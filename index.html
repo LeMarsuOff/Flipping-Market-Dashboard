@@ -216,6 +216,9 @@ body {
   gap: 7px;
   flex-wrap: nowrap;
   overflow: hidden;
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 190;
 }
 .fcs-label { 
   color: var(--sel-border); 
@@ -247,6 +250,9 @@ body {
   border-bottom: 1px solid var(--line);
   padding: 0 20px;
   height: var(--tabs-h);
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--context-h));
+  z-index: 180;
 }
 .view-tab {
   display: flex;
@@ -2525,6 +2531,9 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
   flex-shrink: 0;
   background: var(--bg1);
   border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 53px; /* height of mob-topbar */
+  z-index: 99;
 }
 .mob-presets::-webkit-scrollbar { display: none; }
 .mob-preset-pill {
