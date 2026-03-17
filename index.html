@@ -162,6 +162,31 @@ body {
   color: #c07080;
 }
 
+/* ── Bar mode toggle ── */
+.bar-mode-toggle {
+  display: flex;
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.bmt-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: .6px;
+  padding: 4px 9px;
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  transition: all .12s;
+  white-space: nowrap;
+}
+.bmt-btn.active {
+  background: color-mix(in srgb, var(--b) 15%, transparent);
+  color: var(--b);
+}
+.bmt-btn:not(.active):hover { color: var(--body); }
+
 /* ══ DATASET BADGE ══ */
 .ds-badge {
   font-family: 'DM Mono', monospace;
@@ -2426,7 +2451,413 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
 .sel-pulse { animation: selPulse .4s ease-out; }
 .gs-editing .equity-wrap  { min-height: 100px !important; }
 .gs-editing .monthly-wrap { min-height: 100px !important; }
+
+/* ══════════════════════════════════════════════════════
+   MOBILE — vue simplifiée (< 768px)
+   ══════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+
+  /* Hide desktop UI entirely */
+  .topbar, .sidebar, .view-tabs, .layout,
+  #filter-context-strip, .csv-drop-zone,
+  .theme-panel, .csv-overlay { display: none !important; }
+
+  /* Show mobile shell */
+  #mobile-shell { display: flex !important; }
+}
+
+/* Mobile shell — hidden on desktop */
+#mobile-shell {
+  display: none;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg);
+  overflow-x: hidden;
+}
+
+/* ── Mobile topbar ── */
+.mob-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.mob-logo {
+  font-family: 'Anybody', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.mob-logo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 6px var(--gold);
+}
+.mob-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--b) 30%, transparent);
+  color: var(--b);
+}
+
+/* ── Mobile preset pills ── */
+.mob-presets {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--line);
+}
+.mob-presets::-webkit-scrollbar { display: none; }
+.mob-preset-pill {
+  flex-shrink: 0;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--line2);
+  background: var(--bg2);
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.mob-preset-pill.active {
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  color: var(--gold);
+}
+.mob-bar-mode {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+  overflow: hidden;
+  align-self: center;
+}
+.mob-bmt {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: .5px;
+  padding: 4px 9px;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .12s;
+}
+.mob-bmt.active {
+  background: color-mix(in srgb, var(--b) 15%, transparent);
+  color: var(--b);
+}
+
+/* ── Mobile body ── */
+.mob-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Mobile card ── */
+.mob-card {
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mob-card-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  color: var(--body);
+  padding: 10px 14px 0;
+}
+
+/* ── KPI grid 3×3 ── */
+.mob-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mob-kpi-cell {
+  background: var(--bg1);
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+.mob-kpi-cell::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.mob-kpi-cell.c-green::before { background: var(--g); }
+.mob-kpi-cell.c-red::before   { background: var(--r); }
+.mob-kpi-cell.c-gold::before  { background: var(--gold); }
+.mob-kpi-cell.c-blue::before  { background: var(--b); }
+.mob-kpi-cell.c-dim::before   { background: var(--dim); }
+.mob-kpi-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--dim);
+  line-height: 1;
+}
+.mob-kpi-value {
+  font-family: 'Anybody', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mob-kpi-value.v-green { color: var(--g); }
+.mob-kpi-value.v-red   { color: color-mix(in srgb, var(--r) 70%, var(--body)); }
+.mob-kpi-value.v-gold  { color: var(--gold); }
+.mob-kpi-value.v-blue  { color: var(--b); }
+.mob-kpi-value.v-white { color: var(--white); }
+.mob-kpi-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Mobile canvas containers ── */
+.mob-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 200px;
+  margin: 10px 0 0;
+}
+.mob-canvas-wrap canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+.mob-donut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+}
+.mob-donut-canvas {
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+}
+.mob-donut-canvas canvas {
+  width: 120px !important;
+  height: 120px !important;
+}
+
+/* ── Heatmap on mobile ── */
+.mob-heatmap-wrap {
+  padding: 8px 10px 12px;
+  overflow-x: auto;
+}
+
+/* ── Mobile footer ── */
+.mob-footer {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  background: var(--bg1);
+  flex-shrink: 0;
+}
+.mob-import-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .5px;
+  padding: 10px 20px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--b) 40%, transparent);
+  background: color-mix(in srgb, var(--b) 8%, transparent);
+  color: var(--b);
+  cursor: pointer;
+}
+.mob-ds-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: .8px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: var(--bg3);
+  border: 1px solid var(--line2);
+  color: var(--dim);
+}
 </style>
+
+<!-- ══ MOBILE SHELL ══ -->
+<div id="mobile-shell">
+
+  <!-- Topbar -->
+  <div class="mob-topbar">
+    <div class="mob-logo">
+      <div class="mob-logo-dot"></div>
+      Flipping Research
+    </div>
+    <div class="mob-badge" id="mob-ds-badge">DATASET B</div>
+  </div>
+
+  <!-- Preset pills -->
+  <div class="mob-presets" id="mob-presets">
+    <div class="mob-preset-pill active" onclick="mobApplyPreset(null)">P0 — Baseline</div>
+    <div class="mob-preset-pill" onclick="mobApplyPreset(1)">P1 — LAB 1</div>
+    <div class="mob-preset-pill" onclick="mobApplyPreset(2)">P2 — LAB 4</div>
+    <div class="mob-preset-pill" onclick="mobApplyPreset(3)">P3 — LAB 7</div>
+    <div class="mob-preset-pill" onclick="mobApplyPreset(4)">P4 — No Filters</div>
+    <div style="width:1px;background:var(--line2);margin:4px 2px;flex-shrink:0"></div>
+    <div class="mob-bar-mode">
+      <div class="mob-bmt active" id="mob-dset-a" onclick="setBE(false)">DS A</div>
+      <div class="mob-bmt"        id="mob-dset-b" onclick="setBE(true)">DS B</div>
+    </div>
+    <div style="width:1px;background:var(--line2);margin:4px 2px;flex-shrink:0"></div>
+    <div class="mob-bar-mode">
+      <div class="mob-bmt active" id="mob-bmt-ev"    onclick="setBarMode('ev')">Avg R</div>
+      <div class="mob-bmt"        id="mob-bmt-total" onclick="setBarMode('total')">Total R</div>
+    </div>
+  </div>
+
+  <!-- Scrollable body -->
+  <div class="mob-body">
+
+    <!-- KPI 3×3 -->
+    <div class="mob-kpi-grid" id="mob-kpi-grid">
+      <div class="mob-kpi-cell c-dim">
+        <div class="mob-kpi-label">Trades</div>
+        <div class="mob-kpi-value v-white" id="mk-n">—</div>
+        <div class="mob-kpi-sub" id="mk-n-s">—</div>
+      </div>
+      <div class="mob-kpi-cell c-green">
+        <div class="mob-kpi-label">Win Rate</div>
+        <div class="mob-kpi-value v-green" id="mk-wr">—</div>
+        <div class="mob-kpi-sub" id="mk-wr-s">—</div>
+      </div>
+      <div class="mob-kpi-cell c-gold">
+        <div class="mob-kpi-label">Avg R</div>
+        <div class="mob-kpi-value v-gold" id="mk-ev">—</div>
+        <div class="mob-kpi-sub">Expectancy</div>
+      </div>
+      <div class="mob-kpi-cell c-green">
+        <div class="mob-kpi-label">Total R</div>
+        <div class="mob-kpi-value v-green" id="mk-tot">—</div>
+        <div class="mob-kpi-sub">Cumulative</div>
+      </div>
+      <div class="mob-kpi-cell c-blue">
+        <div class="mob-kpi-label">Prof. Factor</div>
+        <div class="mob-kpi-value v-blue" id="mk-pf">—</div>
+        <div class="mob-kpi-sub" id="mk-pf-s">—</div>
+      </div>
+      <div class="mob-kpi-cell c-red">
+        <div class="mob-kpi-label">Max DD</div>
+        <div class="mob-kpi-value v-red" id="mk-dd">—</div>
+        <div class="mob-kpi-sub">Peak-to-trough</div>
+      </div>
+      <div class="mob-kpi-cell c-green">
+        <div class="mob-kpi-label">Max Win Run</div>
+        <div class="mob-kpi-value v-green" id="mk-ws">—</div>
+        <div class="mob-kpi-sub">Consécutifs</div>
+      </div>
+      <div class="mob-kpi-cell c-red">
+        <div class="mob-kpi-label">Max Loss Run</div>
+        <div class="mob-kpi-value v-red" id="mk-ls">—</div>
+        <div class="mob-kpi-sub">Consécutifs</div>
+      </div>
+      <div class="mob-kpi-cell c-gold">
+        <div class="mob-kpi-label">BE Trades</div>
+        <div class="mob-kpi-value v-gold" id="mk-be">—</div>
+        <div class="mob-kpi-sub" id="mk-be-s">—</div>
+      </div>
+    </div>
+
+    <!-- Equity -->
+    <div class="mob-card">
+      <div class="mob-card-title">Equity</div>
+      <div class="mob-canvas-wrap" id="mob-equity-wrap">
+        <canvas id="mobEquityCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Outcome donut -->
+    <div class="mob-card">
+      <div class="mob-card-title">Outcome</div>
+      <div class="mob-donut-wrap">
+        <div class="mob-donut-canvas"><canvas id="mobDonutCanvas"></canvas></div>
+        <div id="mob-donut-legend" style="flex:1;display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="mob-card">
+      <div class="mob-card-title">Heatmap — Session × Jour</div>
+      <div class="mob-heatmap-wrap">
+        <div id="mob-heatmap-container"></div>
+      </div>
+    </div>
+
+    <!-- Pair Performance -->
+    <div class="mob-card">
+      <div class="mob-card-title">Pair Performance</div>
+      <div style="padding:8px 10px 12px;position:relative;height:220px">
+        <canvas id="mobPairCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- M15 Obstacles -->
+    <div class="mob-card">
+      <div class="mob-card-title">M15 Obstacles</div>
+      <div style="padding:8px 10px 12px;position:relative;height:280px">
+        <canvas id="mobObsCanvas"></canvas>
+      </div>
+    </div>
+
+  </div><!-- /mob-body -->
+
+  <!-- Footer -->
+  <div class="mob-footer">
+    <button class="mob-import-btn" onclick="openCsvOverlay()">⬆ Import CSV</button>
+    <div class="mob-ds-badge" id="mob-footer-badge">DATASET B</div>
+  </div>
+
+</div><!-- /mobile-shell -->
 
 <!-- ══ CSV DRAG & DROP OVERLAY ══ -->
 <div class="csv-overlay" id="csv-overlay">
@@ -2481,7 +2912,11 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       <div class="data-source-dot" id="data-dot"></div>
       <span id="data-source-label">Built-in data</span>
     </div>
-    <div id="ds-badge" class="ds-badge b">DATASET B</div>
+    <div id="ds-badge" class="ds-badge a">DATASET A</div>
+    <div class="bar-mode-toggle">
+      <button class="bmt-btn active" id="bmt-ev"   onclick="setBarMode('ev')">Avg R</button>
+      <button class="bmt-btn"        id="bmt-total" onclick="setBarMode('total')">Total R</button>
+    </div>
     <button class="theme-btn" id="theme-toggle-btn" onclick="toggleThemePanel()" title="Customize colors">🎨</button>
     <button class="reset-btn" onclick="resetAll()">↺ Reset</button>
   </div>
@@ -2559,13 +2994,13 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
     <div class="filter-group">
       <div class="fg-label" style="margin-bottom:8px">Dataset Mode</div>
       <div class="be-toggle-row">
-        <button class="be-btn active" id="be-include" onclick="setBE(true)">
-          <span class="be-icon">●</span> Include BE
-          <span class="be-sub">BE-TP = +2.4R · BE-SL = −1R</span>
-        </button>
-        <button class="be-btn" id="be-exclude" onclick="setBE(false)">
-          <span class="be-icon">○</span> Exclude BE
+        <button class="be-btn active" id="be-exclude" onclick="setBE(false)">
+          <span class="be-icon">●</span> Exclude BE
           <span class="be-sub">Dataset A — pure TP/SL only</span>
+        </button>
+        <button class="be-btn" id="be-include" onclick="setBE(true)">
+          <span class="be-icon">○</span> Include BE
+          <span class="be-sub">BE-TP = +2.4R · BE-SL = −1R</span>
         </button>
       </div>
     </div>
@@ -3137,7 +3572,7 @@ function setMonthlyMode(m) {
 }
 
 // ══ BE TOGGLE STATE ══
-let includeBE = true;
+let includeBE = false;
 let activePreset = null;
 const state = { m15Exclude: [], h4Exclude: [], sessionExclude: [] };
 let TOTAL_OVERRIDE = null;
@@ -3543,6 +3978,14 @@ function setBE(val) {
   const badge = document.getElementById('ds-badge');
   if (val) { badge.className='ds-badge b'; badge.textContent='DATASET B'; }
   else      { badge.className='ds-badge a'; badge.textContent='DATASET A'; }
+  // Sync mobile badge + pills
+  const mobBadge = document.getElementById('mob-ds-badge');
+  const mobFooter = document.getElementById('mob-footer-badge');
+  const label = val ? 'DATASET B' : 'DATASET A';
+  if (mobBadge)  mobBadge.textContent  = label;
+  if (mobFooter) mobFooter.textContent = label;
+  document.getElementById('mob-dset-a')?.classList.toggle('active', !val);
+  document.getElementById('mob-dset-b')?.classList.toggle('active',  val);
   render();
 }
 
@@ -3834,7 +4277,7 @@ function resetAll() {
   tfClearKpiDeltas();
   document.getElementById('period-compare-bar')?.classList.add('hidden');
   document.getElementById('cmp-table-wrap')?.classList.add('hidden');
-  setBE(true);
+  setBE(false);
   render();
 }
 
@@ -3977,6 +4420,35 @@ function sortItems(items, chart, keyFn) {
   return items;
 }
 
+// ── Bar chart metric mode: 'ev' (Avg R) or 'total' (Total R) ──
+let barMode = 'ev';
+
+function setBarMode(mode) {
+  barMode = mode;
+  // Sync desktop buttons
+  document.getElementById('bmt-ev')   ?.classList.toggle('active', mode === 'ev');
+  document.getElementById('bmt-total')?.classList.toggle('active', mode === 'total');
+  // Sync mobile buttons
+  document.getElementById('mob-bmt-ev')   ?.classList.toggle('active', mode === 'ev');
+  document.getElementById('mob-bmt-total')?.classList.toggle('active', mode === 'total');
+  // Rerender all bar charts + heatmaps
+  const filtered = getFiltered();
+  const absMax = 1.8;
+  renderBars('bars-setup',   groupByEV(filtered, t => t.setup,   k => SETUP_SHORT[k]  || k), absMax, false, 'setup');
+  renderBars('bars-session', groupByEV(filtered, t => t.session, k => SESSION_SHORT[k] || k), absMax, false, 'session');
+  renderBars('bars-pair',    groupByEV(filtered, t => t.pair),   absMax, false, 'pair');
+  renderDayBars(filtered);
+  renderObsBars(filtered);
+  renderH4ObsBars(filtered);
+  renderHeatmap(filtered);
+  // Rerender mobile charts
+  if (_isMobile()) {
+    drawMobilePair(filtered);
+    drawMobileObs(filtered);
+    renderMobileHeatmap(filtered);
+  }
+}
+
 function groupByEV(trades, keyFn, labelFn) {
   const groups = {};
   trades.forEach(t => {
@@ -3991,6 +4463,7 @@ function groupByEV(trades, keyFn, labelFn) {
       _rawKey: rawKey,
       n:       rs.length,
       ev:      rs.reduce((s, r) => s + r, 0) / rs.length,
+      totalR:  rs.reduce((s, r) => s + r, 0),
     }))
     .filter(d => d.n >= 1);
 }
@@ -3999,21 +4472,30 @@ function renderBars(containerId, data, maxAbsR, small, chart) {
   const container = document.getElementById(containerId);
   if (!data.length) { container.innerHTML = '<div class="no-data">No data</div>'; return; }
 
-  // Apply sort
-  const sorted = chart ? sortItems(data, chart) : [...data].sort((a, b) => b.ev - a.ev);
-  const absMax = maxAbsR || Math.max(...sorted.map(d => Math.abs(d.ev)));
+  const useTotal = barMode === 'total';
+  const valFn    = d => useTotal ? d.totalR : d.ev;
+
+  // Apply sort — sort by current metric
+  const sorted = chart ? sortItems(data, chart, useTotal ? d => d.totalR : null) : [...data].sort((a, b) => valFn(b) - valFn(a));
+  const absMax = maxAbsR && !useTotal ? maxAbsR : Math.max(...sorted.map(d => Math.abs(valFn(d)))) || 1;
 
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getCol = ev => ev >= 0.5 ? cG : ev >= 0.2 ? cA : ev >= 0 ? cT : cR;
+  const getCol = v => v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR;
   const cls    = small ? 'bar-row sm' : 'bar-row';
+  const suffix = useTotal ? 'R' : 'R';
+  const decimals = useTotal ? 1 : 3;
 
   container.innerHTML = sorted.map(d => {
-    const pct = Math.min(Math.abs(d.ev) / absMax * 100, 100);
-    const col = getCol(d.ev);
+    const val = valFn(d);
+    const pct = Math.min(Math.abs(val) / absMax * 100, 100);
+    const col = getCol(val);
+    const valStr = (val >= 0 ? '+' : '') + val.toFixed(decimals) + suffix;
+    const sub = useTotal ? `<span style="color:var(--dim);font-size:9px"> ×${d.n}</span>` :
+                           `<span style="color:var(--dim);font-size:9px"> ×${d.n}</span>`;
     return `<div class="${cls}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}">${d.ev >= 0 ? '+' : ''}${d.ev.toFixed(3)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
+      <div class="bar-val" style="color:${col}">${valStr}${sub}</div>
     </div>`;
   }).join('');
 }
@@ -4029,28 +4511,31 @@ function renderDayBars(trades) {
     groups[k].push(t.r);
   });
 
-  const absMax = 1.8;
+  const useTotal = barMode === 'total';
+  const valFn  = d => useTotal ? d.totalR : d.ev;
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getCol = ev => ev >= 0.5 ? cG : ev >= 0.2 ? cA : ev >= 0 ? cT : cR;
+  const getCol = v => v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR;
 
   const items = DAY_ORDER
     .filter(d => groups[d] && groups[d].length > 0)
-    .map(d => ({
-      label: DAY_EN[d] || d,
-      n:     groups[d].length,
-      ev:    groups[d].reduce((s, r) => s + r, 0) / groups[d].length,
-    }));
+    .map(d => {
+      const rs = groups[d];
+      const ev = rs.reduce((s, r) => s + r, 0) / rs.length;
+      return { label: DAY_EN[d] || d, n: rs.length, ev, totalR: rs.reduce((s, r) => s + r, 0) };
+    });
 
   if (!items.length) { container.innerHTML = '<div class="no-data">No data</div>'; return; }
-  const localMax = Math.max(...items.map(d => Math.abs(d.ev)));
+  const localMax = Math.max(...items.map(d => Math.abs(valFn(d)))) || 1;
+  const decimals = useTotal ? 1 : 3;
 
   container.innerHTML = items.map(d => {
-    const pct = Math.min(Math.abs(d.ev) / (localMax || 1) * 100, 100);
-    const col = getCol(d.ev);
+    const val = valFn(d);
+    const pct = Math.min(Math.abs(val) / localMax * 100, 100);
+    const col = getCol(val);
     return `<div class="bar-row">
       <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}">${d.ev >= 0 ? '+' : ''}${d.ev.toFixed(3)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
+      <div class="bar-val" style="color:${col}">${val >= 0 ? '+' : ''}${val.toFixed(decimals)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
     </div>`;
   }).join('');
 }
@@ -4067,24 +4552,29 @@ function renderObsBars(trades) {
 
   let items = ALL_OBS
     .filter(o => obsData[o] && obsData[o].length >= 5)
-    .map(o => ({ label: o, n: obsData[o].length, ev: obsData[o].reduce((s, r) => s + r, 0) / obsData[o].length }));
+    .map(o => {
+      const rs = obsData[o];
+      return { label: o, n: rs.length, ev: rs.reduce((s,r)=>s+r,0)/rs.length, totalR: rs.reduce((s,r)=>s+r,0) };
+    });
 
-  // Apply sort
   items = sortItems(items, 'obs');
-
   if (!items.length) { container.innerHTML = '<div class="no-data">No data</div>'; return; }
 
-  const absMax = Math.max(...items.map(d => Math.abs(d.ev)));
+  const useTotal = barMode === 'total';
+  const valFn  = d => useTotal ? d.totalR : d.ev;
+  const absMax = Math.max(...items.map(d => Math.abs(valFn(d)))) || 1;
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getC = ev => ev >= 0.5 ? cG : ev >= 0.2 ? cA : ev >= 0 ? cT : cR;
+  const getC = v => v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR;
+  const decimals = useTotal ? 1 : 3;
 
   container.innerHTML = items.map(d => {
-    const pct = Math.min(Math.abs(d.ev) / absMax * 100, 100);
-    const col = getC(d.ev);
+    const val = valFn(d);
+    const pct = Math.min(Math.abs(val) / absMax * 100, 100);
+    const col = getC(val);
     return `<div class="bar-row sm">
       <div class="bar-label" title="${d.label}" style="font-size:11px">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}">${d.ev >= 0 ? '+' : ''}${d.ev.toFixed(3)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
+      <div class="bar-val" style="color:${col}">${val >= 0 ? '+' : ''}${val.toFixed(decimals)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
     </div>`;
   }).join('');
 }
@@ -4093,7 +4583,6 @@ function renderH4ObsBars(trades) {
   const container = document.getElementById('bars-h4obs');
   if (!container) return;
 
-  // Collect all H4 tags dynamically from filtered trades
   const h4Data = {};
   trades.forEach(t => {
     const h4arr = Array.isArray(t.h4) ? t.h4 : (t.h4 ? [t.h4] : []);
@@ -4107,12 +4596,12 @@ function renderH4ObsBars(trades) {
   let items = Object.entries(h4Data)
     .filter(([, rs]) => rs.length >= 5)
     .map(([tag, rs]) => ({
-      label: tag,
-      n:     rs.length,
-      ev:    rs.reduce((s, r) => s + r, 0) / rs.length,
+      label:  tag,
+      n:      rs.length,
+      ev:     rs.reduce((s,r)=>s+r,0) / rs.length,
+      totalR: rs.reduce((s,r)=>s+r,0),
     }));
 
-  // Apply sort
   items = sortItems(items, 'h4obs');
 
   if (!items.length) {
@@ -4120,17 +4609,21 @@ function renderH4ObsBars(trades) {
     return;
   }
 
-  const absMax = Math.max(...items.map(d => Math.abs(d.ev)));
+  const useTotal = barMode === 'total';
+  const valFn  = d => useTotal ? d.totalR : d.ev;
+  const absMax = Math.max(...items.map(d => Math.abs(valFn(d)))) || 1;
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getC = ev => ev >= 0.5 ? cG : ev >= 0.2 ? cA : ev >= 0 ? cT : cR;
+  const getC = v => v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR;
+  const decimals = useTotal ? 1 : 3;
 
   container.innerHTML = items.map(d => {
-    const pct = Math.min(Math.abs(d.ev) / absMax * 100, 100);
-    const col = getC(d.ev);
+    const val = valFn(d);
+    const pct = Math.min(Math.abs(val) / absMax * 100, 100);
+    const col = getC(val);
     return `<div class="bar-row sm">
       <div class="bar-label" title="${d.label}" style="font-size:11px">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}">${d.ev >= 0 ? '+' : ''}${d.ev.toFixed(3)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
+      <div class="bar-val" style="color:${col}">${val >= 0 ? '+' : ''}${val.toFixed(decimals)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
     </div>`;
   }).join('');
 }
@@ -5458,27 +5951,27 @@ function renderHeatmap(trades) {
   const container = document.getElementById('heatmap-container');
   const sessions = ['Asian','London','Lunch Time Zone','New-York'];
   const days = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  const useTotal = barMode === 'total';
   const data = {};
   trades.forEach(t => {
     const k = t.session+'|'+t.day;
     if(!data[k]) data[k]={r:0,n:0};
     data[k].r+=t.r; data[k].n++;
   });
+  const valFn = v => useTotal ? v.r : v.r/v.n;
   let mn=Infinity, mx=-Infinity;
   sessions.forEach(ss=>days.forEach(d=>{
     const v=data[ss+'|'+d];
-    if(v&&v.n>=2){mn=Math.min(mn,v.r/v.n);mx=Math.max(mx,v.r/v.n);}
+    if(v&&v.n>=2){const val=valFn(v);mn=Math.min(mn,val);mx=Math.max(mx,val);}
   }));
   if(mn===Infinity){mn=0;mx=1;}
   const range=Math.max(mx,Math.abs(mn))||1;
 
-  const cols = days.length+1, rows = sessions.length+1;
   container.style.display='grid';
   container.style.gridTemplateColumns=`80px repeat(${days.length},1fr)`;
   container.style.gap='3px';
   container.innerHTML='';
 
-  // header row
   const blank=document.createElement('div');
   blank.style.cssText='height:24px';
   container.appendChild(blank);
@@ -5501,18 +5994,19 @@ function renderHeatmap(trades) {
       cell.className='hm-cell';
       cell.style.height='32px';
       if(v&&v.n>=2){
-        const ev=v.r/v.n;
-        const norm=ev/range;
+        const val=valFn(v);
+        const norm=val/range;
         const alpha=Math.min(Math.abs(norm)*0.85+0.30, 0.95);
         const winHex = tc('--g');
         const lossHex = tc('--r');
         const toRgbStr = h => { const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r?`${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}`:'180,180,180'; };
-        const col = ev>=0 ? `rgba(${toRgbStr(winHex)},${alpha})` : `rgba(${toRgbStr(lossHex)},${alpha})`;
-        const textCol = alpha > 0.55 ? tc('--bg1') : (ev >= 0 ? tc('--g') : tc('--r'));
+        const col = val>=0 ? `rgba(${toRgbStr(winHex)},${alpha})` : `rgba(${toRgbStr(lossHex)},${alpha})`;
+        const textCol = alpha > 0.55 ? tc('--bg1') : (val >= 0 ? tc('--g') : tc('--r'));
         cell.style.background=col;
         cell.style.color=textCol;
-        cell.textContent=ev>=0?`+${ev.toFixed(2)}`:`${ev.toFixed(2)}`;
-        cell.setAttribute('data-tip',`${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]}: ${ev>=0?'+':''}${ev.toFixed(3)}R (n=${v.n})`);
+        const decimals = useTotal ? 1 : 2;
+        cell.textContent=val>=0?`+${val.toFixed(decimals)}`:`${val.toFixed(decimals)}`;
+        cell.setAttribute('data-tip',`${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]}: ${val>=0?'+':''}${val.toFixed(useTotal?1:3)}R (n=${v.n})`);
       } else {
         cell.style.background='var(--bg3)';
         cell.textContent='—';
@@ -5929,6 +6423,9 @@ function render() {
 
   // Update comparison panel if active
   if (tf.compare) tfUpdateCompareUI();
+
+  // Mobile view
+  if (_isMobile()) renderMobile();
 }
 
 // ══════════════════════════════════════════════════════
@@ -7630,6 +8127,465 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Bootstrap ──
+// ══════════════════════════════════════════════════════
+// MOBILE VIEW
+// ══════════════════════════════════════════════════════
+const _isMobile = () => window.innerWidth < 768;
+
+// ── Mobile KPI update ──
+function updateMobileStats(stats) {
+  if (!_isMobile()) return;
+  const s = document.getElementById;
+  if (!stats) {
+    ['mk-n','mk-wr','mk-ev','mk-tot','mk-pf','mk-dd','mk-ws','mk-ls','mk-be']
+      .forEach(id => { const el = document.getElementById(id); if(el) el.textContent = '—'; });
+    return;
+  }
+  const totN = TOTAL_OVERRIDE !== null ? TOTAL_OVERRIDE : TOTAL;
+  const beTot = stats.be_tp + stats.be_sl;
+
+  const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+  set('mk-n',   stats.n);
+  set('mk-n-s', `of ${totN} · ${stats.w}W ${stats.l}L`);
+  set('mk-wr',  stats.wr.toFixed(1) + '%');
+  set('mk-wr-s', `${stats.w}W / ${stats.l}L`);
+  set('mk-ev',  (stats.ev >= 0 ? '+' : '') + stats.ev.toFixed(3) + 'R');
+  set('mk-tot', (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(1) + 'R');
+  set('mk-pf',  stats.pf >= 9.99 ? '∞' : stats.pf.toFixed(3));
+  set('mk-pf-s', stats.pf >= 1.5 ? 'Positif ✓' : stats.pf >= 1 ? 'Limite' : 'Négatif ✗');
+  set('mk-dd',  stats.maxDD.toFixed(1) + 'R');
+  set('mk-ws',  stats.maxW);
+  set('mk-ls',  stats.maxL);
+  set('mk-be',  beTot);
+  set('mk-be-s', (beTot / stats.n * 100).toFixed(0) + '% · TP:' + stats.be_tp + ' SL:' + stats.be_sl);
+
+  // Dynamic colours
+  const wrCell = document.querySelector('#mob-kpi-grid .mob-kpi-cell:nth-child(2)');
+  const wrVal  = document.getElementById('mk-wr');
+  if (wrCell && wrVal) {
+    const ok = stats.wr >= 50;
+    wrCell.className = 'mob-kpi-cell ' + (ok ? 'c-green' : 'c-red');
+    wrVal.className  = 'mob-kpi-value ' + (ok ? 'v-green' : 'v-red');
+  }
+  const totCell = document.querySelector('#mob-kpi-grid .mob-kpi-cell:nth-child(4)');
+  const totVal  = document.getElementById('mk-tot');
+  if (totCell && totVal) {
+    const ok = stats.totalR >= 0;
+    totCell.className = 'mob-kpi-cell ' + (ok ? 'c-green' : 'c-red');
+    totVal.className  = 'mob-kpi-value ' + (ok ? 'v-green' : 'v-red');
+  }
+
+  // Badge
+  const badge = document.getElementById('mob-ds-badge');
+  const footBadge = document.getElementById('mob-footer-badge');
+  const label = includeBE ? 'DATASET B' : 'DATASET A';
+  if (badge) badge.textContent = label;
+  if (footBadge) footBadge.textContent = label;
+}
+
+// ── Mobile equity chart ──
+let _mobEqChart = null;
+function drawMobileEquity(trades) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobEquityCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('mob-equity-wrap');
+  if (!wrap) return;
+
+  const W = wrap.offsetWidth || 340;
+  const H = 200;
+  canvas.width  = W * window.devicePixelRatio;
+  canvas.height = H * window.devicePixelRatio;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  ctx.clearRect(0, 0, W, H);
+
+  if (!trades.length) return;
+
+  // Build curve
+  let eq = 0;
+  const curve = trades.map(t => { eq += t.r; return eq; });
+  const mn = Math.min(0, ...curve);
+  const mx = Math.max(0, ...curve);
+  const range = mx - mn || 1;
+  const pad = { t: 16, b: 24, l: 42, r: 10 };
+  const cW = W - pad.l - pad.r;
+  const cH = H - pad.t - pad.b;
+
+  const px = i => pad.l + (i / (curve.length - 1 || 1)) * cW;
+  const py = v => pad.t + cH - ((v - mn) / range) * cH;
+
+  // Zero line
+  ctx.strokeStyle = tc('--line2');
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  const y0 = py(0);
+  ctx.moveTo(pad.l, y0);
+  ctx.lineTo(pad.l + cW, y0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Fill
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH);
+  grad.addColorStop(0, 'rgba(38,166,154,0.22)');
+  grad.addColorStop(1, 'rgba(38,166,154,0.02)');
+  ctx.beginPath();
+  curve.forEach((v, i) => i === 0 ? ctx.moveTo(px(i), py(v)) : ctx.lineTo(px(i), py(v)));
+  ctx.lineTo(px(curve.length - 1), py(0));
+  ctx.lineTo(px(0), py(0));
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = tc('--g');
+  ctx.lineWidth = 1.5;
+  curve.forEach((v, i) => i === 0 ? ctx.moveTo(px(i), py(v)) : ctx.lineTo(px(i), py(v)));
+  ctx.stroke();
+
+  // Y axis labels
+  ctx.fillStyle = tc('--dim');
+  ctx.font = `${9 * window.devicePixelRatio / window.devicePixelRatio}px DM Mono, monospace`;
+  ctx.textAlign = 'right';
+  ctx.font = '9px DM Mono, monospace';
+  [mn, mx].forEach(v => {
+    ctx.fillText((v >= 0 ? '+' : '') + v.toFixed(1) + 'R', pad.l - 4, py(v) + 3);
+  });
+}
+
+// ── Mobile donut ──
+let _mobDonutChart = null;
+function drawMobileDonut(stats) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobDonutCanvas');
+  const legend = document.getElementById('mob-donut-legend');
+  if (!canvas || !legend) return;
+
+  if (_mobDonutChart) { _mobDonutChart.destroy(); _mobDonutChart = null; }
+
+  if (!stats) { canvas.getContext('2d').clearRect(0,0,120,120); legend.innerHTML = ''; return; }
+
+  const filtered = getFiltered();
+  const tp    = filtered.filter(t => t.outcome === 'TP').length;
+  const sl    = filtered.filter(t => t.outcome === 'SL').length;
+  const betp  = filtered.filter(t => t.outcome === 'BE-TP').length;
+  const besl  = filtered.filter(t => t.outcome === 'BE-SL').length;
+  const total = filtered.length || 1;
+
+  canvas.width = canvas.height = 120;
+
+  _mobDonutChart = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['TP', 'SL', 'BE-TP', 'BE-SL'],
+      datasets: [{ data: [tp, sl, betp, besl],
+        backgroundColor: [tc('--g'), tc('--r'), tc('--gold'), 'rgba(180,120,240,.8)'],
+        borderWidth: 0, hoverOffset: 4 }]
+    },
+    options: {
+      cutout: '65%', responsive: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } }
+    }
+  });
+
+  const items = [
+    { label:'TP',    count:tp,   col:'var(--g)' },
+    { label:'SL',    count:sl,   col:'var(--r)' },
+    { label:'BE-TP', count:betp, col:'var(--gold)' },
+    { label:'BE-SL', count:besl, col:'rgba(180,120,240,1)' },
+  ];
+  legend.innerHTML = items.map(it => `
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="width:8px;height:8px;border-radius:50%;background:${it.col};flex-shrink:0"></div>
+      <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--body)">${it.label}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--dim);margin-left:auto">${it.count} (${(it.count/total*100).toFixed(0)}%)</span>
+    </div>`).join('');
+}
+
+// ── Mobile heatmap ──
+function renderMobileHeatmap(trades) {
+  if (!_isMobile()) return;
+  const container = document.getElementById('mob-heatmap-container');
+  if (!container) return;
+
+  const sessions  = ['Asian','London','Lunch Time Zone','New-York'];
+  const days      = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  const useTotal  = barMode === 'total';
+  const data = {};
+  trades.forEach(t => {
+    const k = t.session + '|' + t.day;
+    if (!data[k]) data[k] = { r: 0, n: 0 };
+    data[k].r += t.r; data[k].n++;
+  });
+  const valFn = v => useTotal ? v.r : v.r / v.n;
+  let mn = Infinity, mx = -Infinity;
+  sessions.forEach(ss => days.forEach(d => {
+    const v = data[ss + '|' + d];
+    if (v && v.n >= 2) { const val = valFn(v); mn = Math.min(mn, val); mx = Math.max(mx, val); }
+  }));
+  if (mn === Infinity) { mn = 0; mx = 1; }
+  const range = Math.max(mx, Math.abs(mn)) || 1;
+
+  container.style.cssText = `display:grid;grid-template-columns:70px repeat(${days.length},1fr);gap:2px;min-width:320px`;
+  container.innerHTML = '';
+
+  const blank = document.createElement('div');
+  blank.style.height = '20px';
+  container.appendChild(blank);
+  days.forEach(d => {
+    const el = document.createElement('div');
+    el.style.cssText = 'text-align:center;font-family:"DM Mono",monospace;font-size:8px;color:var(--dim);padding:2px 0';
+    el.textContent = DAY_EN[d] || d;
+    container.appendChild(el);
+  });
+
+  sessions.forEach(ss => {
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'display:flex;align-items:center;font-size:9px;color:var(--body);padding-right:4px;white-space:nowrap';
+    lbl.textContent = SESSION_SHORT[ss] || ss;
+    container.appendChild(lbl);
+    days.forEach(d => {
+      const v    = data[ss + '|' + d];
+      const cell = document.createElement('div');
+      cell.style.cssText = 'height:26px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:"DM Mono",monospace;font-size:8px;font-weight:600';
+      if (v && v.n >= 2) {
+        const val   = valFn(v);
+        const norm  = val / range;
+        const alpha = Math.min(Math.abs(norm) * 0.85 + 0.30, 0.95);
+        const toRgb = h => { const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r ? `${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}` : '180,180,180'; };
+        cell.style.background = val >= 0
+          ? `rgba(${toRgb(tc('--g'))},${alpha})`
+          : `rgba(${toRgb(tc('--r'))},${alpha})`;
+        cell.style.color = alpha > 0.55 ? tc('--bg1') : (val >= 0 ? tc('--g') : tc('--r'));
+        cell.textContent = (val >= 0 ? '+' : '') + val.toFixed(useTotal ? 1 : 2);
+      } else {
+        cell.style.background = 'var(--bg3)';
+        cell.style.color = 'var(--mute)';
+        cell.textContent = '—';
+      }
+      container.appendChild(cell);
+    });
+  });
+}
+
+// ── Mobile monthly ──
+let _mobMonthlyChart = null;
+function drawMobileMonthly(trades) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobMonthlyCanvas');
+  if (!canvas) return;
+
+  if (_mobMonthlyChart) { _mobMonthlyChart.destroy(); _mobMonthlyChart = null; }
+
+  if (!trades.length) return;
+
+  const months = {};
+  trades.forEach(t => {
+    if (!t.month || isNaN(t.month)) return;
+    const m = t.month;
+    if (!months[m]) months[m] = { tp:0, sl:0, be:0 };
+    if (t.outcome === 'TP') months[m].tp += t.r;
+    else if (t.outcome === 'SL') months[m].sl += t.r;
+    else months[m].be += t.r;
+  });
+  const labels = Object.keys(months).sort();
+  if (!labels.length) return;
+
+  const shortLabel = m => { const parts = m.split('-'); return parts[1] + '/' + parts[0].slice(2); };
+
+  _mobMonthlyChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels.map(shortLabel),
+      datasets: [
+        { label:'TP',   data: labels.map(m => months[m].tp),  backgroundColor: tc('--g'),    stack:'s' },
+        { label:'Loss', data: labels.map(m => months[m].sl),  backgroundColor: tc('--r'),    stack:'s' },
+        { label:'BE',   data: labels.map(m => months[m].be),  backgroundColor: tc('--gold'), stack:'s' },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend:{ display:false }, tooltip:{ enabled:true } },
+      scales: {
+        x: { stacked:true, grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
+        y: { stacked:true, grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
+      }
+    }
+  });
+}
+
+// ── Mobile Pair Performance ──
+let _mobPairChart = null;
+function drawMobilePair(trades) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobPairCanvas');
+  if (!canvas) return;
+
+  if (_mobPairChart) { _mobPairChart.destroy(); _mobPairChart = null; }
+  if (!trades.length) return;
+
+  const useTotal = barMode === 'total';
+  const pairs = {};
+  trades.forEach(t => {
+    if (!t.pair) return;
+    if (!pairs[t.pair]) pairs[t.pair] = { r:0, n:0 };
+    pairs[t.pair].r += t.r; pairs[t.pair].n++;
+  });
+  const all = Object.entries(pairs).map(([p, v]) => ({
+    pair: p, ev: v.r/v.n, totalR: v.r, n: v.n
+  }));
+  const valFn = d => useTotal ? d.totalR : d.ev;
+  const sorted = all.sort((a,b) => valFn(b) - valFn(a));
+  const decimals = useTotal ? 1 : 3;
+  const tooltipLabel = useTotal ? ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R total`
+                                 : ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R / trade`;
+
+  _mobPairChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(d => d.pair),
+      datasets: [{
+        data: sorted.map(d => +valFn(d).toFixed(decimals)),
+        backgroundColor: sorted.map(d => valFn(d) >= 0 ? tc('--g') : tc('--r')),
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: tooltipLabel } } },
+      scales: {
+        x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
+        y: { grid:{ display:false }, ticks:{ color:tc('--body'), font:{ size:9, weight:'600' } } },
+      }
+    }
+  });
+}
+
+// ── Mobile M15 Obstacles ──
+let _mobObsChart = null;
+function drawMobileObs(trades) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobObsCanvas');
+  if (!canvas) return;
+
+  if (_mobObsChart) { _mobObsChart.destroy(); _mobObsChart = null; }
+  if (!trades.length) return;
+
+  const useTotal = barMode === 'total';
+  const obs = {};
+  trades.forEach(t => {
+    (t.obstacles || []).forEach(o => {
+      if (!o) return;
+      if (!obs[o]) obs[o] = { r:0, n:0 };
+      obs[o].r += t.r; obs[o].n++;
+    });
+  });
+  const valFn = d => useTotal ? d.totalR : d.ev;
+  const all = Object.entries(obs)
+    .filter(([, v]) => v.n >= 3)
+    .map(([o, v]) => ({ obs:o, ev: v.r/v.n, totalR: v.r, n: v.n }));
+  const sorted = all.sort((a,b) => valFn(b) - valFn(a)).slice(0, 14);
+
+  if (!sorted.length) return;
+
+  const decimals = useTotal ? 1 : 3;
+  const tooltipLabel = useTotal ? ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R total`
+                                 : ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R / trade`;
+
+  _mobObsChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(d => d.obs),
+      datasets: [{
+        data: sorted.map(d => +valFn(d).toFixed(decimals)),
+        backgroundColor: sorted.map(d => valFn(d) >= 0 ? tc('--g') : tc('--r')),
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: tooltipLabel } } },
+      scales: {
+        x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
+        y: { grid:{ display:false }, ticks: {
+          color: ctx => valFn(sorted[ctx.index] || {ev:0,totalR:0}) >= 0 ? tc('--g') : tc('--r'),
+          font:{ size:8 }
+        }},
+      }
+    }
+  });
+}
+
+// ── Mobile full render ──
+function renderMobile() {
+  if (!_isMobile()) return;
+  const filtered = getFiltered();
+  const stats    = calcStats(filtered);
+  updateMobileStats(stats);
+  drawMobileEquity(filtered);
+  drawMobileDonut(stats);
+  renderMobileHeatmap(filtered);
+  drawMobilePair(filtered);
+  drawMobileObs(filtered);
+}
+
+// ── Mobile preset switcher ──
+function mobApplyPreset(id) {
+  document.querySelectorAll('.mob-preset-pill').forEach((p, i) => {
+    p.classList.toggle('active', id === null ? i === 0 : id === i);
+  });
+  if (id === null) {
+    // Reset to P0
+    Object.keys(filters).forEach(k => filters[k].clear());
+    state.m15Exclude     = [...BASE_M15_EXCLUDE];
+    state.h4Exclude      = [];
+    state.sessionExclude = [...BASE_SESSION_EXCLUDE];
+    setBE(false);
+    activePreset = null;
+  } else {
+    applyPreset(id);
+  }
+  renderMobile();
+}
+
+// ── Hook mobile render into main render — appelé depuis render() directement ──
+// (pas de wrapper pour éviter la récursion infinie)
+
+// ── Resize: redraw mobile charts on orientation change ──
+window.addEventListener('resize', () => {
+  if (_isMobile()) {
+    const filtered = getFiltered();
+    drawMobileEquity(filtered);
+    drawMobilePair(filtered);
+    drawMobileObs(filtered);
+  }
+});
+
+// ── Chart.js lazy load for mobile donut / monthly ──
+// Chart.js is not loaded by default — inject it if on mobile
+(function() {
+  if (!_isMobile()) return;
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+  s.onload = () => {
+    const filtered = getFiltered();
+    const stats    = calcStats(filtered);
+    updateMobileStats(stats);
+    drawMobileEquity(filtered);
+    drawMobileDonut(stats);
+    renderMobileHeatmap(filtered);
+    drawMobilePair(filtered);
+    drawMobileObs(filtered);
+  };
+  document.head.appendChild(s);
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
   // Small delay to let render() finish first
   setTimeout(() => {
