@@ -2476,24 +2476,31 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
 #mobile-shell {
   display: none;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
   background: var(--bg);
   overflow-x: hidden;
+  overflow-y: auto;
 }
 
-/* ── Mobile topbar ── */
-.mob-topbar {
+/* ── Mobile sticky header (topbar + presets fused) ── */
+.mob-header {
   position: sticky;
   top: 0;
   z-index: 100;
   background: var(--bg1);
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+/* ── Mobile topbar ── */
+.mob-topbar {
+  background: var(--bg1);
+  border-bottom: 1px solid var(--line2);
   padding: 10px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  flex-shrink: 0;
 }
 .mob-logo {
   font-family: 'Anybody', sans-serif;
@@ -2526,14 +2533,10 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 10px 14px;
+  padding: 8px 14px 10px;
   scrollbar-width: none;
   flex-shrink: 0;
   background: var(--bg1);
-  border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 53px; /* height of mob-topbar */
-  z-index: 99;
 }
 .mob-presets::-webkit-scrollbar { display: none; }
 .mob-preset-pill {
@@ -2582,7 +2585,6 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
 /* ── Mobile body ── */
 .mob-body {
   flex: 1;
-  overflow-y: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -2737,33 +2739,38 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
 <!-- ══ MOBILE SHELL ══ -->
 <div id="mobile-shell">
 
-  <!-- Topbar -->
-  <div class="mob-topbar">
-    <div class="mob-logo">
-      <div class="mob-logo-dot"></div>
-      Flipping Research
-    </div>
-    <div class="mob-badge" id="mob-ds-badge">DATASET B</div>
-  </div>
+  <!-- Sticky header: topbar + presets fused -->
+  <div class="mob-header">
 
-  <!-- Preset pills -->
-  <div class="mob-presets" id="mob-presets">
-    <div class="mob-preset-pill active" onclick="mobApplyPreset(null)">P0 — Baseline</div>
-    <div class="mob-preset-pill" onclick="mobApplyPreset(1)">P1 — LAB 1</div>
-    <div class="mob-preset-pill" onclick="mobApplyPreset(2)">P2 — LAB 4</div>
-    <div class="mob-preset-pill" onclick="mobApplyPreset(3)">P3 — LAB 7</div>
-    <div class="mob-preset-pill" onclick="mobApplyPreset(4)">P4 — No Filters</div>
-    <div style="width:1px;background:var(--line2);margin:4px 2px;flex-shrink:0"></div>
-    <div class="mob-bar-mode">
-      <div class="mob-bmt active" id="mob-dset-a" onclick="setBE(false)">DS A</div>
-      <div class="mob-bmt"        id="mob-dset-b" onclick="setBE(true)">DS B</div>
+    <!-- Topbar -->
+    <div class="mob-topbar">
+      <div class="mob-logo">
+        <div class="mob-logo-dot"></div>
+        Flipping Research
+      </div>
+      <div class="mob-badge" id="mob-ds-badge">DATASET A</div>
     </div>
-    <div style="width:1px;background:var(--line2);margin:4px 2px;flex-shrink:0"></div>
-    <div class="mob-bar-mode">
-      <div class="mob-bmt active" id="mob-bmt-ev"    onclick="setBarMode('ev')">Avg R</div>
-      <div class="mob-bmt"        id="mob-bmt-total" onclick="setBarMode('total')">Total R</div>
+
+    <!-- Preset pills -->
+    <div class="mob-presets" id="mob-presets">
+      <div class="mob-preset-pill active" onclick="mobApplyPreset(null)">P0 — Baseline</div>
+      <div class="mob-preset-pill" onclick="mobApplyPreset(1)">P1 — LAB 1</div>
+      <div class="mob-preset-pill" onclick="mobApplyPreset(2)">P2 — LAB 4</div>
+      <div class="mob-preset-pill" onclick="mobApplyPreset(3)">P3 — LAB 7</div>
+      <div class="mob-preset-pill" onclick="mobApplyPreset(4)">P4 — No Filters</div>
+      <div style="width:1px;background:var(--line2);margin:4px 2px;flex-shrink:0"></div>
+      <div class="mob-bar-mode">
+        <div class="mob-bmt active" id="mob-dset-a" onclick="setBE(false)">DS A</div>
+        <div class="mob-bmt"        id="mob-dset-b" onclick="setBE(true)">DS B</div>
+      </div>
+      <div style="width:1px;background:var(--line2);margin:4px 2px;flex-shrink:0"></div>
+      <div class="mob-bar-mode">
+        <div class="mob-bmt active" id="mob-bmt-ev"    onclick="setBarMode('ev')">Avg R</div>
+        <div class="mob-bmt"        id="mob-bmt-total" onclick="setBarMode('total')">Total R</div>
+      </div>
     </div>
-  </div>
+
+  </div><!-- /mob-header -->
 
   <!-- Scrollable body -->
   <div class="mob-body">
