@@ -4710,7 +4710,8 @@ function renderObsBars(trades) {
     });
   });
 
-  let items = ALL_OBS
+  const obsKeys = [...new Set([...ALL_OBS, ...Object.keys(obsData)])];
+  let items = obsKeys
     .filter(o => obsData[o] && obsData[o].length >= 1)
     .map(o => {
       const rs = obsData[o];
@@ -4765,7 +4766,7 @@ function renderH4ObsBars(trades) {
   items = sortItems(items, 'h4obs');
 
   if (!items.length) {
-    container.innerHTML = '<div class="no-data">No H4 data (min ' + 1 + ' occurrences)</div>';
+    container.innerHTML = '<div class="no-data">No H4 obstacle data</div>';
     return;
   }
 
