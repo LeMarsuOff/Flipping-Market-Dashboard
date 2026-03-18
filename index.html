@@ -4164,7 +4164,7 @@ const PRESETS = [
   {
     id: 0,
     label: 'Raw Baseline',
-    be: true,
+    be: false,
     clear: true,
     // Only base exclusions — no additional obstacle/context filters
     m15Exclude: [],
@@ -4174,7 +4174,7 @@ const PRESETS = [
   {
     id: 1,
     label: 'LAB 1 — EV Optimised',
-    be: true,
+    be: false,
     // Base + H4 No-Volume removed (LAB 1 key finding)
     m15Exclude: ['Contre Order Flow'],
     h4Exclude: ['No-Volume'],
@@ -4183,7 +4183,7 @@ const PRESETS = [
   {
     id: 2,
     label: 'LAB 4 — Top Setups',
-    be: true,
+    be: false,
     m15Exclude: ['Contre Order Flow'],
     h4Exclude: ['No-Volume'],
     sessionExclude: [],
@@ -4193,7 +4193,7 @@ const PRESETS = [
   {
     id: 3,
     label: 'LAB 7 — Max Filter',
-    be: true,
+    be: false,
     m15Exclude: ['Contre Order Flow','Volume - 1st Candle'],
     h4Exclude: ['No-Volume'],
     sessionExclude: [],
@@ -4203,7 +4203,7 @@ const PRESETS = [
   {
     id: 4,
     label: 'Custom — No Filters',
-    be: true,
+    be: false,
     clear: true,
     // No exclusions at all — completely raw dataset
     m15Exclude: [],
