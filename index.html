@@ -2048,6 +2048,31 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
   transition: background .2s;
 }
 
+
+.api-reload-btn {
+  background: var(--gold2);
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  color: var(--gold);
+  padding: 5px 11px;
+  border-radius: var(--rad);
+  font-family: 'DM Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: .8px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+  text-transform: uppercase;
+  display: none;
+}
+.api-reload-btn.visible {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.api-reload-btn:hover {
+  background: var(--gold3);
+  border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+}
 </style>
 <!-- Gridstack.js -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
@@ -2888,16 +2913,7 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
     </label>
     <div class="csv-status" id="csv-status"></div>
     <div class="csv-format-hint">
-      <strong style="color:var(--g)">3 formats supportés — détection automatique</strong><br><br>
-      <strong style="color:var(--body)">① Flipping Market M15</strong> (format principal)<br>
-      Colonnes clés : <code>Résultat TP 1</code> · <code>RR TP 1</code> · <code>M15 Type</code> · <code>Obstacles M15</code> · <code>Actif</code> · <code>Session</code> · <code>Jour</code><br>
-      Exclusions auto : trades <code>Invalide</code> et <code>Bad feeling = Yes</code><br><br>
-      <strong style="color:var(--body)">② Flipping Market M15 — Pro Template</strong><br>
-      Colonnes clés : <code>Position Result</code> · <code>RR TP 1</code> · <code>M15 Confirmation / Continu</code> · <code>M15 Obstacles</code> · <code>Pair</code> · <code>Session</code> · <code>Day</code><br>
-      Exclusions auto : trades <code>Bad feeling = Yes</code><br><br>
-      <strong style="color:var(--body)">③ Flipping Market M15 — Beginner</strong><br>
-      Colonnes clés : <code>Pair</code> · <code>Position Result</code> · <code>RR TP 1</code> · <code>Date</code><br>
-      Exclusions auto : trades <code>Invalid</code> et résultat <code>.</code</strong><br><br>
+      <strong style="color:var(--g)">2 formats supportés — détection automatique</strong><br><br>
       <strong style="color:var(--body)">① Flipping Market M15</strong> (format principal)<br>
       Colonnes clés : <code>Résultat TP 1</code> · <code>RR TP 1</code> · <code>M15 Type</code> · <code>Obstacles M15</code> · <code>Actif</code> · <code>Session</code> · <code>Jour</code><br>
       Exclusions auto : trades <code>Invalide</code> et <code>Bad feeling = Yes</code><br><br>
@@ -2937,6 +2953,7 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       <div class="data-source-dot" id="data-dot"></div>
       <span id="data-source-label">Built-in data</span>
     </div>
+    <button class="api-reload-btn" id="api-reload-btn" onclick="reloadFromAPI()" title="Recharger les données depuis l'API Vercel">↺ API</button>
     <div id="ds-badge" class="ds-badge a">DATASET A</div>
     <div class="bar-mode-toggle">
       <button class="bmt-btn active" id="bmt-ev"   onclick="setBarMode('ev')">Avg R</button>
@@ -3093,14 +3110,16 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
 
         <div class="preset-row" id="preset-row-4">
           <div class="preset-btn-wrap">
-            <button class="preset-btn no-tune" id="preset-4" onclick="applyPreset(4)">
+            <button class="preset-btn" id="preset-4" onclick="applyPreset(4)">
               <span class="preset-num">P4</span>
               <span class="preset-info">
                 <span class="preset-name">Custom — No Filters</span>
-                <span class="preset-desc">Full dataset — no exclusions, no overrides</span>
+                <span class="preset-desc">Dataset complet — configurez vos propres filtres</span>
               </span>
             </button>
+            <button class="preset-tune-btn" id="tune-4" onclick="toggleTunePanel(4,event)" title="Tune preset filters">⚙<span class="tune-dot"></span></button>
           </div>
+          <div class="preset-override-panel" id="po-panel-4"></div>
         </div>
 
       </div>
@@ -3607,6 +3626,22 @@ let TOTAL_OVERRIDE = null;
 
 const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
 
+
+// ══ RELOAD FROM API BUTTON ══
+function reloadFromAPI() {
+  const btn = document.getElementById('api-reload-btn');
+  if (btn) { btn.innerHTML = '\u27f3 Chargement\u2026'; btn.style.opacity = '.6'; btn.disabled = true; }
+  loadFromAPI();
+}
+function showApiReloadBtn() {
+  const btn = document.getElementById('api-reload-btn');
+  if (btn) btn.classList.add('visible');
+}
+function hideApiReloadBtn() {
+  const btn = document.getElementById('api-reload-btn');
+  if (btn) btn.classList.remove('visible');
+}
+
 async function loadFromAPI() {
   const dot = document.getElementById('data-dot');
   const lbl = document.getElementById('data-source-label');
@@ -3648,6 +3683,7 @@ async function loadFromAPI() {
     if (dot) { dot.classList.add('live'); dot.style.background = ''; dot.style.boxShadow = ''; }
     if (lbl) lbl.textContent = 'API Vercel (' + TRADES.length + ' trades)';
     console.log('[Dashboard] Loaded', TRADES.length, 'trades from Vercel API');
+    hideApiReloadBtn();
     render();
   } catch (err) {
     console.warn('[Dashboard] API load failed:', err.message);
@@ -4158,11 +4194,11 @@ const PRESETS = [
     label: 'Custom — No Filters',
     be: true,
     clear: true,
-    // No exclusions at all — completely raw dataset
+    // No base exclusions — user configures via tune panel
     m15Exclude: [],
     h4Exclude: [],
     sessionExclude: [],
-    noBaseExclusions: true,  // flag to skip BASE_M15_EXCLUDE / BASE_SESSION_EXCLUDE
+    noBaseExclusions: true,
   },
 ];
 
@@ -6499,6 +6535,33 @@ function updateStatsWidget(stats) {
 // ══════════════════════════════════════════════════════
 // MAIN RENDER
 // ══════════════════════════════════════════════════════
+
+function hideEmptyWidgets(trades) {
+  if (!_grid) return;
+  const hasSetup   = trades.some(t => t.setup    && t.setup.trim());
+  const hasSession = trades.some(t => t.session  && t.session.trim());
+  const hasDay     = trades.some(t => t.day      && t.day.trim());
+  const hasObsM15  = trades.some(t => t.obstacles && t.obstacles.length > 0);
+  const hasObsH4   = trades.some(t => t.h4       && t.h4.length > 0);
+  const rules = {
+    'w-setup':   hasSetup,
+    'w-session': hasSession,
+    'w-day':     hasDay,
+    'w-heatmap': hasSession && hasDay,
+    'w-m15':     hasObsM15,
+    'w-h4':      hasObsH4,
+  };
+  _grid.batchUpdate();
+  _grid.getGridItems().forEach(item => {
+    const id = item.getAttribute('gs-id');
+    if (!(id in rules)) return;
+    item.style.display = rules[id] ? '' : 'none';
+    _grid.update(item, { noMove: !rules[id] });
+  });
+  _grid.commit();
+  _grid.compact();
+}
+
 function render() {
   const filtered = getFiltered();
   const stats = calcStats(filtered);
@@ -6563,6 +6626,9 @@ function render() {
 
   // Update comparison panel if active
   if (tf.compare) tfUpdateCompareUI();
+
+  // Auto-hide empty widgets
+  if (_gsReady) hideEmptyWidgets(filtered);
 
   // Mobile view
   if (_isMobile()) renderMobile();
@@ -6961,94 +7027,35 @@ function parseProTemplateCSV(text) {
 }
 
 
-// ── Flipping Market M15 Beginner CSV parser ──
 function parseBeginnerCSV(text) {
   const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return { ok: false, error: '⚠ Fichier vide' };
-
+  if (lines.length < 2) return { ok: false, error: '\u26a0 Fichier vide' };
   const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, '').replace(/^\uFEFF/, ''));
-
-  const col = name => {
-    const idx = headers.findIndex(h => h.trim().toLowerCase() === name.trim().toLowerCase());
-    return idx;
-  };
-
-  const iPair    = col('pair'); // 'Pair ' with trailing space handled by trim
-  const iResult  = col('position result');
-  const iType    = col('position type');
-  const iDate    = col('date');
-  const iRR      = col('rr tp 1');
-
-  if (iResult === -1 || iPair === -1) {
-    return { ok: false, error: '⚠ Colonnes Beginner introuvables (Pair, Position Result)' };
-  }
-
-  const MONTH_MAP = {
-    january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
-    july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
-  };
-
-  const parseDate = raw => {
-    if (!raw) return '';
-    const m = raw.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/i);
-    if (m) {
-      const mo = MONTH_MAP[m[1].toLowerCase()] || '01';
-      return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
-    }
-    return raw.slice(0,10);
-  };
-
-  const OUTCOME_MAP = {
-    'take profit': 'TP', 'stop loss': 'SL',
-    'be - tp': 'BE-TP', 'be - sl': 'BE-SL',
-  };
-
-  const trades   = [];
-  const warnings = [];
-  let skipped    = 0;
-
+  const col = name => headers.findIndex(h => h.trim().toLowerCase() === name.trim().toLowerCase());
+  const iPair = col('pair'), iResult = col('position result'), iType = col('position type'), iDate = col('date'), iRR = col('rr tp 1');
+  if (iResult === -1 || iPair === -1) return { ok: false, error: '\u26a0 Colonnes Beginner introuvables' };
+  const MONTH_MAP = { january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12' };
+  const OUTCOME_MAP = { 'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL' };
+  const trades = [], warnings = [];
+  let skipped = 0;
   for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const cols = splitCsvLine(line, ',');
-    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
-
-    // Skip Invalid position types and '.' results
-    const typeVal   = get(iType).toLowerCase();
-    const resultVal = get(iResult).trim();
-    if (typeVal === 'invalid') { skipped++; continue; }
-    if (resultVal === '.' || resultVal === '') { skipped++; continue; }
-
+    const cols = splitCsvLine(lines[i], ',');
+    const get = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
+    const typeVal = get(iType).toLowerCase(), resultVal = get(iResult).trim();
+    if (typeVal === 'invalid' || resultVal === '.' || resultVal === '') { skipped++; continue; }
     const outcome = OUTCOME_MAP[resultVal.toLowerCase().trim()];
     if (!outcome) { skipped++; continue; }
-
-    const rrRaw = get(iRR).replace(',', '.');
-    const rVal  = parseFloat(rrRaw);
-    const r     = isNaN(rVal) ? (outcome === 'TP' || outcome === 'BE-TP' ? 2.4 : -1.0) : rVal;
-
-    const date  = parseDate(get(iDate));
+    const rVal = parseFloat(get(iRR).replace(',','.'));
+    const r = isNaN(rVal) ? (outcome === 'TP' || outcome === 'BE-TP' ? 2.4 : -1.0) : rVal;
+    const dateRaw = get(iDate);
+    const m = dateRaw.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/i);
+    let date = m ? `${m[3]}-${(MONTH_MAP[m[1].toLowerCase()]||'01')}-${m[2].padStart(2,'0')}` : dateRaw.slice(0,10);
     if (!date || date.length < 7) { skipped++; continue; }
-
-    trades.push({
-      date,
-      month:     date.slice(0, 7),
-      pair:      get(iPair).trim() || 'UNKNOWN',
-      setup:     '',
-      session:   '',
-      day:       '',
-      obstacles: [],
-      h4:        [],
-      outcome,
-      r,
-      direction: '',
-    });
+    trades.push({ date, month: date.slice(0,7), pair: get(iPair).trim()||'UNKNOWN', setup:'', session:'', day:'', obstacles:[], h4:[], outcome, r, direction:'' });
   }
-
-  if (skipped > 0) warnings.push(`${skipped} trades ignorés (Invalid ou résultat vide)`);
-  if (trades.length === 0) return { ok: false, error: '⚠ Aucun trade valide trouvé' };
-
+  if (skipped > 0) warnings.push(`${skipped} trades ignor\u00e9s`);
+  if (!trades.length) return { ok: false, error: '\u26a0 Aucun trade valide trouv\u00e9' };
   return { ok: true, trades, warnings };
 }
 
@@ -7107,8 +7114,9 @@ function injectParsedTrades(parsed, filename) {
   csvDataActive = true;
   const dot = document.getElementById('data-dot');
   const lbl = document.getElementById('data-source-label');
-  if (dot) { dot.classList.add('live'); }
+  if (dot) { dot.classList.add('live'); dot.style.background = 'var(--b)'; }
   if (lbl) lbl.textContent = filename.replace(/\.csv$/i,'').slice(0,24);
+  showApiReloadBtn();
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
 
@@ -7620,7 +7628,8 @@ window.addEventListener('load', () => {
   tfInit();
 
   initPresetOverrides();
-  loadFromAPI();
+  loadPresetOverrides();
+  render();
   // Show comparison UI if compare is active
   tfUpdateCompareUI();
 
@@ -7646,8 +7655,45 @@ const SB_DIMS = [
 // Initialized lazily after SB_DIMS is defined (see initPresetOverrides() called at bottom)
 const presetOverrides = {};
 
+
+// ══ PRESET OVERRIDES PERSISTENCE ══
+const LS_OVERRIDES_KEY = 'flipping_preset_overrides';
+
+function savePresetOverrides() {
+  try {
+    const toSave = {};
+    [0,1,2,3,4].forEach(id => {
+      if (!presetOverrides[id]) return;
+      toSave[id] = {};
+      SB_DIMS.forEach(d => {
+        const s = presetOverrides[id][d.key];
+        toSave[id][d.key] = { mode: s.mode, vals: [...s.vals] };
+      });
+    });
+    localStorage.setItem(LS_OVERRIDES_KEY, JSON.stringify(toSave));
+  } catch(e) {}
+}
+
+function loadPresetOverrides() {
+  try {
+    const raw = localStorage.getItem(LS_OVERRIDES_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    Object.entries(saved).forEach(([id, dims]) => {
+      const numId = parseInt(id);
+      if (!presetOverrides[numId]) return;
+      Object.entries(dims).forEach(([key, val]) => {
+        if (!presetOverrides[numId][key]) return;
+        presetOverrides[numId][key] = { mode: val.mode, vals: new Set(val.vals) };
+      });
+    });
+    // Refresh tune dots
+    [0,1,2,3,4].forEach(id => refreshTuneDot(id));
+  } catch(e) {}
+}
+
 function initPresetOverrides() {
-  [0,1,2,3].forEach(id => {
+  [0,1,2,3,4].forEach(id => {
     presetOverrides[id] = {};
     SB_DIMS.forEach(d => {
       presetOverrides[id][d.key] = { mode: 'ignore', vals: new Set() };
@@ -7802,6 +7848,7 @@ function togglePoChip(id, dimKey, item) {
   else s.vals.add(item);
   buildTunePanel(id);
   refreshTuneDot(id);
+  savePresetOverrides();
   if (activePreset === id) render();
 }
 
@@ -7816,6 +7863,7 @@ function resetTunePanel(id) {
   });
   buildTunePanel(id);
   refreshTuneDot(id);
+  savePresetOverrides();
   if (activePreset === id) render();
 }
 
