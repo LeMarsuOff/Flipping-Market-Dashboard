@@ -3710,6 +3710,14 @@ async function loadFromAPI() {
     }).filter(Boolean);
     TRADES.length=0; parsed.filter(t=>t.pair&&t.pair.trim()).forEach(t=>TRADES.push(t)); TOTAL_OVERRIDE=TRADES.length;
     rebuildDimensions(); tfPopulateSelects(); tfSetMode('global');
+    // Restore layout when coming back from Beginner CSV
+    if (_csvFormat === 'beginner') {
+      _csvFormat = null;
+      const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
+      const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
+      applyLayout(savedLayout || DEFAULT_LAYOUT);
+    }
+    _csvFormat = null;
     if(dot){dot.classList.add('live');dot.style.background='';dot.style.boxShadow='';}
     if(lbl) lbl.textContent='Notion Live ('+TRADES.length+' trades)';
     if(icon) icon.textContent='\u21ba';
@@ -6759,7 +6767,8 @@ function processCsvText(text, filename) {
     } else {
       csvStatus(`✓ ${trades.length} trades importés${fmt}`, 'ok');
     }
-    injectParsedTrades(trades, filename);
+    _csvFormat = isFlippingMarket ? 'flipping' : isProTemplate ? 'pro' : 'beginner';
+    injectParsedTrades(trades, filename, _csvFormat);
   } catch (err) {
     csvStatus('⚠ Erreur de parsing: ' + err.message, 'err');
   }
@@ -6939,7 +6948,7 @@ function splitCsvLine(line, delim) {
   return cols;
 }
 
-function injectParsedTrades(parsed, filename) {
+function injectParsedTrades(parsed, filename, csvFormat) {
   // Replace the TRADES array
   const validTrades = parsed.filter(t => t.pair && t.pair.trim());
 
@@ -6978,6 +6987,16 @@ function injectParsedTrades(parsed, filename) {
   if(_ta)_ta.classList.remove('active'); if(_tm)_tm.classList.add('active'); if(_tb)_tb.style.display='none';
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
+
+  // Apply format-specific layout
+  if (csvFormat === 'beginner') {
+    applyLayout(BEGINNER_LAYOUT);
+  } else {
+    // Restore saved layout or default
+    const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
+    const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
+    applyLayout(savedLayout || DEFAULT_LAYOUT);
+  }
 
   render();
   setTimeout(closeCsvOverlay, 1200);
@@ -7798,6 +7817,10 @@ const DEFAULT_LAYOUT = {
   'w-h4':        { x:0,  y:288, w:12, h:44, minW:3, minH:14 },
   'w-tradelog':  { x:0,  y:332, w:12, h:30, minW:4, minH:16 },
 };
+
+const BEGINNER_LAYOUT = {"w-equity":{"x":0,"y":17,"w":9,"h":40},"w-outcome":{"x":9,"y":17,"w":3,"h":27},"w-sequence":{"x":9,"y":44,"w":3,"h":13},"w-selection":{"x":0,"y":57,"w":6,"h":43},"w-stats":{"x":0,"y":0,"w":12,"h":17},"w-monthly":{"x":6,"y":57,"w":6,"h":43},"w-setup":{"x":0,"y":100,"w":5,"h":31},"w-session":{"x":5,"y":259,"w":4,"h":30},"w-day":{"x":5,"y":100,"w":3,"h":31},"w-pair":{"x":8,"y":100,"w":4,"h":31},"w-heatmap":{"x":0,"y":342,"w":12,"h":25},"w-m15":{"x":0,"y":131,"w":12,"h":63},"w-h4":{"x":0,"y":289,"w":12,"h":53},"w-tradelog":{"x":0,"y":194,"w":12,"h":65}};
+let _csvFormat = null; // tracks last imported CSV format
+
 
 const NAMED_PRESETS = {
   default:        null,
@@ -8640,7 +8663,10 @@ function renderMobile() {
   updateMobileStats(stats);
   drawMobileEquity(filtered);
   drawMobileDonut(stats);
-  renderMobileHeatmap(filtered);
+  // Only render session heatmap if session data exists
+  if (filtered.some(t => t.session && t.session.trim())) {
+    renderMobileHeatmap(filtered);
+  }
   drawMobilePair(filtered);
   drawMobileObs(filtered);
 }
