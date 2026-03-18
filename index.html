@@ -3713,9 +3713,12 @@ async function loadFromAPI() {
     // Restore layout when coming back from Beginner CSV
     if (_csvFormat === 'beginner') {
       _csvFormat = null;
-      const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
-      const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
-      applyLayout(savedLayout || DEFAULT_LAYOUT);
+      requestAnimationFrame(() => {
+        if (typeof applyLayout !== 'function') return;
+        const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
+        const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
+        applyLayout(savedLayout || DEFAULT_LAYOUT);
+      });
     }
     _csvFormat = null;
     if(dot){dot.classList.add('live');dot.style.background='';dot.style.boxShadow='';}
@@ -6988,17 +6991,19 @@ function injectParsedTrades(parsed, filename, csvFormat) {
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
 
-  // Apply format-specific layout
-  if (csvFormat === 'beginner') {
-    applyLayout(BEGINNER_LAYOUT);
-  } else {
-    // Restore saved layout or default
-    const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
-    const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
-    applyLayout(savedLayout || DEFAULT_LAYOUT);
-  }
-
   render();
+
+  // Apply format-specific layout after render (applyLayout defined later in script)
+  requestAnimationFrame(() => {
+    if (typeof applyLayout !== 'function') return;
+    if (csvFormat === 'beginner') {
+      applyLayout(BEGINNER_LAYOUT);
+    } else {
+      const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
+      const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
+      applyLayout(savedLayout || DEFAULT_LAYOUT);
+    }
+  });
   setTimeout(closeCsvOverlay, 1200);
 }
 
