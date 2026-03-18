@@ -3609,10 +3609,8 @@ async function loadFromAPI() {
     if (dot) { dot.style.background = 'var(--gold)'; dot.style.boxShadow = '0 0 8px var(--gold)'; }
     if (lbl) lbl.textContent = 'Chargement API Vercel\u2026';
 
-    // AbortController pour timeout 20s (Notion API peut être lente au cold start)
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20000);
-
     const resp = await fetch(API_URL, { signal: controller.signal });
     clearTimeout(timer);
 
@@ -3621,30 +3619,22 @@ async function loadFromAPI() {
     if (!json.trades || !json.trades.length) throw new Error('Aucun trade re\xe7u');
 
     const parsed = json.trades.map(t => {
-      // Ignorer les trades "Bad feeling"
-      if (t.badFeeling === true) return null;
-
       const oc = _mapOutcome(t.resultatTp1);
       if (!oc) return null;
-
       const dateRaw = (t.date || '').slice(0, 10);
       if (!dateRaw || dateRaw.length < 7) return null;
-
       return {
         date:      dateRaw,
         month:     dateRaw.slice(0, 7),
-        pair:      t.pair   || '',
-        // m15Type est null dans certains trades → fallback sur confirmation
-        setup:     t.m15Type || t.confirmation || '',
-        // Utiliser t.session directement (déjà en français dans l'API)
+        pair:      t.pair            || '',
+        setup:     t.m15Type         || t.confirmation || '',
         session:   _normalizeSession(t.session || t.sessionFormule || ''),
-        // t.jour = français (Jeudi), t.jourFormule = anglais (Thursday)
-        day:       t.jour || '',
+        day:       t.jour            || '',
         obstacles: _parseObstacles(t.obstaclesM15),
         h4:        _parseObstacles(t.obstaclesH4),
         outcome:   oc,
         r:         _mapR(oc, t.rrTp1),
-        direction: t.order || '',
+        direction: t.order           || '',
       };
     }).filter(Boolean);
 
@@ -7548,7 +7538,7 @@ window.addEventListener('load', () => {
   tfInit();
 
   initPresetOverrides();
-  loadFromAPI(); // ← charge l'API Vercel puis appelle render()
+  loadFromAPI(); // ← API Vercel
   // Show comparison UI if compare is active
   tfUpdateCompareUI();
 
