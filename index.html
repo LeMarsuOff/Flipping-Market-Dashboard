@@ -3000,7 +3000,7 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
   </div>
   <div class="view-tab" id="tab-api" onclick="switchToAPI()" title="Recharger depuis Notion">
     <span id="tab-api-icon">↺</span> Notion Live
-    <span id="tab-api-badge" style="font-size:7px;letter-spacing:.5px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--g) 12%,transparent);color:var(--g);border:1px solid color-mix(in srgb,var(--g) 25%,transparent);margin-left:4px;display:none">LIVE</span>
+    <span id="tab-api-badge" style="font-size:7px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--g) 12%,transparent);color:var(--g);border:1px solid color-mix(in srgb,var(--g) 25%,transparent);margin-left:4px;display:none">LIVE</span>
     <span id="tab-api-loading" style="font-size:7px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--gold) 12%,transparent);color:var(--gold);border:1px solid color-mix(in srgb,var(--gold) 25%,transparent);margin-left:4px;display:none">CHARGEMENT…</span>
   </div>
 </div>
@@ -3093,10 +3093,10 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
               <span class="preset-num">P4</span>
               <span class="preset-info">
                 <span class="preset-name">Custom — No Filters</span>
-                <span class="preset-desc">Dataset complet — configurez vos propres filtres</span>
+                <span class="preset-desc">Dataset complet — configurez vos filtres</span>
               </span>
             </button>
-            <button class="preset-tune-btn" id="tune-4" onclick="toggleTunePanel(4,event)" title="Tune preset filters">⚙<span class="tune-dot"></span></button>
+            <button class="preset-tune-btn" id="tune-4" onclick="toggleTunePanel(4,event)">⚙<span class="tune-dot"></span></button>
           </div>
           <div class="preset-override-panel" id="po-panel-4"></div>
         </div>
@@ -3607,13 +3607,8 @@ let TOTAL_OVERRIDE = null;
 const _MONTH_MAP = {
   january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
   july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
-  janvier:'01','\u00e9vrier':'02',mars:'03',avril:'04',mai:'05',juin:'06',
-  juillet:'07',ao\u00fbt:'08',septembre:'09',octobre:'10',novembre:'11',d\u00e9cembre:'12',
 };
-const _OUTCOME_MAP = {
-  'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL',
-  'take profit':'TP','stop loss':'SL',
-};
+const _OUTCOME_MAP = {'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL'};
 const _SESSION_MAP = {
   'asian kz':'Asian','asian':'Asian',
   'london kz':'London','london':'London',
@@ -3626,72 +3621,54 @@ const _DAY_MAP = {
   monday:'Lundi',tuesday:'Mardi',wednesday:'Mercredi',
   thursday:'Jeudi',friday:'Vendredi',saturday:'Samedi',sunday:'Dimanche',
 };
-
 function _parseDate(raw) {
   if (!raw) return '';
   const m = raw.match(/^([A-Za-z\u00e0-\u00ff]+)\s+(\d{1,2}),?\s+(\d{4})/i);
-  if (m) {
-    const mo = _MONTH_MAP[m[1].toLowerCase()] || '01';
-    return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
-  }
+  if (m) { const mo = _MONTH_MAP[m[1].toLowerCase()]||'01'; return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`; }
   const d = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (d) return `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}`;
   return raw.slice(0,10);
 }
-
 function _parseObs(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.filter(Boolean);
-  if (typeof raw === 'string') {
-    if (raw === '/' || raw === '-' || raw === '' || raw === '.') return [];
-    return raw.split(',').map(s => s.trim()).filter(s => s && s !== '/' && s !== '-');
-  }
-  return [];
+  if (typeof raw !== 'string' || raw==='/'||raw==='-'||raw===''||raw==='.') return [];
+  return raw.split(',').map(s=>s.trim()).filter(s=>s&&s!=='/'&&s!=='-');
 }
-
-function _mapOutcome(raw) {
-  if (!raw) return null;
-  return _OUTCOME_MAP[raw.toLowerCase().trim()] || null;
-}
-
+function _mapOutcome(raw) { return _OUTCOME_MAP[(raw||'').toLowerCase().trim()]||null; }
 function _mapR(oc, rrRaw) {
-  const rr = parseFloat(String(rrRaw || '').replace(',','.'));
-  if (oc === 'TP')    return (!isNaN(rr) && rr > 0) ? rr : 2.4;
-  if (oc === 'SL')    return -1.0;
-  if (oc === 'BE-TP') return (!isNaN(rr) && rr > 0) ? rr : 2.4;
-  if (oc === 'BE-SL') return -1.0;
+  const rr = parseFloat(String(rrRaw||'').replace(',','.'));
+  if (oc==='TP')    return (!isNaN(rr)&&rr>0)?rr:2.4;
+  if (oc==='SL')    return -1.0;
+  if (oc==='BE-TP') return (!isNaN(rr)&&rr>0)?rr:2.4;
+  if (oc==='BE-SL') return -1.0;
   return 0;
 }
-
-function _normSession(s) {
-  return _SESSION_MAP[(s||'').toLowerCase().trim()] || s || '';
-}
-
-function _normDay(s) {
-  return _DAY_MAP[(s||'').toLowerCase().trim()] || s || '';
-}
-
-function _isBadFeeling(v) {
-  return (v||'').toLowerCase().trim() === 'yes';
-}
-
-// Find last occurrence of a column header (handles duplicates)
+function _normSession(s) { return _SESSION_MAP[(s||'').toLowerCase().trim()]||s||''; }
+function _normDay(s)     { return _DAY_MAP[(s||'').toLowerCase().trim()]||s||''; }
+function _isBadFeeling(v){ return (v||'').toLowerCase().trim()==='yes'; }
 function _colLast(headers, name) {
-  let last = -1;
-  headers.forEach((h, i) => { if (h.trim().toLowerCase() === name.toLowerCase()) last = i; });
+  let last=-1;
+  headers.forEach((h,i)=>{ if(h.trim().toLowerCase()===name.toLowerCase()) last=i; });
   return last;
 }
 function _colFirst(headers, name) {
-  return headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+  return headers.findIndex(h=>h.trim().toLowerCase()===name.toLowerCase());
+}
+function _colAny(headers, ...names) {
+  for (const name of names) {
+    const i = _colFirst(headers, name);
+    if (i >= 0) return i;
+  }
+  return -1;
 }
 
 
 const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
 
-// ══ ONGLET NOTION LIVE ══
 function switchToAPI() {
-  const icon=document.getElementById('tab-api-icon'), badge=document.getElementById('tab-api-badge');
-  const loading=document.getElementById('tab-api-loading'), tab=document.getElementById('tab-api'), tabMain=document.getElementById('tab-main');
+  const icon=document.getElementById('tab-api-icon'),badge=document.getElementById('tab-api-badge');
+  const loading=document.getElementById('tab-api-loading'),tab=document.getElementById('tab-api'),tabMain=document.getElementById('tab-main');
   if(icon) icon.textContent='\u27f3';
   if(badge) badge.style.display='none';
   if(loading) loading.style.display='';
@@ -3701,46 +3678,45 @@ function switchToAPI() {
 }
 
 async function loadFromAPI() {
-  const dot=document.getElementById('data-dot'), lbl=document.getElementById('data-source-label');
-  const icon=document.getElementById('tab-api-icon'), badge=document.getElementById('tab-api-badge');
-  const loading=document.getElementById('tab-api-loading'), tab=document.getElementById('tab-api'), tabMain=document.getElementById('tab-main');
+  const dot=document.getElementById('data-dot'),lbl=document.getElementById('data-source-label');
+  const icon=document.getElementById('tab-api-icon'),badge=document.getElementById('tab-api-badge');
+  const loading=document.getElementById('tab-api-loading'),tab=document.getElementById('tab-api'),tabMain=document.getElementById('tab-main');
   try {
     if(dot){dot.style.background='var(--gold)';dot.style.boxShadow='0 0 8px var(--gold)';}
     if(lbl) lbl.textContent='Chargement API Vercel\u2026';
     if(loading) loading.style.display='';
-    if(badge) badge.style.display='none';
+    if(badge)   badge.style.display='none';
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort(),20000);
     const resp=await fetch(API_URL,{signal:controller.signal});
     clearTimeout(timer);
     if(!resp.ok) throw new Error('HTTP '+resp.status);
     const json=await resp.json();
-    if(!json.trades||!json.trades.length) throw new Error('Aucun trade re\xe7u');
+    if(!json.trades||!json.trades.length) throw new Error('Aucun trade');
     const parsed=json.trades.map(t=>{
       const oc=_mapOutcome(t.resultatTp1);
       if(!oc) return null;
       const dateRaw=(t.date||'').slice(0,10);
       if(!dateRaw||dateRaw.length<7) return null;
       return {
-        date:dateRaw, month:dateRaw.slice(0,7),
-        pair:t.pair||'', setup:t.m15Type||t.confirmation||'',
+        date:dateRaw,month:dateRaw.slice(0,7),
+        pair:t.pair||'',setup:t.m15Type||t.confirmation||'',
         session:_normSession(t.session||t.sessionFormule||''),
         day:t.jour||'',
         obstacles:_parseObs(t.obstaclesM15),
         h4:_parseObs(t.obstaclesH4),
-        outcome:oc, r:_mapR(oc,t.rrTp1), direction:t.order||'',
+        outcome:oc,r:_mapR(oc,t.rrTp1),direction:t.order||'',
       };
     }).filter(Boolean);
-    TRADES.length=0; parsed.forEach(t=>TRADES.push(t)); TOTAL_OVERRIDE=TRADES.length;
+    TRADES.length=0; parsed.filter(t=>t.pair&&t.pair.trim()).forEach(t=>TRADES.push(t)); TOTAL_OVERRIDE=TRADES.length;
     rebuildDimensions(); tfPopulateSelects(); tfSetMode('global');
     if(dot){dot.classList.add('live');dot.style.background='';dot.style.boxShadow='';}
     if(lbl) lbl.textContent='Notion Live ('+TRADES.length+' trades)';
     if(icon) icon.textContent='\u21ba';
     if(loading) loading.style.display='none';
-    if(badge) badge.style.display='';
-    if(tab) tab.classList.add('active');
+    if(badge)   badge.style.display='';
+    if(tab)     tab.classList.add('active');
     if(tabMain) tabMain.classList.remove('active');
-    console.log('[Dashboard] Loaded',TRADES.length,'trades');
     render();
   } catch(err) {
     console.warn('[Dashboard] API failed:',err.message);
@@ -3748,7 +3724,7 @@ async function loadFromAPI() {
     if(lbl) lbl.textContent='API indisponible';
     if(icon) icon.textContent='\u21ba';
     if(loading) loading.style.display='none';
-    if(tab) tab.classList.remove('active');
+    if(tab)     tab.classList.remove('active');
     if(tabMain) tabMain.classList.add('active');
     render();
   }
@@ -4735,7 +4711,7 @@ function renderObsBars(trades) {
   });
 
   let items = ALL_OBS
-    .filter(o => obsData[o] && obsData[o].length >= 5)
+    .filter(o => obsData[o] && obsData[o].length >= 1)
     .map(o => {
       const rs = obsData[o];
       return { label: o, n: rs.length, ev: rs.reduce((s,r)=>s+r,0)/rs.length, totalR: rs.reduce((s,r)=>s+r,0) };
@@ -4778,7 +4754,7 @@ function renderH4ObsBars(trades) {
   });
 
   let items = Object.entries(h4Data)
-    .filter(([, rs]) => rs.length >= 5)
+    .filter(([, rs]) => rs.length >= 1)
     .map(([tag, rs]) => ({
       label:  tag,
       n:      rs.length,
@@ -4789,7 +4765,7 @@ function renderH4ObsBars(trades) {
   items = sortItems(items, 'h4obs');
 
   if (!items.length) {
-    container.innerHTML = '<div class="no-data">No H4 data (min 5 occurrences)</div>';
+    container.innerHTML = '<div class="no-data">No H4 data (min ' + 1 + ' occurrences)</div>';
     return;
   }
 
@@ -6565,6 +6541,7 @@ function updateStatsWidget(stats) {
 
 function hideEmptyWidgets(trades) {
   if (!_grid) return;
+
   const has = fn => trades.some(fn);
   const rules = {
     'w-setup':   has(t => t.setup    && t.setup.trim()),
@@ -6574,15 +6551,32 @@ function hideEmptyWidgets(trades) {
     'w-m15':     has(t => t.obstacles && t.obstacles.length > 0),
     'w-h4':      has(t => t.h4       && t.h4.length > 0),
   };
-  _grid.batchUpdate();
+
+  // Step 1: show/hide items WITHOUT touching GridStack node positions
   _grid.getGridItems().forEach(item => {
     const id = item.getAttribute('gs-id');
     if (!(id in rules)) return;
     item.style.display = rules[id] ? '' : 'none';
-    _grid.update(item, { noMove: !rules[id] });
   });
-  _grid.commit();
-  requestAnimationFrame(() => { if (_grid) _grid.compact(); });
+
+  // Step 2: after browser has applied display changes, compact the grid
+  setTimeout(() => {
+    if (!_grid) return;
+    // Remove hidden items temporarily from grid engine, compact, then restore
+    const hiddenNodes = [];
+    _grid.getGridItems().forEach(item => {
+      if (item.style.display === 'none' && item.gridstackNode) {
+        hiddenNodes.push({ item, node: { ...item.gridstackNode } });
+        _grid.removeWidget(item, false, false);
+      }
+    });
+    _grid.compact();
+    // Restore hidden items at their saved positions (off-screen)
+    hiddenNodes.forEach(({ item, node }) => {
+      _grid.makeWidget(item);
+      _grid.update(item, { x: node.x, y: node.y, w: node.w, h: node.h });
+    });
+  }, 50);
 }
 
 function render() {
@@ -6747,15 +6741,10 @@ function handleCsvFile(file) {
 function processCsvText(text, filename) {
   try {
     // ── Detect format ──
-    const isFlippingMarket = text.includes('R\u00e9sultat TP 1') || text.includes('Resultat TP 1') || (text.includes('M15 Type') && text.includes('Obstacles M15'));
-    const isProTemplate    = !isFlippingMarket && text.includes('Position Result') && text.includes('H4 Obstacles') && text.includes('Session');
-    const isBeginner       = !isFlippingMarket && !isProTemplate && text.includes('Position Result');
-
-    if (!isFlippingMarket && !isProTemplate && !isBeginner) {
-      csvStatus('\u26a0 Format non reconnu \u2014 Flipping Market M15, Pro Template ou Beginner attendu', 'err');
-      return;
-    }
-
+    const isFlippingMarket = text.includes('Résultat TP 1') || text.includes('Resultat TP 1') || (text.includes('M15 Type') && text.includes('Obstacles M15'));
+    const isProTemplate = !isFlippingMarket && text.includes('Position Result') && text.includes('H4 Obstacles') && text.includes('Session');
+    const isBeginner    = !isFlippingMarket && !isProTemplate && text.includes('Position Result');
+    if (!isFlippingMarket && !isProTemplate && !isBeginner) { csvStatus('⚠ Format non reconnu', 'err'); return; }
     const result = isFlippingMarket ? parseFlippingMarketCSV(text) : isProTemplate ? parseProTemplateCSV(text) : parseBeginnerCSV(text);
 
     if (!result.ok) {
@@ -6775,398 +6764,156 @@ function processCsvText(text, filename) {
   }
 }
 
-// ── Flipping Market CSV parser ──
+// ── Flipping Market M15 parser (journal principal + export Notion) ──
 function parseFlippingMarketCSV(text) {
-  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return { ok: false, error: '⚠ Fichier vide' };
+  const raw   = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  const lines = raw.split('\n').filter(l=>l.trim());
+  if (lines.length<2) return {ok:false,error:'\u26a0 Fichier vide'};
+  const headers = splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
 
-  // Parse header — comma delimited
-  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+  const iDate       = _colFirst(headers,'date');
+  const iPair       = _colAny(headers,'pair','actif');   // journal = 'Pair', ancien = 'Actif'
+  const iSetup      = _colFirst(headers,'m15 type');
+  const iSession    = _colFirst(headers,'session');
+  const iJour       = _colFirst(headers,'jour');
+  const iResultat   = _colAny(headers,'résultat tp 1','resultat tp 1');
+  const iRR         = _colFirst(headers,'rr tp 1');
+  const iObsM15     = _colFirst(headers,'obstacles m15');
+  const iObsH4      = _colFirst(headers,'obstacles h4');
+  const iType       = _colFirst(headers,'type de trade');
+  const iBadFeeling = _colFirst(headers,'bad feeling');
+  const iOrdre      = _colAny(headers,'ordre','order');  // journal = 'Order', ancien = 'Ordre'
 
-  const col = name => {
-    const idx = headers.indexOf(name);
-    if (idx >= 0) return idx;
-    // case-insensitive fallback
-    return headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
-  };
+  if (iResultat===-1||iRR===-1) return {ok:false,error:'\u26a0 Colonnes Flipping Market introuvables (Résultat TP 1, RR TP 1)'};
 
-  const iDate       = col('Date');
-  const iActif      = col('Actif');
-  const iSetup      = col('M15 Type');
-  const iSession    = col('Session');
-  const iJour       = col('Jour');
-  const iResultat   = col('Résultat TP 1') !== -1 ? col('Résultat TP 1') : col('Resultat TP 1');
-  const iRR         = col('RR TP 1');
-  const iObsM15     = col('Obstacles M15');
-  const iObsH4      = col('Obstacles H4');
-  const iType       = col('Type de trade');
-  const iBadFeeling = col('Bad feeling');
-  const iOrdre      = col('Ordre');
+  const trades=[],warnings=[];
+  let skipped=0;
 
-  if (iResultat === -1 || iRR === -1) {
-    return { ok: false, error: '⚠ Colonnes Flipping Market introuvables (Résultat TP 1, RR TP 1)' };
-  }
+  for (let i=1;i<lines.length;i++) {
+    const line=lines[i].trim(); if(!line) continue;
+    const cols=splitCsvLine(line,',');
+    const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
 
-  // Month name → number
-  const MONTH_MAP = {
-    january:'01', february:'02', march:'03', april:'04', may:'05', june:'06',
-    july:'07', august:'08', september:'09', october:'10', november:'11', december:'12',
-    janvier:'01', février:'02', mars:'03', avril:'04', mai:'05', juin:'06',
-    juillet:'07', août:'08', septembre:'09', octobre:'10', novembre:'11', décembre:'12',
-    aout:'08'
-  };
+    const typeVal=(get(iType)||'').toLowerCase();
+    if (typeVal.includes('invalide')){skipped++;continue;}
+    if (_isBadFeeling(get(iBadFeeling))){skipped++;continue;}
 
-  const parseDate = raw => {
-    if (!raw) return '';
-    // "August 19, 2025" or "August 19, 2025 6:00 (GMT+1)"
-    const m = raw.match(/^([A-Za-zéèûôîàù]+)\s+(\d{1,2}),?\s+(\d{4})/i);
-    if (m) {
-      const mo = MONTH_MAP[m[1].toLowerCase()] || '01';
-      return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
-    }
-    // "dd/mm/yyyy"
-    const d = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (d) return `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}`;
-    return raw.slice(0,10);
-  };
+    const outcome=_mapOutcome(get(iResultat));
+    if (!outcome){skipped++;continue;}
 
-  // Outcome mapping
-  const OUTCOME_MAP = {
-    'take profit': 'TP',
-    'stop loss':   'SL',
-    'be - tp':     'BE-TP',
-    'be - sl':     'BE-SL',
-    'be-tp':       'BE-TP',
-    'be-sl':       'BE-SL',
-  };
-
-  const trades   = [];
-  const warnings = [];
-  let skipped    = 0;
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const cols = splitCsvLine(line, ',');
-    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
-
-    // Filter out Invalide and Bad feeling trades
-    const typeVal = get(iType).toLowerCase();
-    if (typeVal.includes('invalide')) { skipped++; continue; }
-    if (iBadFeeling >= 0 && get(iBadFeeling).toLowerCase() === 'yes') { skipped++; continue; }
-
-    // R value
-    const rRaw = get(iRR).replace(',', '.');
-    const rVal = parseFloat(rRaw);
-    if (isNaN(rVal)) continue; // skip header-like rows
-
-    // Date
-    const date  = parseDate(get(iDate));
-    const month = date.slice(0, 7);
-
-    // Outcome
-    const resRaw = get(iResultat).toLowerCase().trim();
-    const outcome = OUTCOME_MAP[resRaw] || (rVal > 0 ? 'TP' : 'SL');
-
-    // Obstacles — comma-separated in source
-    const parseObs = raw => {
-      if (!raw || raw === '/' || raw === '-') return [];
-      // Strip outer quotes, split on comma
-      return raw.split(',').map(o => o.trim()).filter(o => o && o !== '/' && o !== '-');
-    };
+    const date=_parseDate(get(iDate));
+    if (!date||date.length<7){skipped++;continue;}
 
     trades.push({
-      date,
-      month,
-      pair:      get(iActif)   || 'UNKNOWN',
-      setup:     get(iSetup)   || '',
-      session:   get(iSession) || '',
-      day:       get(iJour)    || '',
-      obstacles: parseObs(get(iObsM15)),
-      h4:        parseObs(get(iObsH4)),
-      outcome,
-      r: rVal,
-      direction: get(iOrdre) || '',
-    });
-  }
-
-  if (skipped > 0) warnings.push(`${skipped} trades ignorés (Invalide ou Bad feeling)`);
-  if (trades.length === 0) return { ok: false, error: '⚠ Aucun trade valide trouvé' };
-
-  return { ok: true, trades, warnings };
-}
-
-// ── Pro Template CSV parser (FIXED) ──
-function parseProTemplateCSV(text) {
-  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return { ok: false, error: '\u26a0 Fichier vide' };
-
-  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, ''));
-
-  // Use last occurrence of 'Pair' (col 0 = abbreviation, col 29 = full pair name)
-  const iPair    = _colLast(headers, 'pair');
-  const iResult  = _colFirst(headers, 'position result');
-  const iType    = _colFirst(headers, 'position type');
-  const iDate    = _colFirst(headers, 'date');
-  const iRR      = _colFirst(headers, 'rr tp 1');
-  const iSetup   = _colFirst(headers, 'm15 confirmation / continu');
-  const iSession = _colFirst(headers, 'session');
-  const iDay     = _colFirst(headers, 'day');
-  const iObsM15  = _colFirst(headers, 'm15 obstacles');
-  const iObsH4   = _colFirst(headers, 'h4 obstacles');
-  const iBad     = _colFirst(headers, 'bad feeling');
-  const iOrder   = _colFirst(headers, 'order');
-
-  if (iResult === -1) return { ok: false, error: '\u26a0 Colonne Position Result introuvable' };
-
-  const trades = [], warnings = [];
-  let skipped = 0;
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitCsvLine(lines[i], ',');
-    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
-
-    if (_isBadFeeling(get(iBad)))      { skipped++; continue; }
-    if (iType >= 0 && get(iType).toLowerCase() === 'invalid') { skipped++; continue; }
-
-    const outcome = _mapOutcome(get(iResult));
-    if (!outcome) { skipped++; continue; }
-
-    const date = _parseDate(get(iDate));
-    if (!date || date.length < 7) { skipped++; continue; }
-
-    trades.push({
-      date,
-      month:     date.slice(0, 7),
-      pair:      get(iPair).trim() || 'UNKNOWN',
-      setup:     get(iSetup),
+      date, month:date.slice(0,7),
+      pair:      get(iPair)|| '',
+      setup:     get(iSetup)||'',
       session:   _normSession(get(iSession)),
-      day:       _normDay(get(iDay)),
+      day:       get(iJour)||'',             // already French in journal
       obstacles: _parseObs(get(iObsM15)),
       h4:        _parseObs(get(iObsH4)),
       outcome,
       r:         _mapR(outcome, get(iRR)),
-      direction: get(iOrder),
+      direction: get(iOrdre)||'',
     });
   }
 
-  if (skipped > 0) warnings.push(`${skipped} trades ignor\u00e9s`);
-  if (!trades.length) return { ok: false, error: '\u26a0 Aucun trade valide trouv\u00e9' };
-  return { ok: true, trades, warnings };
+  if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s (Invalide ou Bad feeling)`);
+  if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
+  return {ok:true,trades,warnings};
 }
 
+
+// ── Pro Template parser ──
 function parseProTemplateCSV(text) {
-  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return { ok: false, error: '⚠ Fichier vide' };
-
-  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, ''));
-
-  const col = name => {
-    const idx = headers.indexOf(name);
-    if (idx >= 0) return idx;
-    return headers.findIndex(h => h.toLowerCase().trim() === name.toLowerCase().trim());
-  };
-
-  // Pro Template columns
-  const iDate    = col('Date');
-  const iPair    = col('Pair ');   // note trailing space
-  const iSetup   = col('M15 Confirmation / Continu');
-  const iSession = col('Session');
-  const iDay     = col('Day');
-  const iResult  = col('Position Result');
-  const iRR      = col('RR TP 1');
-  const iObsM15  = col('M15 Obstacles');
-  const iObsH4   = col('H4 Obstacles');
-  const iBad     = col('Bad feeling');
-  const iType    = col('Position Type');
-  const iOrder   = col('Order');
-
-  if (iResult === -1 || iRR === -1) {
-    return { ok: false, error: '⚠ Colonnes Pro Template introuvables (Position Result, RR TP 1)' };
-  }
-
-  // Session normalisation: Pro Template uses English KZ names
-  const SESSION_MAP = {
-    'london kz':       'London',
-    'new york kz':     'New-York',
-    'out of session':  'Hors Session',
-    "no man's land":   "No Man's Land",
-    'asian kz':        'Asian',
-    'lunch kz':        'Lunch Time Zone',
-    'lunch time zone': 'Lunch Time Zone',
-    'asian':           'Asian',
-    'london':          'London',
-    'new-york':        'New-York',
-    'hors session':    'Hors Session',
-  };
-
-  // Day: English → French
-  const DAY_MAP = {
-    monday:'Lundi', tuesday:'Mardi', wednesday:'Mercredi',
-    thursday:'Jeudi', friday:'Vendredi', saturday:'Samedi', sunday:'Dimanche'
-  };
-
-  // Setup: Pro Template uses English-style names → normalise to dashboard keys
-  const SETUP_MAP = {
-    'internal continuation':  'Continuation Interne Type 1',
-    'internal continuation type 1': 'Continuation Interne Type 1',
-    'internal continuation type 2': 'Continuation Interne Type 2',
-    'continuation':           'Continuation Type A',
-    'continuation type a':    'Continuation Type A',
-    'continuation type b':    'Continuation Type B',
-    'internal confirmation':  'Confirmation Interne',
-    'confirmation swing':     'Confirmation Swing',
-    're-confirmation x':      'Re-confirmation X',
-    're-confirmation y':      'Re-confirmation Y',
-  };
-
-  const OUTCOME_MAP = {
-    'take profit': 'TP', 'stop loss': 'SL',
-    'be - tp': 'BE-TP', 'be - sl': 'BE-SL',
-    'be-tp': 'BE-TP', 'be-sl': 'BE-SL',
-  };
-
-  const MONTH_MAP = {
-    january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
-    july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
-    décember:'12',décembre:'12',aout:'08',août:'08'
-  };
-
-  const parseDate = raw => {
-    if (!raw) return '';
-    const m = raw.match(/^([A-Za-zéèûôîàù]+)\s+(\d{1,2}),?\s+(\d{4})/i);
-    if (m) {
-      const mo = MONTH_MAP[m[1].toLowerCase()] || '01';
-      return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
-    }
-    const d = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (d) return `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}`;
-    return raw.slice(0,10);
-  };
-
-  const trades   = [];
-  const warnings = [];
-  let skipped    = 0;
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const cols = splitCsvLine(line, ',');
-    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
-
-    // Filter bad feeling
-    if (iBad >= 0 && get(iBad).toLowerCase() === 'yes') { skipped++; continue; }
-
-    // R value
-    const rRaw = get(iRR).replace(',', '.');
-    const rVal = parseFloat(rRaw);
-    if (isNaN(rVal)) continue;
-
-    // Outcome
-    const outcome = OUTCOME_MAP[(get(iResult) || '').toLowerCase().trim()] || '';
-    if (!outcome) continue; // skip rows without valid outcome (header-like rows)
-
-    const date  = parseDate(get(iDate));
-    const month = date.slice(0, 7);
-
-    const sessRaw  = (get(iSession) || '').toLowerCase().trim();
-    const session  = SESSION_MAP[sessRaw] || get(iSession) || '';
-
-    const dayRaw   = (get(iDay) || '').toLowerCase().trim();
-    const day      = DAY_MAP[dayRaw] || get(iDay) || '';
-
-    const setupRaw = (get(iSetup) || '').toLowerCase().trim();
-    const setup    = SETUP_MAP[setupRaw] || get(iSetup) || '';
-
-    const parseObs = raw => {
-      if (!raw || raw === '/' || raw === '-' || raw === '.') return [];
-      return raw.split(',').map(o => o.trim()).filter(o => o && o !== '/' && o !== '-' && o !== '.');
-    };
-
+  const raw   = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  const lines = raw.split('\n').filter(l=>l.trim());
+  if (lines.length<2) return {ok:false,error:'\u26a0 Fichier vide'};
+  const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
+  const iPair   =_colLast(headers,'pair');      // last occurrence = full pair name
+  const iResult =_colFirst(headers,'position result');
+  const iType   =_colFirst(headers,'position type');
+  const iDate   =_colFirst(headers,'date');
+  const iRR     =_colFirst(headers,'rr tp 1');
+  const iSetup  =_colFirst(headers,'m15 confirmation / continu');
+  const iSess   =_colFirst(headers,'session');
+  const iDay    =_colFirst(headers,'day');
+  const iObsM15 =_colFirst(headers,'m15 obstacles');
+  const iObsH4  =_colFirst(headers,'h4 obstacles');
+  const iBad    =_colFirst(headers,'bad feeling');
+  const iOrder  =_colFirst(headers,'order');
+  if (iResult===-1) return {ok:false,error:'\u26a0 Colonne Position Result introuvable'};
+  const trades=[],warnings=[];let skipped=0;
+  for (let i=1;i<lines.length;i++) {
+    const cols=splitCsvLine(lines[i],',');
+    const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
+    if (_isBadFeeling(get(iBad))){skipped++;continue;}
+    if (iType>=0&&get(iType).toLowerCase()==='invalid'){skipped++;continue;}
+    const outcome=_mapOutcome(get(iResult));
+    if (!outcome){skipped++;continue;}
+    const date=_parseDate(get(iDate));
+    if (!date||date.length<7){skipped++;continue;}
     trades.push({
-      date, month,
-      pair:      get(iPair)  || 'UNKNOWN',
-      setup,
-      session,
-      day,
-      obstacles: parseObs(get(iObsM15)),
-      h4:        parseObs(get(iObsH4)),
-      outcome,
-      r: rVal,
-      direction: ({ buy: 'Achat', sell: 'Vente' }[(get(iOrder)||'').toLowerCase()] || get(iOrder) || ''),
+      date,month:date.slice(0,7),
+      pair:     get(iPair).trim()|| '',
+      setup:    get(iSetup),
+      session:  _normSession(get(iSess)),
+      day:      _normDay(get(iDay)),
+      obstacles:_parseObs(get(iObsM15)),
+      h4:       _parseObs(get(iObsH4)),
+      outcome,  r:_mapR(outcome,get(iRR)), direction:get(iOrder),
     });
   }
-
-  if (skipped > 0) warnings.push(`${skipped} trades ignorés (Bad feeling)`);
-  if (trades.length === 0) return { ok: false, error: '⚠ Aucun trade valide trouvé' };
-
-  return { ok: true, trades, warnings };
+  if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
+  if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
+  return {ok:true,trades,warnings};
 }
 
 
-// ── Beginner CSV parser (FIXED) ──
+
+// ── Beginner parser ──
 function parseBeginnerCSV(text) {
-  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return { ok: false, error: '\u26a0 Fichier vide' };
-
-  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, '').replace(/^\uFEFF/, ''));
-
-  const iPair    = _colLast(headers, 'pair');
-  const iResult  = _colFirst(headers, 'position result');
-  const iType    = _colFirst(headers, 'position type');
-  const iDate    = _colFirst(headers, 'date');
-  const iRR      = _colFirst(headers, 'rr tp 1');
-  const iSetup   = _colFirst(headers, 'm15 confirmation / continu');
-  const iDay     = _colFirst(headers, 'day');
-  const iObsM15  = _colFirst(headers, 'm15 obstacles');
-  const iBad     = _colFirst(headers, 'bad feeling');
-  const iOrder   = _colFirst(headers, 'order');
-
-  if (iResult === -1 || iPair === -1) return { ok: false, error: '\u26a0 Colonnes Beginner introuvables' };
-
-  const trades = [], warnings = [];
-  let skipped = 0;
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitCsvLine(lines[i], ',');
-    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
-
-    if (_isBadFeeling(get(iBad)))      { skipped++; continue; }
-    if (iType >= 0 && get(iType).toLowerCase() === 'invalid') { skipped++; continue; }
-
-    const resultVal = get(iResult).trim();
-    if (resultVal === '.' || resultVal === '') { skipped++; continue; }
-
-    const outcome = _mapOutcome(resultVal);
-    if (!outcome) { skipped++; continue; }
-
-    const date = _parseDate(get(iDate));
-    if (!date || date.length < 7) { skipped++; continue; }
-
+  const raw   = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  const lines = raw.split('\n').filter(l=>l.trim());
+  if (lines.length<2) return {ok:false,error:'\u26a0 Fichier vide'};
+  const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,'').replace(/^\uFEFF/,''));
+  const iPair  =_colLast(headers,'pair');
+  const iResult=_colFirst(headers,'position result');
+  const iType  =_colFirst(headers,'position type');
+  const iDate  =_colFirst(headers,'date');
+  const iRR    =_colFirst(headers,'rr tp 1');
+  const iSetup =_colFirst(headers,'m15 confirmation / continu');
+  const iDay   =_colFirst(headers,'day');
+  const iObs   =_colFirst(headers,'m15 obstacles');
+  const iBad   =_colFirst(headers,'bad feeling');
+  const iOrder =_colFirst(headers,'order');
+  if (iResult===-1||iPair===-1) return {ok:false,error:'\u26a0 Colonnes Beginner introuvables'};
+  const trades=[],warnings=[];let skipped=0;
+  for (let i=1;i<lines.length;i++) {
+    const cols=splitCsvLine(lines[i],',');
+    const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
+    if (_isBadFeeling(get(iBad))){skipped++;continue;}
+    if (iType>=0&&get(iType).toLowerCase()==='invalid'){skipped++;continue;}
+    const rv=get(iResult).trim();
+    if (rv==='.'||rv===''){skipped++;continue;}
+    const outcome=_mapOutcome(rv);
+    if (!outcome){skipped++;continue;}
+    const date=_parseDate(get(iDate));
+    if (!date||date.length<7){skipped++;continue;}
     trades.push({
-      date,
-      month:     date.slice(0, 7),
-      pair:      get(iPair).trim() || 'UNKNOWN',
-      setup:     get(iSetup),
-      session:   '',
-      day:       _normDay(get(iDay)),
-      obstacles: _parseObs(get(iObsM15)),
-      h4:        [],
-      outcome,
-      r:         _mapR(outcome, get(iRR)),
-      direction: get(iOrder),
+      date,month:date.slice(0,7),
+      pair:    get(iPair).trim()|| '',
+      setup:   get(iSetup),
+      session: '',
+      day:     _normDay(get(iDay)),
+      obstacles:_parseObs(get(iObs)),
+      h4:      [],
+      outcome, r:_mapR(outcome,get(iRR)), direction:get(iOrder),
     });
   }
-
-  if (skipped > 0) warnings.push(`${skipped} trades ignor\u00e9s`);
-  if (!trades.length) return { ok: false, error: '\u26a0 Aucun trade valide trouv\u00e9' };
-  return { ok: true, trades, warnings };
+  if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
+  if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
+  return {ok:true,trades,warnings};
 }
 
 function splitCsvLine(line, delim) {
@@ -7193,7 +6940,7 @@ function splitCsvLine(line, delim) {
 
 function injectParsedTrades(parsed, filename) {
   // Replace the TRADES array
-  const validTrades = parsed.filter(t => t.date || t.pair !== 'UNKNOWN');
+  const validTrades = parsed.filter(t => t.pair && t.pair.trim());
 
   // Clear all filters first
   Object.keys(filters).forEach(k => filters[k].clear());
@@ -7224,10 +6971,10 @@ function injectParsedTrades(parsed, filename) {
   csvDataActive = true;
   const dot = document.getElementById('data-dot');
   const lbl = document.getElementById('data-source-label');
-  if (dot) { dot.classList.add('live'); dot.style.background = 'var(--b)'; }
+  if (dot){dot.classList.add('live');dot.style.background='var(--b)';}
   if (lbl) lbl.textContent = filename.replace(/\.csv$/i,'').slice(0,24);
-  const _tApi=document.getElementById('tab-api'),_tMain=document.getElementById('tab-main'),_tBadge=document.getElementById('tab-api-badge');
-  if(_tApi){_tApi.classList.remove('active');}  if(_tMain){_tMain.classList.add('active');}  if(_tBadge){_tBadge.style.display='none';}
+  const _ta=document.getElementById('tab-api'),_tm=document.getElementById('tab-main'),_tb=document.getElementById('tab-api-badge');
+  if(_ta)_ta.classList.remove('active'); if(_tm)_tm.classList.add('active'); if(_tb)_tb.style.display='none';
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
 
@@ -7766,21 +7513,9 @@ const SB_DIMS = [
 const presetOverrides = {};
 
 
-const LS_OVERRIDES_KEY = 'flipping_preset_overrides';
-function savePresetOverrides() {
-  try {
-    const s={};[0,1,2,3,4].forEach(id=>{if(!presetOverrides[id])return;s[id]={};SB_DIMS.forEach(d=>{const o=presetOverrides[id][d.key];s[id][d.key]={mode:o.mode,vals:[...o.vals]};});});
-    localStorage.setItem(LS_OVERRIDES_KEY,JSON.stringify(s));
-  } catch(e){}
-}
-function loadPresetOverrides() {
-  try {
-    const raw=localStorage.getItem(LS_OVERRIDES_KEY);if(!raw)return;
-    const saved=JSON.parse(raw);
-    Object.entries(saved).forEach(([id,dims])=>{const n=parseInt(id);if(!presetOverrides[n])return;Object.entries(dims).forEach(([k,v])=>{if(!presetOverrides[n][k])return;presetOverrides[n][k]={mode:v.mode,vals:new Set(v.vals)};});});
-    [0,1,2,3,4].forEach(id=>refreshTuneDot(id));
-  } catch(e){}
-}
+const LS_OVERRIDES_KEY='flipping_preset_overrides';
+function savePresetOverrides(){try{const s={};[0,1,2,3,4].forEach(id=>{if(!presetOverrides[id])return;s[id]={};SB_DIMS.forEach(d=>{const o=presetOverrides[id][d.key];s[id][d.key]={mode:o.mode,vals:[...o.vals]};});});localStorage.setItem(LS_OVERRIDES_KEY,JSON.stringify(s));}catch(e){}}
+function loadPresetOverrides(){try{const raw=localStorage.getItem(LS_OVERRIDES_KEY);if(!raw)return;const saved=JSON.parse(raw);Object.entries(saved).forEach(([id,dims])=>{const n=parseInt(id);if(!presetOverrides[n])return;Object.entries(dims).forEach(([k,v])=>{if(!presetOverrides[n][k])return;presetOverrides[n][k]={mode:v.mode,vals:new Set(v.vals)};});});[0,1,2,3,4].forEach(id=>refreshTuneDot(id));}catch(e){}}
 
 function initPresetOverrides() {
   [0,1,2,3,4].forEach(id => {
