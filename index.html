@@ -2048,31 +2048,6 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
   transition: background .2s;
 }
 
-
-.api-reload-btn {
-  background: var(--gold2);
-  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
-  color: var(--gold);
-  padding: 5px 11px;
-  border-radius: var(--rad);
-  font-family: 'DM Mono', monospace;
-  font-size: 9.5px;
-  letter-spacing: .8px;
-  cursor: pointer;
-  transition: all .15s;
-  white-space: nowrap;
-  text-transform: uppercase;
-  display: none;
-}
-.api-reload-btn.visible {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.api-reload-btn:hover {
-  background: var(--gold3);
-  border-color: color-mix(in srgb, var(--gold) 55%, transparent);
-}
 </style>
 <!-- Gridstack.js -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
@@ -2953,7 +2928,6 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       <div class="data-source-dot" id="data-dot"></div>
       <span id="data-source-label">Built-in data</span>
     </div>
-    <button class="api-reload-btn" id="api-reload-btn" onclick="reloadFromAPI()" title="Recharger les données depuis l'API Vercel">↺ API</button>
     <div id="ds-badge" class="ds-badge a">DATASET A</div>
     <div class="bar-mode-toggle">
       <button class="bmt-btn active" id="bmt-ev"   onclick="setBarMode('ev')">Avg R</button>
@@ -3023,6 +2997,11 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
 <div class="view-tabs">
   <div class="view-tab active" id="tab-main" onclick="switchView('main')">
     <span>⬡</span> Dashboard
+  </div>
+  <div class="view-tab" id="tab-api" onclick="switchToAPI()" title="Recharger les données depuis Notion via l'API Vercel">
+    <span id="tab-api-icon">↺</span> Notion Live
+    <span id="tab-api-badge" style="font-size:7px;letter-spacing:.5px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--g) 12%,transparent);color:var(--g);border:1px solid color-mix(in srgb,var(--g) 25%,transparent);margin-left:4px;display:none">LIVE</span>
+    <span id="tab-api-loading" style="font-size:7px;letter-spacing:.5px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--gold) 12%,transparent);color:var(--gold);border:1px solid color-mix(in srgb,var(--gold) 25%,transparent);margin-left:4px;display:none">CHARGEMENT…</span>
   </div>
 </div>
 
@@ -3626,22 +3605,6 @@ let TOTAL_OVERRIDE = null;
 
 const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
 
-
-// ══ RELOAD FROM API BUTTON ══
-function reloadFromAPI() {
-  const btn = document.getElementById('api-reload-btn');
-  if (btn) { btn.innerHTML = '\u27f3 Chargement\u2026'; btn.style.opacity = '.6'; btn.disabled = true; }
-  loadFromAPI();
-}
-function showApiReloadBtn() {
-  const btn = document.getElementById('api-reload-btn');
-  if (btn) btn.classList.add('visible');
-}
-function hideApiReloadBtn() {
-  const btn = document.getElementById('api-reload-btn');
-  if (btn) btn.classList.remove('visible');
-}
-
 async function loadFromAPI() {
   const dot = document.getElementById('data-dot');
   const lbl = document.getElementById('data-source-label');
@@ -3661,17 +3624,13 @@ async function loadFromAPI() {
       const dateRaw = (t.date || '').slice(0, 10);
       if (!dateRaw || dateRaw.length < 7) return null;
       return {
-        date:      dateRaw,
-        month:     dateRaw.slice(0, 7),
-        pair:      t.pair            || '',
-        setup:     t.m15Type         || t.confirmation || '',
-        session:   _normalizeSession(t.session || t.sessionFormule || ''),
-        day:       t.jour            || '',
+        date: dateRaw, month: dateRaw.slice(0, 7),
+        pair: t.pair || '', setup: t.m15Type || t.confirmation || '',
+        session: _normalizeSession(t.session || t.sessionFormule || ''),
+        day: t.jour || '',
         obstacles: _parseObstacles(t.obstaclesM15),
         h4:        _parseObstacles(t.obstaclesH4),
-        outcome:   oc,
-        r:         _mapR(oc, t.rrTp1),
-        direction: t.order           || '',
+        outcome: oc, r: _mapR(oc, t.rrTp1), direction: t.order || '',
       };
     }).filter(Boolean);
     TRADES.length = 0;
@@ -3681,9 +3640,15 @@ async function loadFromAPI() {
     tfPopulateSelects();
     tfSetMode('global');
     if (dot) { dot.classList.add('live'); dot.style.background = ''; dot.style.boxShadow = ''; }
-    if (lbl) lbl.textContent = 'API Vercel (' + TRADES.length + ' trades)';
+    if (lbl) lbl.textContent = 'Notion Live (' + TRADES.length + ' trades)';
+    // Activer onglet Notion Live au démarrage
+    const tabApi  = document.getElementById('tab-api');
+    const tabMain = document.getElementById('tab-main');
+    const badge   = document.getElementById('tab-api-badge');
+    if (tabApi)  tabApi.classList.add('active');
+    if (tabMain) tabMain.classList.remove('active');
+    if (badge)   badge.style.display = '';
     console.log('[Dashboard] Loaded', TRADES.length, 'trades from Vercel API');
-    hideApiReloadBtn();
     render();
   } catch (err) {
     console.warn('[Dashboard] API load failed:', err.message);
@@ -4194,11 +4159,11 @@ const PRESETS = [
     label: 'Custom — No Filters',
     be: true,
     clear: true,
-    // No base exclusions — user configures via tune panel
+    // No exclusions at all — completely raw dataset
     m15Exclude: [],
     h4Exclude: [],
     sessionExclude: [],
-    noBaseExclusions: true,
+    noBaseExclusions: true,  // flag to skip BASE_M15_EXCLUDE / BASE_SESSION_EXCLUDE
   },
 ];
 
@@ -6543,14 +6508,7 @@ function hideEmptyWidgets(trades) {
   const hasDay     = trades.some(t => t.day      && t.day.trim());
   const hasObsM15  = trades.some(t => t.obstacles && t.obstacles.length > 0);
   const hasObsH4   = trades.some(t => t.h4       && t.h4.length > 0);
-  const rules = {
-    'w-setup':   hasSetup,
-    'w-session': hasSession,
-    'w-day':     hasDay,
-    'w-heatmap': hasSession && hasDay,
-    'w-m15':     hasObsM15,
-    'w-h4':      hasObsH4,
-  };
+  const rules = {'w-setup':hasSetup,'w-session':hasSession,'w-day':hasDay,'w-heatmap':hasSession&&hasDay,'w-m15':hasObsM15,'w-h4':hasObsH4};
   _grid.batchUpdate();
   _grid.getGridItems().forEach(item => {
     const id = item.getAttribute('gs-id');
@@ -6727,12 +6685,7 @@ function processCsvText(text, filename) {
     const isFlippingMarket = text.includes('Résultat TP 1') || text.includes('Resultat TP 1') || (text.includes('M15 Type') && text.includes('Obstacles M15'));
     const isProTemplate    = !isFlippingMarket && (text.includes('Position Result') && text.includes('M15 Confirmation'));
     const isBeginner       = !isFlippingMarket && !isProTemplate && text.includes('Position Result') && text.includes('Position Type');
-
-    if (!isFlippingMarket && !isProTemplate && !isBeginner) {
-      csvStatus('⚠ Format non reconnu — importez un fichier Flipping Market M15, Pro Template ou Beginner', 'err');
-      return;
-    }
-
+    if (!isFlippingMarket && !isProTemplate && !isBeginner) { csvStatus('⚠ Format non reconnu', 'err'); return; }
     const result = isFlippingMarket ? parseFlippingMarketCSV(text) : isProTemplate ? parseProTemplateCSV(text) : parseBeginnerCSV(text);
 
     if (!result.ok) {
@@ -7028,35 +6981,34 @@ function parseProTemplateCSV(text) {
 
 
 function parseBeginnerCSV(text) {
-  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const raw = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
   const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return { ok: false, error: '\u26a0 Fichier vide' };
-  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, '').replace(/^\uFEFF/, ''));
+  if (lines.length < 2) return { ok:false, error:'\u26a0 Fichier vide' };
+  const headers = splitCsvLine(lines[0],',').map(h => h.trim().replace(/^["']|["']$/g,'').replace(/^\uFEFF/,''));
   const col = name => headers.findIndex(h => h.trim().toLowerCase() === name.trim().toLowerCase());
-  const iPair = col('pair'), iResult = col('position result'), iType = col('position type'), iDate = col('date'), iRR = col('rr tp 1');
-  if (iResult === -1 || iPair === -1) return { ok: false, error: '\u26a0 Colonnes Beginner introuvables' };
-  const MONTH_MAP = { january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12' };
-  const OUTCOME_MAP = { 'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL' };
-  const trades = [], warnings = [];
-  let skipped = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitCsvLine(lines[i], ',');
-    const get = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
-    const typeVal = get(iType).toLowerCase(), resultVal = get(iResult).trim();
-    if (typeVal === 'invalid' || resultVal === '.' || resultVal === '') { skipped++; continue; }
-    const outcome = OUTCOME_MAP[resultVal.toLowerCase().trim()];
-    if (!outcome) { skipped++; continue; }
-    const rVal = parseFloat(get(iRR).replace(',','.'));
-    const r = isNaN(rVal) ? (outcome === 'TP' || outcome === 'BE-TP' ? 2.4 : -1.0) : rVal;
-    const dateRaw = get(iDate);
-    const m = dateRaw.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/i);
-    let date = m ? `${m[3]}-${(MONTH_MAP[m[1].toLowerCase()]||'01')}-${m[2].padStart(2,'0')}` : dateRaw.slice(0,10);
-    if (!date || date.length < 7) { skipped++; continue; }
-    trades.push({ date, month: date.slice(0,7), pair: get(iPair).trim()||'UNKNOWN', setup:'', session:'', day:'', obstacles:[], h4:[], outcome, r, direction:'' });
+  const iPair=col('pair'), iResult=col('position result'), iType=col('position type'), iDate=col('date'), iRR=col('rr tp 1');
+  if (iResult===-1||iPair===-1) return { ok:false, error:'\u26a0 Colonnes Beginner introuvables' };
+  const MONTH_MAP={january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+  const OUTCOME_MAP={'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL'};
+  const trades=[],warnings=[];let skipped=0;
+  for (let i=1;i<lines.length;i++) {
+    const cols=splitCsvLine(lines[i],',');
+    const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
+    const typeVal=get(iType).toLowerCase(),resultVal=get(iResult).trim();
+    if (typeVal==='invalid'||resultVal==='.'||resultVal===''){skipped++;continue;}
+    const outcome=OUTCOME_MAP[resultVal.toLowerCase().trim()];
+    if (!outcome){skipped++;continue;}
+    const rVal=parseFloat(get(iRR).replace(',','.'));
+    const r=isNaN(rVal)?(outcome==='TP'||outcome==='BE-TP'?2.4:-1.0):rVal;
+    const dateRaw=get(iDate);
+    const m=dateRaw.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/i);
+    const date=m?`${m[3]}-${(MONTH_MAP[m[1].toLowerCase()]||'01')}-${m[2].padStart(2,'0')}`:dateRaw.slice(0,10);
+    if (!date||date.length<7){skipped++;continue;}
+    trades.push({date,month:date.slice(0,7),pair:get(iPair).trim()||'UNKNOWN',setup:'',session:'',day:'',obstacles:[],h4:[],outcome,r,direction:''});
   }
-  if (skipped > 0) warnings.push(`${skipped} trades ignor\u00e9s`);
-  if (!trades.length) return { ok: false, error: '\u26a0 Aucun trade valide trouv\u00e9' };
-  return { ok: true, trades, warnings };
+  if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
+  if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
+  return {ok:true,trades,warnings};
 }
 
 function splitCsvLine(line, delim) {
@@ -7116,7 +7068,13 @@ function injectParsedTrades(parsed, filename) {
   const lbl = document.getElementById('data-source-label');
   if (dot) { dot.classList.add('live'); dot.style.background = 'var(--b)'; }
   if (lbl) lbl.textContent = filename.replace(/\.csv$/i,'').slice(0,24);
-  showApiReloadBtn();
+  // Désactiver badge Notion Live, réactiver onglet Dashboard
+  const tabApi = document.getElementById('tab-api');
+  const tabMain = document.getElementById('tab-main');
+  const apiBadge = document.getElementById('tab-api-badge');
+  if (tabApi)   tabApi.classList.remove('active');
+  if (tabMain)  tabMain.classList.add('active');
+  if (apiBadge) apiBadge.style.display = 'none';
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
 
@@ -7629,7 +7587,7 @@ window.addEventListener('load', () => {
 
   initPresetOverrides();
   loadPresetOverrides();
-  render();
+  loadFromAPI();
   // Show comparison UI if compare is active
   tfUpdateCompareUI();
 
@@ -7656,9 +7614,7 @@ const SB_DIMS = [
 const presetOverrides = {};
 
 
-// ══ PRESET OVERRIDES PERSISTENCE ══
 const LS_OVERRIDES_KEY = 'flipping_preset_overrides';
-
 function savePresetOverrides() {
   try {
     const toSave = {};
@@ -7673,7 +7629,6 @@ function savePresetOverrides() {
     localStorage.setItem(LS_OVERRIDES_KEY, JSON.stringify(toSave));
   } catch(e) {}
 }
-
 function loadPresetOverrides() {
   try {
     const raw = localStorage.getItem(LS_OVERRIDES_KEY);
@@ -7687,7 +7642,6 @@ function loadPresetOverrides() {
         presetOverrides[numId][key] = { mode: val.mode, vals: new Set(val.vals) };
       });
     });
-    // Refresh tune dots
     [0,1,2,3,4].forEach(id => refreshTuneDot(id));
   } catch(e) {}
 }
@@ -7875,6 +7829,80 @@ function refreshTuneDot(id) {
 }
 // ══════════════════════════════════════════════════════
 let currentView = 'main';
+
+// ══ ONGLET NOTION LIVE ══
+function switchToAPI() {
+  // State: loading
+  const icon    = document.getElementById('tab-api-icon');
+  const badge   = document.getElementById('tab-api-badge');
+  const loading = document.getElementById('tab-api-loading');
+  const tab     = document.getElementById('tab-api');
+  const tabMain = document.getElementById('tab-main');
+
+  if (icon)    icon.textContent = '⟳';
+  if (badge)   badge.style.display = 'none';
+  if (loading) loading.style.display = '';
+  if (tab)     tab.classList.add('active');
+  if (tabMain) tabMain.classList.remove('active');
+
+  // Reload from API
+  const dot = document.getElementById('data-dot');
+  const lbl = document.getElementById('data-source-label');
+  if (dot) { dot.style.background = 'var(--gold)'; dot.style.boxShadow = '0 0 8px var(--gold)'; }
+  if (lbl) lbl.textContent = 'Chargement API Vercel\u2026';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+
+  fetch(API_URL, { signal: controller.signal })
+    .then(r => { clearTimeout(timer); return r.json(); })
+    .then(json => {
+      if (!json.trades || !json.trades.length) throw new Error('Aucun trade');
+      const parsed = json.trades.map(t => {
+        const oc = _mapOutcome(t.resultatTp1);
+        if (!oc) return null;
+        const dateRaw = (t.date || '').slice(0, 10);
+        if (!dateRaw || dateRaw.length < 7) return null;
+        return {
+          date: dateRaw, month: dateRaw.slice(0, 7),
+          pair: t.pair || '', setup: t.m15Type || t.confirmation || '',
+          session: _normalizeSession(t.session || t.sessionFormule || ''),
+          day: t.jour || '',
+          obstacles: _parseObstacles(t.obstaclesM15),
+          h4:        _parseObstacles(t.obstaclesH4),
+          outcome: oc, r: _mapR(oc, t.rrTp1), direction: t.order || '',
+        };
+      }).filter(Boolean);
+
+      TRADES.length = 0;
+      parsed.forEach(t => TRADES.push(t));
+      TOTAL_OVERRIDE = TRADES.length;
+      rebuildDimensions();
+      tfPopulateSelects();
+      tfSetMode('global');
+
+      // State: live
+      if (icon)    icon.textContent = '↺';
+      if (loading) loading.style.display = 'none';
+      if (badge)   badge.style.display = '';
+      if (dot) { dot.classList.add('live'); dot.style.background = ''; dot.style.boxShadow = ''; }
+      if (lbl) lbl.textContent = 'Notion Live (' + TRADES.length + ' trades)';
+
+      render();
+    })
+    .catch(err => {
+      clearTimeout(timer);
+      console.warn('[Dashboard] Notion Live failed:', err.message);
+      // State: error — reset tab
+      if (icon)    icon.textContent = '↺';
+      if (loading) loading.style.display = 'none';
+      if (dot) { dot.style.background = 'var(--r)'; dot.style.boxShadow = 'none'; }
+      if (lbl) lbl.textContent = 'Notion indisponible';
+      if (tab)     tab.classList.remove('active');
+      if (tabMain) tabMain.classList.add('active');
+    });
+}
+
 function switchView(v) {
   currentView = v;
 }
