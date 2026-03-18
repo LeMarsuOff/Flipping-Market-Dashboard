@@ -2998,10 +2998,10 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
   <div class="view-tab active" id="tab-main" onclick="switchView('main')">
     <span>⬡</span> Dashboard
   </div>
-  <div class="view-tab" id="tab-api" onclick="switchToAPI()" title="Recharger les données depuis Notion via l'API Vercel">
+  <div class="view-tab" id="tab-api" onclick="switchToAPI()" title="Recharger depuis Notion">
     <span id="tab-api-icon">↺</span> Notion Live
     <span id="tab-api-badge" style="font-size:7px;letter-spacing:.5px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--g) 12%,transparent);color:var(--g);border:1px solid color-mix(in srgb,var(--g) 25%,transparent);margin-left:4px;display:none">LIVE</span>
-    <span id="tab-api-loading" style="font-size:7px;letter-spacing:.5px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--gold) 12%,transparent);color:var(--gold);border:1px solid color-mix(in srgb,var(--gold) 25%,transparent);margin-left:4px;display:none">CHARGEMENT…</span>
+    <span id="tab-api-loading" style="font-size:7px;padding:1px 5px;border-radius:2px;background:color-mix(in srgb,var(--gold) 12%,transparent);color:var(--gold);border:1px solid color-mix(in srgb,var(--gold) 25%,transparent);margin-left:4px;display:none">CHARGEMENT…</span>
   </div>
 </div>
 
@@ -3603,93 +3603,155 @@ let activePreset = null;
 const state = { m15Exclude: [], h4Exclude: [], sessionExclude: [] };
 let TOTAL_OVERRIDE = null;
 
-const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
+// ══ SHARED CSV HELPERS ══
+const _MONTH_MAP = {
+  january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
+  july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
+  janvier:'01','\u00e9vrier':'02',mars:'03',avril:'04',mai:'05',juin:'06',
+  juillet:'07',ao\u00fbt:'08',septembre:'09',octobre:'10',novembre:'11',d\u00e9cembre:'12',
+};
+const _OUTCOME_MAP = {
+  'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL',
+  'take profit':'TP','stop loss':'SL',
+};
+const _SESSION_MAP = {
+  'asian kz':'Asian','asian':'Asian',
+  'london kz':'London','london':'London',
+  'new york kz':'New-York','new york':'New-York','new-york':'New-York',
+  'lunch time zone':'Lunch Time Zone','lunch kz':'Lunch Time Zone',
+  'out of session':'Hors Session','hors session':'Hors Session',
+  "no man's land":"No Man's Land",'no mans land':"No Man's Land",
+};
+const _DAY_MAP = {
+  monday:'Lundi',tuesday:'Mardi',wednesday:'Mercredi',
+  thursday:'Jeudi',friday:'Vendredi',saturday:'Samedi',sunday:'Dimanche',
+};
 
-async function loadFromAPI() {
-  const dot = document.getElementById('data-dot');
-  const lbl = document.getElementById('data-source-label');
-  try {
-    if (dot) { dot.style.background = 'var(--gold)'; dot.style.boxShadow = '0 0 8px var(--gold)'; }
-    if (lbl) lbl.textContent = 'Chargement API Vercel\u2026';
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
-    const resp = await fetch(API_URL, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const json = await resp.json();
-    if (!json.trades || !json.trades.length) throw new Error('Aucun trade re\xe7u');
-    const parsed = json.trades.map(t => {
-      const oc = _mapOutcome(t.resultatTp1);
-      if (!oc) return null;
-      const dateRaw = (t.date || '').slice(0, 10);
-      if (!dateRaw || dateRaw.length < 7) return null;
-      return {
-        date: dateRaw, month: dateRaw.slice(0, 7),
-        pair: t.pair || '', setup: t.m15Type || t.confirmation || '',
-        session: _normalizeSession(t.session || t.sessionFormule || ''),
-        day: t.jour || '',
-        obstacles: _parseObstacles(t.obstaclesM15),
-        h4:        _parseObstacles(t.obstaclesH4),
-        outcome: oc, r: _mapR(oc, t.rrTp1), direction: t.order || '',
-      };
-    }).filter(Boolean);
-    TRADES.length = 0;
-    parsed.forEach(t => TRADES.push(t));
-    TOTAL_OVERRIDE = TRADES.length;
-    rebuildDimensions();
-    tfPopulateSelects();
-    tfSetMode('global');
-    if (dot) { dot.classList.add('live'); dot.style.background = ''; dot.style.boxShadow = ''; }
-    if (lbl) lbl.textContent = 'Notion Live (' + TRADES.length + ' trades)';
-    // Activer onglet Notion Live au démarrage
-    const tabApi  = document.getElementById('tab-api');
-    const tabMain = document.getElementById('tab-main');
-    const badge   = document.getElementById('tab-api-badge');
-    if (tabApi)  tabApi.classList.add('active');
-    if (tabMain) tabMain.classList.remove('active');
-    if (badge)   badge.style.display = '';
-    console.log('[Dashboard] Loaded', TRADES.length, 'trades from Vercel API');
-    render();
-  } catch (err) {
-    console.warn('[Dashboard] API load failed:', err.message);
-    if (dot) { dot.style.background = 'var(--r)'; dot.style.boxShadow = 'none'; }
-    if (lbl) lbl.textContent = 'API indisponible (' + err.message + ')';
-    render();
+function _parseDate(raw) {
+  if (!raw) return '';
+  const m = raw.match(/^([A-Za-z\u00e0-\u00ff]+)\s+(\d{1,2}),?\s+(\d{4})/i);
+  if (m) {
+    const mo = _MONTH_MAP[m[1].toLowerCase()] || '01';
+    return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
   }
+  const d = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (d) return `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}`;
+  return raw.slice(0,10);
 }
-function _parseObstacles(val) {
-  if (!val) return [];
-  if (Array.isArray(val)) return val.filter(Boolean);
-  if (typeof val === 'string') {
-    if (val === '/' || val === '-' || val === '') return [];
-    return val.split(',').map(s => s.trim()).filter(Boolean);
+
+function _parseObs(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (typeof raw === 'string') {
+    if (raw === '/' || raw === '-' || raw === '' || raw === '.') return [];
+    return raw.split(',').map(s => s.trim()).filter(s => s && s !== '/' && s !== '-');
   }
   return [];
 }
-function _normalizeSession(s) {
-  if (!s) return '';
-  const map = {
-    'asian':'Asian','london':'London','lunch time zone':'Lunch Time Zone',
-    'new-york':'New-York','new york':'New-York','hors session':'Hors Session',
-    "no man's land":"No Man's Land",'no mans land':"No Man's Land",
-  };
-  return map[s.toLowerCase().trim()] || s;
+
+function _mapOutcome(raw) {
+  if (!raw) return null;
+  return _OUTCOME_MAP[raw.toLowerCase().trim()] || null;
 }
-function _mapOutcome(resultat) {
-  if (!resultat) return null;
-  const r = resultat.toLowerCase().trim();
-  if (r === 'take profit')               return 'TP';
-  if (r === 'stop loss')                 return 'SL';
-  if (r === 'be - tp' || r === 'be-tp')  return 'BE-TP';
-  if (r === 'be - sl' || r === 'be-sl')  return 'BE-SL';
-  return null;
-}
-function _mapR(oc, rrTp1) {
-  if (oc === 'TP')    return (typeof rrTp1 === 'number' && rrTp1 > 0) ? rrTp1 : 2.4;
+
+function _mapR(oc, rrRaw) {
+  const rr = parseFloat(String(rrRaw || '').replace(',','.'));
+  if (oc === 'TP')    return (!isNaN(rr) && rr > 0) ? rr : 2.4;
   if (oc === 'SL')    return -1.0;
-  if (oc === 'BE-TP') return (typeof rrTp1 === 'number' && rrTp1 > 0) ? rrTp1 : 2.4;
+  if (oc === 'BE-TP') return (!isNaN(rr) && rr > 0) ? rr : 2.4;
   if (oc === 'BE-SL') return -1.0;
   return 0;
+}
+
+function _normSession(s) {
+  return _SESSION_MAP[(s||'').toLowerCase().trim()] || s || '';
+}
+
+function _normDay(s) {
+  return _DAY_MAP[(s||'').toLowerCase().trim()] || s || '';
+}
+
+function _isBadFeeling(v) {
+  return (v||'').toLowerCase().trim() === 'yes';
+}
+
+// Find last occurrence of a column header (handles duplicates)
+function _colLast(headers, name) {
+  let last = -1;
+  headers.forEach((h, i) => { if (h.trim().toLowerCase() === name.toLowerCase()) last = i; });
+  return last;
+}
+function _colFirst(headers, name) {
+  return headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+}
+
+
+const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
+
+// ══ ONGLET NOTION LIVE ══
+function switchToAPI() {
+  const icon=document.getElementById('tab-api-icon'), badge=document.getElementById('tab-api-badge');
+  const loading=document.getElementById('tab-api-loading'), tab=document.getElementById('tab-api'), tabMain=document.getElementById('tab-main');
+  if(icon) icon.textContent='\u27f3';
+  if(badge) badge.style.display='none';
+  if(loading) loading.style.display='';
+  if(tab) tab.classList.add('active');
+  if(tabMain) tabMain.classList.remove('active');
+  loadFromAPI();
+}
+
+async function loadFromAPI() {
+  const dot=document.getElementById('data-dot'), lbl=document.getElementById('data-source-label');
+  const icon=document.getElementById('tab-api-icon'), badge=document.getElementById('tab-api-badge');
+  const loading=document.getElementById('tab-api-loading'), tab=document.getElementById('tab-api'), tabMain=document.getElementById('tab-main');
+  try {
+    if(dot){dot.style.background='var(--gold)';dot.style.boxShadow='0 0 8px var(--gold)';}
+    if(lbl) lbl.textContent='Chargement API Vercel\u2026';
+    if(loading) loading.style.display='';
+    if(badge) badge.style.display='none';
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),20000);
+    const resp=await fetch(API_URL,{signal:controller.signal});
+    clearTimeout(timer);
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const json=await resp.json();
+    if(!json.trades||!json.trades.length) throw new Error('Aucun trade re\xe7u');
+    const parsed=json.trades.map(t=>{
+      const oc=_mapOutcome(t.resultatTp1);
+      if(!oc) return null;
+      const dateRaw=(t.date||'').slice(0,10);
+      if(!dateRaw||dateRaw.length<7) return null;
+      return {
+        date:dateRaw, month:dateRaw.slice(0,7),
+        pair:t.pair||'', setup:t.m15Type||t.confirmation||'',
+        session:_normSession(t.session||t.sessionFormule||''),
+        day:t.jour||'',
+        obstacles:_parseObs(t.obstaclesM15),
+        h4:_parseObs(t.obstaclesH4),
+        outcome:oc, r:_mapR(oc,t.rrTp1), direction:t.order||'',
+      };
+    }).filter(Boolean);
+    TRADES.length=0; parsed.forEach(t=>TRADES.push(t)); TOTAL_OVERRIDE=TRADES.length;
+    rebuildDimensions(); tfPopulateSelects(); tfSetMode('global');
+    if(dot){dot.classList.add('live');dot.style.background='';dot.style.boxShadow='';}
+    if(lbl) lbl.textContent='Notion Live ('+TRADES.length+' trades)';
+    if(icon) icon.textContent='\u21ba';
+    if(loading) loading.style.display='none';
+    if(badge) badge.style.display='';
+    if(tab) tab.classList.add('active');
+    if(tabMain) tabMain.classList.remove('active');
+    console.log('[Dashboard] Loaded',TRADES.length,'trades');
+    render();
+  } catch(err) {
+    console.warn('[Dashboard] API failed:',err.message);
+    if(dot){dot.style.background='var(--r)';dot.style.boxShadow='none';}
+    if(lbl) lbl.textContent='API indisponible';
+    if(icon) icon.textContent='\u21ba';
+    if(loading) loading.style.display='none';
+    if(tab) tab.classList.remove('active');
+    if(tabMain) tabMain.classList.add('active');
+    render();
+  }
 }
 
 // Legacy date vars (now driven by temporal filter)
@@ -6503,12 +6565,15 @@ function updateStatsWidget(stats) {
 
 function hideEmptyWidgets(trades) {
   if (!_grid) return;
-  const hasSetup   = trades.some(t => t.setup    && t.setup.trim());
-  const hasSession = trades.some(t => t.session  && t.session.trim());
-  const hasDay     = trades.some(t => t.day      && t.day.trim());
-  const hasObsM15  = trades.some(t => t.obstacles && t.obstacles.length > 0);
-  const hasObsH4   = trades.some(t => t.h4       && t.h4.length > 0);
-  const rules = {'w-setup':hasSetup,'w-session':hasSession,'w-day':hasDay,'w-heatmap':hasSession&&hasDay,'w-m15':hasObsM15,'w-h4':hasObsH4};
+  const has = fn => trades.some(fn);
+  const rules = {
+    'w-setup':   has(t => t.setup    && t.setup.trim()),
+    'w-session': has(t => t.session  && t.session.trim()),
+    'w-day':     has(t => t.day      && t.day.trim()),
+    'w-heatmap': has(t => t.session  && t.session.trim()) && has(t => t.day && t.day.trim()),
+    'w-m15':     has(t => t.obstacles && t.obstacles.length > 0),
+    'w-h4':      has(t => t.h4       && t.h4.length > 0),
+  };
   _grid.batchUpdate();
   _grid.getGridItems().forEach(item => {
     const id = item.getAttribute('gs-id');
@@ -6517,7 +6582,7 @@ function hideEmptyWidgets(trades) {
     _grid.update(item, { noMove: !rules[id] });
   });
   _grid.commit();
-  _grid.compact();
+  requestAnimationFrame(() => { if (_grid) _grid.compact(); });
 }
 
 function render() {
@@ -6682,10 +6747,15 @@ function handleCsvFile(file) {
 function processCsvText(text, filename) {
   try {
     // ── Detect format ──
-    const isFlippingMarket = text.includes('Résultat TP 1') || text.includes('Resultat TP 1') || (text.includes('M15 Type') && text.includes('Obstacles M15'));
-    const isProTemplate    = !isFlippingMarket && (text.includes('Position Result') && text.includes('M15 Confirmation'));
-    const isBeginner       = !isFlippingMarket && !isProTemplate && text.includes('Position Result') && text.includes('Position Type');
-    if (!isFlippingMarket && !isProTemplate && !isBeginner) { csvStatus('⚠ Format non reconnu', 'err'); return; }
+    const isFlippingMarket = text.includes('R\u00e9sultat TP 1') || text.includes('Resultat TP 1') || (text.includes('M15 Type') && text.includes('Obstacles M15'));
+    const isProTemplate    = !isFlippingMarket && text.includes('Position Result') && text.includes('H4 Obstacles') && text.includes('Session');
+    const isBeginner       = !isFlippingMarket && !isProTemplate && text.includes('Position Result');
+
+    if (!isFlippingMarket && !isProTemplate && !isBeginner) {
+      csvStatus('\u26a0 Format non reconnu \u2014 Flipping Market M15, Pro Template ou Beginner attendu', 'err');
+      return;
+    }
+
     const result = isFlippingMarket ? parseFlippingMarketCSV(text) : isProTemplate ? parseProTemplateCSV(text) : parseBeginnerCSV(text);
 
     if (!result.ok) {
@@ -6828,7 +6898,66 @@ function parseFlippingMarketCSV(text) {
   return { ok: true, trades, warnings };
 }
 
-// ── Pro Template CSV parser ──
+// ── Pro Template CSV parser (FIXED) ──
+function parseProTemplateCSV(text) {
+  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return { ok: false, error: '\u26a0 Fichier vide' };
+
+  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+
+  // Use last occurrence of 'Pair' (col 0 = abbreviation, col 29 = full pair name)
+  const iPair    = _colLast(headers, 'pair');
+  const iResult  = _colFirst(headers, 'position result');
+  const iType    = _colFirst(headers, 'position type');
+  const iDate    = _colFirst(headers, 'date');
+  const iRR      = _colFirst(headers, 'rr tp 1');
+  const iSetup   = _colFirst(headers, 'm15 confirmation / continu');
+  const iSession = _colFirst(headers, 'session');
+  const iDay     = _colFirst(headers, 'day');
+  const iObsM15  = _colFirst(headers, 'm15 obstacles');
+  const iObsH4   = _colFirst(headers, 'h4 obstacles');
+  const iBad     = _colFirst(headers, 'bad feeling');
+  const iOrder   = _colFirst(headers, 'order');
+
+  if (iResult === -1) return { ok: false, error: '\u26a0 Colonne Position Result introuvable' };
+
+  const trades = [], warnings = [];
+  let skipped = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsvLine(lines[i], ',');
+    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
+
+    if (_isBadFeeling(get(iBad)))      { skipped++; continue; }
+    if (iType >= 0 && get(iType).toLowerCase() === 'invalid') { skipped++; continue; }
+
+    const outcome = _mapOutcome(get(iResult));
+    if (!outcome) { skipped++; continue; }
+
+    const date = _parseDate(get(iDate));
+    if (!date || date.length < 7) { skipped++; continue; }
+
+    trades.push({
+      date,
+      month:     date.slice(0, 7),
+      pair:      get(iPair).trim() || 'UNKNOWN',
+      setup:     get(iSetup),
+      session:   _normSession(get(iSession)),
+      day:       _normDay(get(iDay)),
+      obstacles: _parseObs(get(iObsM15)),
+      h4:        _parseObs(get(iObsH4)),
+      outcome,
+      r:         _mapR(outcome, get(iRR)),
+      direction: get(iOrder),
+    });
+  }
+
+  if (skipped > 0) warnings.push(`${skipped} trades ignor\u00e9s`);
+  if (!trades.length) return { ok: false, error: '\u26a0 Aucun trade valide trouv\u00e9' };
+  return { ok: true, trades, warnings };
+}
+
 function parseProTemplateCSV(text) {
   const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = raw.split('\n').filter(l => l.trim());
@@ -6980,35 +7109,64 @@ function parseProTemplateCSV(text) {
 }
 
 
+// ── Beginner CSV parser (FIXED) ──
 function parseBeginnerCSV(text) {
-  const raw = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = raw.split('\n').filter(l => l.trim());
-  if (lines.length < 2) return { ok:false, error:'\u26a0 Fichier vide' };
-  const headers = splitCsvLine(lines[0],',').map(h => h.trim().replace(/^["']|["']$/g,'').replace(/^\uFEFF/,''));
-  const col = name => headers.findIndex(h => h.trim().toLowerCase() === name.trim().toLowerCase());
-  const iPair=col('pair'), iResult=col('position result'), iType=col('position type'), iDate=col('date'), iRR=col('rr tp 1');
-  if (iResult===-1||iPair===-1) return { ok:false, error:'\u26a0 Colonnes Beginner introuvables' };
-  const MONTH_MAP={january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
-  const OUTCOME_MAP={'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL'};
-  const trades=[],warnings=[];let skipped=0;
-  for (let i=1;i<lines.length;i++) {
-    const cols=splitCsvLine(lines[i],',');
-    const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
-    const typeVal=get(iType).toLowerCase(),resultVal=get(iResult).trim();
-    if (typeVal==='invalid'||resultVal==='.'||resultVal===''){skipped++;continue;}
-    const outcome=OUTCOME_MAP[resultVal.toLowerCase().trim()];
-    if (!outcome){skipped++;continue;}
-    const rVal=parseFloat(get(iRR).replace(',','.'));
-    const r=isNaN(rVal)?(outcome==='TP'||outcome==='BE-TP'?2.4:-1.0):rVal;
-    const dateRaw=get(iDate);
-    const m=dateRaw.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/i);
-    const date=m?`${m[3]}-${(MONTH_MAP[m[1].toLowerCase()]||'01')}-${m[2].padStart(2,'0')}`:dateRaw.slice(0,10);
-    if (!date||date.length<7){skipped++;continue;}
-    trades.push({date,month:date.slice(0,7),pair:get(iPair).trim()||'UNKNOWN',setup:'',session:'',day:'',obstacles:[],h4:[],outcome,r,direction:''});
+  if (lines.length < 2) return { ok: false, error: '\u26a0 Fichier vide' };
+
+  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, '').replace(/^\uFEFF/, ''));
+
+  const iPair    = _colLast(headers, 'pair');
+  const iResult  = _colFirst(headers, 'position result');
+  const iType    = _colFirst(headers, 'position type');
+  const iDate    = _colFirst(headers, 'date');
+  const iRR      = _colFirst(headers, 'rr tp 1');
+  const iSetup   = _colFirst(headers, 'm15 confirmation / continu');
+  const iDay     = _colFirst(headers, 'day');
+  const iObsM15  = _colFirst(headers, 'm15 obstacles');
+  const iBad     = _colFirst(headers, 'bad feeling');
+  const iOrder   = _colFirst(headers, 'order');
+
+  if (iResult === -1 || iPair === -1) return { ok: false, error: '\u26a0 Colonnes Beginner introuvables' };
+
+  const trades = [], warnings = [];
+  let skipped = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsvLine(lines[i], ',');
+    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
+
+    if (_isBadFeeling(get(iBad)))      { skipped++; continue; }
+    if (iType >= 0 && get(iType).toLowerCase() === 'invalid') { skipped++; continue; }
+
+    const resultVal = get(iResult).trim();
+    if (resultVal === '.' || resultVal === '') { skipped++; continue; }
+
+    const outcome = _mapOutcome(resultVal);
+    if (!outcome) { skipped++; continue; }
+
+    const date = _parseDate(get(iDate));
+    if (!date || date.length < 7) { skipped++; continue; }
+
+    trades.push({
+      date,
+      month:     date.slice(0, 7),
+      pair:      get(iPair).trim() || 'UNKNOWN',
+      setup:     get(iSetup),
+      session:   '',
+      day:       _normDay(get(iDay)),
+      obstacles: _parseObs(get(iObsM15)),
+      h4:        [],
+      outcome,
+      r:         _mapR(outcome, get(iRR)),
+      direction: get(iOrder),
+    });
   }
-  if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
-  if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
-  return {ok:true,trades,warnings};
+
+  if (skipped > 0) warnings.push(`${skipped} trades ignor\u00e9s`);
+  if (!trades.length) return { ok: false, error: '\u26a0 Aucun trade valide trouv\u00e9' };
+  return { ok: true, trades, warnings };
 }
 
 function splitCsvLine(line, delim) {
@@ -7068,13 +7226,8 @@ function injectParsedTrades(parsed, filename) {
   const lbl = document.getElementById('data-source-label');
   if (dot) { dot.classList.add('live'); dot.style.background = 'var(--b)'; }
   if (lbl) lbl.textContent = filename.replace(/\.csv$/i,'').slice(0,24);
-  // Désactiver badge Notion Live, réactiver onglet Dashboard
-  const tabApi = document.getElementById('tab-api');
-  const tabMain = document.getElementById('tab-main');
-  const apiBadge = document.getElementById('tab-api-badge');
-  if (tabApi)   tabApi.classList.remove('active');
-  if (tabMain)  tabMain.classList.add('active');
-  if (apiBadge) apiBadge.style.display = 'none';
+  const _tApi=document.getElementById('tab-api'),_tMain=document.getElementById('tab-main'),_tBadge=document.getElementById('tab-api-badge');
+  if(_tApi){_tApi.classList.remove('active');}  if(_tMain){_tMain.classList.add('active');}  if(_tBadge){_tBadge.style.display='none';}
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
 
@@ -7586,7 +7739,6 @@ window.addEventListener('load', () => {
   tfInit();
 
   initPresetOverrides();
-  loadPresetOverrides();
   loadFromAPI();
   // Show comparison UI if compare is active
   tfUpdateCompareUI();
@@ -7617,33 +7769,17 @@ const presetOverrides = {};
 const LS_OVERRIDES_KEY = 'flipping_preset_overrides';
 function savePresetOverrides() {
   try {
-    const toSave = {};
-    [0,1,2,3,4].forEach(id => {
-      if (!presetOverrides[id]) return;
-      toSave[id] = {};
-      SB_DIMS.forEach(d => {
-        const s = presetOverrides[id][d.key];
-        toSave[id][d.key] = { mode: s.mode, vals: [...s.vals] };
-      });
-    });
-    localStorage.setItem(LS_OVERRIDES_KEY, JSON.stringify(toSave));
-  } catch(e) {}
+    const s={};[0,1,2,3,4].forEach(id=>{if(!presetOverrides[id])return;s[id]={};SB_DIMS.forEach(d=>{const o=presetOverrides[id][d.key];s[id][d.key]={mode:o.mode,vals:[...o.vals]};});});
+    localStorage.setItem(LS_OVERRIDES_KEY,JSON.stringify(s));
+  } catch(e){}
 }
 function loadPresetOverrides() {
   try {
-    const raw = localStorage.getItem(LS_OVERRIDES_KEY);
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    Object.entries(saved).forEach(([id, dims]) => {
-      const numId = parseInt(id);
-      if (!presetOverrides[numId]) return;
-      Object.entries(dims).forEach(([key, val]) => {
-        if (!presetOverrides[numId][key]) return;
-        presetOverrides[numId][key] = { mode: val.mode, vals: new Set(val.vals) };
-      });
-    });
-    [0,1,2,3,4].forEach(id => refreshTuneDot(id));
-  } catch(e) {}
+    const raw=localStorage.getItem(LS_OVERRIDES_KEY);if(!raw)return;
+    const saved=JSON.parse(raw);
+    Object.entries(saved).forEach(([id,dims])=>{const n=parseInt(id);if(!presetOverrides[n])return;Object.entries(dims).forEach(([k,v])=>{if(!presetOverrides[n][k])return;presetOverrides[n][k]={mode:v.mode,vals:new Set(v.vals)};});});
+    [0,1,2,3,4].forEach(id=>refreshTuneDot(id));
+  } catch(e){}
 }
 
 function initPresetOverrides() {
@@ -7817,7 +7953,6 @@ function resetTunePanel(id) {
   });
   buildTunePanel(id);
   refreshTuneDot(id);
-  savePresetOverrides();
   if (activePreset === id) render();
 }
 
@@ -7829,80 +7964,6 @@ function refreshTuneDot(id) {
 }
 // ══════════════════════════════════════════════════════
 let currentView = 'main';
-
-// ══ ONGLET NOTION LIVE ══
-function switchToAPI() {
-  // State: loading
-  const icon    = document.getElementById('tab-api-icon');
-  const badge   = document.getElementById('tab-api-badge');
-  const loading = document.getElementById('tab-api-loading');
-  const tab     = document.getElementById('tab-api');
-  const tabMain = document.getElementById('tab-main');
-
-  if (icon)    icon.textContent = '⟳';
-  if (badge)   badge.style.display = 'none';
-  if (loading) loading.style.display = '';
-  if (tab)     tab.classList.add('active');
-  if (tabMain) tabMain.classList.remove('active');
-
-  // Reload from API
-  const dot = document.getElementById('data-dot');
-  const lbl = document.getElementById('data-source-label');
-  if (dot) { dot.style.background = 'var(--gold)'; dot.style.boxShadow = '0 0 8px var(--gold)'; }
-  if (lbl) lbl.textContent = 'Chargement API Vercel\u2026';
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
-
-  fetch(API_URL, { signal: controller.signal })
-    .then(r => { clearTimeout(timer); return r.json(); })
-    .then(json => {
-      if (!json.trades || !json.trades.length) throw new Error('Aucun trade');
-      const parsed = json.trades.map(t => {
-        const oc = _mapOutcome(t.resultatTp1);
-        if (!oc) return null;
-        const dateRaw = (t.date || '').slice(0, 10);
-        if (!dateRaw || dateRaw.length < 7) return null;
-        return {
-          date: dateRaw, month: dateRaw.slice(0, 7),
-          pair: t.pair || '', setup: t.m15Type || t.confirmation || '',
-          session: _normalizeSession(t.session || t.sessionFormule || ''),
-          day: t.jour || '',
-          obstacles: _parseObstacles(t.obstaclesM15),
-          h4:        _parseObstacles(t.obstaclesH4),
-          outcome: oc, r: _mapR(oc, t.rrTp1), direction: t.order || '',
-        };
-      }).filter(Boolean);
-
-      TRADES.length = 0;
-      parsed.forEach(t => TRADES.push(t));
-      TOTAL_OVERRIDE = TRADES.length;
-      rebuildDimensions();
-      tfPopulateSelects();
-      tfSetMode('global');
-
-      // State: live
-      if (icon)    icon.textContent = '↺';
-      if (loading) loading.style.display = 'none';
-      if (badge)   badge.style.display = '';
-      if (dot) { dot.classList.add('live'); dot.style.background = ''; dot.style.boxShadow = ''; }
-      if (lbl) lbl.textContent = 'Notion Live (' + TRADES.length + ' trades)';
-
-      render();
-    })
-    .catch(err => {
-      clearTimeout(timer);
-      console.warn('[Dashboard] Notion Live failed:', err.message);
-      // State: error — reset tab
-      if (icon)    icon.textContent = '↺';
-      if (loading) loading.style.display = 'none';
-      if (dot) { dot.style.background = 'var(--r)'; dot.style.boxShadow = 'none'; }
-      if (lbl) lbl.textContent = 'Notion indisponible';
-      if (tab)     tab.classList.remove('active');
-      if (tabMain) tabMain.classList.add('active');
-    });
-}
-
 function switchView(v) {
   currentView = v;
 }
