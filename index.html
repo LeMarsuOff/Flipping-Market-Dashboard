@@ -789,6 +789,9 @@ body {
   gap: 8px;
 }
 .bar-row.sm { grid-template-columns: 88px 1fr 62px }
+.bar-row.obs {
+  grid-template-columns: 130px 1fr 62px;
+}
 .bar-label {
   font-size: 11px;
   color: var(--body);
@@ -796,6 +799,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: right;
+}
+.bar-row.obs .bar-label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  word-break: break-word;
+  line-height: 1.3;
 }
 .bar-track {
   height: 12px;
@@ -1337,6 +1347,17 @@ thead th.sort-active .th-arrow { opacity: 1; }
 thead th.r { text-align: right }
 tbody tr { border-bottom: 1px solid var(--line); transition: background .08s }
 tbody tr:hover { background: rgba(255,255,255,.015) }
+.tt-day-sep td {
+  padding: 2px 8px 2px 8px;
+  background: var(--bg2);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-family: 'DM Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: .6px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
 tbody tr:last-child { border-bottom: none }
 td { padding: 6px 11px; vertical-align: middle }
 td.r { text-align: right; font-family:'DM Mono',monospace; font-size:10.5px }
@@ -3714,10 +3735,10 @@ async function loadFromAPI() {
     if (_csvFormat === 'beginner') {
       _csvFormat = null;
       requestAnimationFrame(() => {
-        if (typeof applyLayout !== 'function') return;
+        if (typeof _applySerializedLayout !== 'function') return;
         const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
         const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
-        applyLayout(savedLayout || DEFAULT_LAYOUT);
+        _applySerializedLayout(savedLayout || DEFAULT_LAYOUT);
       });
     }
     _csvFormat = null;
@@ -4743,8 +4764,8 @@ function renderObsBars(trades) {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
     const col = getC(val);
-    return `<div class="bar-row sm">
-      <div class="bar-label" title="${d.label}" style="font-size:11px">${d.label}</div>
+    return `<div class="bar-row obs">
+      <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
       <div class="bar-val" style="color:${col}">${val >= 0 ? '+' : ''}${val.toFixed(decimals)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
     </div>`;
@@ -4792,8 +4813,8 @@ function renderH4ObsBars(trades) {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
     const col = getC(val);
-    return `<div class="bar-row sm">
-      <div class="bar-label" title="${d.label}" style="font-size:11px">${d.label}</div>
+    return `<div class="bar-row obs">
+      <div class="bar-label" title="${d.label}" >${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
       <div class="bar-val" style="color:${col}">${val >= 0 ? '+' : ''}${val.toFixed(decimals)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
     </div>`;
@@ -6424,13 +6445,21 @@ function renderTable(trades) {
 
   const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl' };
   const rowBg = { 'TP': 'rgba(110,224,180,.25)', 'SL': 'rgba(224,90,114,.27)', 'BE-TP': 'rgba(245,200,66,.22)', 'BE-SL': 'rgba(180,120,240,.22)' };
+  // Group by date — insert day separator row between dates
+  let lastDate = null;
   tbody.innerHTML = sorted.map(t => {
     const dir = t.direction || '';
     const dirCol = dir === 'Achat' ? 'var(--g)' : dir === 'Vente' ? 'var(--r)' : 'var(--dim)';
     const dirHtml = dir
       ? `<span style="font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.5px;color:${dirCol}">${dir.toUpperCase()}</span>`
       : '<span style="color:var(--dim)">—</span>';
-    return `
+    let sep = '';
+    if (t.date !== lastDate) {
+      const dayLabel = t.day ? `${t.date} · ${DAY_EN[t.day] || t.day}` : (t.date || '—');
+      sep = `<tr class="tt-day-sep"><td colspan="9">${dayLabel}</td></tr>`;
+      lastDate = t.date;
+    }
+    return sep + `
     <tr style="background:${rowBg[t.outcome] || ''}">
       <td class="mono">${t.date || '—'}</td>
       <td><strong style="color:var(--white);font-size:12px">${t.pair}</strong></td>
@@ -6995,13 +7024,13 @@ function injectParsedTrades(parsed, filename, csvFormat) {
 
   // Apply format-specific layout after render (applyLayout defined later in script)
   requestAnimationFrame(() => {
-    if (typeof applyLayout !== 'function') return;
+    if (typeof _applySerializedLayout !== 'function') return;
     if (csvFormat === 'beginner') {
-      applyLayout(BEGINNER_LAYOUT);
+      _applySerializedLayout(BEGINNER_LAYOUT);
     } else {
       const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
       const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
-      applyLayout(savedLayout || DEFAULT_LAYOUT);
+      _applySerializedLayout(savedLayout || DEFAULT_LAYOUT);
     }
   });
   setTimeout(closeCsvOverlay, 1200);
@@ -7807,20 +7836,20 @@ const ROW_HEIGHT_PX  = 10;   // 1 grid unit = 10px
 
 // ── Default layout: 14 widgets ──
 const DEFAULT_LAYOUT = {
-  'w-stats':     { x:0,  y:0,   w:12, h:19, minW:4, minH:12 },
-  'w-equity':    { x:0,  y:19,  w:12, h:39, minW:4, minH:16 },
-  'w-outcome':   { x:7,  y:58,  w:5,  h:31, minW:3, minH:14 },
-  'w-selection': { x:0,  y:58,  w:7,  h:43, minW:4, minH:14 },
-  'w-sequence':  { x:7,  y:89,  w:5,  h:12, minW:3, minH:12 },
-  'w-monthly':   { x:0,  y:101, w:12, h:47, minW:4, minH:16 },
-  'w-setup':     { x:0,  y:148, w:5,  h:30, minW:2, minH:14 },
-  'w-session':   { x:5,  y:148, w:4,  h:30, minW:2, minH:14 },
-  'w-day':       { x:9,  y:148, w:3,  h:30, minW:2, minH:14 },
-  'w-heatmap':   { x:0,  y:178, w:12, h:25, minW:4, minH:14 },
-  'w-pair':      { x:0,  y:203, w:6,  h:33, minW:2, minH:14 },
-  'w-m15':       { x:0,  y:236, w:12, h:52, minW:3, minH:14 },
-  'w-h4':        { x:0,  y:288, w:12, h:44, minW:3, minH:14 },
-  'w-tradelog':  { x:0,  y:332, w:12, h:30, minW:4, minH:16 },
+  'w-equity': {x:0, y:19, w:9, h:46, minW:4, minH:16},
+  'w-outcome': {x:9, y:19, w:3, h:30, minW:3, minH:14},
+  'w-sequence': {x:9, y:49, w:3, h:16, minW:3, minH:12},
+  'w-selection': {x:0, y:65, w:7, h:43, minW:4, minH:14},
+  'w-stats': {x:0, y:0, w:12, h:19, minW:4, minH:12},
+  'w-monthly': {x:7, y:65, w:5, h:43, minW:4, minH:16},
+  'w-setup': {x:0, y:108, w:4, h:31, minW:2, minH:14},
+  'w-session': {x:8, y:108, w:4, h:31, minW:2, minH:14},
+  'w-day': {x:4, y:108, w:4, h:31, minW:2, minH:14},
+  'w-pair': {x:0, y:139, w:4, h:37, minW:2, minH:14},
+  'w-heatmap': {x:4, y:139, w:8, h:37, minW:4, minH:14},
+  'w-m15': {x:6, y:176, w:6, h:73, minW:3, minH:14},
+  'w-h4': {x:0, y:176, w:6, h:73, minW:3, minH:14},
+  'w-tradelog': {x:0, y:249, w:12, h:45, minW:4, minH:16},
 };
 
 const BEGINNER_LAYOUT = {"w-equity":{"x":0,"y":17,"w":9,"h":40},"w-outcome":{"x":9,"y":17,"w":3,"h":27},"w-sequence":{"x":9,"y":44,"w":3,"h":13},"w-selection":{"x":0,"y":57,"w":6,"h":43},"w-stats":{"x":0,"y":0,"w":12,"h":17},"w-monthly":{"x":6,"y":57,"w":6,"h":43},"w-setup":{"x":0,"y":100,"w":5,"h":31},"w-session":{"x":5,"y":259,"w":4,"h":30},"w-day":{"x":5,"y":100,"w":3,"h":31},"w-pair":{"x":8,"y":100,"w":4,"h":31},"w-heatmap":{"x":0,"y":342,"w":12,"h":25},"w-m15":{"x":0,"y":131,"w":12,"h":63},"w-h4":{"x":0,"y":289,"w":12,"h":53},"w-tradelog":{"x":0,"y":194,"w":12,"h":65}};
