@@ -2888,7 +2888,16 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
     </label>
     <div class="csv-status" id="csv-status"></div>
     <div class="csv-format-hint">
-      <strong style="color:var(--g)">2 formats supportés — détection automatique</strong><br><br>
+      <strong style="color:var(--g)">3 formats supportés — détection automatique</strong><br><br>
+      <strong style="color:var(--body)">① Flipping Market M15</strong> (format principal)<br>
+      Colonnes clés : <code>Résultat TP 1</code> · <code>RR TP 1</code> · <code>M15 Type</code> · <code>Obstacles M15</code> · <code>Actif</code> · <code>Session</code> · <code>Jour</code><br>
+      Exclusions auto : trades <code>Invalide</code> et <code>Bad feeling = Yes</code><br><br>
+      <strong style="color:var(--body)">② Flipping Market M15 — Pro Template</strong><br>
+      Colonnes clés : <code>Position Result</code> · <code>RR TP 1</code> · <code>M15 Confirmation / Continu</code> · <code>M15 Obstacles</code> · <code>Pair</code> · <code>Session</code> · <code>Day</code><br>
+      Exclusions auto : trades <code>Bad feeling = Yes</code><br><br>
+      <strong style="color:var(--body)">③ Flipping Market M15 — Beginner</strong><br>
+      Colonnes clés : <code>Pair</code> · <code>Position Result</code> · <code>RR TP 1</code> · <code>Date</code><br>
+      Exclusions auto : trades <code>Invalid</code> et résultat <code>.</code</strong><br><br>
       <strong style="color:var(--body)">① Flipping Market M15</strong> (format principal)<br>
       Colonnes clés : <code>Résultat TP 1</code> · <code>RR TP 1</code> · <code>M15 Type</code> · <code>Obstacles M15</code> · <code>Actif</code> · <code>Session</code> · <code>Jour</code><br>
       Exclusions auto : trades <code>Invalide</code> et <code>Bad feeling = Yes</code><br><br>
@@ -3553,7 +3562,7 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
 </div>
 
 <script>
-const RAW = []; // données chargées depuis API Vercel
+const RAW = [];
 // Map compact keys back to readable
 const TRADES = RAW.map(t => ({
   date:      t.d,
@@ -3596,10 +3605,6 @@ let activePreset = null;
 const state = { m15Exclude: [], h4Exclude: [], sessionExclude: [] };
 let TOTAL_OVERRIDE = null;
 
-// ══════════════════════════════════════════════════════
-// API VERCEL — chargement automatique au démarrage
-// URL: https://notion-dashboard-api-2.vercel.app/api/trades
-// ══════════════════════════════════════════════════════
 const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
 
 async function loadFromAPI() {
@@ -3608,16 +3613,13 @@ async function loadFromAPI() {
   try {
     if (dot) { dot.style.background = 'var(--gold)'; dot.style.boxShadow = '0 0 8px var(--gold)'; }
     if (lbl) lbl.textContent = 'Chargement API Vercel\u2026';
-
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20000);
     const resp = await fetch(API_URL, { signal: controller.signal });
     clearTimeout(timer);
-
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const json = await resp.json();
     if (!json.trades || !json.trades.length) throw new Error('Aucun trade re\xe7u');
-
     const parsed = json.trades.map(t => {
       const oc = _mapOutcome(t.resultatTp1);
       if (!oc) return null;
@@ -3637,20 +3639,16 @@ async function loadFromAPI() {
         direction: t.order           || '',
       };
     }).filter(Boolean);
-
     TRADES.length = 0;
     parsed.forEach(t => TRADES.push(t));
     TOTAL_OVERRIDE = TRADES.length;
-
     rebuildDimensions();
     tfPopulateSelects();
     tfSetMode('global');
-
     if (dot) { dot.classList.add('live'); dot.style.background = ''; dot.style.boxShadow = ''; }
     if (lbl) lbl.textContent = 'API Vercel (' + TRADES.length + ' trades)';
     console.log('[Dashboard] Loaded', TRADES.length, 'trades from Vercel API');
     render();
-
   } catch (err) {
     console.warn('[Dashboard] API load failed:', err.message);
     if (dot) { dot.style.background = 'var(--r)'; dot.style.boxShadow = 'none'; }
@@ -3658,7 +3656,6 @@ async function loadFromAPI() {
     render();
   }
 }
-
 function _parseObstacles(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val.filter(Boolean);
@@ -3668,22 +3665,15 @@ function _parseObstacles(val) {
   }
   return [];
 }
-
 function _normalizeSession(s) {
   if (!s) return '';
   const map = {
-    'asian':           'Asian',
-    'london':          'London',
-    'lunch time zone': 'Lunch Time Zone',
-    'new-york':        'New-York',
-    'new york':        'New-York',
-    'hors session':    'Hors Session',
-    "no man's land":   "No Man's Land",
-    'no mans land':    "No Man's Land",
+    'asian':'Asian','london':'London','lunch time zone':'Lunch Time Zone',
+    'new-york':'New-York','new york':'New-York','hors session':'Hors Session',
+    "no man's land":"No Man's Land",'no mans land':"No Man's Land",
   };
   return map[s.toLowerCase().trim()] || s;
 }
-
 function _mapOutcome(resultat) {
   if (!resultat) return null;
   const r = resultat.toLowerCase().trim();
@@ -3693,7 +3683,6 @@ function _mapOutcome(resultat) {
   if (r === 'be - sl' || r === 'be-sl')  return 'BE-SL';
   return null;
 }
-
 function _mapR(oc, rrTp1) {
   if (oc === 'TP')    return (typeof rrTp1 === 'number' && rrTp1 > 0) ? rrTp1 : 2.4;
   if (oc === 'SL')    return -1.0;
@@ -6671,20 +6660,21 @@ function processCsvText(text, filename) {
     // ── Detect format ──
     const isFlippingMarket = text.includes('Résultat TP 1') || text.includes('Resultat TP 1') || (text.includes('M15 Type') && text.includes('Obstacles M15'));
     const isProTemplate    = !isFlippingMarket && (text.includes('Position Result') && text.includes('M15 Confirmation'));
+    const isBeginner       = !isFlippingMarket && !isProTemplate && text.includes('Position Result') && text.includes('Position Type');
 
-    if (!isFlippingMarket && !isProTemplate) {
-      csvStatus('⚠ Format non reconnu — importez un fichier Flipping Market M15 ou Pro Template', 'err');
+    if (!isFlippingMarket && !isProTemplate && !isBeginner) {
+      csvStatus('⚠ Format non reconnu — importez un fichier Flipping Market M15, Pro Template ou Beginner', 'err');
       return;
     }
 
-    const result = isFlippingMarket ? parseFlippingMarketCSV(text) : parseProTemplateCSV(text);
+    const result = isFlippingMarket ? parseFlippingMarketCSV(text) : isProTemplate ? parseProTemplateCSV(text) : parseBeginnerCSV(text);
 
     if (!result.ok) {
       csvStatus(result.error, 'err');
       return;
     }
     const { trades, warnings } = result;
-    const fmt = isFlippingMarket ? ' [Flipping Market M15]' : ' [Pro Template]';
+    const fmt = isFlippingMarket ? ' [Flipping Market M15]' : isProTemplate ? ' [Pro Template]' : ' [Beginner]';
     if (warnings.length) {
       csvStatus(`✓ ${trades.length} trades importés${fmt} — ${warnings.length} avertissement(s)`, 'ok');
     } else {
@@ -6965,6 +6955,98 @@ function parseProTemplateCSV(text) {
   }
 
   if (skipped > 0) warnings.push(`${skipped} trades ignorés (Bad feeling)`);
+  if (trades.length === 0) return { ok: false, error: '⚠ Aucun trade valide trouvé' };
+
+  return { ok: true, trades, warnings };
+}
+
+
+// ── Flipping Market M15 Beginner CSV parser ──
+function parseBeginnerCSV(text) {
+  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return { ok: false, error: '⚠ Fichier vide' };
+
+  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, '').replace(/^\uFEFF/, ''));
+
+  const col = name => {
+    const idx = headers.findIndex(h => h.trim().toLowerCase() === name.trim().toLowerCase());
+    return idx;
+  };
+
+  const iPair    = col('pair'); // 'Pair ' with trailing space handled by trim
+  const iResult  = col('position result');
+  const iType    = col('position type');
+  const iDate    = col('date');
+  const iRR      = col('rr tp 1');
+
+  if (iResult === -1 || iPair === -1) {
+    return { ok: false, error: '⚠ Colonnes Beginner introuvables (Pair, Position Result)' };
+  }
+
+  const MONTH_MAP = {
+    january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
+    july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
+  };
+
+  const parseDate = raw => {
+    if (!raw) return '';
+    const m = raw.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/i);
+    if (m) {
+      const mo = MONTH_MAP[m[1].toLowerCase()] || '01';
+      return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
+    }
+    return raw.slice(0,10);
+  };
+
+  const OUTCOME_MAP = {
+    'take profit': 'TP', 'stop loss': 'SL',
+    'be - tp': 'BE-TP', 'be - sl': 'BE-SL',
+  };
+
+  const trades   = [];
+  const warnings = [];
+  let skipped    = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const cols = splitCsvLine(line, ',');
+    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
+
+    // Skip Invalid position types and '.' results
+    const typeVal   = get(iType).toLowerCase();
+    const resultVal = get(iResult).trim();
+    if (typeVal === 'invalid') { skipped++; continue; }
+    if (resultVal === '.' || resultVal === '') { skipped++; continue; }
+
+    const outcome = OUTCOME_MAP[resultVal.toLowerCase().trim()];
+    if (!outcome) { skipped++; continue; }
+
+    const rrRaw = get(iRR).replace(',', '.');
+    const rVal  = parseFloat(rrRaw);
+    const r     = isNaN(rVal) ? (outcome === 'TP' || outcome === 'BE-TP' ? 2.4 : -1.0) : rVal;
+
+    const date  = parseDate(get(iDate));
+    if (!date || date.length < 7) { skipped++; continue; }
+
+    trades.push({
+      date,
+      month:     date.slice(0, 7),
+      pair:      get(iPair).trim() || 'UNKNOWN',
+      setup:     '',
+      session:   '',
+      day:       '',
+      obstacles: [],
+      h4:        [],
+      outcome,
+      r,
+      direction: '',
+    });
+  }
+
+  if (skipped > 0) warnings.push(`${skipped} trades ignorés (Invalid ou résultat vide)`);
   if (trades.length === 0) return { ok: false, error: '⚠ Aucun trade valide trouvé' };
 
   return { ok: true, trades, warnings };
@@ -7538,7 +7620,7 @@ window.addEventListener('load', () => {
   tfInit();
 
   initPresetOverrides();
-  loadFromAPI(); // ← API Vercel
+  loadFromAPI();
   // Show comparison UI if compare is active
   tfUpdateCompareUI();
 
