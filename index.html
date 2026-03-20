@@ -789,9 +789,6 @@ body {
   gap: 8px;
 }
 .bar-row.sm { grid-template-columns: 88px 1fr 62px }
-.bar-row.obs {
-  grid-template-columns: 130px 1fr 62px;
-}
 .bar-label {
   font-size: 11px;
   color: var(--body);
@@ -799,13 +796,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: right;
-}
-.bar-row.obs .bar-label {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: unset;
-  word-break: break-word;
-  line-height: 1.3;
 }
 .bar-track {
   height: 12px;
@@ -1347,17 +1337,6 @@ thead th.sort-active .th-arrow { opacity: 1; }
 thead th.r { text-align: right }
 tbody tr { border-bottom: 1px solid var(--line); transition: background .08s }
 tbody tr:hover { background: rgba(255,255,255,.015) }
-.tt-day-sep td {
-  padding: 2px 8px 2px 8px;
-  background: var(--bg2);
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  font-family: 'DM Mono', monospace;
-  font-size: 9.5px;
-  letter-spacing: .6px;
-  color: var(--dim);
-  text-transform: uppercase;
-}
 tbody tr:last-child { border-bottom: none }
 td { padding: 6px 11px; vertical-align: middle }
 td.r { text-align: right; font-family:'DM Mono',monospace; font-size:10.5px }
@@ -2862,14 +2841,6 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       </div>
     </div>
 
-    <!-- Monthly P&L -->
-    <div class="mob-card">
-      <div class="mob-card-title">Monthly P&L</div>
-      <div style="padding:8px 10px 12px;position:relative;height:200px">
-        <canvas id="mobMonthlyCanvas2"></canvas>
-      </div>
-    </div>
-
     <!-- Heatmap -->
     <div class="mob-card">
       <div class="mob-card-title">Heatmap — Session × Jour</div>
@@ -2886,26 +2857,12 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       </div>
     </div>
 
-    <!-- Setup Performance -->
-    <div class="mob-card" id="mob-card-setup">
-      <div class="mob-card-title">Setup Performance</div>
-      <div style="padding:8px 10px 12px;position:relative;height:240px">
-        <canvas id="mobSetupCanvas"></canvas>
-      </div>
-    </div>
-
     <!-- M15 Obstacles -->
     <div class="mob-card">
       <div class="mob-card-title">M15 Obstacles</div>
       <div style="padding:8px 10px 12px;position:relative;height:280px">
         <canvas id="mobObsCanvas"></canvas>
       </div>
-    </div>
-
-    <!-- Trade Log -->
-    <div class="mob-card" id="mob-card-tradelog">
-      <div class="mob-card-title">Trade Log</div>
-      <div id="mob-tradelog-wrap" style="overflow-x:auto;padding:0 4px 8px"></div>
     </div>
 
   </div><!-- /mob-body -->
@@ -2931,7 +2888,16 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
     </label>
     <div class="csv-status" id="csv-status"></div>
     <div class="csv-format-hint">
-      <strong style="color:var(--g)">2 formats supportés — détection automatique</strong><br><br>
+      <strong style="color:var(--g)">3 formats supportés — détection automatique</strong><br><br>
+      <strong style="color:var(--body)">① Flipping Market M15</strong> (journal principal)<br>
+      Colonnes clés : <code>Résultat TP 1</code> · <code>RR TP 1</code> · <code>M15 Type</code> · <code>Obstacles M15</code> · <code>Pair</code> · <code>Session</code> · <code>Jour</code><br>
+      Exclusions auto : <code>Bad feeling = Yes</code><br><br>
+      <strong style="color:var(--body)">② Pro Template</strong><br>
+      Colonnes clés : <code>Position Result</code> · <code>H4 Obstacles</code> · <code>Session</code> · <code>M15 Confirmation / Continu</code><br>
+      Exclusions auto : <code>Bad feeling = Yes</code><br><br>
+      <strong style="color:var(--body)">③ Beginner</strong><br>
+      Colonnes clés : <code>Position Result</code> · <code>RR TP 1</code> · <code>Pair</code> · <code>Date</code><br>
+      Exclusions auto : <code>Bad feeling = Yes</code> · résultat <code>.</code</strong><br><br>
       <strong style="color:var(--body)">① Flipping Market M15</strong> (format principal)<br>
       Colonnes clés : <code>Résultat TP 1</code> · <code>RR TP 1</code> · <code>M15 Type</code> · <code>Obstacles M15</code> · <code>Actif</code> · <code>Session</code> · <code>Jour</code><br>
       Exclusions auto : trades <code>Invalide</code> et <code>Bad feeling = Yes</code><br><br>
@@ -3650,8 +3616,12 @@ let TOTAL_OVERRIDE = null;
 const _MONTH_MAP = {
   january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
   july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
+  janvier:'01','f\u00e9vrier':'02',mars:'03',avril:'04',mai:'05',juin:'06',
+  juillet:'07','ao\u00fbt':'08',aout:'08',septembre:'09',octobre:'10',novembre:'11','d\u00e9cembre':'12',
 };
-const _OUTCOME_MAP = {'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL'};
+const _OUTCOME_MAP = {
+  'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL',
+};
 const _SESSION_MAP = {
   'asian kz':'Asian','asian':'Asian',
   'london kz':'London','london':'London',
@@ -3667,7 +3637,7 @@ const _DAY_MAP = {
 function _parseDate(raw) {
   if (!raw) return '';
   const m = raw.match(/^([A-Za-z\u00e0-\u00ff]+)\s+(\d{1,2}),?\s+(\d{4})/i);
-  if (m) { const mo = _MONTH_MAP[m[1].toLowerCase()]||'01'; return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`; }
+  if (m) { const mo=_MONTH_MAP[m[1].toLowerCase()]||'01'; return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`; }
   const d = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (d) return `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}`;
   return raw.slice(0,10);
@@ -3675,12 +3645,15 @@ function _parseDate(raw) {
 function _parseObs(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.filter(Boolean);
-  if (typeof raw !== 'string' || raw==='/'||raw==='-'||raw===''||raw==='.') return [];
-  return raw.split(',').map(s=>s.trim()).filter(s=>s&&s!=='/'&&s!=='-');
+  if (typeof raw==='string') {
+    if (raw==='/'||raw==='-'||raw===''||raw==='.') return [];
+    return raw.split(',').map(s=>s.trim()).filter(s=>s&&s!=='/'&&s!=='-'&&s!=='.');
+  }
+  return [];
 }
 function _mapOutcome(raw) { return _OUTCOME_MAP[(raw||'').toLowerCase().trim()]||null; }
 function _mapR(oc, rrRaw) {
-  const rr = parseFloat(String(rrRaw||'').replace(',','.'));
+  const rr=parseFloat(String(rrRaw||'').replace(',','.'));
   if (oc==='TP')    return (!isNaN(rr)&&rr>0)?rr:2.4;
   if (oc==='SL')    return -1.0;
   if (oc==='BE-TP') return (!isNaN(rr)&&rr>0)?rr:2.4;
@@ -3690,21 +3663,8 @@ function _mapR(oc, rrRaw) {
 function _normSession(s) { return _SESSION_MAP[(s||'').toLowerCase().trim()]||s||''; }
 function _normDay(s)     { return _DAY_MAP[(s||'').toLowerCase().trim()]||s||''; }
 function _isBadFeeling(v){ return (v||'').toLowerCase().trim()==='yes'; }
-function _colLast(headers, name) {
-  let last=-1;
-  headers.forEach((h,i)=>{ if(h.trim().toLowerCase()===name.toLowerCase()) last=i; });
-  return last;
-}
-function _colFirst(headers, name) {
-  return headers.findIndex(h=>h.trim().toLowerCase()===name.toLowerCase());
-}
-function _colAny(headers, ...names) {
-  for (const name of names) {
-    const i = _colFirst(headers, name);
-    if (i >= 0) return i;
-  }
-  return -1;
-}
+function _colLast(headers,name)  { let l=-1; headers.forEach((h,i)=>{if(h.trim().toLowerCase()===name.toLowerCase())l=i;}); return l; }
+function _colFirst(headers,name) { return headers.findIndex(h=>h.trim().toLowerCase()===name.toLowerCase()); }
 
 
 const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
@@ -3712,11 +3672,8 @@ const API_URL = 'https://notion-dashboard-api-2.vercel.app/api/trades';
 function switchToAPI() {
   const icon=document.getElementById('tab-api-icon'),badge=document.getElementById('tab-api-badge');
   const loading=document.getElementById('tab-api-loading'),tab=document.getElementById('tab-api'),tabMain=document.getElementById('tab-main');
-  if(icon) icon.textContent='\u27f3';
-  if(badge) badge.style.display='none';
-  if(loading) loading.style.display='';
-  if(tab) tab.classList.add('active');
-  if(tabMain) tabMain.classList.remove('active');
+  if(icon)icon.textContent='\u27f3'; if(badge)badge.style.display='none'; if(loading)loading.style.display='';
+  if(tab)tab.classList.add('active'); if(tabMain)tabMain.classList.remove('active');
   loadFromAPI();
 }
 
@@ -3726,60 +3683,34 @@ async function loadFromAPI() {
   const loading=document.getElementById('tab-api-loading'),tab=document.getElementById('tab-api'),tabMain=document.getElementById('tab-main');
   try {
     if(dot){dot.style.background='var(--gold)';dot.style.boxShadow='0 0 8px var(--gold)';}
-    if(lbl) lbl.textContent='Chargement API Vercel\u2026';
-    if(loading) loading.style.display='';
-    if(badge)   badge.style.display='none';
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),20000);
-    const resp=await fetch(API_URL,{signal:controller.signal});
-    clearTimeout(timer);
+    if(lbl)lbl.textContent='Chargement API Vercel\u2026';
+    if(loading)loading.style.display=''; if(badge)badge.style.display='none';
+    const ctrl=new AbortController(), timer=setTimeout(()=>ctrl.abort(),20000);
+    const resp=await fetch(API_URL,{signal:ctrl.signal}); clearTimeout(timer);
     if(!resp.ok) throw new Error('HTTP '+resp.status);
     const json=await resp.json();
     if(!json.trades||!json.trades.length) throw new Error('Aucun trade');
     const parsed=json.trades.map(t=>{
-      const oc=_mapOutcome(t.resultatTp1);
-      if(!oc) return null;
-      const dateRaw=(t.date||'').slice(0,10);
-      if(!dateRaw||dateRaw.length<7) return null;
-      return {
-        date:dateRaw,month:dateRaw.slice(0,7),
-        pair:t.pair||'',setup:t.m15Type||t.confirmation||'',
-        session:_normSession(t.session||t.sessionFormule||''),
-        day:t.jour||'',
-        obstacles:_parseObs(t.obstaclesM15),
-        h4:_parseObs(t.obstaclesH4),
-        outcome:oc,r:_mapR(oc,t.rrTp1),direction:t.order||'',
-      };
+      const oc=_mapOutcome(t.resultatTp1); if(!oc) return null;
+      const dr=(t.date||'').slice(0,10); if(!dr||dr.length<7) return null;
+      return {date:dr,month:dr.slice(0,7),pair:t.pair||'',setup:t.m15Type||t.confirmation||'',
+        session:_normSession(t.session||t.sessionFormule||''),day:t.jour||'',
+        obstacles:_parseObs(t.obstaclesM15),h4:_parseObs(t.obstaclesH4),
+        outcome:oc,r:_mapR(oc,t.rrTp1),direction:t.order||''};
     }).filter(Boolean);
-    TRADES.length=0; parsed.filter(t=>t.pair&&t.pair.trim()).forEach(t=>TRADES.push(t)); TOTAL_OVERRIDE=TRADES.length;
+    TRADES.length=0; parsed.forEach(t=>TRADES.push(t)); TOTAL_OVERRIDE=TRADES.length;
     rebuildDimensions(); tfPopulateSelects(); tfSetMode('global');
-    // Restore layout when coming back from Beginner CSV
-    if (_csvFormat === 'beginner') {
-      _csvFormat = null;
-      requestAnimationFrame(() => {
-        if (typeof _applySerializedLayout !== 'function') return;
-        const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
-        const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
-        _applySerializedLayout(savedLayout || DEFAULT_LAYOUT);
-      });
-    }
-    _csvFormat = null;
     if(dot){dot.classList.add('live');dot.style.background='';dot.style.boxShadow='';}
-    if(lbl) lbl.textContent='Notion Live ('+TRADES.length+' trades)';
-    if(icon) icon.textContent='\u21ba';
-    if(loading) loading.style.display='none';
-    if(badge)   badge.style.display='';
-    if(tab)     tab.classList.add('active');
-    if(tabMain) tabMain.classList.remove('active');
+    if(lbl)lbl.textContent='Notion Live ('+TRADES.length+' trades)';
+    if(icon)icon.textContent='\u21ba'; if(loading)loading.style.display='none'; if(badge)badge.style.display='';
+    if(tab)tab.classList.add('active'); if(tabMain)tabMain.classList.remove('active');
     render();
   } catch(err) {
     console.warn('[Dashboard] API failed:',err.message);
     if(dot){dot.style.background='var(--r)';dot.style.boxShadow='none';}
-    if(lbl) lbl.textContent='API indisponible';
-    if(icon) icon.textContent='\u21ba';
-    if(loading) loading.style.display='none';
-    if(tab)     tab.classList.remove('active');
-    if(tabMain) tabMain.classList.add('active');
+    if(lbl)lbl.textContent='API indisponible';
+    if(icon)icon.textContent='\u21ba'; if(loading)loading.style.display='none';
+    if(tab)tab.classList.remove('active'); if(tabMain)tabMain.classList.add('active');
     render();
   }
 }
@@ -4210,7 +4141,7 @@ const PRESETS = [
   {
     id: 0,
     label: 'Raw Baseline',
-    be: false,
+    be: true,
     clear: true,
     // Only base exclusions — no additional obstacle/context filters
     m15Exclude: [],
@@ -4220,7 +4151,7 @@ const PRESETS = [
   {
     id: 1,
     label: 'LAB 1 — EV Optimised',
-    be: false,
+    be: true,
     // Base + H4 No-Volume removed (LAB 1 key finding)
     m15Exclude: ['Contre Order Flow'],
     h4Exclude: ['No-Volume'],
@@ -4229,7 +4160,7 @@ const PRESETS = [
   {
     id: 2,
     label: 'LAB 4 — Top Setups',
-    be: false,
+    be: true,
     m15Exclude: ['Contre Order Flow'],
     h4Exclude: ['No-Volume'],
     sessionExclude: [],
@@ -4239,7 +4170,7 @@ const PRESETS = [
   {
     id: 3,
     label: 'LAB 7 — Max Filter',
-    be: false,
+    be: true,
     m15Exclude: ['Contre Order Flow','Volume - 1st Candle'],
     h4Exclude: ['No-Volume'],
     sessionExclude: [],
@@ -4249,7 +4180,7 @@ const PRESETS = [
   {
     id: 4,
     label: 'Custom — No Filters',
-    be: false,
+    be: true,
     clear: true,
     // No exclusions at all — completely raw dataset
     m15Exclude: [],
@@ -4657,9 +4588,7 @@ function setBarMode(mode) {
   renderHeatmap(filtered);
   // Rerender mobile charts
   if (_isMobile()) {
-    drawMobileMonthly2(filtered);
     drawMobilePair(filtered);
-    drawMobileSetup(filtered);
     drawMobileObs(filtered);
     renderMobileHeatmap(filtered);
   }
@@ -4766,9 +4695,8 @@ function renderObsBars(trades) {
     });
   });
 
-  const obsKeys = [...new Set([...ALL_OBS, ...Object.keys(obsData)])];
-  let items = obsKeys
-    .filter(o => obsData[o] && obsData[o].length >= 1)
+  let items = ALL_OBS
+    .filter(o => obsData[o] && obsData[o].length >= 5)
     .map(o => {
       const rs = obsData[o];
       return { label: o, n: rs.length, ev: rs.reduce((s,r)=>s+r,0)/rs.length, totalR: rs.reduce((s,r)=>s+r,0) };
@@ -4788,8 +4716,8 @@ function renderObsBars(trades) {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
     const col = getC(val);
-    return `<div class="bar-row obs">
-      <div class="bar-label" title="${d.label}">${d.label}</div>
+    return `<div class="bar-row sm">
+      <div class="bar-label" title="${d.label}" style="font-size:11px">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
       <div class="bar-val" style="color:${col}">${val >= 0 ? '+' : ''}${val.toFixed(decimals)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
     </div>`;
@@ -4811,7 +4739,7 @@ function renderH4ObsBars(trades) {
   });
 
   let items = Object.entries(h4Data)
-    .filter(([, rs]) => rs.length >= 1)
+    .filter(([, rs]) => rs.length >= 5)
     .map(([tag, rs]) => ({
       label:  tag,
       n:      rs.length,
@@ -4822,7 +4750,7 @@ function renderH4ObsBars(trades) {
   items = sortItems(items, 'h4obs');
 
   if (!items.length) {
-    container.innerHTML = '<div class="no-data">No H4 obstacle data</div>';
+    container.innerHTML = '<div class="no-data">No H4 data (min 5 occurrences)</div>';
     return;
   }
 
@@ -4837,8 +4765,8 @@ function renderH4ObsBars(trades) {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
     const col = getC(val);
-    return `<div class="bar-row obs">
-      <div class="bar-label" title="${d.label}" >${d.label}</div>
+    return `<div class="bar-row sm">
+      <div class="bar-label" title="${d.label}" style="font-size:11px">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
       <div class="bar-val" style="color:${col}">${val >= 0 ? '+' : ''}${val.toFixed(decimals)}R<span style="color:var(--dim);font-size:9px"> ×${d.n}</span></div>
     </div>`;
@@ -6469,21 +6397,13 @@ function renderTable(trades) {
 
   const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl' };
   const rowBg = { 'TP': 'rgba(110,224,180,.25)', 'SL': 'rgba(224,90,114,.27)', 'BE-TP': 'rgba(245,200,66,.22)', 'BE-SL': 'rgba(180,120,240,.22)' };
-  // Group by date — insert day separator row between dates
-  let lastDate = null;
   tbody.innerHTML = sorted.map(t => {
     const dir = t.direction || '';
     const dirCol = dir === 'Achat' ? 'var(--g)' : dir === 'Vente' ? 'var(--r)' : 'var(--dim)';
     const dirHtml = dir
       ? `<span style="font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.5px;color:${dirCol}">${dir.toUpperCase()}</span>`
       : '<span style="color:var(--dim)">—</span>';
-    let sep = '';
-    if (t.date !== lastDate) {
-      const dayLabel = t.day ? `${t.date} · ${DAY_EN[t.day] || t.day}` : (t.date || '—');
-      sep = `<tr class="tt-day-sep"><td colspan="9">${dayLabel}</td></tr>`;
-      lastDate = t.date;
-    }
-    return sep + `
+    return `
     <tr style="background:${rowBg[t.outcome] || ''}">
       <td class="mono">${t.date || '—'}</td>
       <td><strong style="color:var(--white);font-size:12px">${t.pair}</strong></td>
@@ -6606,42 +6526,21 @@ function updateStatsWidget(stats) {
 
 function hideEmptyWidgets(trades) {
   if (!_grid) return;
-
-  const has = fn => trades.some(fn);
-  const rules = {
-    'w-setup':   has(t => t.setup    && t.setup.trim()),
-    'w-session': has(t => t.session  && t.session.trim()),
-    'w-day':     has(t => t.day      && t.day.trim()),
-    'w-heatmap': has(t => t.session  && t.session.trim()) && has(t => t.day && t.day.trim()),
-    'w-m15':     has(t => t.obstacles && t.obstacles.length > 0),
-    'w-h4':      has(t => t.h4       && t.h4.length > 0),
+  const has=fn=>trades.some(fn);
+  const rules={
+    'w-setup':   has(t=>t.setup&&t.setup.trim()),
+    'w-session': has(t=>t.session&&t.session.trim()),
+    'w-day':     has(t=>t.day&&t.day.trim()),
+    'w-heatmap': has(t=>t.session&&t.session.trim())&&has(t=>t.day&&t.day.trim()),
+    'w-m15':     has(t=>t.obstacles&&t.obstacles.length>0),
+    'w-h4':      has(t=>t.h4&&t.h4.length>0),
   };
-
-  // Step 1: show/hide items WITHOUT touching GridStack node positions
-  _grid.getGridItems().forEach(item => {
-    const id = item.getAttribute('gs-id');
-    if (!(id in rules)) return;
-    item.style.display = rules[id] ? '' : 'none';
+  _grid.getGridItems().forEach(item=>{
+    const id=item.getAttribute('gs-id');
+    if(!(id in rules)) return;
+    item.style.display=rules[id]?'':'none';
   });
-
-  // Step 2: after browser has applied display changes, compact the grid
-  setTimeout(() => {
-    if (!_grid) return;
-    // Remove hidden items temporarily from grid engine, compact, then restore
-    const hiddenNodes = [];
-    _grid.getGridItems().forEach(item => {
-      if (item.style.display === 'none' && item.gridstackNode) {
-        hiddenNodes.push({ item, node: { ...item.gridstackNode } });
-        _grid.removeWidget(item, false, false);
-      }
-    });
-    _grid.compact();
-    // Restore hidden items at their saved positions (off-screen)
-    hiddenNodes.forEach(({ item, node }) => {
-      _grid.makeWidget(item);
-      _grid.update(item, { x: node.x, y: node.y, w: node.w, h: node.h });
-    });
-  }, 50);
+  requestAnimationFrame(()=>{if(_grid){_grid.compact();}});
 }
 
 function render() {
@@ -6713,7 +6612,7 @@ function render() {
   if (_gsReady) hideEmptyWidgets(filtered);
 
   // Mobile view
-  if (_isMobile()) requestAnimationFrame(() => renderMobile());
+  if (_isMobile()) renderMobile();
 }
 
 // ══════════════════════════════════════════════════════
@@ -6806,10 +6705,18 @@ function handleCsvFile(file) {
 function processCsvText(text, filename) {
   try {
     // ── Detect format ──
-    const isFlippingMarket = text.includes('Résultat TP 1') || text.includes('Resultat TP 1') || (text.includes('M15 Type') && text.includes('Obstacles M15'));
-    const isProTemplate = !isFlippingMarket && text.includes('Position Result') && text.includes('H4 Obstacles') && text.includes('Session');
-    const isBeginner    = !isFlippingMarket && !isProTemplate && text.includes('Position Result');
-    if (!isFlippingMarket && !isProTemplate && !isBeginner) { csvStatus('⚠ Format non reconnu', 'err'); return; }
+    // Format 1 : journal principal (Résultat TP 1)
+    // Format 2 : Pro Template (Position Result + H4 Obstacles + Session)
+    // Format 3 : Beginner (Position Result uniquement)
+    const isFlippingMarket = text.includes('R\u00e9sultat TP 1') || text.includes('Resultat TP 1');
+    const isProTemplate    = !isFlippingMarket && text.includes('Position Result') && text.includes('H4 Obstacles') && text.includes('Session');
+    const isBeginner       = !isFlippingMarket && !isProTemplate && text.includes('Position Result');
+
+    if (!isFlippingMarket && !isProTemplate && !isBeginner) {
+      csvStatus('\u26a0 Format non reconnu \u2014 3 formats support\u00e9s : Flipping Market M15, Pro Template, Beginner', 'err');
+      return;
+    }
+
     const result = isFlippingMarket ? parseFlippingMarketCSV(text) : isProTemplate ? parseProTemplateCSV(text) : parseBeginnerCSV(text);
 
     if (!result.ok) {
@@ -6823,64 +6730,67 @@ function processCsvText(text, filename) {
     } else {
       csvStatus(`✓ ${trades.length} trades importés${fmt}`, 'ok');
     }
-    _csvFormat = isFlippingMarket ? 'flipping' : isProTemplate ? 'pro' : 'beginner';
-    injectParsedTrades(trades, filename, _csvFormat);
+    injectParsedTrades(trades, filename);
   } catch (err) {
     csvStatus('⚠ Erreur de parsing: ' + err.message, 'err');
   }
 }
 
-// ── Flipping Market M15 parser (journal principal + export Notion) ──
+// ── FORMAT 1 : Flipping Market M15 (journal principal) ──
 function parseFlippingMarketCSV(text) {
   const raw   = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
   const lines = raw.split('\n').filter(l=>l.trim());
   if (lines.length<2) return {ok:false,error:'\u26a0 Fichier vide'};
+
   const headers = splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
 
-  const iDate       = _colFirst(headers,'date');
-  const iPair       = _colAny(headers,'pair','actif');   // journal = 'Pair', ancien = 'Actif'
-  const iSetup      = _colFirst(headers,'m15 type');
-  const iSession    = _colFirst(headers,'session');
-  const iJour       = _colFirst(headers,'jour');
-  const iResultat   = _colAny(headers,'résultat tp 1','resultat tp 1');
-  const iRR         = _colFirst(headers,'rr tp 1');
-  const iObsM15     = _colFirst(headers,'obstacles m15');
-  const iObsH4      = _colFirst(headers,'obstacles h4');
-  const iType       = _colFirst(headers,'type de trade');
-  const iBadFeeling = _colFirst(headers,'bad feeling');
-  const iOrdre      = _colAny(headers,'ordre','order');  // journal = 'Order', ancien = 'Ordre'
+  const iResult  = _colFirst(headers,'r\u00e9sultat tp 1') !== -1 ? _colFirst(headers,'r\u00e9sultat tp 1') : _colFirst(headers,'resultat tp 1');
+  const iRR      = _colFirst(headers,'rr tp 1');
+  // Pair: try 'Pair' first (journal), fallback to 'Actif' (old format)
+  const iPair    = _colFirst(headers,'pair') !== -1 ? _colFirst(headers,'pair') : _colFirst(headers,'actif');
+  const iSetup   = _colFirst(headers,'m15 type');
+  const iSession = _colFirst(headers,'session');
+  const iDay     = _colFirst(headers,'jour');
+  const iObsM15  = _colFirst(headers,'obstacles m15');
+  const iObsH4   = _colFirst(headers,'obstacles h4');
+  const iType    = _colFirst(headers,'type de trade');
+  const iBad     = _colFirst(headers,'bad feeling');
+  const iDate    = _colFirst(headers,'date');
+  const iOrder   = _colFirst(headers,'order') !== -1 ? _colFirst(headers,'order') : _colFirst(headers,'ordre');
 
-  if (iResultat===-1||iRR===-1) return {ok:false,error:'\u26a0 Colonnes Flipping Market introuvables (Résultat TP 1, RR TP 1)'};
+  if (iResult===-1||iRR===-1) return {ok:false,error:'\u26a0 Colonnes journal introuvables (R\u00e9sultat TP 1, RR TP 1)'};
 
   const trades=[],warnings=[];
   let skipped=0;
 
   for (let i=1;i<lines.length;i++) {
-    const line=lines[i].trim(); if(!line) continue;
-    const cols=splitCsvLine(line,',');
+    const cols=splitCsvLine(lines[i],',');
     const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
 
-    const typeVal=(get(iType)||'').toLowerCase();
-    if (typeVal.includes('invalide')){skipped++;continue;}
-    if (_isBadFeeling(get(iBadFeeling))){skipped++;continue;}
+    // Exclusions
+    if (_isBadFeeling(get(iBad)))                       { skipped++; continue; }
+    if (iType>=0&&get(iType).toLowerCase().includes('invalide')) { skipped++; continue; }
 
-    const outcome=_mapOutcome(get(iResultat));
-    if (!outcome){skipped++;continue;}
+    const outcome=_mapOutcome(get(iResult));
+    if (!outcome) { skipped++; continue; }
+
+    const rRaw=parseFloat(get(iRR).replace(',','.'));
+    const r=isNaN(rRaw)?_mapR(outcome,null):rRaw;
 
     const date=_parseDate(get(iDate));
-    if (!date||date.length<7){skipped++;continue;}
+    if (!date||date.length<7) { skipped++; continue; }
 
     trades.push({
       date, month:date.slice(0,7),
-      pair:      get(iPair)|| '',
-      setup:     get(iSetup)||'',
+      pair:      get(iPair)||'UNKNOWN',
+      setup:     get(iSetup),
       session:   _normSession(get(iSession)),
-      day:       get(iJour)||'',             // already French in journal
+      day:       get(iDay)||'',   // already French in this format
       obstacles: _parseObs(get(iObsM15)),
       h4:        _parseObs(get(iObsH4)),
       outcome,
-      r:         _mapR(outcome, get(iRR)),
-      direction: get(iOrdre)||'',
+      r,
+      direction: get(iOrder),
     });
   }
 
@@ -6890,93 +6800,390 @@ function parseFlippingMarketCSV(text) {
 }
 
 
-// ── Pro Template parser ──
+function parseFlippingMarketCSV(text) {
+  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return { ok: false, error: '⚠ Fichier vide' };
+
+  // Parse header — comma delimited
+  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+
+  const col = name => {
+    const idx = headers.indexOf(name);
+    if (idx >= 0) return idx;
+    // case-insensitive fallback
+    return headers.findIndex(h => h.toLowerCase() === name.toLowerCase());
+  };
+
+  const iDate       = col('Date');
+  const iActif      = col('Actif');
+  const iSetup      = col('M15 Type');
+  const iSession    = col('Session');
+  const iJour       = col('Jour');
+  const iResultat   = col('Résultat TP 1') !== -1 ? col('Résultat TP 1') : col('Resultat TP 1');
+  const iRR         = col('RR TP 1');
+  const iObsM15     = col('Obstacles M15');
+  const iObsH4      = col('Obstacles H4');
+  const iType       = col('Type de trade');
+  const iBadFeeling = col('Bad feeling');
+  const iOrdre      = col('Ordre');
+
+  if (iResultat === -1 || iRR === -1) {
+    return { ok: false, error: '⚠ Colonnes Flipping Market introuvables (Résultat TP 1, RR TP 1)' };
+  }
+
+  // Month name → number
+  const MONTH_MAP = {
+    january:'01', february:'02', march:'03', april:'04', may:'05', june:'06',
+    july:'07', august:'08', september:'09', october:'10', november:'11', december:'12',
+    janvier:'01', février:'02', mars:'03', avril:'04', mai:'05', juin:'06',
+    juillet:'07', août:'08', septembre:'09', octobre:'10', novembre:'11', décembre:'12',
+    aout:'08'
+  };
+
+  const parseDate = raw => {
+    if (!raw) return '';
+    // "August 19, 2025" or "August 19, 2025 6:00 (GMT+1)"
+    const m = raw.match(/^([A-Za-zéèûôîàù]+)\s+(\d{1,2}),?\s+(\d{4})/i);
+    if (m) {
+      const mo = MONTH_MAP[m[1].toLowerCase()] || '01';
+      return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
+    }
+    // "dd/mm/yyyy"
+    const d = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (d) return `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}`;
+    return raw.slice(0,10);
+  };
+
+  // Outcome mapping
+  const OUTCOME_MAP = {
+    'take profit': 'TP',
+    'stop loss':   'SL',
+    'be - tp':     'BE-TP',
+    'be - sl':     'BE-SL',
+    'be-tp':       'BE-TP',
+    'be-sl':       'BE-SL',
+  };
+
+  const trades   = [];
+  const warnings = [];
+  let skipped    = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const cols = splitCsvLine(line, ',');
+    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
+
+    // Filter out Invalide and Bad feeling trades
+    const typeVal = get(iType).toLowerCase();
+    if (typeVal.includes('invalide')) { skipped++; continue; }
+    if (iBadFeeling >= 0 && get(iBadFeeling).toLowerCase() === 'yes') { skipped++; continue; }
+
+    // R value
+    const rRaw = get(iRR).replace(',', '.');
+    const rVal = parseFloat(rRaw);
+    if (isNaN(rVal)) continue; // skip header-like rows
+
+    // Date
+    const date  = parseDate(get(iDate));
+    const month = date.slice(0, 7);
+
+    // Outcome
+    const resRaw = get(iResultat).toLowerCase().trim();
+    const outcome = OUTCOME_MAP[resRaw] || (rVal > 0 ? 'TP' : 'SL');
+
+    // Obstacles — comma-separated in source
+    const parseObs = raw => {
+      if (!raw || raw === '/' || raw === '-') return [];
+      // Strip outer quotes, split on comma
+      return raw.split(',').map(o => o.trim()).filter(o => o && o !== '/' && o !== '-');
+    };
+
+    trades.push({
+      date,
+      month,
+      pair:      get(iActif)   || 'UNKNOWN',
+      setup:     get(iSetup)   || '',
+      session:   get(iSession) || '',
+      day:       get(iJour)    || '',
+      obstacles: parseObs(get(iObsM15)),
+      h4:        parseObs(get(iObsH4)),
+      outcome,
+      r: rVal,
+      direction: get(iOrdre) || '',
+    });
+  }
+
+  if (skipped > 0) warnings.push(`${skipped} trades ignorés (Invalide ou Bad feeling)`);
+  if (trades.length === 0) return { ok: false, error: '⚠ Aucun trade valide trouvé' };
+
+  return { ok: true, trades, warnings };
+}
+
+// ── FORMAT 2 : Pro Template ──
 function parseProTemplateCSV(text) {
   const raw   = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
   const lines = raw.split('\n').filter(l=>l.trim());
   if (lines.length<2) return {ok:false,error:'\u26a0 Fichier vide'};
+
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
-  const iPair   =_colLast(headers,'pair');      // last occurrence = full pair name
-  const iResult =_colFirst(headers,'position result');
-  const iType   =_colFirst(headers,'position type');
-  const iDate   =_colFirst(headers,'date');
-  const iRR     =_colFirst(headers,'rr tp 1');
-  const iSetup  =_colFirst(headers,'m15 confirmation / continu');
-  const iSess   =_colFirst(headers,'session');
-  const iDay    =_colFirst(headers,'day');
-  const iObsM15 =_colFirst(headers,'m15 obstacles');
-  const iObsH4  =_colFirst(headers,'h4 obstacles');
-  const iBad    =_colFirst(headers,'bad feeling');
-  const iOrder  =_colFirst(headers,'order');
+
+  // 'Pair' appears twice: col 0 = abbreviation (EU, GJ...), last = full name (EURAUD...)
+  const iPair    = _colLast(headers,'pair');
+  const iResult  = _colFirst(headers,'position result');
+  const iType    = _colFirst(headers,'position type');
+  const iDate    = _colFirst(headers,'date');
+  const iRR      = _colFirst(headers,'rr tp 1');
+  const iSetup   = _colFirst(headers,'m15 confirmation / continu');
+  const iSession = _colFirst(headers,'session');
+  const iDay     = _colFirst(headers,'day');
+  const iObsM15  = _colFirst(headers,'m15 obstacles');
+  const iObsH4   = _colFirst(headers,'h4 obstacles');
+  const iBad     = _colFirst(headers,'bad feeling');
+  const iOrder   = _colFirst(headers,'order');
+
   if (iResult===-1) return {ok:false,error:'\u26a0 Colonne Position Result introuvable'};
-  const trades=[],warnings=[];let skipped=0;
+
+  const trades=[],warnings=[];
+  let skipped=0;
+
   for (let i=1;i<lines.length;i++) {
     const cols=splitCsvLine(lines[i],',');
     const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
-    if (_isBadFeeling(get(iBad))){skipped++;continue;}
-    if (iType>=0&&get(iType).toLowerCase()==='invalid'){skipped++;continue;}
+
+    if (_isBadFeeling(get(iBad)))                              { skipped++; continue; }
+    if (iType>=0&&get(iType).toLowerCase()==='invalid')        { skipped++; continue; }
+
     const outcome=_mapOutcome(get(iResult));
-    if (!outcome){skipped++;continue;}
+    if (!outcome) { skipped++; continue; }
+
     const date=_parseDate(get(iDate));
-    if (!date||date.length<7){skipped++;continue;}
+    if (!date||date.length<7) { skipped++; continue; }
+
     trades.push({
-      date,month:date.slice(0,7),
-      pair:     get(iPair).trim()|| '',
-      setup:    get(iSetup),
-      session:  _normSession(get(iSess)),
-      day:      _normDay(get(iDay)),
-      obstacles:_parseObs(get(iObsM15)),
-      h4:       _parseObs(get(iObsH4)),
-      outcome,  r:_mapR(outcome,get(iRR)), direction:get(iOrder),
+      date, month:date.slice(0,7),
+      pair:      get(iPair).trim()||'UNKNOWN',
+      setup:     get(iSetup),
+      session:   _normSession(get(iSession)),
+      day:       _normDay(get(iDay)),
+      obstacles: _parseObs(get(iObsM15)),
+      h4:        _parseObs(get(iObsH4)),
+      outcome,   r:_mapR(outcome,get(iRR)),
+      direction: get(iOrder),
     });
   }
+
   if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
   if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
   return {ok:true,trades,warnings};
 }
 
 
+function parseProTemplateCSV(text) {
+  const raw   = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return { ok: false, error: '⚠ Fichier vide' };
 
-// ── Beginner parser ──
+  const headers = splitCsvLine(lines[0], ',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+
+  const col = name => {
+    const idx = headers.indexOf(name);
+    if (idx >= 0) return idx;
+    return headers.findIndex(h => h.toLowerCase().trim() === name.toLowerCase().trim());
+  };
+
+  // Pro Template columns
+  const iDate    = col('Date');
+  const iPair    = col('Pair ');   // note trailing space
+  const iSetup   = col('M15 Confirmation / Continu');
+  const iSession = col('Session');
+  const iDay     = col('Day');
+  const iResult  = col('Position Result');
+  const iRR      = col('RR TP 1');
+  const iObsM15  = col('M15 Obstacles');
+  const iObsH4   = col('H4 Obstacles');
+  const iBad     = col('Bad feeling');
+  const iType    = col('Position Type');
+  const iOrder   = col('Order');
+
+  if (iResult === -1 || iRR === -1) {
+    return { ok: false, error: '⚠ Colonnes Pro Template introuvables (Position Result, RR TP 1)' };
+  }
+
+  // Session normalisation: Pro Template uses English KZ names
+  const SESSION_MAP = {
+    'london kz':       'London',
+    'new york kz':     'New-York',
+    'out of session':  'Hors Session',
+    "no man's land":   "No Man's Land",
+    'asian kz':        'Asian',
+    'lunch kz':        'Lunch Time Zone',
+    'lunch time zone': 'Lunch Time Zone',
+    'asian':           'Asian',
+    'london':          'London',
+    'new-york':        'New-York',
+    'hors session':    'Hors Session',
+  };
+
+  // Day: English → French
+  const DAY_MAP = {
+    monday:'Lundi', tuesday:'Mardi', wednesday:'Mercredi',
+    thursday:'Jeudi', friday:'Vendredi', saturday:'Samedi', sunday:'Dimanche'
+  };
+
+  // Setup: Pro Template uses English-style names → normalise to dashboard keys
+  const SETUP_MAP = {
+    'internal continuation':  'Continuation Interne Type 1',
+    'internal continuation type 1': 'Continuation Interne Type 1',
+    'internal continuation type 2': 'Continuation Interne Type 2',
+    'continuation':           'Continuation Type A',
+    'continuation type a':    'Continuation Type A',
+    'continuation type b':    'Continuation Type B',
+    'internal confirmation':  'Confirmation Interne',
+    'confirmation swing':     'Confirmation Swing',
+    're-confirmation x':      'Re-confirmation X',
+    're-confirmation y':      'Re-confirmation Y',
+  };
+
+  const OUTCOME_MAP = {
+    'take profit': 'TP', 'stop loss': 'SL',
+    'be - tp': 'BE-TP', 'be - sl': 'BE-SL',
+    'be-tp': 'BE-TP', 'be-sl': 'BE-SL',
+  };
+
+  const MONTH_MAP = {
+    january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
+    july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
+    décember:'12',décembre:'12',aout:'08',août:'08'
+  };
+
+  const parseDate = raw => {
+    if (!raw) return '';
+    const m = raw.match(/^([A-Za-zéèûôîàù]+)\s+(\d{1,2}),?\s+(\d{4})/i);
+    if (m) {
+      const mo = MONTH_MAP[m[1].toLowerCase()] || '01';
+      return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
+    }
+    const d = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (d) return `${d[3]}-${d[2].padStart(2,'0')}-${d[1].padStart(2,'0')}`;
+    return raw.slice(0,10);
+  };
+
+  const trades   = [];
+  const warnings = [];
+  let skipped    = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const cols = splitCsvLine(line, ',');
+    const get  = idx => (idx < 0 || idx >= cols.length) ? '' : cols[idx].trim().replace(/^["']|["']$/g, '');
+
+    // Filter bad feeling
+    if (iBad >= 0 && get(iBad).toLowerCase() === 'yes') { skipped++; continue; }
+
+    // R value
+    const rRaw = get(iRR).replace(',', '.');
+    const rVal = parseFloat(rRaw);
+    if (isNaN(rVal)) continue;
+
+    // Outcome
+    const outcome = OUTCOME_MAP[(get(iResult) || '').toLowerCase().trim()] || '';
+    if (!outcome) continue; // skip rows without valid outcome (header-like rows)
+
+    const date  = parseDate(get(iDate));
+    const month = date.slice(0, 7);
+
+    const sessRaw  = (get(iSession) || '').toLowerCase().trim();
+    const session  = SESSION_MAP[sessRaw] || get(iSession) || '';
+
+    const dayRaw   = (get(iDay) || '').toLowerCase().trim();
+    const day      = DAY_MAP[dayRaw] || get(iDay) || '';
+
+    const setupRaw = (get(iSetup) || '').toLowerCase().trim();
+    const setup    = SETUP_MAP[setupRaw] || get(iSetup) || '';
+
+    const parseObs = raw => {
+      if (!raw || raw === '/' || raw === '-' || raw === '.') return [];
+      return raw.split(',').map(o => o.trim()).filter(o => o && o !== '/' && o !== '-' && o !== '.');
+    };
+
+    trades.push({
+      date, month,
+      pair:      get(iPair)  || 'UNKNOWN',
+      setup,
+      session,
+      day,
+      obstacles: parseObs(get(iObsM15)),
+      h4:        parseObs(get(iObsH4)),
+      outcome,
+      r: rVal,
+      direction: ({ buy: 'Achat', sell: 'Vente' }[(get(iOrder)||'').toLowerCase()] || get(iOrder) || ''),
+    });
+  }
+
+  if (skipped > 0) warnings.push(`${skipped} trades ignorés (Bad feeling)`);
+  if (trades.length === 0) return { ok: false, error: '⚠ Aucun trade valide trouvé' };
+
+  return { ok: true, trades, warnings };
+}
+
+
+// ── FORMAT 3 : Beginner ──
 function parseBeginnerCSV(text) {
   const raw   = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
   const lines = raw.split('\n').filter(l=>l.trim());
   if (lines.length<2) return {ok:false,error:'\u26a0 Fichier vide'};
+
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,'').replace(/^\uFEFF/,''));
-  const iPair  =_colLast(headers,'pair');
-  const iResult=_colFirst(headers,'position result');
-  const iType  =_colFirst(headers,'position type');
-  const iDate  =_colFirst(headers,'date');
-  const iRR    =_colFirst(headers,'rr tp 1');
-  const iSetup =_colFirst(headers,'m15 confirmation / continu');
-  const iDay   =_colFirst(headers,'day');
-  const iObs   =_colFirst(headers,'m15 obstacles');
-  const iBad   =_colFirst(headers,'bad feeling');
-  const iOrder =_colFirst(headers,'order');
+
+  const iPair   = _colLast(headers,'pair');
+  const iResult = _colFirst(headers,'position result');
+  const iType   = _colFirst(headers,'position type');
+  const iDate   = _colFirst(headers,'date');
+  const iRR     = _colFirst(headers,'rr tp 1');
+  const iSetup  = _colFirst(headers,'m15 confirmation / continu');
+  const iDay    = _colFirst(headers,'day');
+  const iObsM15 = _colFirst(headers,'m15 obstacles');
+  const iBad    = _colFirst(headers,'bad feeling');
+  const iOrder  = _colFirst(headers,'order');
+
   if (iResult===-1||iPair===-1) return {ok:false,error:'\u26a0 Colonnes Beginner introuvables'};
-  const trades=[],warnings=[];let skipped=0;
+
+  const trades=[],warnings=[];
+  let skipped=0;
+
   for (let i=1;i<lines.length;i++) {
     const cols=splitCsvLine(lines[i],',');
     const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
-    if (_isBadFeeling(get(iBad))){skipped++;continue;}
-    if (iType>=0&&get(iType).toLowerCase()==='invalid'){skipped++;continue;}
-    const rv=get(iResult).trim();
-    if (rv==='.'||rv===''){skipped++;continue;}
-    const outcome=_mapOutcome(rv);
-    if (!outcome){skipped++;continue;}
+
+    if (_isBadFeeling(get(iBad)))                              { skipped++; continue; }
+    if (iType>=0&&get(iType).toLowerCase()==='invalid')        { skipped++; continue; }
+    const resultVal=get(iResult).trim();
+    if (resultVal==='.'||resultVal==='')                       { skipped++; continue; }
+
+    const outcome=_mapOutcome(resultVal);
+    if (!outcome) { skipped++; continue; }
+
     const date=_parseDate(get(iDate));
-    if (!date||date.length<7){skipped++;continue;}
+    if (!date||date.length<7) { skipped++; continue; }
+
     trades.push({
-      date,month:date.slice(0,7),
-      pair:    get(iPair).trim()|| '',
-      setup:   get(iSetup),
-      session: '',
-      day:     _normDay(get(iDay)),
-      obstacles:_parseObs(get(iObs)),
-      h4:      [],
-      outcome, r:_mapR(outcome,get(iRR)), direction:get(iOrder),
+      date, month:date.slice(0,7),
+      pair:      get(iPair).trim()||'UNKNOWN',
+      setup:     get(iSetup),
+      session:   '',
+      day:       _normDay(get(iDay)),
+      obstacles: _parseObs(get(iObsM15)),
+      h4:        [],
+      outcome,   r:_mapR(outcome,get(iRR)),
+      direction: get(iOrder),
     });
   }
+
   if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
   if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
   return {ok:true,trades,warnings};
@@ -7004,9 +7211,9 @@ function splitCsvLine(line, delim) {
   return cols;
 }
 
-function injectParsedTrades(parsed, filename, csvFormat) {
+function injectParsedTrades(parsed, filename) {
   // Replace the TRADES array
-  const validTrades = parsed.filter(t => t.pair && t.pair.trim());
+  const validTrades = parsed.filter(t => t.date || t.pair !== 'UNKNOWN');
 
   // Clear all filters first
   Object.keys(filters).forEach(k => filters[k].clear());
@@ -7035,28 +7242,15 @@ function injectParsedTrades(parsed, filename, csvFormat) {
 
   // Update UI indicators
   csvDataActive = true;
-  const dot = document.getElementById('data-dot');
-  const lbl = document.getElementById('data-source-label');
-  if (dot){dot.classList.add('live');dot.style.background='var(--b)';}
-  if (lbl) lbl.textContent = filename.replace(/\.csv$/i,'').slice(0,24);
+  const dot=document.getElementById('data-dot'), lbl=document.getElementById('data-source-label');
+  if(dot){dot.classList.add('live');dot.style.background='var(--b)';}
+  if(lbl) lbl.textContent=filename.replace(/\.csv$/i,'').slice(0,24);
   const _ta=document.getElementById('tab-api'),_tm=document.getElementById('tab-main'),_tb=document.getElementById('tab-api-badge');
   if(_ta)_ta.classList.remove('active'); if(_tm)_tm.classList.add('active'); if(_tb)_tb.style.display='none';
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
 
   render();
-
-  // Apply format-specific layout after render (applyLayout defined later in script)
-  requestAnimationFrame(() => {
-    if (typeof _applySerializedLayout !== 'function') return;
-    if (csvFormat === 'beginner') {
-      _applySerializedLayout(BEGINNER_LAYOUT);
-    } else {
-      const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
-      const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
-      _applySerializedLayout(savedLayout || DEFAULT_LAYOUT);
-    }
-  });
   setTimeout(closeCsvOverlay, 1200);
 }
 
@@ -7860,25 +8054,21 @@ const ROW_HEIGHT_PX  = 10;   // 1 grid unit = 10px
 
 // ── Default layout: 14 widgets ──
 const DEFAULT_LAYOUT = {
-  'w-equity': {x:0, y:19, w:9, h:46, minW:4, minH:16},
-  'w-outcome': {x:9, y:19, w:3, h:30, minW:3, minH:14},
-  'w-sequence': {x:9, y:49, w:3, h:16, minW:3, minH:12},
-  'w-selection': {x:0, y:65, w:7, h:43, minW:4, minH:14},
-  'w-stats': {x:0, y:0, w:12, h:19, minW:4, minH:12},
-  'w-monthly': {x:7, y:65, w:5, h:43, minW:4, minH:16},
-  'w-setup': {x:0, y:108, w:4, h:31, minW:2, minH:14},
-  'w-session': {x:8, y:108, w:4, h:31, minW:2, minH:14},
-  'w-day': {x:4, y:108, w:4, h:31, minW:2, minH:14},
-  'w-pair': {x:0, y:139, w:4, h:37, minW:2, minH:14},
-  'w-heatmap': {x:4, y:139, w:8, h:37, minW:4, minH:14},
-  'w-m15': {x:6, y:176, w:6, h:73, minW:3, minH:14},
-  'w-h4': {x:0, y:176, w:6, h:73, minW:3, minH:14},
-  'w-tradelog': {x:0, y:249, w:12, h:45, minW:4, minH:16},
+  'w-stats':     { x:0,  y:0,   w:12, h:19, minW:4, minH:12 },
+  'w-equity':    { x:0,  y:19,  w:12, h:39, minW:4, minH:16 },
+  'w-outcome':   { x:7,  y:58,  w:5,  h:31, minW:3, minH:14 },
+  'w-selection': { x:0,  y:58,  w:7,  h:43, minW:4, minH:14 },
+  'w-sequence':  { x:7,  y:89,  w:5,  h:12, minW:3, minH:12 },
+  'w-monthly':   { x:0,  y:101, w:12, h:47, minW:4, minH:16 },
+  'w-setup':     { x:0,  y:148, w:5,  h:30, minW:2, minH:14 },
+  'w-session':   { x:5,  y:148, w:4,  h:30, minW:2, minH:14 },
+  'w-day':       { x:9,  y:148, w:3,  h:30, minW:2, minH:14 },
+  'w-heatmap':   { x:0,  y:178, w:12, h:25, minW:4, minH:14 },
+  'w-pair':      { x:0,  y:203, w:6,  h:33, minW:2, minH:14 },
+  'w-m15':       { x:0,  y:236, w:12, h:52, minW:3, minH:14 },
+  'w-h4':        { x:0,  y:288, w:12, h:44, minW:3, minH:14 },
+  'w-tradelog':  { x:0,  y:332, w:12, h:30, minW:4, minH:16 },
 };
-
-const BEGINNER_LAYOUT = {"w-equity":{"x":0,"y":17,"w":9,"h":40},"w-outcome":{"x":9,"y":17,"w":3,"h":27},"w-sequence":{"x":9,"y":44,"w":3,"h":13},"w-selection":{"x":0,"y":57,"w":6,"h":43},"w-stats":{"x":0,"y":0,"w":12,"h":17},"w-monthly":{"x":6,"y":57,"w":6,"h":43},"w-setup":{"x":0,"y":100,"w":5,"h":31},"w-session":{"x":5,"y":259,"w":4,"h":30},"w-day":{"x":5,"y":100,"w":3,"h":31},"w-pair":{"x":8,"y":100,"w":4,"h":31},"w-heatmap":{"x":0,"y":342,"w":12,"h":25},"w-m15":{"x":0,"y":131,"w":12,"h":63},"w-h4":{"x":0,"y":289,"w":12,"h":53},"w-tradelog":{"x":0,"y":194,"w":12,"h":65}};
-let _csvFormat = null; // tracks last imported CSV format
-
 
 const NAMED_PRESETS = {
   default:        null,
@@ -8563,29 +8753,6 @@ function drawMobileDonut(stats) {
 
   canvas.width = canvas.height = 120;
 
-  // Center text plugin — shows TP% in center
-  const centerTextPlugin = {
-    id: 'mobCenterText',
-    afterDraw(chart) {
-      const { ctx, chartArea: { left, right, top, bottom } } = chart;
-      const cx = (left + right) / 2;
-      const cy = (top + bottom) / 2;
-      const pct = Math.round(tp / total * 100);
-      ctx.save();
-      ctx.font = 'bold 16px DM Mono, monospace';
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      // Clip to inner circle so text never overflows
-      const cutoutR = chart._metasets[0]?.data[0]?.innerRadius || 35;
-      ctx.beginPath();
-      ctx.arc(cx, cy, cutoutR - 2, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.fillText(pct + '%', cx, cy);
-      ctx.restore();
-    }
-  };
-
   _mobDonutChart = new Chart(canvas.getContext('2d'), {
     type: 'doughnut',
     data: {
@@ -8595,10 +8762,9 @@ function drawMobileDonut(stats) {
         borderWidth: 0, hoverOffset: 4 }]
     },
     options: {
-      cutout: '60%', responsive: false, animation: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: true } }
-    },
-    plugins: [centerTextPlugin]
+      cutout: '65%', responsive: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } }
+    }
   });
 
   const items = [
@@ -8615,6 +8781,7 @@ function drawMobileDonut(stats) {
     </div>`).join('');
 }
 
+// ── Mobile heatmap ──
 function renderMobileHeatmap(trades) {
   if (!_isMobile()) return;
   const container = document.getElementById('mob-heatmap-container');
@@ -8732,6 +8899,7 @@ function drawMobilePair(trades) {
   if (!_isMobile()) return;
   const canvas = document.getElementById('mobPairCanvas');
   if (!canvas) return;
+
   if (_mobPairChart) { _mobPairChart.destroy(); _mobPairChart = null; }
   if (!trades.length) return;
 
@@ -8742,19 +8910,14 @@ function drawMobilePair(trades) {
     if (!pairs[t.pair]) pairs[t.pair] = { r:0, n:0 };
     pairs[t.pair].r += t.r; pairs[t.pair].n++;
   });
-  const all    = Object.entries(pairs).map(([p, v]) => ({ pair:p, ev:v.r/v.n, totalR:v.r, n:v.n }));
-  const valFn  = d => useTotal ? d.totalR : d.ev;
+  const all = Object.entries(pairs).map(([p, v]) => ({
+    pair: p, ev: v.r/v.n, totalR: v.r, n: v.n
+  }));
+  const valFn = d => useTotal ? d.totalR : d.ev;
   const sorted = all.sort((a,b) => valFn(b) - valFn(a));
   const decimals = useTotal ? 1 : 3;
-
-  // Height based on number of bars
-  const H = Math.max(160, sorted.length * 30 + 40);
-  const wrap = canvas.parentElement;
-  canvas.removeAttribute('width');
-  canvas.removeAttribute('height');
-  canvas.style.width  = '100%';
-  canvas.style.height = H + 'px';
-  wrap.style.height   = H + 'px';
+  const tooltipLabel = useTotal ? ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R total`
+                                 : ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R / trade`;
 
   _mobPairChart = new Chart(canvas, {
     type: 'bar',
@@ -8769,19 +8932,14 @@ function drawMobilePair(trades) {
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: 'index', axis: 'y', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` } }
-      },
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: tooltipLabel } } },
       scales: {
-        x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:10, family:'"DM Mono", monospace' } } },
-        y: { grid:{ display:false },      ticks:{ color:tc('--body'), font:{ size:11, family:'"DM Mono", monospace', weight:'600' } } },
+        x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
+        y: { grid:{ display:false }, ticks:{ color:tc('--body'), font:{ size:9, weight:'600' } } },
       }
     }
   });
 }
-
 
 // ── Mobile M15 Obstacles ──
 let _mobObsChart = null;
@@ -8789,6 +8947,7 @@ function drawMobileObs(trades) {
   if (!_isMobile()) return;
   const canvas = document.getElementById('mobObsCanvas');
   if (!canvas) return;
+
   if (_mobObsChart) { _mobObsChart.destroy(); _mobObsChart = null; }
   if (!trades.length) return;
 
@@ -8803,20 +8962,16 @@ function drawMobileObs(trades) {
   });
   const valFn = d => useTotal ? d.totalR : d.ev;
   const all = Object.entries(obs)
-    .filter(([, v]) => v.n >= 1)
-    .map(([o, v]) => ({ obs:o, ev:v.r/v.n, totalR:v.r, n:v.n }));
-  const sorted = all.sort((a,b) => valFn(b) - valFn(a)).slice(0, 15);
+    .filter(([, v]) => v.n >= 3)
+    .map(([o, v]) => ({ obs:o, ev: v.r/v.n, totalR: v.r, n: v.n }));
+  const sorted = all.sort((a,b) => valFn(b) - valFn(a)).slice(0, 14);
+
   if (!sorted.length) return;
 
-  const H = Math.max(200, sorted.length * 28 + 40);
-  const wrap = canvas.parentElement;
-  canvas.removeAttribute('width');
-  canvas.removeAttribute('height');
-  canvas.style.width  = '100%';
-  canvas.style.height = H + 'px';
-  wrap.style.height   = H + 'px';
-
   const decimals = useTotal ? 1 : 3;
+  const tooltipLabel = useTotal ? ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R total`
+                                 : ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R / trade`;
+
   _mobObsChart = new Chart(canvas, {
     type: 'bar',
     data: {
@@ -8830,216 +8985,19 @@ function drawMobileObs(trades) {
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: 'index', axis: 'y', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` } }
-      },
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: tooltipLabel } } },
       scales: {
-        x: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'), font:{size:10, family:'"DM Mono", monospace'}} },
-        y: { grid:{display:false},      ticks:{color:tc('--body'), font:{size:11, family:'"DM Mono", monospace'}} },
+        x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
+        y: { grid:{ display:false }, ticks: {
+          color: ctx => valFn(sorted[ctx.index] || {ev:0,totalR:0}) >= 0 ? tc('--g') : tc('--r'),
+          font:{ size:8 }
+        }},
       }
     }
   });
 }
 
-
-function drawMobileMonthly2(trades) {
-  if (!_isMobile()) return;
-  const canvas = document.getElementById('mobMonthlyCanvas2');
-  if (!canvas) return;
-  if (_mobMonthlyChart2) { _mobMonthlyChart2.destroy(); _mobMonthlyChart2 = null; }
-  if (!trades.length) return;
-
-  const useTotal = barMode === 'total';
-  const months = {};
-  trades.forEach(t => {
-    if (!t.month) return;
-    if (!months[t.month]) months[t.month] = { r:0, n:0 };
-    months[t.month].r += t.r; months[t.month].n++;
-  });
-  const keys   = Object.keys(months).sort();
-  if (!keys.length) return;
-  const labels = keys.map(k => { const [y,m] = k.split('-'); return `${m}/${y.slice(2)}`; });
-  const vals   = keys.map(k => {
-    const d = months[k];
-    return +(useTotal ? d.r : d.r / d.n).toFixed(useTotal ? 1 : 3);
-  });
-  const cG = tc('--g'), cR = tc('--r');
-
-  // Use CSS pixels — let Chart.js handle DPR
-  const wrap = canvas.parentElement;
-  canvas.removeAttribute('width');
-  canvas.removeAttribute('height');
-  canvas.style.width  = '100%';
-  canvas.style.height = '200px';
-  wrap.style.height   = '200px';
-
-  const dataLabelsPlugin = {
-    id: 'mobMonthlyLabels',
-    afterDatasetsDraw(chart) {
-      const { ctx, scales: { y } } = chart;
-      chart.data.datasets[0].data.forEach((val, i) => {
-        const bar  = chart.getDatasetMeta(0).data[i];
-        const barH = Math.abs(bar.y - y.getPixelForValue(0));
-        if (barH < 16) return;
-        ctx.save();
-        ctx.font         = 'bold 9px "DM Mono", monospace';
-        ctx.fillStyle    = 'rgba(255,255,255,0.9)';
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = val >= 0 ? 'bottom' : 'top';
-        ctx.fillText((val>=0?'+':'') + val.toFixed(useTotal?1:2) + 'R',
-                     bar.x, val >= 0 ? bar.y - 2 : bar.y + 2);
-        ctx.restore();
-      });
-    }
-  };
-
-  _mobMonthlyChart2 = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data: vals,
-        backgroundColor: vals.map(v => v >= 0 ? cG : cR),
-        borderRadius: 3,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: 'index', axis: 'x', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` }
-        }
-      },
-      scales: {
-        x: {
-          grid: { color: tc('--line') },
-          ticks: { color: tc('--dim'), font: { size: 11, family: '"DM Mono", monospace' } }
-        },
-        y: {
-          grid: { color: tc('--line') },
-          ticks: { color: tc('--dim'), font: { size: 10, family: '"DM Mono", monospace' } }
-        },
-      }
-    },
-    plugins: [dataLabelsPlugin]
-  });
-}
-
-
-function drawMobileSetup(trades) {
-  if (!_isMobile()) return;
-  const canvas = document.getElementById('mobSetupCanvas');
-  if (!canvas) return;
-  if (_mobSetupChart) { _mobSetupChart.destroy(); _mobSetupChart = null; }
-  if (!trades.length) return;
-
-  const useTotal = barMode === 'total';
-  const data = groupByEV(trades, t => t.setup, k => SETUP_SHORT[k] || k);
-  if (!data.length) return;
-  const sorted = [...data].sort((a,b) => (useTotal ? b.totalR-a.totalR : b.ev-a.ev));
-  const vals   = sorted.map(d => +(useTotal ? d.totalR : d.ev).toFixed(useTotal?1:3));
-  const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold');
-
-  const H = Math.max(160, sorted.length * 30 + 40);
-  const wrap = canvas.parentElement;
-  canvas.removeAttribute('width');
-  canvas.removeAttribute('height');
-  canvas.style.width  = '100%';
-  canvas.style.height = H + 'px';
-  wrap.style.height   = H + 'px';
-
-  _mobSetupChart = new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels: sorted.map(d => d.label),
-      datasets: [{
-        data: vals,
-        backgroundColor: vals.map(v => v>=0.5?cG:v>=0?cA:cR),
-        borderRadius: 3,
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: 'index', axis: 'y', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` } }
-      },
-      scales: {
-        x: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'), font:{size:10, family:'"DM Mono", monospace'}} },
-        y: { grid:{display:false},      ticks:{color:tc('--body'), font:{size:11, family:'"DM Mono", monospace', weight:'600'}} },
-      }
-    }
-  });
-}
-
-
-function renderMobileTradeLog(trades) {
-  if (!_isMobile()) return;
-  const wrap = document.getElementById('mob-tradelog-wrap');
-  if (!wrap) return;
-
-  _mobTradeLogAll  = [...trades].sort((a,b) => (b.date||'').localeCompare(a.date||''));
-  _mobTradeLogPage = 0;
-  _renderMobTradeLogPage(wrap);
-}
-
-function _renderMobTradeLogPage(wrap) {
-  const all    = _mobTradeLogAll;
-  const page   = _mobTradeLogPage;
-  const total  = all.length;
-  const start  = 0;
-  const end    = Math.min((page + 1) * MOB_PAGE_SIZE, total);
-  const shown  = all.slice(start, end);
-
-  if (!total) {
-    wrap.innerHTML = '<div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">No trades</div>';
-    return;
-  }
-
-  const ocClass = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl' };
-  const rowBg   = { TP:'rgba(110,224,180,.18)', SL:'rgba(224,90,114,.18)', 'BE-TP':'rgba(245,200,66,.15)', 'BE-SL':'rgba(180,120,240,.15)' };
-
-  let lastDate = null;
-  let rows = '';
-  shown.forEach(t => {
-    if (t.date !== lastDate) {
-      const dayLabel = t.day ? `${t.date} · ${DAY_EN[t.day]||t.day}` : (t.date||'—');
-      rows += `<div style="padding:4px 8px;background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--dim);text-transform:uppercase">${dayLabel}</div>`;
-      lastDate = t.date;
-    }
-    rows += `<div style="display:grid;grid-template-columns:70px 1fr auto auto;gap:6px;align-items:center;padding:7px 10px;background:${rowBg[t.outcome]||''};border-bottom:1px solid color-mix(in srgb,var(--line) 40%,transparent)">
-      <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--body)">${t.pair||'—'}</span>
-      <span style="font-size:10px;color:var(--body)">${SETUP_SHORT[t.setup]||t.setup||'—'}</span>
-      <span class="${ocClass[t.outcome]||''}" style="font-size:10px;font-weight:600">${t.outcome}</span>
-      <span style="font-family:'DM Mono',monospace;font-size:10px;font-weight:600;color:${t.r>0?'var(--g)':t.r<0?'var(--r)':'var(--gold)'}">${t.r>0?'+':''}${t.r.toFixed(1)}R</span>
-    </div>`;
-  });
-
-  // Pagination buttons
-  const hasMore = end < total;
-  const btnStyle = `display:inline-flex;align-items:center;justify-content:center;padding:7px 14px;border-radius:4px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.5px;cursor:pointer;border:1px solid var(--line);background:var(--bg2);color:var(--body)`;
-  let footer = `<div style="display:flex;gap:8px;justify-content:center;padding:10px 8px">`;
-  if (hasMore) {
-    footer += `<button style="${btnStyle}" onclick="_mobTradeLogPage++;_renderMobTradeLogPage(document.getElementById('mob-tradelog-wrap'))">
-      +15 suivants <span style="color:var(--dim);margin-left:4px">(${end}/${total})</span>
-    </button>`;
-    footer += `<button style="${btnStyle}" onclick="_mobTradeLogPage=${Math.ceil(total/MOB_PAGE_SIZE)-1};_renderMobTradeLogPage(document.getElementById('mob-tradelog-wrap'))">
-      Tout voir (${total})
-    </button>`;
-  } else {
-    footer += `<span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--dim)">${total} trades</span>`;
-  }
-  footer += `</div>`;
-
-  wrap.innerHTML = rows + footer;
-}
-
+// ── Mobile full render ──
 function renderMobile() {
   if (!_isMobile()) return;
   const filtered = getFiltered();
@@ -9047,14 +9005,9 @@ function renderMobile() {
   updateMobileStats(stats);
   drawMobileEquity(filtered);
   drawMobileDonut(stats);
-  drawMobileMonthly2(filtered);
-  if (filtered.some(t => t.session && t.session.trim())) {
-    renderMobileHeatmap(filtered);
-  }
+  renderMobileHeatmap(filtered);
   drawMobilePair(filtered);
-  drawMobileSetup(filtered);
   drawMobileObs(filtered);
-  renderMobileTradeLog(filtered);
 }
 
 // ── Mobile preset switcher ──
@@ -9091,33 +9044,19 @@ window.addEventListener('resize', () => {
 
 // ── Chart.js lazy load for mobile donut / monthly ──
 // Chart.js is not loaded by default — inject it if on mobile
-
-// ── Mobile chart instances (declared at module level) ──
-let _mobMonthlyChart2 = null;
-let _mobSetupChart    = null;
-let _mobTradeLogPage  = 0;
-let _mobTradeLogAll   = [];
-const MOB_PAGE_SIZE   = 15;
-
 (function() {
   if (!_isMobile()) return;
   const s = document.createElement('script');
   s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
   s.onload = () => {
-    // Full mobile render now that Chart.js is available
     const filtered = getFiltered();
     const stats    = calcStats(filtered);
     updateMobileStats(stats);
     drawMobileEquity(filtered);
     drawMobileDonut(stats);
-    drawMobileMonthly2(filtered);
-    if (filtered.some(t => t.session && t.session.trim())) {
-      renderMobileHeatmap(filtered);
-    }
+    renderMobileHeatmap(filtered);
     drawMobilePair(filtered);
-    drawMobileSetup(filtered);
     drawMobileObs(filtered);
-    renderMobileTradeLog(filtered);
   };
   document.head.appendChild(s);
 })();
