@@ -3972,7 +3972,7 @@ async function loadFromAPI(silent = false) {
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
+    const timer = setTimeout(() => controller.abort(new DOMException('Timeout 45s', 'AbortError')), 45000);
     const resp  = await fetch(getAPIURL(), { signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -3998,7 +3998,7 @@ async function loadFromAPI(silent = false) {
 
     // Build human-readable error reason
     let reason = err.message || 'Erreur inconnue';
-    if (err.name === 'AbortError')                reason = 'Timeout (15s)';
+    if (err.name === 'AbortError')                reason = 'Timeout — Vercel cold start lent (45s)';
     else if (err.message.includes('Failed to fetch')) reason = 'Réseau — vérifier CORS ou URL';
     else if (err.message.includes('NetworkError'))    reason = 'Réseau indisponible';
     else if (err.message.includes('HTTP '))           reason = err.message; // HTTP 404, 500, etc.
