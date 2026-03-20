@@ -8732,7 +8732,6 @@ function drawMobilePair(trades) {
   if (!_isMobile()) return;
   const canvas = document.getElementById('mobPairCanvas');
   if (!canvas) return;
-
   if (_mobPairChart) { _mobPairChart.destroy(); _mobPairChart = null; }
   if (!trades.length) return;
 
@@ -8743,23 +8742,19 @@ function drawMobilePair(trades) {
     if (!pairs[t.pair]) pairs[t.pair] = { r:0, n:0 };
     pairs[t.pair].r += t.r; pairs[t.pair].n++;
   });
-  const all = Object.entries(pairs).map(([p, v]) => ({
-    pair: p, ev: v.r/v.n, totalR: v.r, n: v.n
-  }));
-  const valFn = d => useTotal ? d.totalR : d.ev;
+  const all    = Object.entries(pairs).map(([p, v]) => ({ pair:p, ev:v.r/v.n, totalR:v.r, n:v.n }));
+  const valFn  = d => useTotal ? d.totalR : d.ev;
   const sorted = all.sort((a,b) => valFn(b) - valFn(a));
   const decimals = useTotal ? 1 : 3;
-  const tooltipLabel = useTotal ? ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R total`
-                                 : ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R / trade`;
 
-  // Explicit sizing — responsive:false to avoid 0x0 on first render
-  const H_pair = Math.max(160, sorted.length * 26 + 30);
-  const wrap_pair = canvas.parentElement;
-  canvas.width  = (wrap_pair.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
-  canvas.height = H_pair * window.devicePixelRatio;
+  // Height based on number of bars
+  const H = Math.max(160, sorted.length * 30 + 40);
+  const wrap = canvas.parentElement;
+  canvas.removeAttribute('width');
+  canvas.removeAttribute('height');
   canvas.style.width  = '100%';
-  canvas.style.height = H_pair + 'px';
-  wrap_pair.style.height = H_pair + 'px';
+  canvas.style.height = H + 'px';
+  wrap.style.height   = H + 'px';
 
   _mobPairChart = new Chart(canvas, {
     type: 'bar',
@@ -8772,15 +8767,21 @@ function drawMobilePair(trades) {
       }]
     },
     options: {
-      indexAxis: 'y', responsive: false, animation: false,
-      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: tooltipLabel } } },
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', axis: 'y', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` } }
+      },
       scales: {
-        x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
-        y: { grid:{ display:false }, ticks:{ color:tc('--body'), font:{ size:9, weight:'600' } } },
+        x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:10, family:'"DM Mono", monospace' } } },
+        y: { grid:{ display:false },      ticks:{ color:tc('--body'), font:{ size:11, family:'"DM Mono", monospace', weight:'600' } } },
       }
     }
   });
 }
+
 
 // ── Mobile M15 Obstacles ──
 let _mobObsChart = null;
@@ -8803,14 +8804,14 @@ function drawMobileObs(trades) {
   const valFn = d => useTotal ? d.totalR : d.ev;
   const all = Object.entries(obs)
     .filter(([, v]) => v.n >= 1)
-    .map(([o, v]) => ({ obs:o, ev: v.r/v.n, totalR: v.r, n: v.n }));
+    .map(([o, v]) => ({ obs:o, ev:v.r/v.n, totalR:v.r, n:v.n }));
   const sorted = all.sort((a,b) => valFn(b) - valFn(a)).slice(0, 15);
   if (!sorted.length) return;
 
-  const H = Math.max(180, sorted.length * 22 + 30);
+  const H = Math.max(200, sorted.length * 28 + 40);
   const wrap = canvas.parentElement;
-  canvas.width  = (wrap.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
-  canvas.height = H * window.devicePixelRatio;
+  canvas.removeAttribute('width');
+  canvas.removeAttribute('height');
   canvas.style.width  = '100%';
   canvas.style.height = H + 'px';
   wrap.style.height   = H + 'px';
@@ -8827,17 +8828,21 @@ function drawMobileObs(trades) {
       }]
     },
     options: {
-      indexAxis: 'y', responsive: false, animation: false,
-      plugins: { legend:{display:false}, tooltip:{ callbacks:{
-        label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}`
-      }}},
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', axis: 'y', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` } }
+      },
       scales: {
-        x: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'),font:{size:8}} },
-        y: { grid:{display:false}, ticks:{color:tc('--body'),font:{size:8}} },
+        x: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'), font:{size:10, family:'"DM Mono", monospace'}} },
+        y: { grid:{display:false},      ticks:{color:tc('--body'), font:{size:11, family:'"DM Mono", monospace'}} },
       }
     }
   });
 }
+
 
 function drawMobileMonthly2(trades) {
   if (!_isMobile()) return;
@@ -8854,39 +8859,37 @@ function drawMobileMonthly2(trades) {
     months[t.month].r += t.r; months[t.month].n++;
   });
   const keys   = Object.keys(months).sort();
+  if (!keys.length) return;
   const labels = keys.map(k => { const [y,m] = k.split('-'); return `${m}/${y.slice(2)}`; });
   const vals   = keys.map(k => {
     const d = months[k];
     return +(useTotal ? d.r : d.r / d.n).toFixed(useTotal ? 1 : 3);
   });
-  const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold');
+  const cG = tc('--g'), cR = tc('--r');
 
+  // Use CSS pixels — let Chart.js handle DPR
   const wrap = canvas.parentElement;
-  canvas.width  = (wrap.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
-  canvas.height = 200 * window.devicePixelRatio;
+  canvas.removeAttribute('width');
+  canvas.removeAttribute('height');
   canvas.style.width  = '100%';
   canvas.style.height = '200px';
+  wrap.style.height   = '200px';
 
-  // Data labels plugin — show value inside/above each bar
   const dataLabelsPlugin = {
     id: 'mobMonthlyLabels',
     afterDatasetsDraw(chart) {
-      const { ctx, scales: { x, y } } = chart;
+      const { ctx, scales: { y } } = chart;
       chart.data.datasets[0].data.forEach((val, i) => {
-        const bar   = chart.getDatasetMeta(0).data[i];
-        const xPos  = bar.x;
-        const yPos  = bar.y;
-        const isPos = val >= 0;
+        const bar  = chart.getDatasetMeta(0).data[i];
+        const barH = Math.abs(bar.y - y.getPixelForValue(0));
+        if (barH < 16) return;
         ctx.save();
-        ctx.font = `bold 8px DM Mono, monospace`;
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = isPos ? 'bottom' : 'top';
-        const label = (val>=0?'+':'') + val.toFixed(useTotal?1:2) + 'R';
-        const yOff  = isPos ? yPos - 2 : yPos + 2;
-        // Only draw if bar is tall enough
-        const barH  = Math.abs(bar.y - y.getPixelForValue(0));
-        if (barH > 14) ctx.fillText(label, xPos, yOff);
+        ctx.font         = 'bold 9px "DM Mono", monospace';
+        ctx.fillStyle    = 'rgba(255,255,255,0.9)';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = val >= 0 ? 'bottom' : 'top';
+        ctx.fillText((val>=0?'+':'') + val.toFixed(useTotal?1:2) + 'R',
+                     bar.x, val >= 0 ? bar.y - 2 : bar.y + 2);
         ctx.restore();
       });
     }
@@ -8903,19 +8906,29 @@ function drawMobileMonthly2(trades) {
       }]
     },
     options: {
-      responsive: false, animation: false,
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', axis: 'x', intersect: false },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` } }
+        tooltip: {
+          callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` }
+        }
       },
       scales: {
-        x: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'),font:{size:8}} },
-        y: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'),font:{size:8}} },
+        x: {
+          grid: { color: tc('--line') },
+          ticks: { color: tc('--dim'), font: { size: 11, family: '"DM Mono", monospace' } }
+        },
+        y: {
+          grid: { color: tc('--line') },
+          ticks: { color: tc('--dim'), font: { size: 10, family: '"DM Mono", monospace' } }
+        },
       }
     },
     plugins: [dataLabelsPlugin]
   });
 }
+
 
 function drawMobileSetup(trades) {
   if (!_isMobile()) return;
@@ -8931,10 +8944,10 @@ function drawMobileSetup(trades) {
   const vals   = sorted.map(d => +(useTotal ? d.totalR : d.ev).toFixed(useTotal?1:3));
   const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold');
 
-  const H = Math.max(160, sorted.length * 26 + 30);
+  const H = Math.max(160, sorted.length * 30 + 40);
   const wrap = canvas.parentElement;
-  canvas.width  = (wrap.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
-  canvas.height = H * window.devicePixelRatio;
+  canvas.removeAttribute('width');
+  canvas.removeAttribute('height');
   canvas.style.width  = '100%';
   canvas.style.height = H + 'px';
   wrap.style.height   = H + 'px';
@@ -8950,17 +8963,21 @@ function drawMobileSetup(trades) {
       }]
     },
     options: {
-      indexAxis: 'y', responsive: false, animation: false,
-      plugins: { legend:{display:false}, tooltip:{ callbacks:{
-        label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}`
-      }}},
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', axis: 'y', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw>=0?'+':''}${ctx.raw}R ${useTotal?'total':'/ trade'}` } }
+      },
       scales: {
-        x: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'),font:{size:8}} },
-        y: { grid:{display:false}, ticks:{color:tc('--body'),font:{size:9,weight:'600'}} },
+        x: { grid:{color:tc('--line')}, ticks:{color:tc('--dim'), font:{size:10, family:'"DM Mono", monospace'}} },
+        y: { grid:{display:false},      ticks:{color:tc('--body'), font:{size:11, family:'"DM Mono", monospace', weight:'600'}} },
       }
     }
   });
 }
+
 
 function renderMobileTradeLog(trades) {
   if (!_isMobile()) return;
