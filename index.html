@@ -2862,6 +2862,14 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       </div>
     </div>
 
+    <!-- Monthly P&L -->
+    <div class="mob-card">
+      <div class="mob-card-title">Monthly P&L</div>
+      <div style="padding:8px 10px 12px;position:relative;height:200px">
+        <canvas id="mobMonthlyCanvas2"></canvas>
+      </div>
+    </div>
+
     <!-- Heatmap -->
     <div class="mob-card">
       <div class="mob-card-title">Heatmap — Session × Jour</div>
@@ -2878,12 +2886,26 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       </div>
     </div>
 
+    <!-- Setup Performance -->
+    <div class="mob-card" id="mob-card-setup">
+      <div class="mob-card-title">Setup Performance</div>
+      <div style="padding:8px 10px 12px;position:relative;height:240px">
+        <canvas id="mobSetupCanvas"></canvas>
+      </div>
+    </div>
+
     <!-- M15 Obstacles -->
     <div class="mob-card">
       <div class="mob-card-title">M15 Obstacles</div>
       <div style="padding:8px 10px 12px;position:relative;height:280px">
         <canvas id="mobObsCanvas"></canvas>
       </div>
+    </div>
+
+    <!-- Trade Log -->
+    <div class="mob-card" id="mob-card-tradelog">
+      <div class="mob-card-title">Trade Log</div>
+      <div id="mob-tradelog-wrap" style="overflow-x:auto;padding:0 4px 8px"></div>
     </div>
 
   </div><!-- /mob-body -->
@@ -8352,26 +8374,20 @@ function updateMobileStats(stats) {
 
 // ── Mobile equity chart ──
 let _mobEqChart = null;
-function drawMobileEquity(trades) {
-  if (!_isMobile()) return;
-  const canvas = document.getElementById('mobEquityCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const wrap = document.getElementById('mob-equity-wrap');
-  if (!wrap) return;
+// Mobile equity crosshair state
+let _mobEqTrades = [];
+let _mobEqCrosshair = -1;
 
-  const W = wrap.offsetWidth || 340;
-  const H = 200;
-  canvas.width  = W * window.devicePixelRatio;
-  canvas.height = H * window.devicePixelRatio;
-  canvas.style.width  = W + 'px';
-  canvas.style.height = H + 'px';
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+function _drawMobileEquityFrame(canvas, trades, crosshairIdx) {
+  const ctx  = canvas.getContext('2d');
+  const W    = parseInt(canvas.style.width)  || canvas.width  / window.devicePixelRatio;
+  const H    = parseInt(canvas.style.height) || canvas.height / window.devicePixelRatio;
+
+  ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
   if (!trades.length) return;
 
-  // Build curve
   let eq = 0;
   const curve = trades.map(t => { eq += t.r; return eq; });
   const mn = Math.min(0, ...curve);
@@ -8389,9 +8405,8 @@ function drawMobileEquity(trades) {
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 4]);
   ctx.beginPath();
-  const y0 = py(0);
-  ctx.moveTo(pad.l, y0);
-  ctx.lineTo(pad.l + cW, y0);
+  ctx.moveTo(pad.l, py(0));
+  ctx.lineTo(pad.l + cW, py(0));
   ctx.stroke();
   ctx.setLineDash([]);
 
@@ -8416,12 +8431,113 @@ function drawMobileEquity(trades) {
 
   // Y axis labels
   ctx.fillStyle = tc('--dim');
-  ctx.font = `${9 * window.devicePixelRatio / window.devicePixelRatio}px DM Mono, monospace`;
-  ctx.textAlign = 'right';
   ctx.font = '9px DM Mono, monospace';
+  ctx.textAlign = 'right';
   [mn, mx].forEach(v => {
     ctx.fillText((v >= 0 ? '+' : '') + v.toFixed(1) + 'R', pad.l - 4, py(v) + 3);
   });
+
+  // ── Crosshair ──
+  if (crosshairIdx >= 0 && crosshairIdx < curve.length) {
+    const ci  = crosshairIdx;
+    const cx  = px(ci);
+    const cy  = py(curve[ci]);
+    const val = curve[ci];
+    const t   = trades[ci];
+
+    // Vertical line
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(cx, pad.t);
+    ctx.lineTo(cx, pad.t + cH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fillStyle = tc('--g');
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Tooltip
+    const label   = `${t.date || ''}  ${val >= 0 ? '+' : ''}${val.toFixed(1)}R`;
+    ctx.font      = 'bold 10px DM Mono, monospace';
+    const tw      = ctx.measureText(label).width;
+    const tPad    = 5;
+    const tW      = tw + tPad * 2;
+    const tH      = 18;
+    let tx = cx - tW / 2;
+    if (tx < pad.l) tx = pad.l;
+    if (tx + tW > W - pad.r) tx = W - pad.r - tW;
+    const ty = cy - tH - 8 < pad.t ? cy + 10 : cy - tH - 8;
+
+    ctx.fillStyle = 'rgba(20,20,30,0.88)';
+    ctx.beginPath();
+    ctx.roundRect(tx, ty, tW, tH, 3);
+    ctx.fill();
+
+    ctx.fillStyle = val >= 0 ? tc('--g') : tc('--r');
+    ctx.textAlign = 'left';
+    ctx.fillText(label, tx + tPad, ty + 13);
+    ctx.restore();
+  }
+}
+
+function drawMobileEquity(trades) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobEquityCanvas');
+  if (!canvas) return;
+  const wrap = document.getElementById('mob-equity-wrap');
+  if (!wrap) return;
+
+  const W = wrap.offsetWidth || 340;
+  const H = 200;
+  canvas.width  = W * window.devicePixelRatio;
+  canvas.height = H * window.devicePixelRatio;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  _mobEqTrades = trades;
+  _mobEqCrosshair = -1;
+  _drawMobileEquityFrame(canvas, trades, -1);
+
+  // Attach touch/mouse listeners once
+  if (!canvas._mobListenersAttached) {
+    canvas._mobListenersAttached = true;
+
+    const getIdx = clientX => {
+      const rect   = canvas.getBoundingClientRect();
+      const W      = rect.width;
+      const pad    = { l: 42, r: 10 };
+      const cW     = W - pad.l - pad.r;
+      const x      = clientX - rect.left - pad.l;
+      const frac   = Math.max(0, Math.min(1, x / cW));
+      return Math.round(frac * (_mobEqTrades.length - 1));
+    };
+
+    const onMove = e => {
+      e.preventDefault();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      _mobEqCrosshair = getIdx(clientX);
+      _drawMobileEquityFrame(canvas, _mobEqTrades, _mobEqCrosshair);
+    };
+    const onEnd = () => {
+      _mobEqCrosshair = -1;
+      _drawMobileEquityFrame(canvas, _mobEqTrades, -1);
+    };
+
+    canvas.addEventListener('touchmove',  onMove, { passive: false });
+    canvas.addEventListener('touchend',   onEnd);
+    canvas.addEventListener('touchcancel',onEnd);
+    canvas.addEventListener('mousemove',  onMove);
+    canvas.addEventListener('mouseleave', onEnd);
+  }
 }
 
 // ── Mobile donut ──
@@ -8690,6 +8806,98 @@ function drawMobileObs(trades) {
 }
 
 // ── Mobile full render ──
+
+// ── Mobile Monthly P&L ──
+let _mobMonthlyChart2 = null;
+function drawMobileMonthly2(trades) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobMonthlyCanvas2');
+  if (!canvas) return;
+  if (_mobMonthlyChart2) { _mobMonthlyChart2.destroy(); _mobMonthlyChart2 = null; }
+  if (!trades.length) return;
+  const months = {};
+  trades.forEach(t => {
+    if (!t.month) return;
+    if (!months[t.month]) months[t.month] = 0;
+    months[t.month] += t.r;
+  });
+  const labels = Object.keys(months).sort();
+  const vals   = labels.map(m => +months[m].toFixed(2));
+  const cG = tc('--g'), cR = tc('--r');
+  const wrap = canvas.parentElement;
+  canvas.width  = (wrap.offsetWidth||340) * window.devicePixelRatio;
+  canvas.height = 200 * window.devicePixelRatio;
+  canvas.style.width  = '100%';
+  canvas.style.height = '200px';
+  _mobMonthlyChart2 = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels.map(m => m.slice(5)),
+      datasets: [{ data: vals, backgroundColor: vals.map(v => v >= 0 ? cG+'99' : cR+'99'), borderColor: vals.map(v => v >= 0 ? cG : cR), borderWidth: 1, borderRadius: 3 }]
+    },
+    options: { responsive:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#888',font:{size:9}}}, y:{ticks:{color:'#888',font:{size:9}},grid:{color:'#ffffff10'}} } }
+  });
+}
+
+// ── Mobile Setup Performance ──
+let _mobSetupChart = null;
+function drawMobileSetup(trades) {
+  if (!_isMobile()) return;
+  const canvas = document.getElementById('mobSetupCanvas');
+  if (!canvas || !trades.length) return;
+  if (_mobSetupChart) { _mobSetupChart.destroy(); _mobSetupChart = null; }
+  const useTotal = barMode === 'total';
+  const data = groupByEV(trades, t => t.setup, k => SETUP_SHORT[k] || k);
+  if (!data.length) return;
+  const sorted = [...data].sort((a,b) => (useTotal ? b.totalR-a.totalR : b.ev-a.ev));
+  const vals   = sorted.map(d => +(useTotal ? d.totalR : d.ev).toFixed(3));
+  const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold');
+  const wrap = canvas.parentElement;
+  canvas.width  = (wrap.offsetWidth||340) * window.devicePixelRatio;
+  canvas.height = 240 * window.devicePixelRatio;
+  canvas.style.width  = '100%';
+  canvas.style.height = '240px';
+  _mobSetupChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(d => d.label),
+      datasets: [{ data: vals, backgroundColor: vals.map(v => v>=0.5?cG+'99':v>=0?cA+'99':cR+'99'), borderColor: vals.map(v => v>=0.5?cG:v>=0?cA:cR), borderWidth:1, borderRadius:3 }]
+    },
+    options: {
+      indexAxis: 'y', responsive:false,
+      plugins:{legend:{display:false}},
+      scales:{ x:{ticks:{color:'#888',font:{size:9}},grid:{color:'#ffffff10'}}, y:{ticks:{color:'#888',font:{size:9}}} }
+    }
+  });
+}
+
+// ── Mobile Trade Log ──
+function renderMobileTradeLog(trades) {
+  if (!_isMobile()) return;
+  const wrap = document.getElementById('mob-tradelog-wrap');
+  if (!wrap) return;
+  if (!trades.length) { wrap.innerHTML = '<div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">No trades</div>'; return; }
+  const ocClass = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl' };
+  const rowBg   = { TP:'rgba(110,224,180,.18)', SL:'rgba(224,90,114,.18)', 'BE-TP':'rgba(245,200,66,.15)', 'BE-SL':'rgba(180,120,240,.15)' };
+  const sorted  = [...trades].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  let lastDate  = null;
+  let rows = '';
+  sorted.forEach(t => {
+    if (t.date !== lastDate) {
+      const dayLabel = t.day ? `${t.date} · ${DAY_EN[t.day]||t.day}` : (t.date||'—');
+      rows += `<div style="padding:4px 8px;background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--dim);text-transform:uppercase">${dayLabel}</div>`;
+      lastDate = t.date;
+    }
+    rows += `<div style="display:grid;grid-template-columns:70px 1fr auto auto;gap:6px;align-items:center;padding:7px 10px;background:${rowBg[t.outcome]||''};border-bottom:1px solid var(--line)10">
+      <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--body)">${t.pair||'—'}</span>
+      <span style="font-size:10px;color:var(--body)">${SETUP_SHORT[t.setup]||t.setup||'—'}</span>
+      <span class="${ocClass[t.outcome]||''}" style="font-size:10px;font-weight:600">${t.outcome}</span>
+      <span style="font-family:'DM Mono',monospace;font-size:10px;font-weight:600;color:${t.r>0?'var(--g)':t.r<0?'var(--r)':'var(--gold)'}">${t.r>0?'+':''}${t.r.toFixed(1)}R</span>
+    </div>`;
+  });
+  wrap.innerHTML = rows;
+}
+
 function renderMobile() {
   if (!_isMobile()) return;
   const filtered = getFiltered();
@@ -8697,12 +8905,14 @@ function renderMobile() {
   updateMobileStats(stats);
   drawMobileEquity(filtered);
   drawMobileDonut(stats);
-  // Only render session heatmap if session data exists
+  drawMobileMonthly2(filtered);
   if (filtered.some(t => t.session && t.session.trim())) {
     renderMobileHeatmap(filtered);
   }
   drawMobilePair(filtered);
+  drawMobileSetup(filtered);
   drawMobileObs(filtered);
+  renderMobileTradeLog(filtered);
 }
 
 // ── Mobile preset switcher ──
