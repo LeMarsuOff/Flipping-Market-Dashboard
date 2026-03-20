@@ -3846,11 +3846,28 @@ function _normalizeAPITrade(t) {
 
   // Parse helper for both M15 and H4 obstacles:
   // handles string (single/comma-separated), array (multi-select), or null
+  // Also normalizes known name variations from Notion API → canonical CSV names
+  const _OBS_NORMALIZE = {
+    'news entry':      'News Entry',
+    'news candle':     'News Candle',
+    'volume - faible': 'Volume - Faible',
+    'range':           'Range',
+    'contre order flow':  'Contre Order Flow',
+    'contre orderflow':   'Contre Order Flow',
+    'contre-orderflow':   'Contre Order Flow',
+    'no-volume':       'No-Volume',
+    'no volume':       'No-Volume',
+    'volume - 1st candle': 'Volume - 1st Candle',
+  };
+  const _normObs = s => {
+    const key = s.trim().toLowerCase();
+    return _OBS_NORMALIZE[key] || s.trim();
+  };
   const _parseField = raw => {
     if (!raw) return [];
-    if (Array.isArray(raw)) return raw.filter(Boolean);
+    if (Array.isArray(raw)) return raw.filter(Boolean).map(_normObs);
     if (typeof raw === 'string')
-      return raw.split(',').map(s => s.trim()).filter(s => s && s !== '/' && s !== '-');
+      return raw.split(',').map(s => s.trim()).filter(s => s && s !== '/' && s !== '-').map(_normObs);
     return [];
   };
 
@@ -4763,13 +4780,15 @@ function getFiltered() {
     // BE toggle
     if (!includeBE && (t.outcome === 'BE-TP' || t.outcome === 'BE-SL')) return false;
 
-    // Preset: M15 obstacle exclusions (base + preset-specific)
+    // Preset: M15 obstacle exclusions (base + preset-specific) — case-insensitive
     if (state.m15Exclude.length) {
-      if (state.m15Exclude.some(o => t.obstacles.includes(o))) return false;
+      const obsLower = t.obstacles.map(o => o.toLowerCase());
+      if (state.m15Exclude.some(o => obsLower.includes(o.toLowerCase()))) return false;
     }
-    // Preset: H4 obstacle exclusions
+    // Preset: H4 obstacle exclusions — case-insensitive
     if (state.h4Exclude.length) {
-      if (state.h4Exclude.some(o => t.h4.includes(o))) return false;
+      const h4Lower = t.h4.map(o => o.toLowerCase());
+      if (state.h4Exclude.some(o => h4Lower.includes(o.toLowerCase()))) return false;
     }
     // Preset: session exclusions
     if (state.sessionExclude.length) {
@@ -4790,7 +4809,8 @@ function getFiltered() {
     if (filters.day.size      && !filters.day.has(t.day))         return false;
     if (filters.pair.size     && !filters.pair.has(t.pair))       return false;
     if (filters.obstacles.size) {
-      const hasAll = [...filters.obstacles].every(o => t.obstacles.includes(o));
+      const obsLower = t.obstacles.map(o => o.toLowerCase());
+      const hasAll = [...filters.obstacles].every(o => obsLower.includes(o.toLowerCase()));
       if (!hasAll) return false;
     }
     return true;
