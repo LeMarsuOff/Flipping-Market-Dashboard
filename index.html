@@ -3826,7 +3826,9 @@ function _colAny(headers, ...names) {
 // DATA SOURCE SYSTEM — CSV / API LIVE with cache + fallback
 // ══════════════════════════════════════════════════════
 
-const API_URL        = 'https://notion-dashboard-api.vercel.app/api/trades';
+const API_URL_DEFAULT = 'https://notion-dashboard-api-2.vercel.app/api/trades';
+// API URL can be overridden from the settings panel (stored in localStorage)
+const getAPIURL = () => localStorage.getItem('flipping_api_url') || API_URL_DEFAULT;
 const DS_KEY         = 'dataSource';       // localStorage: "csv" | "api"
 const CACHE_KEY      = 'apiTradesCache';
 const CACHE_TIME_KEY = 'apiTradesCacheTime';
@@ -3971,7 +3973,7 @@ async function loadFromAPI(silent = false) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
-    const resp  = await fetch(API_URL, { signal: controller.signal });
+    const resp  = await fetch(getAPIURL(), { signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const json = await resp.json();
@@ -3990,9 +3992,19 @@ async function loadFromAPI(silent = false) {
     _updateLastSync();
 
   } catch (err) {
-    console.warn('[DS] API fetch failed:', err.message);
+    console.error('[DS] API fetch failed:', err.name, err.message);
     if (loading) loading.style.display = 'none';
     if (dot) { dot.style.background = 'var(--r)'; dot.style.boxShadow = 'none'; }
+
+    // Build human-readable error reason
+    let reason = err.message || 'Erreur inconnue';
+    if (err.name === 'AbortError')                reason = 'Timeout (15s)';
+    else if (err.message.includes('Failed to fetch')) reason = 'Réseau — vérifier CORS ou URL';
+    else if (err.message.includes('NetworkError'))    reason = 'Réseau indisponible';
+    else if (err.message.includes('HTTP '))           reason = err.message; // HTTP 404, 500, etc.
+
+    // Show detailed error in console banner
+    _showAPIError(reason);
 
     // Fallback logic
     const cached = getCachedAPIData();
@@ -4002,13 +4014,11 @@ async function loadFromAPI(silent = false) {
       showDataStatus('Offline — données en cache', 'warn');
       _updateLastSync();
     } else {
-      // No cache — switch back to CSV mode automatically
       if (lbl) lbl.textContent = 'API indisponible';
       localStorage.setItem(DS_KEY, 'csv');
       updateSourceUI('csv');
-      showDataStatus('API indisponible — mode CSV', 'err');
-      // TRADES is already loaded from CSV at init — just re-render
-      render();
+      showDataStatus('API indisponible — fallback CSV', 'err');
+      loadBuiltinCSV();
     }
   } finally {
     _dsLoading = false;
@@ -4095,6 +4105,63 @@ function loadBuiltinCSV() {
       : null;
     _applySerializedLayout(savedLayout || DEFAULT_LAYOUT);
   });
+}
+
+// ── API error banner ──
+function _showAPIError(reason) {
+  let banner = document.getElementById('api-error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'api-error-banner';
+    banner.style.cssText = [
+      'position:fixed','top:48px','left:50%','transform:translateX(-50%)',
+      'z-index:9999','display:flex','flex-direction:column','gap:8px',
+      'padding:12px 16px','border-radius:6px','min-width:460px','max-width:600px',
+      'font-family:DM Mono,monospace','font-size:10px','letter-spacing:.4px',
+      'background:color-mix(in srgb,var(--r) 15%,var(--bg1))',
+      'border:1px solid color-mix(in srgb,var(--r) 40%,transparent)',
+      'color:var(--r)','box-shadow:0 4px 20px rgba(0,0,0,.4)',
+    ].join(';');
+    document.body.appendChild(banner);
+  }
+  const currentURL = getAPIURL();
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
+      <span><span style="font-size:12px">⚠</span> <strong>API Error:</strong> ${reason}</span>
+      <span style="opacity:.5;font-size:9px">${new Date().toLocaleTimeString()}</span>
+      <button onclick="document.getElementById('api-error-banner').remove()"
+        style="background:none;border:none;color:var(--r);cursor:pointer;font-size:14px;padding:0;line-height:1;flex-shrink:0">✕</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:2px">
+      <input id="api-url-input" type="text" value="${currentURL}"
+        style="flex:1;font-family:DM Mono,monospace;font-size:9px;padding:5px 8px;
+               border-radius:3px;border:1px solid color-mix(in srgb,var(--r) 35%,transparent);
+               background:color-mix(in srgb,var(--r) 8%,var(--bg1));color:var(--body);outline:none"
+        placeholder="https://your-project.vercel.app/api/trades"
+        onkeydown="if(event.key==='Enter')_saveAPIURL()">
+      <button onclick="_saveAPIURL()"
+        style="font-family:DM Mono,monospace;font-size:9px;padding:5px 10px;border-radius:3px;
+               border:1px solid color-mix(in srgb,var(--g) 40%,transparent);
+               background:color-mix(in srgb,var(--g) 12%,transparent);
+               color:var(--g);cursor:pointer;white-space:nowrap;flex-shrink:0">
+        ↺ Réessayer
+      </button>
+    </div>
+    <div style="opacity:.45;font-size:8.5px;color:var(--body)">
+      Modifie l'URL si le projet Vercel a changé, puis appuie sur Entrée ou Réessayer
+    </div>
+  `;
+  banner.style.opacity = '1';
+}
+
+function _saveAPIURL() {
+  const input = document.getElementById('api-url-input');
+  if (!input) return;
+  const url = input.value.trim();
+  if (!url) return;
+  localStorage.setItem('flipping_api_url', url);
+  document.getElementById('api-error-banner')?.remove();
+  loadFromAPI(false);
 }
 
 // ── Manual refresh (only in API mode) ──
