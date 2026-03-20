@@ -9074,19 +9074,33 @@ window.addEventListener('resize', () => {
 
 // ── Chart.js lazy load for mobile donut / monthly ──
 // Chart.js is not loaded by default — inject it if on mobile
+
+// ── Mobile chart instances (declared at module level) ──
+let _mobMonthlyChart2 = null;
+let _mobSetupChart    = null;
+let _mobTradeLogPage  = 0;
+let _mobTradeLogAll   = [];
+const MOB_PAGE_SIZE   = 15;
+
 (function() {
   if (!_isMobile()) return;
   const s = document.createElement('script');
   s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
   s.onload = () => {
+    // Full mobile render now that Chart.js is available
     const filtered = getFiltered();
     const stats    = calcStats(filtered);
     updateMobileStats(stats);
     drawMobileEquity(filtered);
     drawMobileDonut(stats);
-    renderMobileHeatmap(filtered);
+    drawMobileMonthly2(filtered);
+    if (filtered.some(t => t.session && t.session.trim())) {
+      renderMobileHeatmap(filtered);
+    }
     drawMobilePair(filtered);
+    drawMobileSetup(filtered);
     drawMobileObs(filtered);
+    renderMobileTradeLog(filtered);
   };
   document.head.appendChild(s);
 })();
