@@ -3963,6 +3963,14 @@ function _injectTrades(parsed, totalLabel) {
   TRADES.length = 0;
   valid.forEach(t => TRADES.push(t));
   TOTAL_OVERRIDE = TRADES.length;
+  // Default to raw mode on any fresh data load
+  showRawAll = true;
+  activePreset = null;
+  state.m15Exclude = [];
+  state.h4Exclude  = [];
+  state.sessionExclude = [];
+  Object.keys(filters).forEach(k => filters[k].clear());
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
   // Restore layout if coming back from beginner CSV
   if (_csvFormat === 'beginner') {
     _csvFormat = null;
@@ -4098,12 +4106,14 @@ function loadBuiltinCSV() {
     invalide:   t.inv || false,
   }));
 
-  // Reset filters
+  // Reset filters — no preset active, raw mode on
+  showRawAll = true;
   Object.keys(filters).forEach(k => filters[k].clear());
-  state.m15Exclude     = [...BASE_M15_EXCLUDE];
+  state.m15Exclude     = [];
   state.h4Exclude      = [];
-  state.sessionExclude = [...BASE_SESSION_EXCLUDE];
+  state.sessionExclude = [];
   activePreset = null;
+  includeBE = false;
   document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
   tf.mode = 'global'; tf.year = null; tf.quarter = null; tf.month = null; tf.compare = false;
   dateFrom = null; dateTo = null;
@@ -4646,18 +4656,19 @@ function setBE(val) {
 //   M15 obstacles: Volume-Faible · News Candle · News Entry · Range
 //   Session: No Man's Land
 //   Bad Feeling & Invalid are already excluded from the dataset at parse time
-const BASE_M15_EXCLUDE     = ['Volume - Faible','News Candle','News Entry','Range'];
+const BASE_M15_EXCLUDE     = ['Volume - Faible','News Entry','Range'];
 const BASE_SESSION_EXCLUDE = [];
 
 // ══ PRESET DEFINITIONS ══
 const PRESETS = [
   {
+    // P0: Baseline clean — invalide + bad feeling + base M15 obstacles excluded
+    // Dataset A/B still controlled by the BE toggle
     id: 0,
     label: 'Raw Baseline',
     be: false,
     clear: true,
-    // Only base exclusions — no additional obstacle/context filters
-    m15Exclude: [],
+    m15Exclude: [],    // BASE_M15_EXCLUDE applied automatically
     h4Exclude: [],
     sessionExclude: [],
   },
@@ -4665,7 +4676,6 @@ const PRESETS = [
     id: 1,
     label: 'LAB 1 — EV Optimised',
     be: false,
-    // Base + H4 No-Volume removed (LAB 1 key finding)
     m15Exclude: ['Contre Order Flow'],
     h4Exclude: ['No-Volume'],
     sessionExclude: [],
@@ -4679,7 +4689,6 @@ const PRESETS = [
     sessionExclude: [],
     setupInclude: ['Continuation Type A','Continuation Type B','Re-confirmation X','Re-confirmation Y'],
   },
-
   {
     id: 3,
     label: 'LAB 7 — Max Filter',
@@ -4689,17 +4698,15 @@ const PRESETS = [
     sessionExclude: [],
     dayInclude: ['Lundi','Mardi','Mercredi','Jeudi'],
   },
-
   {
     id: 4,
     label: 'Custom — No Filters',
     be: false,
     clear: true,
-    // No exclusions at all — completely raw dataset
     m15Exclude: [],
     h4Exclude: [],
     sessionExclude: [],
-    noBaseExclusions: true,  // flag to skip BASE_M15_EXCLUDE / BASE_SESSION_EXCLUDE
+    noBaseExclusions: true,
   },
 ];
 
@@ -4766,44 +4773,45 @@ const SESSION_SHORT = {
 // FILTER ENGINE
 // ══════════════════════════════════════════════════════
 function getFiltered() {
-  // RAW mode: bypass all exclusions and filters
+  // ── RAW mode (Reset button): all trades unfiltered ──
   if (showRawAll) return TRADES.slice();
 
-  // Get active preset definition (if any)
   const p = typeof activePreset === 'number' ? PRESETS.find(x => x.id === activePreset) : null;
 
   const result = TRADES.filter(t => {
-    // Exclude bad feeling and invalide by default (flags from CSV)
-    if (t.badFeeling) return false;
-    if (t.invalide)   return false;
-
-    // BE toggle
+    // ── Dataset A/B: always exclude BE when Dataset A ──
     if (!includeBE && (t.outcome === 'BE-TP' || t.outcome === 'BE-SL')) return false;
 
-    // Preset: M15 obstacle exclusions (base + preset-specific) — case-insensitive
-    if (state.m15Exclude.length) {
-      const obsLower = t.obstacles.map(o => o.toLowerCase());
-      if (state.m15Exclude.some(o => obsLower.includes(o.toLowerCase()))) return false;
-    }
-    // Preset: H4 obstacle exclusions — case-insensitive
-    if (state.h4Exclude.length) {
-      const h4Lower = t.h4.map(o => o.toLowerCase());
-      if (state.h4Exclude.some(o => h4Lower.includes(o.toLowerCase()))) return false;
-    }
-    // Preset: session exclusions
-    if (state.sessionExclude.length) {
-      if (state.sessionExclude.includes(t.session)) return false;
+    // ── Preset-level filters (only when a preset is active) ──
+    if (p !== null) {
+      // Exclude invalide and bad feeling only when a preset is active
+      if (t.invalide)   return false;
+      if (t.badFeeling) return false;
+
+      // M15 obstacle exclusions (base + preset-specific) — case-insensitive
+      if (state.m15Exclude.length) {
+        const obsLower = t.obstacles.map(o => o.toLowerCase());
+        if (state.m15Exclude.some(o => obsLower.includes(o.toLowerCase()))) return false;
+      }
+      // H4 obstacle exclusions — case-insensitive
+      if (state.h4Exclude.length) {
+        const h4Lower = t.h4.map(o => o.toLowerCase());
+        if (state.h4Exclude.some(o => h4Lower.includes(o.toLowerCase()))) return false;
+      }
+      // Session exclusions
+      if (state.sessionExclude.length) {
+        if (state.sessionExclude.includes(t.session)) return false;
+      }
+      // Preset inclusion rules
+      if (!p.clear) {
+        if (p.setupInclude   && p.setupInclude.length   && !p.setupInclude.includes(t.setup))     return false;
+        if (p.sessionInclude && p.sessionInclude.length && !p.sessionInclude.includes(t.session)) return false;
+        if (p.dayInclude     && p.dayInclude.length     && !p.dayInclude.includes(t.day))         return false;
+        if (p.pairInclude    && p.pairInclude.length    && !p.pairInclude.includes(t.pair))       return false;
+      }
     }
 
-    // Preset inclusion rules (setup / session / day / pair)
-    if (p && !p.clear) {
-      if (p.setupInclude   && p.setupInclude.length   && !p.setupInclude.includes(t.setup))    return false;
-      if (p.sessionInclude && p.sessionInclude.length && !p.sessionInclude.includes(t.session)) return false;
-      if (p.dayInclude     && p.dayInclude.length     && !p.dayInclude.includes(t.day))        return false;
-      if (p.pairInclude    && p.pairInclude.length    && !p.pairInclude.includes(t.pair))      return false;
-    }
-
-    // Chip filters (additive on top of preset)
+    // ── Chip filters (always active, additive) ──
     if (filters.setup.size    && !filters.setup.has(t.setup))     return false;
     if (filters.session.size  && !filters.session.has(t.session)) return false;
     if (filters.day.size      && !filters.day.has(t.day))         return false;
@@ -4816,11 +4824,10 @@ function getFiltered() {
     return true;
   });
 
-  // Apply tune-panel overrides on top
+  // Tune-panel overrides (only when preset active)
   let out = result;
-  if (p) {
-    out = getPresetOverrideFiltered(result, activePreset);
-  }
+  if (p) out = getPresetOverrideFiltered(result, activePreset);
+
   // Date range filter
   if (dateFrom) out = out.filter(t => t.date >= dateFrom);
   if (dateTo)   out = out.filter(t => t.date <= dateTo);
