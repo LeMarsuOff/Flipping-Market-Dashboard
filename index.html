@@ -3844,17 +3844,13 @@ function _normalizeAPITrade(t) {
   const dateRaw = (t.date || '').slice(0, 10);
   if (!dateRaw || dateRaw.length < 7) return null;
 
-  // obstaclesH4 can arrive as:
-  //   - string  "contre-OrderFlow"          (getSelectLike, single select)
-  //   - string  "contre-OrderFlow, No-Volume" (getSelectLike on formula)
-  //   - array   ["contre-OrderFlow"]        (if API updated to getMultiSelect)
-  //   - null/undefined                       (field empty)
-  const _parseH4 = raw => {
+  // Parse helper for both M15 and H4 obstacles:
+  // handles string (single/comma-separated), array (multi-select), or null
+  const _parseField = raw => {
     if (!raw) return [];
     if (Array.isArray(raw)) return raw.filter(Boolean);
-    if (typeof raw === 'string') {
+    if (typeof raw === 'string')
       return raw.split(',').map(s => s.trim()).filter(s => s && s !== '/' && s !== '-');
-    }
     return [];
   };
 
@@ -3865,8 +3861,8 @@ function _normalizeAPITrade(t) {
     setup:      t.m15Type || t.confirmation || '',
     session:    _normSession(t.session || t.sessionFormule || ''),
     day:        t.jour || '',
-    obstacles:  _parseObs(t.obstaclesM15),
-    h4:         _parseH4(t.obstaclesH4),
+    obstacles:  _parseField(t.obstaclesM15),
+    h4:         _parseField(t.obstaclesH4),
     outcome:    oc,
     r:          _mapR(oc, t.rrTp1),
     direction:  t.order || '',
