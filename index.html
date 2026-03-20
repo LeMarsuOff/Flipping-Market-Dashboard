@@ -3836,6 +3836,7 @@ const CACHE_TTL_MS   = 5 * 60 * 1000;     // 5 minutes
 
 // Debounce guard — prevents duplicate concurrent API fetches
 let _dsLoading = false;
+let _pendingRestoreState = null;  // state to restore after async API load
 
 // ── Normalize a raw API trade object into the internal trade format ──
 function _normalizeAPITrade(t) {
@@ -4020,6 +4021,10 @@ async function loadFromAPI(silent = false) {
     const parsed = json.trades.map(_normalizeAPITrade).filter(Boolean);
     setCachedAPIData(parsed);           // persist to cache
     _injectTrades(parsed, 'Notion Live');
+    if (_pendingRestoreState) {
+      _restoreFilterState(_pendingRestoreState);
+      _pendingRestoreState = null;
+    }
 
     if (dot) { dot.classList.add('live'); dot.style.background = ''; dot.style.boxShadow = ''; }
     if (lbl)     lbl.textContent     = 'Notion Live (' + TRADES.length + ' trades)';
@@ -4049,6 +4054,10 @@ async function loadFromAPI(silent = false) {
     if (cached && cached.length) {
       if (lbl) lbl.textContent = 'Cache (' + cached.length + ' trades)';
       _injectTrades(cached, 'Cache');
+      if (_pendingRestoreState) {
+        _restoreFilterState(_pendingRestoreState);
+        _pendingRestoreState = null;
+      }
       showDataStatus('Offline — données en cache', 'warn');
       _updateLastSync();
     } else {
@@ -4065,31 +4074,118 @@ async function loadFromAPI(silent = false) {
 }
 
 // ── setDataSource — switch mode, persist, reload data ──
+
+// ── Save / restore filter state across source switches ──
+function _saveFilterState() {
+  return {
+    showRawAll,
+    activePreset,
+    includeBE,
+    m15Exclude:     [...state.m15Exclude],
+    h4Exclude:      [...state.h4Exclude],
+    sessionExclude: [...state.sessionExclude],
+    filters: {
+      setup:     new Set(filters.setup),
+      session:   new Set(filters.session),
+      day:       new Set(filters.day),
+      pair:      new Set(filters.pair),
+      obstacles: new Set(filters.obstacles),
+    },
+    tf: { mode: tf.mode, year: tf.year, quarter: tf.quarter, month: tf.month, compare: tf.compare },
+    dateFrom, dateTo,
+  };
+}
+
+function _restoreFilterState(saved) {
+  if (!saved) return;
+  showRawAll   = saved.showRawAll;
+  activePreset = saved.activePreset;
+  includeBE    = saved.includeBE;
+  state.m15Exclude     = saved.m15Exclude;
+  state.h4Exclude      = saved.h4Exclude;
+  state.sessionExclude = saved.sessionExclude;
+  Object.keys(filters).forEach(k => {
+    filters[k].clear();
+    saved.filters[k].forEach(v => filters[k].add(v));
+  });
+  tf.mode    = saved.tf.mode;
+  tf.year    = saved.tf.year;
+  tf.quarter = saved.tf.quarter;
+  tf.month   = saved.tf.month;
+  tf.compare = saved.tf.compare;
+  dateFrom   = saved.dateFrom;
+  dateTo     = saved.dateTo;
+
+  // Sync UI buttons
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  if (activePreset !== null) {
+    document.getElementById('preset-' + activePreset)?.classList.add('active');
+  }
+  // Sync Raw mode button
+  const resetBtn = document.querySelector('.reset-btn');
+  if (resetBtn) {
+    if (showRawAll) {
+      resetBtn.textContent = '✕ Raw mode';
+      resetBtn.classList.add('raw-active');
+      resetBtn.onclick = exitRawMode;
+    } else {
+      resetBtn.textContent = '↺ Reset';
+      resetBtn.classList.remove('raw-active');
+      resetBtn.onclick = resetAll;
+    }
+  }
+  // Sync BE buttons
+  document.getElementById('be-include')?.classList.toggle('active', includeBE);
+  document.getElementById('be-exclude')?.classList.toggle('active', !includeBE);
+  const badge = document.getElementById('ds-badge');
+  if (badge) {
+    badge.className = includeBE ? 'ds-badge b' : 'ds-badge a';
+    badge.textContent = includeBE ? 'DATASET B' : 'DATASET A';
+  }
+  document.getElementById('mob-dset-a')?.classList.toggle('active', !includeBE);
+  document.getElementById('mob-dset-b')?.classList.toggle('active',  includeBE);
+  const mobBadge = document.getElementById('mob-ds-badge');
+  const mobFooter = document.getElementById('mob-footer-badge');
+  const label = includeBE ? 'DATASET B' : 'DATASET A';
+  if (mobBadge)  mobBadge.textContent = label;
+  if (mobFooter) mobFooter.textContent = label;
+
+  // Re-apply temporal filter UI then re-render with restored state
+  tfSetMode(tf.mode);
+  render();
+}
+
 function setDataSource(mode) {
   if (mode !== 'csv' && mode !== 'api') return;
+
+  // Save current filter state to restore after the source switch
+  const savedState = _saveFilterState();
+  const isFirstLoad = (TRADES.length === 0);
+
   localStorage.setItem(DS_KEY, mode);
   updateSourceUI(mode);
 
   if (mode === 'api') {
-    // Show cached data immediately if available, then refresh if stale
     const cached = getCachedAPIData();
     if (cached && cached.length) {
       _injectTrades(cached, 'Cache');
+      if (!isFirstLoad) _restoreFilterState(savedState);
       const fresh = isCacheFresh();
       showDataStatus(fresh ? 'API (cache frais)' : 'API (cache ancien)', fresh ? 'live' : 'warn');
       _updateLastSync();
-      if (!fresh) loadFromAPI(true); // silent background refresh
+      if (!fresh) loadFromAPI(true);
     } else {
+      // No cache — will restore state after fetch completes
+      _pendingRestoreState = isFirstLoad ? null : savedState;
       loadFromAPI(false);
     }
   } else {
-    // CSV mode: always load the built-in dataset directly — no overlay
-    loadBuiltinCSV();
+    loadBuiltinCSV(isFirstLoad ? null : savedState);
   }
 }
 
 // ── Load the built-in baked CSV dataset ──
-function loadBuiltinCSV() {
+function loadBuiltinCSV(savedState) {
   const parsed = BUILTIN_TRADES.map(t => ({
     date:      t.d,
     month:     t.m,
@@ -4122,6 +4218,9 @@ function loadBuiltinCSV() {
 
   _injectTrades(parsed, 'Built-in CSV');
   _csvFormat = 'flipping';
+  if (savedState) {
+    _restoreFilterState(savedState);
+  }
 
   // Update UI
   const dot = document.getElementById('data-dot');
