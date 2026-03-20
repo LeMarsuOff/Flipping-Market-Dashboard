@@ -6713,7 +6713,7 @@ function render() {
   if (_gsReady) hideEmptyWidgets(filtered);
 
   // Mobile view
-  if (_isMobile()) renderMobile();
+  if (_isMobile()) requestAnimationFrame(() => renderMobile());
 }
 
 // ══════════════════════════════════════════════════════
@@ -8752,6 +8752,15 @@ function drawMobilePair(trades) {
   const tooltipLabel = useTotal ? ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R total`
                                  : ctx => ` ${ctx.raw > 0 ? '+' : ''}${ctx.raw}R / trade`;
 
+  // Explicit sizing — responsive:false to avoid 0x0 on first render
+  const H_pair = Math.max(160, sorted.length * 26 + 30);
+  const wrap_pair = canvas.parentElement;
+  canvas.width  = (wrap_pair.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
+  canvas.height = H_pair * window.devicePixelRatio;
+  canvas.style.width  = '100%';
+  canvas.style.height = H_pair + 'px';
+  wrap_pair.style.height = H_pair + 'px';
+
   _mobPairChart = new Chart(canvas, {
     type: 'bar',
     data: {
@@ -8763,8 +8772,7 @@ function drawMobilePair(trades) {
       }]
     },
     options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false, animation: false,
+      indexAxis: 'y', responsive: false, animation: false,
       plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: tooltipLabel } } },
       scales: {
         x: { grid:{ color:tc('--line') }, ticks:{ color:tc('--dim'), font:{ size:8 } } },
@@ -8801,7 +8809,7 @@ function drawMobileObs(trades) {
 
   const H = Math.max(180, sorted.length * 22 + 30);
   const wrap = canvas.parentElement;
-  canvas.width  = (wrap.offsetWidth || 340) * window.devicePixelRatio;
+  canvas.width  = (wrap.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
   canvas.height = H * window.devicePixelRatio;
   canvas.style.width  = '100%';
   canvas.style.height = H + 'px';
@@ -8854,7 +8862,7 @@ function drawMobileMonthly2(trades) {
   const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold');
 
   const wrap = canvas.parentElement;
-  canvas.width  = (wrap.offsetWidth || 340) * window.devicePixelRatio;
+  canvas.width  = (wrap.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
   canvas.height = 200 * window.devicePixelRatio;
   canvas.style.width  = '100%';
   canvas.style.height = '200px';
@@ -8925,7 +8933,7 @@ function drawMobileSetup(trades) {
 
   const H = Math.max(160, sorted.length * 26 + 30);
   const wrap = canvas.parentElement;
-  canvas.width  = (wrap.offsetWidth || 340) * window.devicePixelRatio;
+  canvas.width  = (wrap.offsetWidth || window.innerWidth - 32) * window.devicePixelRatio;
   canvas.height = H * window.devicePixelRatio;
   canvas.style.width  = '100%';
   canvas.style.height = H + 'px';
