@@ -380,6 +380,11 @@ body {
 .chip[data-key="obstacles"].excluded        { background: rgba(224,90,114,.10); border-color: rgba(224,90,114,.45); color: #f07890; font-weight:600 }
 .chip[data-key="obstacles"].excluded .chip-n{ color: rgba(224,90,114,.55) }
 
+/* H4 obstacles — gold/amber */
+.chip[data-key="h4obs"]:hover               { border-color: rgba(245,200,66,.40); background: rgba(245,200,66,.06); color: var(--white) }
+.chip[data-key="h4obs"].excluded            { background: rgba(245,200,66,.10); border-color: rgba(245,200,66,.45); color: #f0c84a; font-weight:600 }
+.chip[data-key="h4obs"].excluded .chip-n    { color: rgba(245,200,66,.55) }
+
 /* Fallback (other keys) */
 .chip:not([data-key]):hover,
 .chip[data-key=""]:hover                    { border-color: color-mix(in srgb, var(--gold) 30%, transparent); background: var(--bg4); color: var(--white) }
@@ -403,6 +408,7 @@ body {
 .fg-dot.day       { background: #f5c842; }
 .fg-dot.pair      { background: #b478f0; }
 .fg-dot.obstacles { background: var(--r); }
+.fg-dot.h4obs    { background: var(--gold); }
 
 /* BE Toggle */
 .be-toggle-row { display:flex; flex-direction:column; gap:4px }
@@ -2873,7 +2879,8 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
       <div class="mob-preset-pill" onclick="mobApplyPreset(1)">P1 — LAB 1</div>
       <div class="mob-preset-pill" onclick="mobApplyPreset(2)">P2 — LAB 4</div>
       <div class="mob-preset-pill" onclick="mobApplyPreset(3)">P3 — LAB 7</div>
-      <div class="mob-preset-pill" onclick="mobApplyPreset(4)">P4 — No Filters</div>
+      <div class="mob-preset-pill" onclick="mobApplyPreset(4)">P4 — Notion</div>
+      <div class="mob-preset-pill" onclick="mobApplyPreset(5)">P5 — No Filters</div>
       <div style="width:1px;background:var(--line2);margin:4px 2px;flex-shrink:0"></div>
       <div class="mob-bar-mode">
         <div class="mob-bmt active" id="mob-dset-a" onclick="setBE(false)">DS A</div>
@@ -3244,13 +3251,27 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
             <button class="preset-btn" id="preset-4" onclick="applyPreset(4)">
               <span class="preset-num">P4</span>
               <span class="preset-info">
+                <span class="preset-name">Notion Filters</span>
+                <span class="preset-desc">Filtres Notion — sans invalide · bad feeling · obs bruyants · NML · Dimanche</span>
+              </span>
+            </button>
+            <button class="preset-tune-btn" id="tune-4" onclick="toggleTunePanel(4,event)" title="Tune preset filters">⚙<span class="tune-dot"></span></button>
+          </div>
+          <div class="preset-override-panel" id="po-panel-4"></div>
+        </div>
+
+        <div class="preset-row" id="preset-row-5">
+          <div class="preset-btn-wrap">
+            <button class="preset-btn" id="preset-5" onclick="applyPreset(5)">
+              <span class="preset-num">P5</span>
+              <span class="preset-info">
                 <span class="preset-name">Custom — No Filters</span>
                 <span class="preset-desc">Dataset complet — configurez vos filtres</span>
               </span>
             </button>
-            <button class="preset-tune-btn" id="tune-4" onclick="toggleTunePanel(4,event)">⚙<span class="tune-dot"></span></button>
+            <button class="preset-tune-btn" id="tune-5" onclick="toggleTunePanel(5,event)">⚙<span class="tune-dot"></span></button>
           </div>
-          <div class="preset-override-panel" id="po-panel-4"></div>
+          <div class="preset-override-panel" id="po-panel-5"></div>
         </div>
 
       </div>
@@ -3347,6 +3368,14 @@ td.mono { font-family:'DM Mono',monospace; font-size:10.5px }
         <span class="fg-count" id="cnt-obs">0</span>
       </div>
       <div class="chips obs" id="chips-obs"></div>
+    </div>
+
+    <div class="filter-group">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot h4obs"></span>H4 Obstacle</span>
+        <span class="fg-count" id="cnt-h4obs">0</span>
+      </div>
+      <div class="chips obs" id="chips-h4obs"></div>
     </div>
 
   </aside>
@@ -3742,6 +3771,7 @@ const filters = {
   day: new Set(),
   pair: new Set(),
   obstacles: new Set(),
+  h4obs: new Set(),
 };
 
 // ══ MONTHLY MODE ══
@@ -3758,7 +3788,7 @@ function setMonthlyMode(m) {
 let includeBE  = false;
 let showRawAll = false;  // true = show all 567 raw trades (Reset mode)
 let activePreset = null;
-const state = { m15Exclude: [], h4Exclude: [], sessionExclude: [] };
+const state = { m15Exclude: [], h4Exclude: [], sessionExclude: [], dayExclude: [] };
 let TOTAL_OVERRIDE = null;
 
 // ══ SHARED CSV HELPERS ══
@@ -3967,9 +3997,10 @@ function _injectTrades(parsed, totalLabel) {
   // Default to raw mode on any fresh data load
   showRawAll = true;
   activePreset = null;
-  state.m15Exclude = [];
-  state.h4Exclude  = [];
+  state.m15Exclude     = [];
+  state.h4Exclude      = [];
   state.sessionExclude = [];
+  state.dayExclude     = [];
   Object.keys(filters).forEach(k => filters[k].clear());
   document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
   // Restore layout if coming back from beginner CSV
@@ -4084,6 +4115,7 @@ function _saveFilterState() {
     m15Exclude:     [...state.m15Exclude],
     h4Exclude:      [...state.h4Exclude],
     sessionExclude: [...state.sessionExclude],
+    dayExclude:     [...(state.dayExclude || [])],
     filters: {
       setup:     new Set(filters.setup),
       session:   new Set(filters.session),
@@ -4104,6 +4136,7 @@ function _restoreFilterState(saved) {
   state.m15Exclude     = saved.m15Exclude;
   state.h4Exclude      = saved.h4Exclude;
   state.sessionExclude = saved.sessionExclude;
+  state.dayExclude     = saved.dayExclude || [];
   Object.keys(filters).forEach(k => {
     filters[k].clear();
     saved.filters[k].forEach(v => filters[k].add(v));
@@ -4762,7 +4795,6 @@ const BASE_SESSION_EXCLUDE = [];
 const PRESETS = [
   {
     // P0: Baseline clean — invalide + bad feeling + base M15 obstacles excluded
-    // Dataset A/B still controlled by the BE toggle
     id: 0,
     label: 'Raw Baseline',
     be: false,
@@ -4798,7 +4830,21 @@ const PRESETS = [
     dayInclude: ['Lundi','Mardi','Mercredi','Jeudi'],
   },
   {
+    // P4: Notion filters — clean journal view
     id: 4,
+    label: 'Notion Filters',
+    be: false,
+    clear: true,
+    // M15 obstacles to exclude (extends BASE_M15_EXCLUDE)
+    m15Exclude: ['News Candle','Big Impact News','News to entry','Volume - Far Away'],
+    h4Exclude: ['No-Volume','Structure Geante'],
+    sessionExclude: ["No Man's Land"],
+    dayExclude: ['Dimanche'],
+    // bad feeling + invalide handled by preset-level filter in getFiltered()
+  },
+  {
+    // P5: Custom — no filters at all
+    id: 5,
     label: 'Custom — No Filters',
     be: false,
     clear: true,
@@ -4820,10 +4866,12 @@ function applyPreset(id) {
     state.m15Exclude     = [];
     state.h4Exclude      = [];
     state.sessionExclude = [];
+    state.dayExclude     = [];
   } else {
     state.m15Exclude     = [...BASE_M15_EXCLUDE, ...(p.m15Exclude || [])];
     state.h4Exclude      = p.h4Exclude || [];
     state.sessionExclude = [...BASE_SESSION_EXCLUDE, ...(p.sessionExclude || [])];
+    state.dayExclude     = p.dayExclude || [];
   }
   activePreset = id;
   document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
@@ -4850,6 +4898,15 @@ const ALL_OBS = [
   'Contre Order Flow','Faible Sweep','Large Sweep','MNR','News Entry',
   'Range','Setup Geant','Sweep = LQ','Sweep Accumulation','Sweep Interne',
   'Volume - 1st Candle','Volume - Faible','Volume - Mèche',
+];
+
+const ALL_H4OBS = [
+  '1 Candle PB Break','1 Candle PB Sweep','After Sweep','Aggressif',
+  'Faible Sweep','Fib Externe atteint','Fib Interne Atteint',
+  'No mitigation','No-Sweep','No-Volume','No-Volume x Good leg',
+  'Range','Structure - Late','Structure Geante','Sweep - Internal',
+  'Sweep = LQ','Sweep Accumulation','Volume - Faible',
+  'Volume - Wick OB Candle','Wick Break','contre-OrderFlow',
 ];
 
 const DAY_EN = { 'Lundi':'Mon','Mardi':'Tue','Mercredi':'Wed','Jeudi':'Thu','Vendredi':'Fri' };
@@ -4901,6 +4958,10 @@ function getFiltered() {
       if (state.sessionExclude.length) {
         if (state.sessionExclude.includes(t.session)) return false;
       }
+      // Day exclusions
+      if (state.dayExclude && state.dayExclude.length) {
+        if (state.dayExclude.includes(t.day)) return false;
+      }
       // Preset inclusion rules
       if (!p.clear) {
         if (p.setupInclude   && p.setupInclude.length   && !p.setupInclude.includes(t.setup))     return false;
@@ -4910,15 +4971,20 @@ function getFiltered() {
       }
     }
 
-    // ── Chip filters (always active, additive) ──
-    if (filters.setup.size    && !filters.setup.has(t.setup))     return false;
-    if (filters.session.size  && !filters.session.has(t.session)) return false;
-    if (filters.day.size      && !filters.day.has(t.day))         return false;
-    if (filters.pair.size     && !filters.pair.has(t.pair))       return false;
+    // ── Chip filters: EXCLUSIVE — cliquer un chip = l'exclure des graphiques ──
+    if (filters.setup.size    && filters.setup.has(t.setup))      return false;
+    if (filters.session.size  && filters.session.has(t.session))  return false;
+    if (filters.day.size      && filters.day.has(t.day))          return false;
+    if (filters.pair.size     && filters.pair.has(t.pair))        return false;
     if (filters.obstacles.size) {
       const obsLower = t.obstacles.map(o => o.toLowerCase());
-      const hasAll = [...filters.obstacles].every(o => obsLower.includes(o.toLowerCase()));
-      if (!hasAll) return false;
+      const hasAny = [...filters.obstacles].some(o => obsLower.includes(o.toLowerCase()));
+      if (hasAny) return false;
+    }
+    if (filters.h4obs.size) {
+      const h4Lower = (t.h4 || []).map(o => o.toLowerCase());
+      const hasAny  = [...filters.h4obs].some(o => h4Lower.includes(o.toLowerCase()));
+      if (hasAny) return false;
     }
     return true;
   });
@@ -5027,9 +5093,7 @@ function toggleFilter(key, val) {
   _exitRawBtn();
   if (filters[key].has(val)) filters[key].delete(val);
   else filters[key].add(val);
-  // clear preset highlight when user manually changes a chip
-  activePreset = null;
-  document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
+  // Keep activePreset — chip filters are additive on top of the preset
   render();
 }
 
@@ -5038,9 +5102,10 @@ function resetAll() {
   showRawAll = true;
 
   Object.keys(filters).forEach(k => filters[k].clear());
-  state.m15Exclude = [];
-  state.h4Exclude  = [];
+  state.m15Exclude     = [];
+  state.h4Exclude      = [];
   state.sessionExclude = [];
+  state.dayExclude     = [];
   activePreset = null;
   document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
   // Reset temporal filter to Global
@@ -5105,7 +5170,7 @@ function renderActiveFilters() {
   const container = document.getElementById('active-filters');
   if (!container) return;
   container.innerHTML = '';
-  const keyLabels = { setup:'Setup', session:'Session', day:'Day', pair:'Pair', obstacles:'Obstacle' };
+
 
   // Per-category pill color map (bg rgba, border rgba, text)
   const keyColors = {
@@ -5114,7 +5179,9 @@ function renderActiveFilters() {
     day:       ['rgba(245,200,66,.12)',  'rgba(245,200,66,.40)',  '#f0c84a'],
     pair:      ['rgba(180,120,240,.12)', 'rgba(180,120,240,.40)', '#c290f8'],
     obstacles: ['rgba(224,90,114,.12)',  'rgba(224,90,114,.40)',  '#f07890'],
+    h4obs:     ['rgba(245,200,66,.12)',  'rgba(245,200,66,.40)',  '#f0c84a'],
   };
+  const keyLabels = { setup:'Setup', session:'Session', day:'Day', pair:'Pair', obstacles:'M15 Obs', h4obs:'H4 Obs' };
 
   // Show preset M15 exclusions
   state.m15Exclude.forEach(val => {
@@ -5140,8 +5207,16 @@ function renderActiveFilters() {
     pill.innerHTML = `<span style="opacity:.5;font-size:9px">Sess‒</span> ${val}`;
     container.appendChild(pill);
   });
+  // Show day exclusions
+  (state.dayExclude || []).forEach(val => {
+    const pill = document.createElement('div');
+    pill.className = 'af-pill';
+    pill.style.cssText = `background:${keyColors.day[0]};border-color:${keyColors.day[1]};color:${keyColors.day[2]}`;
+    pill.innerHTML = `<span style="opacity:.5;font-size:9px">Jour‒</span> ${val}`;
+    container.appendChild(pill);
+  });
 
-  // Show chip filters — each with its category color
+  // Show chip filters — each with its category color (inclusive filter pills)
   Object.entries(filters).forEach(([key, set]) => {
     const [bg, border, color] = keyColors[key] || ['var(--sel)', 'var(--sel-border)', 'var(--gold)'];
     set.forEach(val => {
@@ -5149,7 +5224,7 @@ function renderActiveFilters() {
       pill.className = 'af-pill';
       pill.style.cssText = `background:${bg};border-color:${border};color:${color}`;
       pill.innerHTML = `<span style="opacity:.5;font-size:9px">${keyLabels[key]}</span> ${val} <span class="af-pill-x">×</span>`;
-      pill.onclick = () => { filters[key].delete(val); activePreset=null; document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active')); render(); };
+      pill.onclick = () => { filters[key].delete(val); render(); };
       container.appendChild(pill);
     });
   });
@@ -7262,7 +7337,8 @@ function render() {
   buildChips('chips-session', SESSIONS, 'session', k=>SESSION_SHORT[k]||k);
   buildChips('chips-day',     DAYS,     'day',     k=>DAY_EN[k]||k);
   buildChips('chips-pair',    PAIRS,    'pair',    null);
-  buildChips('chips-obs',     ALL_OBS,  'obstacles',null);
+  buildChips('chips-obs',     ALL_OBS,    'obstacles', null);
+  buildChips('chips-h4obs',   ALL_H4OBS,  'h4obs',     null);
 
   renderActiveFilters();
   updateStats(stats);
@@ -7692,6 +7768,8 @@ function rebuildDimensions() {
   DAYS.length     = 0; newDays.forEach(v=>DAYS.push(v));
   PAIRS.length    = 0; newPairs.forEach(v=>PAIRS.push(v));
   ALL_OBS.length  = 0; newObs.forEach(v=>ALL_OBS.push(v));
+  const newH4Obs = [...new Set(TRADES.flatMap(t => t.h4 || []))].filter(Boolean).sort();
+  ALL_H4OBS.length = 0; newH4Obs.forEach(v=>ALL_H4OBS.push(v));
 }
 
 // (TOTAL_OVERRIDE applied directly inside updateStats below)
@@ -8198,6 +8276,7 @@ const SB_DIMS = [
   { key:'day',       label:'Day',      items: DAYS,      field: t => [t.day] },
   { key:'pair',      label:'Pair',     items: PAIRS,     field: t => [t.pair] },
   { key:'obstacles', label:'M15 Obs',  items: ALL_OBS,   field: t => t.obstacles },
+  { key:'h4obs',     label:'H4 Obs',   items: ALL_H4OBS, field: t => t.h4 || [] },
 ];
 
 // ══ PRESET OVERRIDES: per-preset Ignore/Include/Exclude state ══
@@ -8208,10 +8287,10 @@ const presetOverrides = {};
 
 const LS_OVERRIDES_KEY='flipping_preset_overrides';
 function savePresetOverrides(){try{const s={};[0,1,2,3,4].forEach(id=>{if(!presetOverrides[id])return;s[id]={};SB_DIMS.forEach(d=>{const o=presetOverrides[id][d.key];s[id][d.key]={mode:o.mode,vals:[...o.vals]};});});localStorage.setItem(LS_OVERRIDES_KEY,JSON.stringify(s));}catch(e){}}
-function loadPresetOverrides(){try{const raw=localStorage.getItem(LS_OVERRIDES_KEY);if(!raw)return;const saved=JSON.parse(raw);Object.entries(saved).forEach(([id,dims])=>{const n=parseInt(id);if(!presetOverrides[n])return;Object.entries(dims).forEach(([k,v])=>{if(!presetOverrides[n][k])return;presetOverrides[n][k]={mode:v.mode,vals:new Set(v.vals)};});});[0,1,2,3,4].forEach(id=>refreshTuneDot(id));}catch(e){}}
+function loadPresetOverrides(){try{const raw=localStorage.getItem(LS_OVERRIDES_KEY);if(!raw)return;const saved=JSON.parse(raw);Object.entries(saved).forEach(([id,dims])=>{const n=parseInt(id);if(!presetOverrides[n])return;Object.entries(dims).forEach(([k,v])=>{if(!presetOverrides[n][k])return;presetOverrides[n][k]={mode:v.mode,vals:new Set(v.vals)};});});[0,1,2,3,4,5].forEach(id=>refreshTuneDot(id));}catch(e){}}
 
 function initPresetOverrides() {
-  [0,1,2,3,4].forEach(id => {
+  [0,1,2,3,4,5].forEach(id => {
     presetOverrides[id] = {};
     SB_DIMS.forEach(d => {
       presetOverrides[id][d.key] = { mode: 'ignore', vals: new Set() };
@@ -8475,20 +8554,20 @@ const ROW_HEIGHT_PX  = 10;   // 1 grid unit = 10px
 
 // ── Default layout: 14 widgets ──
 const DEFAULT_LAYOUT = {
-  'w-equity': {x:0, y:19, w:9, h:46, minW:4, minH:16},
-  'w-outcome': {x:9, y:19, w:3, h:30, minW:3, minH:14},
-  'w-sequence': {x:9, y:49, w:3, h:16, minW:3, minH:12},
-  'w-selection': {x:0, y:65, w:7, h:43, minW:4, minH:14},
-  'w-stats': {x:0, y:0, w:12, h:19, minW:4, minH:12},
-  'w-monthly': {x:7, y:65, w:5, h:43, minW:4, minH:16},
-  'w-setup': {x:0, y:108, w:4, h:31, minW:2, minH:14},
-  'w-session': {x:8, y:108, w:4, h:31, minW:2, minH:14},
-  'w-day': {x:4, y:108, w:4, h:31, minW:2, minH:14},
-  'w-pair': {x:0, y:139, w:4, h:37, minW:2, minH:14},
-  'w-heatmap': {x:4, y:139, w:8, h:37, minW:4, minH:14},
-  'w-m15': {x:6, y:176, w:6, h:73, minW:3, minH:14},
-  'w-h4': {x:0, y:176, w:6, h:73, minW:3, minH:14},
-  'w-tradelog': {x:0, y:249, w:12, h:45, minW:4, minH:16},
+  'w-equity':    {x:0,  y:19,  w:9,  h:46, minW:4, minH:16},
+  'w-outcome':   {x:9,  y:19,  w:3,  h:30, minW:3, minH:14},
+  'w-sequence':  {x:9,  y:49,  w:3,  h:16, minW:3, minH:12},
+  'w-selection': {x:0,  y:65,  w:7,  h:43, minW:4, minH:14},
+  'w-stats':     {x:0,  y:0,   w:12, h:19, minW:4, minH:12},
+  'w-monthly':   {x:7,  y:65,  w:5,  h:43, minW:4, minH:16},
+  'w-setup':     {x:0,  y:108, w:4,  h:36, minW:2, minH:14},
+  'w-session':   {x:8,  y:108, w:4,  h:36, minW:2, minH:14},
+  'w-day':       {x:4,  y:108, w:4,  h:36, minW:2, minH:14},
+  'w-pair':      {x:0,  y:144, w:4,  h:42, minW:2, minH:14},
+  'w-heatmap':   {x:4,  y:144, w:8,  h:42, minW:4, minH:14},
+  'w-m15':       {x:0,  y:186, w:12, h:96, minW:3, minH:14},
+  'w-h4':        {x:0,  y:282, w:12, h:81, minW:3, minH:14},
+  'w-tradelog':  {x:0,  y:363, w:12, h:45, minW:4, minH:16},
 };
 
 const BEGINNER_LAYOUT = {"w-equity":{"x":0,"y":17,"w":9,"h":40},"w-outcome":{"x":9,"y":17,"w":3,"h":27},"w-sequence":{"x":9,"y":44,"w":3,"h":13},"w-selection":{"x":0,"y":57,"w":6,"h":43},"w-stats":{"x":0,"y":0,"w":12,"h":17},"w-monthly":{"x":6,"y":57,"w":6,"h":43},"w-setup":{"x":0,"y":100,"w":5,"h":31},"w-session":{"x":5,"y":259,"w":4,"h":30},"w-day":{"x":5,"y":100,"w":3,"h":31},"w-pair":{"x":8,"y":100,"w":4,"h":31},"w-heatmap":{"x":0,"y":342,"w":12,"h":25},"w-m15":{"x":0,"y":131,"w":12,"h":63},"w-h4":{"x":0,"y":289,"w":12,"h":53},"w-tradelog":{"x":0,"y":194,"w":12,"h":65}};
@@ -9161,6 +9240,7 @@ function drawMobileEquity(trades) {
 let _mobDonutChart = null;
 function drawMobileDonut(stats) {
   if (!_isMobile()) return;
+  if (!_chartJsReady) return;  // Chart.js not loaded yet
   const canvas = document.getElementById('mobDonutCanvas');
   const legend = document.getElementById('mob-donut-legend');
   if (!canvas || !legend) return;
@@ -9345,6 +9425,7 @@ function drawMobileMonthly(trades) {
 let _mobPairChart = null;
 function drawMobilePair(trades) {
   if (!_isMobile()) return;
+  if (!_chartJsReady) return;  // Chart.js not loaded yet
   const canvas = document.getElementById('mobPairCanvas');
   if (!canvas) return;
   if (_mobPairChart) { _mobPairChart.destroy(); _mobPairChart = null; }
@@ -9402,6 +9483,7 @@ function drawMobilePair(trades) {
 let _mobObsChart = null;
 function drawMobileObs(trades) {
   if (!_isMobile()) return;
+  if (!_chartJsReady) return;  // Chart.js not loaded yet
   const canvas = document.getElementById('mobObsCanvas');
   if (!canvas) return;
   if (_mobObsChart) { _mobObsChart.destroy(); _mobObsChart = null; }
@@ -9461,6 +9543,7 @@ function drawMobileObs(trades) {
 
 function drawMobileMonthly2(trades) {
   if (!_isMobile()) return;
+  if (!_chartJsReady) return;  // Chart.js not loaded yet
   const canvas = document.getElementById('mobMonthlyCanvas2');
   if (!canvas) return;
   if (_mobMonthlyChart2) { _mobMonthlyChart2.destroy(); _mobMonthlyChart2 = null; }
@@ -9547,6 +9630,7 @@ function drawMobileMonthly2(trades) {
 
 function drawMobileSetup(trades) {
   if (!_isMobile()) return;
+  if (!_chartJsReady) return;  // Chart.js not loaded yet
   const canvas = document.getElementById('mobSetupCanvas');
   if (!canvas) return;
   if (_mobSetupChart) { _mobSetupChart.destroy(); _mobSetupChart = null; }
@@ -9708,6 +9792,7 @@ window.addEventListener('resize', () => {
 // Chart.js is not loaded by default — inject it if on mobile
 
 // ── Mobile chart instances (declared at module level) ──
+let _chartJsReady     = false;   // true once Chart.js script has loaded
 let _mobMonthlyChart2 = null;
 let _mobSetupChart    = null;
 let _mobTradeLogPage  = 0;
@@ -9719,6 +9804,7 @@ const MOB_PAGE_SIZE   = 15;
   const s = document.createElement('script');
   s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
   s.onload = () => {
+    _chartJsReady = true;
     // Full mobile render now that Chart.js is available
     const filtered = getFiltered();
     const stats    = calcStats(filtered);
