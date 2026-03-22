@@ -7589,7 +7589,7 @@ function parseFlippingMarketCSV(text) {
     });
   }
 
-  if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s (Invalide ou Bad feeling)`);
+  if (skipped>0) warnings.push(`${skipped} trades ignorés (résultat ou date manquants)`);
   if (!trades.length) return {ok:false,error:'\u26a0 Aucun trade valide trouv\u00e9'};
   return {ok:true,trades,warnings};
 }
@@ -7618,8 +7618,7 @@ function parseProTemplateCSV(text) {
   for (let i=1;i<lines.length;i++) {
     const cols=splitCsvLine(lines[i],',');
     const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
-    if (_isBadFeeling(get(iBad))){skipped++;continue;}
-    if (iType>=0&&get(iType).toLowerCase()==='invalid'){skipped++;continue;}
+    const isInvalide = iType>=0 && get(iType).toLowerCase()==='invalid';
     const outcome=_mapOutcome(get(iResult));
     if (!outcome){skipped++;continue;}
     const date=_parseDate(get(iDate));
@@ -7633,6 +7632,8 @@ function parseProTemplateCSV(text) {
       obstacles:_parseObs(get(iObsM15)),
       h4:       _parseObs(get(iObsH4)),
       outcome,  r:_mapR(outcome,get(iRR)), direction:get(iOrder),
+      badFeeling: _isBadFeeling(get(iBad)),
+      invalide:   isInvalide,
     });
   }
   if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
@@ -7663,8 +7664,7 @@ function parseBeginnerCSV(text) {
   for (let i=1;i<lines.length;i++) {
     const cols=splitCsvLine(lines[i],',');
     const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
-    if (_isBadFeeling(get(iBad))){skipped++;continue;}
-    if (iType>=0&&get(iType).toLowerCase()==='invalid'){skipped++;continue;}
+    const isInvalide = iType>=0 && get(iType).toLowerCase()==='invalid';
     const rv=get(iResult).trim();
     if (rv==='.'||rv===''){skipped++;continue;}
     const outcome=_mapOutcome(rv);
@@ -7680,6 +7680,8 @@ function parseBeginnerCSV(text) {
       obstacles:_parseObs(get(iObs)),
       h4:      [],
       outcome, r:_mapR(outcome,get(iRR)), direction:get(iOrder),
+      badFeeling: _isBadFeeling(get(iBad)),
+      invalide:   isInvalide,
     });
   }
   if (skipped>0) warnings.push(`${skipped} trades ignor\u00e9s`);
