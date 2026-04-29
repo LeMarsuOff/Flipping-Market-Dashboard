@@ -14501,11 +14501,56 @@ function _resolveBEDecision(trade) {
 
 // Multi-leg plan path. Used by PO + Personalised + ORR (single-leg).
 function _resolveBeR(trade, partials, reachR) {
+  const mode = _activeBeMode();
+
+  // flipping-be with a plan: trigger BE counterfactuel = first plan leg,
+  // NOT the hardcoded _FLIPPING_BE_R = 2.4R. Rationale: the BE under the
+  // simulated plan is moved when the first partial is taken, so the cap
+  // for the BE-TP/BE-SL counterfactual must align with that leg.
+  // _resolveBEDecision is bypassed here because it doesn't know about the
+  // plan (signature: trade only). For Fixed mode (no plan), the original
+  // _FLIPPING_BE_R logic remains in _resolveBeRFixed, which doesn't call
+  // this function.
+  if (mode === 'flipping-be' && partials && partials.length > 0) {
+    const triggerR = partials[0].lv;
+    const reach = Number.isFinite(reachR) ? reachR : null;
+    const beArmed = reach !== null && reach >= triggerR;
+
+    if (trade.outcome === 'BE-TP') {
+      // BE-TP can never be a real loser in the counterfactual (reached its
+      // journaled TP target by definition). Above the trigger: nothing
+      // captured because the BE held; below: 0R floor (BE-out / KPI BE
+      // Trades). When beArmed, only legs at lv ≤ trigger are captured
+      // (i.e. the first leg only, since trigger == partials[0].lv).
+      if (!beArmed) return 0;
+      let r = 0;
+      for (const { pct, lv } of partials) {
+        if (lv <= triggerR) r += pct * lv;
+      }
+      return r;
+    }
+    // BE-SL
+    if (beArmed) {
+      // BE armed counterfactually: legs at lv ≤ trigger captured, legs
+      // above are 0R (closed at BE before reaching them).
+      let r = 0;
+      for (const { pct, lv } of partials) {
+        if (lv <= triggerR) r += pct * lv;
+      }
+      return r;
+    }
+    // BE never armed: SL pur via _ppSimTrade. reach < first leg → -1R
+    // by _ppSimTrade contract.
+    return _ppSimTrade(reachR, partials);
+  }
+
+  // be-fallback (or flipping-be with no plan — defensive) routes through
+  // the original decision logic via _resolveBEDecision.
   const d = _resolveBEDecision(trade);
   if (d.applyBEAware) {
-    // be-fallback / flipping-be (reach≥2.4): legs at lv ≤ triggerR are
-    // captured before BE retrace; legs above triggerR are credited 0R
-    // (closed at BE before reaching them). Symmetric for BE-TP and BE-SL.
+    // be-fallback: legs at lv ≤ triggerR (from chip) are captured before
+    // BE retrace; legs above triggerR are credited 0R. Symmetric for BE-TP
+    // and BE-SL.
     let r = 0;
     for (const { pct, lv } of partials) {
       if (lv <= d.triggerR) r += pct * lv;
@@ -14513,14 +14558,10 @@ function _resolveBeR(trade, partials, reachR) {
     return r;
   }
   if (d.fallbackToNoBE) {
-    // BE-TP and BE-SL both run the plan via _ppSimTrade (treated as TP / SL
-    // pur), EXCEPT BE-TP under flipping-be where the rrMax<TP1 SL fallback is
-    // disabled (variant 'pure-tp-no-sl'). The BE-SL→-1R systematic shortcut
-    // was removed: under flipping-be reach<2.4, a BE-SL with rrMax ≥ a leg's
-    // lv counterfactually captures that leg, NOT a flat -1R.
+    // Defensive — only reachable if a flipping-be path hits this without
+    // a plan (no current call-site does), kept for symmetry with the
+    // pre-fix code paths.
     if (d.fallbackVariant === 'pure-tp-no-sl' && trade.outcome === 'BE-TP') {
-      // No SL fallback — a BE-TP reached its journaled TP, so the worst
-      // counterfactual is 0R (BE-out / KPI BE Trades).
       let r = 0;
       for (const { pct, lv } of partials) {
         if (reachR >= lv) r += pct * lv;
