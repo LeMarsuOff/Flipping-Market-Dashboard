@@ -12081,7 +12081,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 /* Zone basse (rows 109-168) — Ranking-tbl à gauche, Equity à droite */
 .po-block-ranking-tbl     { grid-column: 1 / span 4;  grid-row: 109 / span 60; }
 .po-block-equity          { grid-column: 6 / span 6;  grid-row: 109 / span 60; }
-.po-block-ranking-compact { grid-column: 1 / span 4;  grid-row: 164 / span 5;  }
 
 .po-ctrl-row {
   display: flex;
@@ -12250,47 +12249,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   gap: var(--space-2);
   padding: 4px 8px 6px;
   flex-shrink: 0;
-}
-
-/* ── Ranking compact (v10, sous le tableau) ─── */
-.po-block-ranking-compact {
-  padding: var(--space-2) var(--space-3);
-  flex-direction: row;
-  align-items: center;
-}
-.po-ranking-compact-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  flex-wrap: wrap;
-}
-.po-ranking-compact-lbl {
-  font-family: 'DM Mono', monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  flex-shrink: 0;
-}
-.po-ranking-compact-radios {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.po-ranking-compact-radios label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  font-family: 'DM Mono', monospace;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.po-ranking-compact-radios input[type="radio"] {
-  accent-color: var(--accent-primary);
 }
 
 /* Toolbar (lives inside .po-block-scatter) ─────────── */
@@ -12499,6 +12457,26 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .po-row.is-baseline { color: var(--text-muted); font-style: italic; }
 .po-row-name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 
+/* Sortable column headers — click to sort, arrow indicator */
+.po-th-sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--ease-fast), background var(--ease-fast);
+}
+.po-th-sortable:hover {
+  color: var(--text-primary);
+  background: var(--surface-3);
+}
+.po-th-sortable.is-sorted {
+  color: var(--gold);
+}
+.po-th-arrow {
+  display: inline-block;
+  font-size: 9px;
+  margin-left: 2px;
+  font-family: 'DM Mono', monospace;
+}
+
 .po-badge {
   display: inline-block;
   padding: 0 5px;
@@ -12670,6 +12648,5 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   .po-block-detail          { order: 8;  min-height: 320px; }
   .po-block-equity          { order: 9;  min-height: 320px; }
   .po-block-ranking-tbl     { order: 10; min-height: 320px; }
-  .po-block-ranking-compact { order: 11; min-height: 60px;  }
   .po-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -14698,6 +14698,7 @@ window._poState = window._poState || {
     tpFinal: 2.4,
     partialMode: 'both',     // 'one' | 'two' | 'both'
     rankMode: 'ev',          // ev | stability | compromise | dd | pf | netSaved
+    rankDir:  'desc',        // 'asc' | 'desc' — direction du tri du Classement
     topN: 50,
     colorMode: 'type',       // 'type' | 'sig' | 'tpfinal'
     sweepMode: false,        // when true, generate models for all PO_RR_DIST_THRESHOLDS
@@ -15232,11 +15233,12 @@ function _poRecompute() {
   return true;
 }
 
-function _poRankResults(results, mode) {
+function _poRankResults(results, mode, dir) {
   const sorted = results.slice();
   const score = (r) => {
     switch (mode) {
       case 'ev':         return r.sim.ev;
+      case 'wr':         return r.sim.wr;
       case 'stability':  return r.stability;
       case 'compromise': return 0.6 * r.sim.ev + 0.004 * r.stability;
       case 'dd':         return -r.sim.maxDD;
@@ -15245,7 +15247,9 @@ function _poRankResults(results, mode) {
       default:           return r.sim.ev;
     }
   };
-  sorted.sort((a, b) => score(b) - score(a));
+  // dir: 'desc' (default) → b - a ; 'asc' → a - b
+  const direction = dir === 'asc' ? 1 : -1;
+  sorted.sort((a, b) => direction * (score(b) - score(a)));
   return sorted;
 }
 
@@ -15388,28 +15392,19 @@ function _poBuildScaffold() {
         <table class="po-ranking" id="po-ranking">
           <thead>
             <tr>
-              <th>#</th><th>Modèle</th><th class="po-num-col">EV</th>
-              <th class="po-num-col">WR</th><th class="po-num-col">PF</th>
-              <th class="po-num-col">DD</th><th class="po-num-col">Stab.</th>
-              <th class="po-num-col">Net</th><th>IC</th>
+              <th>#</th>
+              <th>Modèle</th>
+              <th class="po-num-col po-th-sortable" data-po-sort="ev">EV<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="wr">WR<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="pf">PF<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="dd">DD<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="stability">Stab.<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="netSaved">Net<span class="po-th-arrow"></span></th>
+              <th>IC</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
-      </div>
-    </div>
-
-    <div class="po-block po-block-ranking-compact">
-      <div class="po-ranking-compact-row">
-        <span class="po-ranking-compact-lbl">Trier par</span>
-        <div class="po-ranking-compact-radios">
-          <label><input type="radio" name="po-rank" value="ev" checked><span>Max EV</span></label>
-          <label><input type="radio" name="po-rank" value="stability"><span>Max Stability</span></label>
-          <label><input type="radio" name="po-rank" value="compromise"><span>Best Compromise</span></label>
-          <label><input type="radio" name="po-rank" value="dd"><span>Min DD</span></label>
-          <label><input type="radio" name="po-rank" value="pf"><span>Best PF</span></label>
-          <label><input type="radio" name="po-rank" value="netSaved"><span>Best Net</span></label>
-        </div>
       </div>
     </div>
   `;
@@ -15428,9 +15423,6 @@ function _poWireScaffold() {
   const sweepEl = $('po-sweep-mode'); if (sweepEl) sweepEl.checked = !!cfg.sweepMode;
   const yAxEl = $('po-yaxis');         if (yAxEl) yAxEl.value = cfg.yAxisMode || 'calmar';
   const hideCatEl = $('po-hide-catastrophic'); if (hideCatEl) hideCatEl.checked = !!cfg.hideCatastrophic;
-  document.querySelectorAll('input[name="po-rank"]').forEach(el => {
-    el.checked = (el.value === cfg.rankMode);
-  });
   // v12: initial sync from Optimal RR — adopt whatever bubble was already active.
   _poSyncTPFinalFromORR();
 
@@ -15452,12 +15444,18 @@ function _poWireScaffold() {
     cfg.partialMode = pmEl.value;
     debouncedRecompute();
   });
-  document.querySelectorAll('input[name="po-rank"]').forEach(el => {
-    el.addEventListener('change', () => {
-      if (el.checked) {
-        cfg.rankMode = el.value;
-        _poRender({ rerunSim: false });
+  // Sortable column headers — click to set rankMode, reclick to toggle direction
+  document.querySelectorAll('#po-ranking thead th.po-th-sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const newMode = th.getAttribute('data-po-sort');
+      if (!newMode) return;
+      if (cfg.rankMode === newMode) {
+        cfg.rankDir = (cfg.rankDir === 'desc') ? 'asc' : 'desc';
+      } else {
+        cfg.rankMode = newMode;
+        cfg.rankDir = 'desc';
       }
+      _poRender({ rerunSim: false });
     });
   });
   tnEl?.addEventListener('change', () => {
@@ -15886,8 +15884,20 @@ function _poRenderRanking() {
   if (!tbody) return;
   if (!st.results.length) { tbody.innerHTML = ''; return; }
 
-  const ranked = _poRankResults(st.results, st.config.rankMode);
+  const ranked = _poRankResults(st.results, st.config.rankMode, st.config.rankDir);
   const limit = Math.min(50, ranked.length);
+
+  // Update sort arrow indicators on column headers
+  const arrow = (st.config.rankDir === 'asc') ? '▲' : '▼';
+  document.querySelectorAll('#po-ranking thead th.po-th-sortable').forEach(th => {
+    const mode = th.getAttribute('data-po-sort');
+    const arrowEl = th.querySelector('.po-th-arrow');
+    if (arrowEl) {
+      arrowEl.textContent = (mode === st.config.rankMode) ? ` ${arrow}` : '';
+    }
+    th.classList.toggle('is-sorted', mode === st.config.rankMode);
+  });
+
   const rows = [];
   for (let i = 0; i < limit; i++) {
     const r = ranked[i];
