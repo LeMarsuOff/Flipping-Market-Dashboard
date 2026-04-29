@@ -14711,6 +14711,7 @@ window._poState = window._poState || {
   },
   hiddenTpFinals: new Set(), // TP final values hidden via legend click (sweep+tpfinal mode)
   equityBaselineBeFilter: false, // v12: apply BE Management filter to the equity baseline line
+  hiddenPresetCurves: new Set(), // PR-D: 'P1' | 'P2' | 'P3' if hidden via legend click — persists across re-renders
   scatterChart: null,
   equityChart: null,
 };
@@ -14939,6 +14940,11 @@ function _poDeletePresetSlot(slotKey) {
   try { savePresetLiveFilters(); } catch (e) {
     console.warn('[poPresetSlot] delete failed:', e.message);
     return false;
+  }
+  // PR-D: cleanup hidden-curve state — if the slot is re-saved later, the
+  // curve should reappear by default, not stay hidden from a previous toggle.
+  if (window._poState?.hiddenPresetCurves) {
+    window._poState.hiddenPresetCurves.delete(slotKey);
   }
   return true;
 }
@@ -16447,43 +16453,100 @@ function _poRenderEquity(sel, base) {
     }
   }
 
-  // Labels go up to the longer of the two datasets so curves of different
-  // lengths (when BE filter toggle is on with BE Management active) align.
-  const maxLen = Math.max(sel.sim.equity.length, baseEquityData.length);
+  // PR-D: Recompute equity for each filled preset slot (P1/P2/P3).
+  // Stats stored in slots are just params — equity is recomputed against the
+  // current filtered dataset every render, so curves move with filters.
+  const presetCurves = []; // [{ key, label, data, color }]
+  const _PO_PRESET_COLORS = {
+    P1: tc('--g')   || '#5dd6a8',
+    P2: tc('--t')   || '#3ec8d8',
+    P3: '#b478f0',
+  };
+  for (const key of _PO_PRESET_SLOT_KEYS) {
+    const result = (typeof _poSimulateSlotModel === 'function') ? _poSimulateSlotModel(key) : null;
+    if (!result || !result.sim || !Array.isArray(result.sim.equity)) continue;
+    presetCurves.push({
+      key,
+      label: `${key} · ${result.model.name}`,
+      data: result.sim.equity,
+      color: _PO_PRESET_COLORS[key],
+    });
+  }
+
+  // Labels go up to the longest of all curves so they align.
+  const allLengths = [sel.sim.equity.length, baseEquityData.length, ...presetCurves.map(c => c.data.length)];
+  const maxLen = Math.max(...allLengths);
   const labels = Array.from({ length: maxLen }, (_, i) => i + 1);
   canvas.removeAttribute('width'); canvas.removeAttribute('height');
   const tipFs = (typeof _chartTipFs === 'function') ? _chartTipFs() : 11;
 
+  // Build the datasets array. Preset curves are appended after the 2 core ones.
+  // Their hidden state is restored from st.hiddenPresetCurves (persists across renders).
+  const datasets = [
+    {
+      label: 'Modèle',
+      data: sel.sim.equity,
+      borderColor: tc('--gold') || '#5a9cf5',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.1,
+    },
+    {
+      label: baseLabel,
+      data: baseEquityData,
+      borderColor: tc('--dim') || '#6B8AB0',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [4, 4],
+      pointRadius: 0,
+      tension: 0.1,
+    },
+  ];
+  for (const curve of presetCurves) {
+    datasets.push({
+      label: curve.label,
+      data: curve.data,
+      borderColor: curve.color,
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.1,
+      hidden: st.hiddenPresetCurves.has(curve.key),
+      // Custom property to identify this dataset on legend toggle. Chart.js
+      // ignores unknown keys but they remain accessible via dataset reference.
+      _poPresetKey: curve.key,
+    });
+  }
+
   st.equityChart = new Chart(canvas, {
     type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Modèle',
-          data: sel.sim.equity,
-          borderColor: tc('--gold') || '#5a9cf5',
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.1,
-        },
-        {
-          label: baseLabel,
-          data: baseEquityData,
-          borderColor: tc('--dim') || '#6B8AB0',
-          backgroundColor: 'transparent',
-          borderWidth: 1.5,
-          borderDash: [4, 4],
-          pointRadius: 0,
-          tension: 0.1,
-        },
-      ]
-    },
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       plugins: {
-        legend: { display: true, labels: { color: tc('--dim'), usePointStyle: true, font: { size: tipFs, family: '"DM Mono",monospace' } } },
+        legend: {
+          display: true,
+          labels: { color: tc('--dim'), usePointStyle: true, font: { size: tipFs, family: '"DM Mono",monospace' } },
+          // PR-D: custom onClick to persist preset-curve hide state across re-renders.
+          // Default Chart.js behaviour is preserved for non-preset datasets.
+          onClick: (e, legendItem, legend) => {
+            const ci = legend.chart;
+            const idx = legendItem.datasetIndex;
+            const ds = ci.data.datasets[idx];
+            const presetKey = ds && ds._poPresetKey;
+            // Toggle visibility (mirrors default Chart.js behaviour)
+            const meta = ci.getDatasetMeta(idx);
+            meta.hidden = meta.hidden === null ? !ds.hidden : null;
+            // If this is a preset dataset, persist the new state.
+            if (presetKey && _PO_PRESET_SLOT_KEYS.includes(presetKey)) {
+              const isNowHidden = meta.hidden === true || (meta.hidden === null && ds.hidden === true);
+              if (isNowHidden) st.hiddenPresetCurves.add(presetKey);
+              else st.hiddenPresetCurves.delete(presetKey);
+            }
+            ci.update();
+          },
+        },
         tooltip: { bodyFont: { size: tipFs }, titleFont: { size: tipFs } }
       },
       scales: {
