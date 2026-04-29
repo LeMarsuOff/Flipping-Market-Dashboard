@@ -12246,13 +12246,49 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 .po-btn-icon { font-size: 11px; opacity: 0.85; }
 
-/* v12: petite toolbar au-dessus du canvas Equity pour le toggle BE filter */
+/* ═══════════════════════════════════════════════════════════
+   EQUITY CURVE — Soft Glow redesign (PR-2)
+═══════════════════════════════════════════════════════════ */
+
+.po-block-equity {
+  position: relative;
+  overflow: hidden;
+}
+.po-block-equity::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: -50px;
+  width: 300px;
+  height: 200px;
+  background: radial-gradient(ellipse, rgba(90, 156, 245, 0.10) 0%, transparent 60%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+.po-block-equity > * {
+  position: relative;
+  z-index: 1;
+}
+
 .po-equity-toolbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
-  gap: var(--space-2);
-  padding: 4px 8px 6px;
+  margin-bottom: 8px;
   flex-shrink: 0;
+}
+
+/* Canvas wrapper / stage gets a subtle inner background to set the chart apart */
+.po-block-equity .po-canvas-stage {
+  background: rgba(0, 0, 0, 0.20);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  padding: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
 }
 
 /* Toolbar (lives inside .po-block-scatter) ─────────── */
@@ -12308,92 +12344,146 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   color: var(--text-muted);
 }
 
-/* Detail block (po-block-detail is the container — no nested bg) ─── */
+/* ═══════════════════════════════════════════════════════════
+   BILAN / DETAIL — Soft Glow redesign (PR-2)
+═══════════════════════════════════════════════════════════ */
+
 .po-block-detail {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 14px;
   overflow-y: auto;
+  position: relative;
 }
+
+/* Decorative ambient halo top-right of the Bilan card */
+.po-block-detail::before {
+  content: '';
+  position: absolute;
+  top: -80px;
+  right: -80px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(93, 214, 168, 0.10) 0%, transparent 60%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .po-detail-head {
+  position: relative;
+  z-index: 1;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(93, 214, 168, 0.08) 0%, rgba(90, 156, 245, 0.04) 100%);
+  border: 1px solid rgba(93, 214, 168, 0.15);
+  border-radius: 12px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
   flex-shrink: 0;
 }
 .po-detail-title {
-  font-family: 'DM Mono', monospace;
-  font-size: 16px;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .po-verdict {
-  font-family: 'DM Mono', monospace;
-  font-size: 10px;
-  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 5px 12px;
   border-radius: var(--rad-pill);
-  border: 1px solid var(--border-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 .po-verdict-good {
-  background: var(--g3);
-  border-color: color-mix(in srgb, var(--g) 40%, transparent);
+  background: rgba(93, 214, 168, 0.18);
   color: var(--g);
+  border-color: color-mix(in srgb, var(--g) 30%, transparent);
 }
 .po-verdict-bad {
-  background: var(--r3);
-  border-color: color-mix(in srgb, var(--r) 40%, transparent);
+  background: rgba(224, 90, 110, 0.18);
   color: var(--r);
+  border-color: color-mix(in srgb, var(--r) 30%, transparent);
 }
 .po-verdict-neutral {
-  background: var(--surface-3);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border-color: var(--line2);
 }
 
-/* 9-cell metric grid (3 cols × 3 rows) — fills detail block. Sized +50% vs v3. */
+/* Metric grid */
 .po-metric-grid {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  margin-bottom: 10px;
   flex: 1;
   min-height: 0;
 }
 .po-metric {
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--rad-sm);
-  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
   min-height: 0;
 }
-.po-metric-good { border-left: 4px solid var(--g); }
-.po-metric-bad  { border-left: 4px solid var(--r); }
+.po-metric-good {
+  background: rgba(93, 214, 168, 0.08);
+  border-color: color-mix(in srgb, var(--g) 22%, transparent);
+}
+.po-metric-bad {
+  background: rgba(224, 90, 110, 0.08);
+  border-color: color-mix(in srgb, var(--r) 22%, transparent);
+}
 .po-metric-lbl {
-  font-size: 11px;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
   color: var(--text-muted);
-  font-family: 'DM Mono', monospace;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
+  font-weight: 600;
 }
 .po-metric-val {
-  font-family: 'DM Mono', monospace;
-  font-size: 18px;
-  font-weight: 600;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
 }
-.po-metric-delta { font-size: 11px; }
+.po-metric-good .po-metric-val { color: var(--g); }
+.po-metric-bad  .po-metric-val { color: var(--r); }
+.po-metric-delta {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 
 .po-delta {
-  font-family: 'DM Mono', monospace;
+  font-family: 'DM Mono', ui-monospace, monospace;
   font-size: 9px;
   padding: 0 4px;
   border-radius: var(--rad-pill);
@@ -12403,49 +12493,92 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .po-delta-bad    { background: var(--r3); color: var(--r); }
 .po-delta-neutral{ background: var(--surface-3); color: var(--text-muted); }
 
+/* IC (bootstrap confidence interval) */
 .po-ic {
-  display: flex;
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  font-family: 'DM Mono', monospace;
-  font-size: 10px;
-  color: var(--text-muted);
+  gap: 10px;
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  align-self: flex-start;
+  margin-bottom: 10px;
   flex-shrink: 0;
 }
-.po-ic-lbl { color: var(--text-secondary); font-weight: 600; }
-.po-ic-val { color: var(--text-primary); }
-.po-ic-mean { margin-left: auto; }
+.po-ic-lbl {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.po-ic-val {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.po-ic-mean {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--gold);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
 
-/* PR-B: Apply to Dashboard button — sits at the bottom of #po-detail */
+/* Action buttons (Save + Apply to Dashboard) */
 .po-detail-actions {
+  position: relative;
+  z-index: 1;
   display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-2);
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 .po-btn-apply {
-  background: var(--gold);
-  color: var(--text-inverse);
-  border: 1px solid var(--gold);
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  cursor: pointer;
+  flex: 1;
+  background: linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 80%, white) 100%);
+  color: white;
+  border: 1px solid color-mix(in srgb, var(--gold) 75%, white);
+  border-radius: 10px;
+  padding: 9px 18px;
   font-family: inherit;
-  transition: background var(--ease-fast), opacity var(--ease-fast);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow:
+    0 6px 18px rgba(90, 156, 245, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .po-btn-apply:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--gold) 85%, white);
+  transform: translateY(-1px);
+  box-shadow:
+    0 10px 24px rgba(90, 156, 245, 0.50),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
 }
 .po-btn-apply:disabled {
-  opacity: 0.4;
+  opacity: 0.40;
   cursor: not-allowed;
+  transform: none;
 }
 .po-btn-apply.is-applied {
-  background: var(--g);
-  border-color: var(--g);
+  background: linear-gradient(135deg, var(--g) 0%, color-mix(in srgb, var(--g) 80%, white) 100%);
+  border-color: color-mix(in srgb, var(--g) 75%, white);
+  box-shadow: 0 6px 18px rgba(93, 214, 168, 0.35);
 }
 
 /* Ranking table (lives inside .po-block-ranking-tbl) ─── */
@@ -13018,28 +13151,30 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   display: block;
 }
 
-/* ─── PR-C: Save button in Bilan (alongside Apply to Dashboard) ──── */
+/* ─── Save button in Bilan (PR-2 soft glow) ─────────────────────── */
 .po-btn-save {
-  background: var(--surface-3);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
-  border: 1px solid var(--line2);
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 10px;
+  padding: 9px 16px;
   font-family: inherit;
-  transition: background var(--ease-fast), border-color var(--ease-fast);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  transition: all 0.18s;
 }
 .po-btn-save:hover {
-  background: var(--surface-4);
-  border-color: var(--gold);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--gold);
 }
 .po-btn-save .po-btn-icon {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* ─── PR-C: Popups (Save picker + Delete confirm) ─────────────────── */
