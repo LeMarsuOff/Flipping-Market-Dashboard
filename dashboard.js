@@ -16051,23 +16051,10 @@ function _poApplyToDashboard(sel) {
     },
   };
 
-  // Confirmation if a Personalised plan is already configured (mode === 'personalised'
-  // OR a non-default personalised sub-config exists). We compare against the default
-  // shape — if it's been customized, ask before overwriting.
+  // Apply directly: write the new sub-config, then switch mode (which triggers
+  // _saveTpConfig → render() → all widgets refresh). No confirmation — direct
+  // application by user request (PR-B v2).
   const cfg = appState.ui.tpConfig;
-  const existing = cfg?.personalised;
-  const isCustomized = existing && (
-    existing.tpCount !== 2
-    || existing.targets.tp1 !== 1 || existing.targets.tp2 !== 2 || existing.targets.tp3 !== 3
-    || existing.partials.tp1 !== 50 || existing.partials.tp2 !== 50 || existing.partials.tp3 !== 0
-  );
-  if (isCustomized) {
-    const ok = window.confirm('Replace your current Personalised TP plan?');
-    if (!ok) return;
-  }
-
-  // Apply: write the new sub-config, then switch mode (which triggers _saveTpConfig
-  // → render() → all widgets refresh).
   cfg.personalised = newPersonalised;
   if (typeof _setTpMode === 'function') _setTpMode('personalised');
 
