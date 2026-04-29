@@ -14893,6 +14893,93 @@ function _poTpfColor(tpf) {
   return palette[idx] || (tc('--dim') || '#6B8AB0');
 }
 
+// ── PR-C: Partial Optimizer preset slots (P1/P2/P3) ───────────────────
+// Slots are scoped per dashboard preset (live in presetLiveFilters[id].poPresetSlots)
+// and store only the model parameters. Stats are recomputed on every render against
+// the currently filtered dataset — slots reflect the SAME params under DIFFERENT
+// data conditions, by design.
+
+const _PO_PRESET_SLOT_KEYS = ['P1', 'P2', 'P3'];
+
+/** Returns the {P1, P2, P3} object for the active preset, initializing if absent. */
+function _poGetPresetSlots() {
+  const id = appState.presets?.activeId ?? null;
+  const slot = getPresetLiveSlot(id);
+  if (!slot.poPresetSlots) {
+    slot.poPresetSlots = { P1: null, P2: null, P3: null };
+  }
+  return slot.poPresetSlots;
+}
+
+/** Saves a model to the given slot key (P1/P2/P3). Stores only params (tpFinal, legs,
+ *  type, name). Persists immediately. Returns true on success. */
+function _poSavePresetSlot(slotKey, model) {
+  if (!_PO_PRESET_SLOT_KEYS.includes(slotKey)) return false;
+  if (!model || !Array.isArray(model.legs) || !Number.isFinite(model.tpFinal)) return false;
+
+  const slots = _poGetPresetSlots();
+  slots[slotKey] = {
+    tpFinal: model.tpFinal,
+    legs: model.legs.map(l => ({ lv: l.lv, pct: l.pct })),
+    type: model.type || 'full',
+    name: model.name || `Slot ${slotKey}`,
+  };
+  try { savePresetLiveFilters(); } catch (e) {
+    console.warn('[poPresetSlot] save failed:', e.message);
+    return false;
+  }
+  return true;
+}
+
+/** Empties the given slot key. Persists. Returns true on success. */
+function _poDeletePresetSlot(slotKey) {
+  if (!_PO_PRESET_SLOT_KEYS.includes(slotKey)) return false;
+  const slots = _poGetPresetSlots();
+  slots[slotKey] = null;
+  try { savePresetLiveFilters(); } catch (e) {
+    console.warn('[poPresetSlot] delete failed:', e.message);
+    return false;
+  }
+  return true;
+}
+
+/** Recomputes the simulation result for a saved slot against the current filtered
+ *  dataset. Returns { sim, vsBaseline, stability, model } or null if slot empty / no data. */
+function _poSimulateSlotModel(slotKey) {
+  const slots = _poGetPresetSlots();
+  const stored = slots[slotKey];
+  if (!stored) return null;
+
+  const { trades, rrMaxArr } = _poGetTradesAndRRMax();
+  if (!rrMaxArr.length) return null;
+
+  // Reconstruct a model object compatible with _poSimulateModel.
+  const model = {
+    id: `slot_${slotKey}`,
+    name: stored.name,
+    type: stored.type,
+    legs: stored.legs.map(l => ({ lv: l.lv, pct: l.pct })),
+    sl: -1,
+    tpFinal: stored.tpFinal,
+  };
+
+  const sim = _poSimulateModel(model, rrMaxArr, trades);
+  if (!sim) return null;
+
+  // Compute vsBaseline against the matching tpFinal Full-TP baseline if available
+  // in the current results. Fallback: no comparison.
+  const st = window._poState;
+  let vsBaseline = null;
+  if (st && Array.isArray(st.results)) {
+    const baseline = st.results.find(r => r.model.type === 'full' && r.model.tpFinal === stored.tpFinal);
+    if (baseline) {
+      vsBaseline = _poComputeSavedSacrificed(sim.simR, baseline.sim.simR);
+    }
+  }
+
+  return { sim, vsBaseline, stability: 0, model };
+}
+
 // Simulate one model on the rrMax array — returns per-trade R + aggregates.
 function _poSimulateModel(model, rrMaxArr, trades) {
   const n = rrMaxArr.length;
@@ -21837,6 +21924,10 @@ function _blankLiveSlot() {
   // restore the right bubble.
   slot.rrMinFilter = null;
   // tpConfig is inherited from _blankSnapshot (per-preset architecture).
+  // PR-C: Partial Optimizer preset slots (P1/P2/P3). Each slot stores only the
+  // model params (tpFinal + legs); stats are recomputed on the current filtered
+  // dataset on every render. null = empty slot.
+  slot.poPresetSlots = { P1: null, P2: null, P3: null };
   return slot;
 }
 
@@ -21855,6 +21946,18 @@ function getPresetLiveSlot(id) {
   // Migration: legacy slots may not have tpConfig. Default to fixed mode.
   if (!_isValidTpConfigShape(presetLiveFilters[k].tpConfig)) {
     presetLiveFilters[k].tpConfig = _defaultTpConfig();
+  }
+  // PR-C migration: legacy slots have no poPresetSlots. Default to all empty.
+  if (!presetLiveFilters[k].poPresetSlots
+      || typeof presetLiveFilters[k].poPresetSlots !== 'object') {
+    presetLiveFilters[k].poPresetSlots = { P1: null, P2: null, P3: null };
+  } else {
+    // Ensure all 3 keys exist (forward-compat in case future code adds slots).
+    for (const key of ['P1', 'P2', 'P3']) {
+      if (!(key in presetLiveFilters[k].poPresetSlots)) {
+        presetLiveFilters[k].poPresetSlots[key] = null;
+      }
+    }
   }
   return presetLiveFilters[k];
 }
@@ -21897,6 +22000,31 @@ function loadPresetLiveFilters() {
       // fixed default already in dst from _blankLiveSlot/_blankSnapshot.
       if (slot && _isValidTpConfigShape(slot.tpConfig)) {
         dst.tpConfig = JSON.parse(JSON.stringify(slot.tpConfig));
+      }
+      // PR-C: hydrate poPresetSlots (P1/P2/P3) from storage. Validate shape per slot.
+      if (slot && slot.poPresetSlots && typeof slot.poPresetSlots === 'object') {
+        for (const key of ['P1', 'P2', 'P3']) {
+          const s = slot.poPresetSlots[key];
+          if (s && typeof s === 'object'
+              && Number.isFinite(s.tpFinal)
+              && Array.isArray(s.legs) && s.legs.length >= 1 && s.legs.length <= 3
+              && typeof s.type === 'string'
+              && typeof s.name === 'string') {
+            // Deep-validate each leg
+            const legsValid = s.legs.every(l =>
+              l && typeof l === 'object'
+              && Number.isFinite(l.lv) && Number.isFinite(l.pct)
+            );
+            if (legsValid) {
+              dst.poPresetSlots[key] = {
+                tpFinal: s.tpFinal,
+                legs: s.legs.map(l => ({ lv: l.lv, pct: l.pct })),
+                type: s.type,
+                name: s.name,
+              };
+            }
+          }
+        }
       }
       presetLiveFilters[k] = dst;
     }
@@ -21943,9 +22071,23 @@ function savePresetLiveFilters() {
           hasAny = true;
         }
       }
+      // PR-C: serialize poPresetSlots only if at least one slot is non-null.
+      let poSlotsOut = null;
+      if (slot.poPresetSlots && typeof slot.poPresetSlots === 'object') {
+        const anySlot = ['P1', 'P2', 'P3'].some(k2 => slot.poPresetSlots[k2] !== null);
+        if (anySlot) {
+          poSlotsOut = {
+            P1: slot.poPresetSlots.P1 ? JSON.parse(JSON.stringify(slot.poPresetSlots.P1)) : null,
+            P2: slot.poPresetSlots.P2 ? JSON.parse(JSON.stringify(slot.poPresetSlots.P2)) : null,
+            P3: slot.poPresetSlots.P3 ? JSON.parse(JSON.stringify(slot.poPresetSlots.P3)) : null,
+          };
+          hasAny = true;
+        }
+      }
       if (hasAny) {
         out[k] = { chips: chipsOut, customChips: customOut, comboFilters: cfOut, rrMinFilter: rrMin };
         if (tpcOut) out[k].tpConfig = tpcOut;
+        if (poSlotsOut) out[k].poPresetSlots = poSlotsOut;
       }
     }
     localStorage.setItem(PRESET_LIVE_FILTERS_LS_KEY, JSON.stringify(out));
