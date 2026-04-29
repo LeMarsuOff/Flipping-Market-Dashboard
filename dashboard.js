@@ -15494,6 +15494,13 @@ function _poBuildScaffold() {
         </table>
       </div>
     </div>
+
+    <div class="po-block po-block-presets">
+      <div class="po-block-title">Saved presets</div>
+      <div class="po-presets-grid" id="po-presets-grid">
+        <!-- Tiles injected by _poRenderPresetsBlock -->
+      </div>
+    </div>
   `;
   _poWireScaffold();
 }
@@ -16088,6 +16095,9 @@ function _poRenderDetail() {
     </div>
     ${icHtml}
     <div class="po-detail-actions">
+      <button type="button" class="po-btn-save" id="po-btn-save-preset">
+        <span class="po-btn-icon">💾</span><span>Save</span>
+      </button>
       <button type="button" class="po-btn-apply" id="po-btn-apply-dashboard"
         ${sel.model.type === 'full' ? 'disabled title="Full TP models cannot be applied as Personalised. Switch to Fixed mode manually if needed."' : ''}>
         Apply to Dashboard
@@ -16099,6 +16109,15 @@ function _poRenderDetail() {
   const applyBtn = document.getElementById('po-btn-apply-dashboard');
   if (applyBtn && sel.model.type !== 'full') {
     applyBtn.addEventListener('click', () => _poApplyToDashboard(sel));
+  }
+
+  // Wire the Save button — opens slot picker popup anchored to the button.
+  const saveBtn = document.getElementById('po-btn-save-preset');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      _poOpenSavePopup(saveBtn, sel.model);
+    });
   }
 
   // Equity curve is rendered into its own block (po-block-equity) every render.
@@ -16160,6 +16179,239 @@ function _poApplyToDashboard(sel) {
       }
     }, 1500);
   }
+}
+
+// ── PR-C 2/2: UI for P1/P2/P3 preset slots ────────────────────────────
+
+/** Renders the 3 tiles (P1/P2/P3) in the .po-block-presets block. Called on
+ *  every _poRender, so stats stay in sync with the current filtered dataset. */
+function _poRenderPresetsBlock() {
+  const wrap = document.getElementById('po-presets-grid');
+  if (!wrap) return;
+
+  const slots = _poGetPresetSlots();
+  const tiles = _PO_PRESET_SLOT_KEYS.map(key => {
+    const stored = slots[key];
+    if (!stored) {
+      // Empty tile: + button for quick-save
+      return `
+        <div class="po-preset-tile po-preset-tile-empty" data-po-slot="${key}" role="button" tabindex="0" aria-label="Save current model to ${key}">
+          <div class="po-preset-tile-key">${key}</div>
+          <div class="po-preset-tile-plus">+</div>
+          <div class="po-preset-tile-hint">Quick save</div>
+        </div>
+      `;
+    }
+    // Filled tile: name + 4 stats (recomputed) + Apply / Trash buttons
+    const result = _poSimulateSlotModel(key);
+    const sim = result?.sim;
+    const evTxt   = sim ? _poFmtR(sim.ev) : '—';
+    const wrTxt   = sim ? _poFmtPct(sim.wr) : '—';
+    const ddTxt   = sim ? _poFmtR(-sim.maxDD) : '—';
+    const totTxt  = sim ? _poFmtR(sim.totalR) : '—';
+    const isFull = stored.type === 'full';
+    return `
+      <div class="po-preset-tile po-preset-tile-filled" data-po-slot="${key}">
+        <div class="po-preset-tile-head">
+          <span class="po-preset-tile-key">${key}</span>
+          <span class="po-preset-tile-name" title="${stored.name}">${stored.name}</span>
+        </div>
+        <div class="po-preset-tile-stats">
+          <div class="po-preset-stat"><span class="po-preset-stat-lbl">EV</span><span class="po-preset-stat-val">${evTxt}</span></div>
+          <div class="po-preset-stat"><span class="po-preset-stat-lbl">WR</span><span class="po-preset-stat-val">${wrTxt}</span></div>
+          <div class="po-preset-stat"><span class="po-preset-stat-lbl">DD</span><span class="po-preset-stat-val">${ddTxt}</span></div>
+          <div class="po-preset-stat"><span class="po-preset-stat-lbl">Total R</span><span class="po-preset-stat-val">${totTxt}</span></div>
+        </div>
+        <div class="po-preset-tile-actions">
+          <button type="button" class="po-preset-btn-apply" data-po-slot-apply="${key}"
+            ${isFull ? 'disabled title="Full TP models cannot be applied as Personalised."' : ''}>
+            Apply
+          </button>
+          <button type="button" class="po-preset-btn-trash" data-po-slot-delete="${key}" aria-label="Delete ${key}" title="Delete ${key}">
+            🗑
+          </button>
+        </div>
+      </div>
+    `;
+  });
+
+  wrap.innerHTML = tiles.join('');
+
+  // Wire empty tiles: click = quick-save the currently selected model
+  wrap.querySelectorAll('.po-preset-tile-empty').forEach(tile => {
+    const key = tile.getAttribute('data-po-slot');
+    const handler = () => {
+      const st = window._poState;
+      const sel = st?.results[st.selectedIdx];
+      if (!sel) return;
+      _poSavePresetSlot(key, sel.model);
+      _poRenderPresetsBlock();
+    };
+    tile.addEventListener('click', handler);
+    tile.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); handler(); }
+    });
+  });
+
+  // Wire Apply buttons on filled tiles
+  wrap.querySelectorAll('[data-po-slot-apply]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const key = btn.getAttribute('data-po-slot-apply');
+      const slots = _poGetPresetSlots();
+      const stored = slots[key];
+      if (!stored) return;
+      // Build a model-like object for _poApplyToDashboard
+      const fakeSel = {
+        model: {
+          type: stored.type,
+          legs: stored.legs.map(l => ({ lv: l.lv, pct: l.pct })),
+          tpFinal: stored.tpFinal,
+          name: stored.name,
+        },
+      };
+      _poApplyToDashboard(fakeSel);
+    });
+  });
+
+  // Wire Trash buttons on filled tiles — open confirmation popup
+  wrap.querySelectorAll('[data-po-slot-delete]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const key = btn.getAttribute('data-po-slot-delete');
+      _poOpenDeleteConfirmPopup(btn, key);
+    });
+  });
+}
+
+/** Removes any open PO popup. Idempotent. */
+function _poCloseAllPopups() {
+  document.querySelectorAll('.po-popup').forEach(el => el.remove());
+  document.removeEventListener('click', _poCloseAllPopups);
+  document.removeEventListener('keydown', _poPopupEscHandler);
+}
+
+function _poPopupEscHandler(ev) {
+  if (ev.key === 'Escape') _poCloseAllPopups();
+}
+
+/** Positions a popup element near the given anchor button, using fixed positioning
+ *  so the popup escapes any parent overflow:hidden. Auto-flips above/below if it
+ *  would clip the viewport. */
+function _poPositionPopup(popup, anchor) {
+  // Append to body to escape parent overflow constraints
+  document.body.appendChild(popup);
+  // Measure
+  const a = anchor.getBoundingClientRect();
+  const p = popup.getBoundingClientRect();
+  const margin = 6;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Default: below the anchor, left-aligned
+  let top = a.bottom + margin;
+  let left = a.left;
+
+  // Flip above if overflow bottom
+  if (top + p.height > vh - margin) {
+    top = a.top - p.height - margin;
+  }
+  // Shift left if overflow right
+  if (left + p.width > vw - margin) {
+    left = vw - p.width - margin;
+  }
+  if (left < margin) left = margin;
+  if (top < margin) top = margin;
+
+  popup.style.position = 'fixed';
+  popup.style.top = `${top}px`;
+  popup.style.left = `${left}px`;
+}
+
+/** Opens the Save popup anchored to the Save button. Lists P1/P2/P3 with current
+ *  state (empty / filled with summary). Click on a row → save the current model
+ *  in that slot (overwrite without confirmation, the tile has its own trash). */
+function _poOpenSavePopup(anchor, model) {
+  _poCloseAllPopups();
+
+  const slots = _poGetPresetSlots();
+  const popup = document.createElement('div');
+  popup.className = 'po-popup po-popup-save';
+  popup.innerHTML = `
+    <div class="po-popup-title">Save to slot</div>
+    <div class="po-popup-rows">
+      ${_PO_PRESET_SLOT_KEYS.map(key => {
+        const stored = slots[key];
+        const status = stored
+          ? `<span class="po-popup-row-status filled">${stored.name}</span>`
+          : `<span class="po-popup-row-status empty">empty</span>`;
+        return `
+          <button type="button" class="po-popup-row" data-po-popup-slot="${key}">
+            <span class="po-popup-row-key">${key}</span>
+            ${status}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  popup.querySelectorAll('[data-po-popup-slot]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const key = btn.getAttribute('data-po-popup-slot');
+      _poSavePresetSlot(key, model);
+      _poCloseAllPopups();
+      _poRenderPresetsBlock();
+    });
+  });
+
+  // Prevent click-inside from closing the popup
+  popup.addEventListener('click', (ev) => ev.stopPropagation());
+
+  _poPositionPopup(popup, anchor);
+
+  // Close on outside click / Escape (deferred so the current click doesn't trigger close)
+  setTimeout(() => {
+    document.addEventListener('click', _poCloseAllPopups);
+    document.addEventListener('keydown', _poPopupEscHandler);
+  }, 0);
+}
+
+/** Opens a confirmation popup for slot deletion, anchored to the trash button. */
+function _poOpenDeleteConfirmPopup(anchor, slotKey) {
+  _poCloseAllPopups();
+
+  const popup = document.createElement('div');
+  popup.className = 'po-popup po-popup-confirm';
+  popup.innerHTML = `
+    <div class="po-popup-title">Delete ${slotKey}?</div>
+    <div class="po-popup-msg">This action cannot be undone.</div>
+    <div class="po-popup-actions">
+      <button type="button" class="po-popup-btn-cancel" data-po-popup-cancel>Cancel</button>
+      <button type="button" class="po-popup-btn-danger" data-po-popup-confirm>Delete</button>
+    </div>
+  `;
+
+  popup.querySelector('[data-po-popup-cancel]').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    _poCloseAllPopups();
+  });
+  popup.querySelector('[data-po-popup-confirm]').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    _poDeletePresetSlot(slotKey);
+    _poCloseAllPopups();
+    _poRenderPresetsBlock();
+  });
+
+  // Prevent click-inside from closing
+  popup.addEventListener('click', (ev) => ev.stopPropagation());
+
+  _poPositionPopup(popup, anchor);
+
+  setTimeout(() => {
+    document.addEventListener('click', _poCloseAllPopups);
+    document.addEventListener('keydown', _poPopupEscHandler);
+  }, 0);
 }
 
 function _poRenderEquity(sel, base) {
@@ -16364,6 +16616,7 @@ function _poRender(opts = {}) {
   _poRenderDetail();
   _poRenderStatCards();
   _poRenderRRDist();
+  _poRenderPresetsBlock();
 }
 
 window._poRender = _poRender;
