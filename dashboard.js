@@ -16199,16 +16199,23 @@ function _poRenderPresetsBlock() {
   const tiles = _PO_PRESET_SLOT_KEYS.map(key => {
     const stored = slots[key];
     if (!stored) {
-      // Empty tile: + button for quick-save
+      // Empty tile: + button for quick-save with watermark and SVG plus icon
       return `
         <div class="po-preset-tile po-preset-tile-empty" data-po-slot="${key}" role="button" tabindex="0" aria-label="Save current model to ${key}">
-          <div class="po-preset-tile-key">${key}</div>
-          <div class="po-preset-tile-plus">+</div>
-          <div class="po-preset-tile-hint">Quick save</div>
+          <span class="po-preset-tile-watermark" aria-hidden="true">${key}</span>
+          <div class="po-preset-tile-empty-content">
+            <div class="po-preset-tile-plus">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </div>
+            <div class="po-preset-tile-hint">Quick save</div>
+            <div class="po-preset-tile-sub">Click to save current model</div>
+          </div>
         </div>
       `;
     }
-    // Filled tile: name + 4 stats (recomputed) + Apply / Trash buttons
+    // Filled tile: name + 4 stats (EV/Total R with delta vs baseline, WR/DD without)
+    // + Apply / Trash buttons. Deltas computed against the same-tpFinal Full TP baseline
+    // present in current results — null if baseline not in scope.
     const result = _poSimulateSlotModel(key);
     const sim = result?.sim;
     const evTxt   = sim ? _poFmtR(sim.ev) : '—';
@@ -16216,17 +16223,65 @@ function _poRenderPresetsBlock() {
     const ddTxt   = sim ? _poFmtR(-sim.maxDD) : '—';
     const totTxt  = sim ? _poFmtR(sim.totalR) : '—';
     const isFull = stored.type === 'full';
+    const evClass  = sim ? (sim.ev > 0 ? 'pos' : sim.ev < 0 ? 'neg' : '') : '';
+    const totClass = sim ? (sim.totalR > 0 ? 'pos' : sim.totalR < 0 ? 'neg' : '') : '';
+    const ddClass  = sim ? 'neg' : '';
+
+    const st2 = window._poState;
+    const baselineForSlot = (st2 && Array.isArray(st2.results))
+      ? st2.results.find(r => r.model.type === 'full' && r.model.tpFinal === stored.tpFinal)
+      : null;
+    let evDeltaHTML = '', totDeltaHTML = '';
+    if (sim && baselineForSlot) {
+      const dEV  = sim.ev - baselineForSlot.sim.ev;
+      const dTot = sim.totalR - baselineForSlot.sim.totalR;
+      const evDeltaCls  = dEV  > 0.005 ? 'pos' : dEV  < -0.005 ? 'neg' : 'neutral';
+      const totDeltaCls = dTot > 0.05  ? 'pos' : dTot < -0.05  ? 'neg' : 'neutral';
+      const evArrow  = evDeltaCls  === 'pos' ? '▲' : evDeltaCls  === 'neg' ? '▼' : '•';
+      const totArrow = totDeltaCls === 'pos' ? '▲' : totDeltaCls === 'neg' ? '▼' : '•';
+      evDeltaHTML  = `<span class="po-preset-stat-delta ${evDeltaCls}">${evArrow}${dEV  >= 0 ? '+' : ''}${dEV.toFixed(2)}</span>`;
+      totDeltaHTML = `<span class="po-preset-stat-delta ${totDeltaCls}">${totArrow}${dTot >= 0 ? '+' : ''}${dTot.toFixed(1)}</span>`;
+    }
+
+    const trashSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
+    const typeLabel = stored.type === 'two' ? '2 Partials' : stored.type === 'one' ? '1 Partial' : 'Full TP';
+
     return `
       <div class="po-preset-tile po-preset-tile-filled" data-po-slot="${key}">
         <div class="po-preset-tile-head">
-          <span class="po-preset-tile-key">${key}</span>
-          <span class="po-preset-tile-name" title="${stored.name}">${stored.name}</span>
+          <span class="po-preset-tile-badge" data-slot="${key}">${key}</span>
+          <div class="po-preset-tile-name-block">
+            <span class="po-preset-tile-name" title="${stored.name}">${stored.name}</span>
+            <span class="po-preset-tile-type">${typeLabel}</span>
+          </div>
         </div>
         <div class="po-preset-tile-stats">
-          <div class="po-preset-stat"><span class="po-preset-stat-lbl">EV</span><span class="po-preset-stat-val">${evTxt}</span></div>
-          <div class="po-preset-stat"><span class="po-preset-stat-lbl">WR</span><span class="po-preset-stat-val">${wrTxt}</span></div>
-          <div class="po-preset-stat"><span class="po-preset-stat-lbl">DD</span><span class="po-preset-stat-val">${ddTxt}</span></div>
-          <div class="po-preset-stat"><span class="po-preset-stat-lbl">Total R</span><span class="po-preset-stat-val">${totTxt}</span></div>
+          <div class="po-preset-stat po-preset-stat-primary">
+            <span class="po-preset-stat-lbl">EV</span>
+            <div class="po-preset-stat-row">
+              <span class="po-preset-stat-val ${evClass}">${evTxt}</span>
+              ${evDeltaHTML}
+            </div>
+          </div>
+          <div class="po-preset-stat po-preset-stat-primary">
+            <span class="po-preset-stat-lbl">Total R</span>
+            <div class="po-preset-stat-row">
+              <span class="po-preset-stat-val ${totClass}">${totTxt}</span>
+              ${totDeltaHTML}
+            </div>
+          </div>
+          <div class="po-preset-stat">
+            <span class="po-preset-stat-lbl">WR</span>
+            <div class="po-preset-stat-row">
+              <span class="po-preset-stat-val">${wrTxt}</span>
+            </div>
+          </div>
+          <div class="po-preset-stat">
+            <span class="po-preset-stat-lbl">Max DD</span>
+            <div class="po-preset-stat-row">
+              <span class="po-preset-stat-val ${ddClass}">${ddTxt}</span>
+            </div>
+          </div>
         </div>
         <div class="po-preset-tile-actions">
           <button type="button" class="po-preset-btn-apply" data-po-slot-apply="${key}"
@@ -16234,7 +16289,7 @@ function _poRenderPresetsBlock() {
             Apply
           </button>
           <button type="button" class="po-preset-btn-trash" data-po-slot-delete="${key}" aria-label="Delete ${key}" title="Delete ${key}">
-            🗑
+            ${trashSVG}
           </button>
         </div>
       </div>
