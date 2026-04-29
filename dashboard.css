@@ -12057,30 +12057,31 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 
 /* ── Locked block placements (12-col × 168-row grid) ──────────────
-   Layout v9 — 13 blocks. Bandeau supérieur 5 contrôles côte à côte
-   (rows 1-32). Scatter pleine largeur droite + 5 stat cards empilées
-   à gauche (rows 33-107). Zone basse: Detail + Equity côte à côte
-   (Equity 3× plus haut), Tableau classement sous Detail. */
+   Layout v13 (2026-04-29) — réorganisation:
+   - Tuiles stats (Best EV / Stab / DD / TPF) en bandeau 4×1 sous RR Dist
+   - Best Compromise full-width sous le bandeau
+   - Detail (Bilan) déplacé en zone gauche row 63-108 (sous tuiles)
+   - Equity & Ranking-tbl côte à côte en bas (rows 109-168)
+   - Scatter étendu d'1 row (107→108) pour aligner avec le détail */
+.po-block-rr-dist     { grid-column: 1 / span 4;  grid-row: 1   / span 36;  }
+.po-block-scatter     { grid-column: 5 / span 8;  grid-row: 1   / span 108; }
 
-/* v12 layout — Setup fusionné dans la toolbar du scatter, pas de bloc dédié.
-   RR Dist seul à gauche en haut, scatter pleine hauteur droite. Stat cards
-   en grille 2×2 sous RR Dist + 5e card en pleine largeur. */
-.po-block-rr-dist     { grid-column: 1 / span 4;  grid-row: 1   / span 36; }
-.po-block-scatter     { grid-column: 5 / span 8;  grid-row: 1   / span 107; }
+/* Tuiles stats — bandeau 4×1 cols 1-4, rows 37-49 */
+.po-block-best-ev     { grid-column: 1 / span 1;  grid-row: 37  / span 13;  }
+.po-block-best-stab   { grid-column: 2 / span 1;  grid-row: 37  / span 13;  }
+.po-block-min-dd      { grid-column: 3 / span 1;  grid-row: 37  / span 13;  }
+.po-block-best-tpf    { grid-column: 4 / span 1;  grid-row: 37  / span 13;  }
 
-/* Stat cards — grille 2 cols dans cols 1-4, sous RR Dist */
-.po-block-best-ev     { grid-column: 1 / span 2;  grid-row: 37  / span 16; }
-.po-block-best-tpf    { grid-column: 3 / span 2;  grid-row: 37  / span 16; }
-.po-block-min-dd      { grid-column: 1 / span 2;  grid-row: 53  / span 16; }
-.po-block-best-stab   { grid-column: 3 / span 2;  grid-row: 53  / span 16; }
-.po-block-best-comp   { grid-column: 1 / span 4;  grid-row: 69  / span 16; }
+/* Best Compromise — full-width sous le bandeau, rows 50-62 */
+.po-block-best-comp   { grid-column: 1 / span 4;  grid-row: 50  / span 13;  }
 
-/* Zone basse (rows 108-168) — Detail agrandi (#7), Equity inchangé,
-   Ranking-tbl décalé pour laisser de la place à Detail. */
-.po-block-detail          { grid-column: 1 / span 6;  grid-row: 108 / span 32; }
-.po-block-equity          { grid-column: 7 / span 6;  grid-row: 108 / span 61; }
-.po-block-ranking-tbl     { grid-column: 1 / span 6;  grid-row: 140 / span 24; }
-.po-block-ranking-compact { grid-column: 1 / span 6;  grid-row: 164 / span 5;  }
+/* Detail (Bilan) — zone gauche, rows 63-108 */
+.po-block-detail      { grid-column: 1 / span 4;  grid-row: 63  / span 46;  }
+
+/* Zone basse (rows 109-168) — Ranking-tbl à gauche, Equity à droite */
+.po-block-ranking-tbl     { grid-column: 1 / span 4;  grid-row: 109 / span 60; }
+.po-block-equity          { grid-column: 6 / span 6;  grid-row: 109 / span 60; }
+.po-block-ranking-compact { grid-column: 1 / span 4;  grid-row: 164 / span 5;  }
 
 .po-ctrl-row {
   display: flex;
