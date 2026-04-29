@@ -11971,7 +11971,10 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .po-body {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: repeat(188, minmax(0, 1fr));
+  /* Layout v13 + post-redesign sizing fix: rows 188 → 208 to give Best stat
+     cards / Bilan / Saved Presets more vertical room without shrinking the
+     other blocks proportionally. */
+  grid-template-rows: repeat(208, minmax(0, 1fr));
   gap: var(--space-2);
   flex: 1;
   width: 100%;
@@ -12064,27 +12067,29 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
    - Equity & Ranking-tbl côte à côte en bas (rows 109-168)
    - Scatter étendu d'1 row (107→108) pour aligner avec le détail */
 .po-block-rr-dist     { grid-column: 1 / span 4;  grid-row: 1   / span 36;  }
-.po-block-scatter     { grid-column: 5 / span 8;  grid-row: 1   / span 108; }
+/* Scatter spans the right side of the entire left stack — extended from 108
+   to 124 to remain aligned with the new Bilan end (post-sizing fix). */
+.po-block-scatter     { grid-column: 5 / span 8;  grid-row: 1   / span 124; }
 
-/* Tuiles stats — bandeau 4×1 cols 1-4, rows 37-49 */
-.po-block-best-ev     { grid-column: 1 / span 1;  grid-row: 37  / span 13;  }
-.po-block-best-stab   { grid-column: 2 / span 1;  grid-row: 37  / span 13;  }
-.po-block-min-dd      { grid-column: 3 / span 1;  grid-row: 37  / span 13;  }
-.po-block-best-tpf    { grid-column: 4 / span 1;  grid-row: 37  / span 13;  }
+/* Tuiles stats — bandeau 4×1 cols 1-4, rows 37-52 (span 13 → 16, +3 each) */
+.po-block-best-ev     { grid-column: 1 / span 1;  grid-row: 37  / span 16;  }
+.po-block-best-stab   { grid-column: 2 / span 1;  grid-row: 37  / span 16;  }
+.po-block-min-dd      { grid-column: 3 / span 1;  grid-row: 37  / span 16;  }
+.po-block-best-tpf    { grid-column: 4 / span 1;  grid-row: 37  / span 16;  }
 
-/* Best Compromise — full-width sous le bandeau, rows 50-62 */
-.po-block-best-comp   { grid-column: 1 / span 4;  grid-row: 50  / span 13;  }
+/* Best Compromise — full-width sous le bandeau, rows 53-68 (span 13 → 16) */
+.po-block-best-comp   { grid-column: 1 / span 4;  grid-row: 53  / span 16;  }
 
-/* Detail (Bilan) — zone gauche, rows 63-108 */
-.po-block-detail      { grid-column: 1 / span 4;  grid-row: 63  / span 46;  }
+/* Detail (Bilan) — zone gauche, rows 69-124 (span 46 → 56, +10 for 9 metrics
+   to breathe and title to wrap on 2 lines) */
+.po-block-detail      { grid-column: 1 / span 4;  grid-row: 69  / span 56;  }
 
-/* Zone basse (rows 109-168) — Ranking-tbl à gauche, Equity à droite */
-.po-block-ranking-tbl     { grid-column: 1 / span 4;  grid-row: 109 / span 60; }
-.po-block-equity          { grid-column: 6 / span 6;  grid-row: 109 / span 60; }
+/* Zone basse (rows 125-184) — Ranking-tbl à gauche, Equity à droite (shifted +16) */
+.po-block-ranking-tbl     { grid-column: 1 / span 4;  grid-row: 125 / span 60; }
+.po-block-equity          { grid-column: 6 / span 6;  grid-row: 125 / span 60; }
 
-/* PR-C: provisional placement for saved presets block — full-width at the bottom.
-   Max will reposition this via the reorganizer later. */
-.po-block-presets         { grid-column: 1 / span 12; grid-row: 169 / span 20; }
+/* Saved presets block — full-width at the bottom, rows 185-208 (span 20 → 24) */
+.po-block-presets         { grid-column: 1 / span 12; grid-row: 185 / span 24; }
 
 .po-ctrl-row {
   display: flex;
@@ -13291,6 +13296,90 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 
 /* ═══════════════════════════════════════════════════════════
+   POST-REDESIGN SIZING FIXES
+   Override PR-1 / PR-2 sizing where the v13 layout was too cramped.
+═══════════════════════════════════════════════════════════ */
+
+/* Best stat cards — allow 2-line model name wrap, larger cards */
+.po-widget .po-stat-card {
+  min-height: 100px;
+  padding: 12px;
+  gap: 8px;
+}
+.po-widget .po-stat-name {
+  font-size: 11px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  white-space: normal;
+}
+.po-widget .po-stat-val {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+/* Best Compromise has two spans inside the value — let it wrap if needed */
+.po-widget .po-stat-card[data-po-stat="compromise"] .po-stat-val {
+  white-space: normal;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+/* Saved Presets — taller tiles, wrapping names, tighter stats to prevent
+   delta overflow on narrow grids */
+.po-widget .po-preset-tile {
+  min-height: 240px;
+}
+.po-widget .po-preset-tile-name {
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.po-widget .po-preset-stat-val {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.po-widget .po-preset-stat-delta {
+  font-size: 9px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* Bilan / Detail — wrapping title, ellipsis on metric values, 2-col grid on
+   narrow viewports */
+.po-widget .po-detail-title {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+}
+/* flex-shrink: 0 prevents the value line from collapsing to 0 height when the
+   metric cell is height-constrained (caused empty cells before fix). */
+.po-widget .po-metric-val {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  min-height: 1.2em;
+}
+@media (max-width: 1100px) {
+  .po-widget .po-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    PARTIAL OPTIMIZER WIDGET — Header refresh (PR-3)
    Scoped to .po-widget only.
 ═══════════════════════════════════════════════════════════ */
@@ -13346,6 +13435,24 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Universal value coloring — applied dynamically based on sign.
+   Used by stat cards, Bilan metrics, saved preset stats.
+═══════════════════════════════════════════════════════════ */
+.po-widget .po-v-pos { color: var(--g) !important; }
+.po-widget .po-v-neg { color: var(--r) !important; }
+.po-widget .po-v-neutral { color: var(--text-primary) !important; }
+
+/* Stat card values with no .po-v-* class fall back to primary text */
+.po-widget .po-stat-val:not(.po-v-pos):not(.po-v-neg):not(.po-v-neutral) {
+  color: var(--text-primary);
+}
+/* Best Compromise: secondary part (· stability) stays primary */
+.po-widget .po-stat-val .po-stat-val-secondary {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 /* ═══════════════════════════════════════════════════════════

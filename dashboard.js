@@ -15334,14 +15334,20 @@ function _poRankResults(results, mode, dir) {
       case 'wr':         return r.sim.wr;
       case 'stability':  return r.stability;
       case 'compromise': return 0.6 * r.sim.ev + 0.004 * r.stability;
+      // sim.maxDD is POSITIVE (peak - cum, ≥ 0). For "Min DD" (best = smallest
+      // drawdown) we want the smallest maxDD first under desc — return -maxDD
+      // so largest score (least negative) wins.
       case 'dd':         return -r.sim.maxDD;
       case 'pf':         return r.sim.pf;
       case 'netSaved':   return r.vsBaseline ? r.vsBaseline.net : 0;
       default:           return r.sim.ev;
     }
   };
-  // dir: 'desc' (default) → b - a ; 'asc' → a - b
-  const direction = dir === 'asc' ? 1 : -1;
+  // Direction multiplier: desc (default) = largest score first, asc = smallest
+  // first. Previous code had this inverted, causing all stat cards to surface
+  // the WORST model. JS sort: negative return → a before b. score(b) - score(a)
+  // is negative when score(a) > score(b), so a comes first → descending ✓.
+  const direction = dir === 'asc' ? -1 : 1;
   sorted.sort((a, b) => direction * (score(b) - score(a)));
   return sorted;
 }
@@ -16075,19 +16081,19 @@ function _poRenderDetail() {
     </div>
     <div class="po-metric-grid">
       <div class="po-metric"><div class="po-metric-lbl">EV</div>
-        <div class="po-metric-val">${_poFmtR(sel.sim.ev)}</div>
+        <div class="po-metric-val ${_poColorClass(sel.sim.ev)}">${_poFmtR(sel.sim.ev)}</div>
         <div class="po-metric-delta">${_poDeltaSpan(dEV)}</div></div>
       <div class="po-metric"><div class="po-metric-lbl">WR</div>
-        <div class="po-metric-val">${_poFmtPct(sel.sim.wr)}</div>
+        <div class="po-metric-val ${_poColorClass(sel.sim.wr - 0.5)}">${_poFmtPct(sel.sim.wr)}</div>
         <div class="po-metric-delta">${_poDeltaSpan(dWR * 100, 'pp')}</div></div>
       <div class="po-metric"><div class="po-metric-lbl">PF</div>
-        <div class="po-metric-val">${_poFmtNum(sel.sim.pf)}</div>
+        <div class="po-metric-val ${_poColorClass(sel.sim.pf - 1, 0.01, -0.01)}">${_poFmtNum(sel.sim.pf)}</div>
         <div class="po-metric-delta">${_poDeltaSpan(dPF, '')}</div></div>
       <div class="po-metric"><div class="po-metric-lbl">Max DD</div>
-        <div class="po-metric-val">${_poFmtR(-sel.sim.maxDD)}</div>
+        <div class="po-metric-val ${_poColorClass(-sel.sim.maxDD)}">${_poFmtR(-sel.sim.maxDD)}</div>
         <div class="po-metric-delta">${_poDeltaSpan(dDD)}</div></div>
       <div class="po-metric"><div class="po-metric-lbl">Total R</div>
-        <div class="po-metric-val">${_poFmtR(sel.sim.totalR)}</div>
+        <div class="po-metric-val ${_poColorClass(sel.sim.totalR)}">${_poFmtR(sel.sim.totalR)}</div>
         <div class="po-metric-delta">${_poDeltaSpan(dTot)}</div></div>
       <div class="po-metric"><div class="po-metric-lbl">Stability</div>
         <div class="po-metric-val">${sel.stability}</div>
@@ -16223,9 +16229,12 @@ function _poRenderPresetsBlock() {
     const ddTxt   = sim ? _poFmtR(-sim.maxDD) : '—';
     const totTxt  = sim ? _poFmtR(sim.totalR) : '—';
     const isFull = stored.type === 'full';
+    // Dynamic color classes — pos=green, neg=red, neutral=primary.
+    // sim.maxDD is positive (peak - cum, ≥ 0) → maxDD > 0 = drawdown exists → red.
     const evClass  = sim ? (sim.ev > 0 ? 'pos' : sim.ev < 0 ? 'neg' : '') : '';
     const totClass = sim ? (sim.totalR > 0 ? 'pos' : sim.totalR < 0 ? 'neg' : '') : '';
-    const ddClass  = sim ? 'neg' : '';
+    const wrClass  = sim ? (sim.wr > 0.5 ? 'pos' : sim.wr < 0.5 ? 'neg' : '') : '';
+    const ddClass  = sim ? (sim.maxDD > 0 ? 'neg' : '') : '';
 
     const st2 = window._poState;
     const baselineForSlot = (st2 && Array.isArray(st2.results))
@@ -16273,7 +16282,7 @@ function _poRenderPresetsBlock() {
           <div class="po-preset-stat">
             <span class="po-preset-stat-lbl">WR</span>
             <div class="po-preset-stat-row">
-              <span class="po-preset-stat-val">${wrTxt}</span>
+              <span class="po-preset-stat-val ${wrClass}">${wrTxt}</span>
             </div>
           </div>
           <div class="po-preset-stat">
@@ -16616,39 +16625,72 @@ function _poRenderEquity(sel, base) {
   });
 }
 
+// Maps a numeric value to a color class. Wider-than-zero threshold avoids
+// flickering between colors on near-zero values.
+function _poColorClass(value, thresholdPos = 0.005, thresholdNeg = -0.005) {
+  if (!Number.isFinite(value)) return '';
+  if (value > thresholdPos) return 'po-v-pos';
+  if (value < thresholdNeg) return 'po-v-neg';
+  return 'po-v-neutral';
+}
+
 function _poRenderStatCards() {
   const st = window._poState;
   const cards = document.querySelectorAll('.po-stat-card');
   if (!cards.length || !st.results.length) return;
 
-  const setCard = (key, ranked, valFmt) => {
+  // applyColor: function returning the value to color-classify (null = no coloring)
+  const setCard = (key, ranked, valFmt, applyColor) => {
     const card = document.querySelector(`.po-stat-card[data-po-stat="${key}"]`);
     if (!card || !ranked.length) return;
     const top = ranked[0];
-    card.querySelector('.po-stat-name').textContent = top.model.name;
-    card.querySelector('.po-stat-val').textContent = valFmt(top);
+    const nameEl = card.querySelector('.po-stat-name');
+    const valEl  = card.querySelector('.po-stat-val');
+    if (nameEl) nameEl.textContent = top.model.name;
+    if (valEl) {
+      valEl.classList.remove('po-v-pos', 'po-v-neg', 'po-v-neutral');
+      if (key === 'compromise') {
+        // Mixed coloring: EV dynamic, stability primary
+        const evVal = top.sim.ev;
+        const evCls = _poColorClass(evVal);
+        valEl.innerHTML = `<span class="${evCls}">${_poFmtR(evVal)}</span> <span class="po-stat-val-secondary">· ${top.stability}</span>`;
+      } else {
+        valEl.textContent = valFmt(top);
+        if (applyColor) {
+          const cls = _poColorClass(applyColor(top));
+          if (cls) valEl.classList.add(cls);
+        }
+      }
+    }
   };
-  setCard('ev',         _poRankResults(st.results, 'ev'),         (r) => _poFmtR(r.sim.ev));
-  setCard('stability',  _poRankResults(st.results, 'stability'),  (r) => `${r.stability}`);
-  setCard('compromise', _poRankResults(st.results, 'compromise'), (r) => `${_poFmtR(r.sim.ev)} · ${r.stability}`);
-  setCard('dd',         _poRankResults(st.results, 'dd'),         (r) => _poFmtR(-r.sim.maxDD));
+  setCard('ev',         _poRankResults(st.results, 'ev'),         (r) => _poFmtR(r.sim.ev),         (r) => r.sim.ev);
+  setCard('stability',  _poRankResults(st.results, 'stability'),  (r) => `${r.stability}`,          null);
+  setCard('compromise', _poRankResults(st.results, 'compromise'), null,                             null);
+  setCard('dd',         _poRankResults(st.results, 'dd'),         (r) => _poFmtR(-r.sim.maxDD),     (r) => -r.sim.maxDD);
 
   // Best TP Final — only meaningful in sweep mode (otherwise all models share
-  // a single TP final). Show a placeholder explaining the disabled state.
+  // a single TP final). AVG EV part colored dynamically like Total R.
   const tpfCard = document.querySelector('.po-stat-card[data-po-stat="tpfinal"]');
   if (tpfCard) {
+    const nameEl = tpfCard.querySelector('.po-stat-name');
+    const valEl  = tpfCard.querySelector('.po-stat-val');
+    if (valEl) valEl.classList.remove('po-v-pos', 'po-v-neg', 'po-v-neutral');
     if (st.config.sweepMode) {
       const best = _poBestTpFinal(st.results);
       if (best) {
-        tpfCard.querySelector('.po-stat-name').textContent = `top 20% (n=${best.n})`;
-        tpfCard.querySelector('.po-stat-val').textContent = `${best.tpf}R · ${_poFmtR(best.avgEV)}`;
+        if (nameEl) nameEl.textContent = `top 20% (n=${best.n})`;
+        if (valEl) {
+          valEl.textContent = `${best.tpf}R · ${_poFmtR(best.avgEV)}`;
+          const cls = _poColorClass(best.avgEV);
+          if (cls) valEl.classList.add(cls);
+        }
       } else {
-        tpfCard.querySelector('.po-stat-name').textContent = '—';
-        tpfCard.querySelector('.po-stat-val').textContent = '—';
+        if (nameEl) nameEl.textContent = '—';
+        if (valEl) valEl.textContent = '—';
       }
     } else {
-      tpfCard.querySelector('.po-stat-name').textContent = '(sweep désactivé)';
-      tpfCard.querySelector('.po-stat-val').textContent = '—';
+      if (nameEl) nameEl.textContent = '(sweep désactivé)';
+      if (valEl) valEl.textContent = '—';
     }
   }
 }
