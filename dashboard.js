@@ -16000,10 +16000,92 @@ function _poRenderDetail() {
         <div class="po-metric-val">${_poFmtR(net)}</div></div>
     </div>
     ${icHtml}
+    <div class="po-detail-actions">
+      <button type="button" class="po-btn-apply" id="po-btn-apply-dashboard"
+        ${sel.model.type === 'full' ? 'disabled title="Full TP models cannot be applied as Personalised. Switch to Fixed mode manually if needed."' : ''}>
+        Apply to Dashboard
+      </button>
+    </div>
   `;
+
+  // Wire the Apply button (after innerHTML assignment).
+  const applyBtn = document.getElementById('po-btn-apply-dashboard');
+  if (applyBtn && sel.model.type !== 'full') {
+    applyBtn.addEventListener('click', () => _poApplyToDashboard(sel));
+  }
 
   // Equity curve is rendered into its own block (po-block-equity) every render.
   _poRenderEquity(sel, base);
+}
+
+// PR-B: push the selected PO model's params into appState.ui.tpConfig as a
+// Personalised TP plan, with confirmation if one already exists. Stays on the
+// Partial Optimizer section. Full TP models (type === 'full') are not
+// supported — the button is disabled in those cases.
+function _poApplyToDashboard(sel) {
+  if (!sel || !sel.model) return;
+  if (sel.model.type === 'full') return; // Defensive guard — button is disabled.
+
+  const legs = sel.model.legs;
+  if (!Array.isArray(legs) || legs.length < 2 || legs.length > 3) {
+    console.warn('[poApply] Unexpected legs shape:', legs);
+    return;
+  }
+
+  // Build the Personalised sub-config. tpCount = legs.length (each leg is a TP).
+  // legs[i].lv is the R-multiple target; legs[i].pct is the fraction (0..1).
+  // _isValidPersonalisedConfig requires tp1/tp2/tp3 keys all present even when
+  // tpCount === 2 (tp3 is then ignored by the engine but the shape must be valid).
+  const tpCount = legs.length;
+  const newPersonalised = {
+    tpCount,
+    targets: {
+      tp1: legs[0].lv,
+      tp2: legs[1].lv,
+      tp3: legs[2]?.lv ?? 3,
+    },
+    partials: {
+      tp1: Math.round((legs[0].pct ?? 0) * 100),
+      tp2: Math.round((legs[1].pct ?? 0) * 100),
+      tp3: Math.round((legs[2]?.pct ?? 0) * 100),
+    },
+  };
+
+  // Confirmation if a Personalised plan is already configured (mode === 'personalised'
+  // OR a non-default personalised sub-config exists). We compare against the default
+  // shape — if it's been customized, ask before overwriting.
+  const cfg = appState.ui.tpConfig;
+  const existing = cfg?.personalised;
+  const isCustomized = existing && (
+    existing.tpCount !== 2
+    || existing.targets.tp1 !== 1 || existing.targets.tp2 !== 2 || existing.targets.tp3 !== 3
+    || existing.partials.tp1 !== 50 || existing.partials.tp2 !== 50 || existing.partials.tp3 !== 0
+  );
+  if (isCustomized) {
+    const ok = window.confirm('Replace your current Personalised TP plan?');
+    if (!ok) return;
+  }
+
+  // Apply: write the new sub-config, then switch mode (which triggers _saveTpConfig
+  // → render() → all widgets refresh).
+  cfg.personalised = newPersonalised;
+  if (typeof _setTpMode === 'function') _setTpMode('personalised');
+
+  // Visual feedback on the button: temporarily change label.
+  const btn = document.getElementById('po-btn-apply-dashboard');
+  if (btn) {
+    const original = btn.textContent;
+    btn.textContent = '✓ Applied';
+    btn.classList.add('is-applied');
+    setTimeout(() => {
+      // Re-check element still exists (the detail block may have been re-rendered).
+      const stillThere = document.getElementById('po-btn-apply-dashboard');
+      if (stillThere) {
+        stillThere.textContent = original;
+        stillThere.classList.remove('is-applied');
+      }
+    }, 1500);
+  }
 }
 
 function _poRenderEquity(sel, base) {
