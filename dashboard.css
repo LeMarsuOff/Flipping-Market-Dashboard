@@ -13290,6 +13290,223 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   background: color-mix(in srgb, var(--r) 85%, white);
 }
 
+/* ═══════════════════════════════════════════════════════════
+   PARTIAL OPTIMIZER WIDGET — Header refresh (PR-3)
+   Scoped to .po-widget only.
+═══════════════════════════════════════════════════════════ */
+
+.po-widget {
+  position: relative;
+  overflow: hidden;
+}
+/* Soft ambient glow at top of the widget */
+.po-widget::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 200px;
+  background: radial-gradient(ellipse, rgba(90, 156, 245, 0.08) 0%, transparent 60%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+.po-widget > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Title bar accent: scope inside .po-widget */
+.po-widget .cc-head {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 12px;
+}
+.po-widget .cc-title {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.po-widget .pp-head-sub {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Counter pill at the top-right (po-head-n) — make it more prominent */
+.po-widget #po-head-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(90, 156, 245, 0.10);
+  border: 1px solid rgba(90, 156, 245, 0.20);
+  border-radius: var(--rad-pill);
+  color: var(--gold);
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RR DISTRIBUTION — Soft refresh (PR-3, KEEP gold colors)
+═══════════════════════════════════════════════════════════ */
+
+.po-widget .po-rr-gchips {
+  gap: 6px;
+}
+.po-widget .po-rr-gchips .pp-gchip-track {
+  height: 11px;
+  background: rgba(0, 0, 0, 0.30);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+/* The fill stays gold (no change to color logic) — just add a soft glow */
+.po-widget .po-rr-gchips .pp-gchip-fill {
+  border-radius: 6px;
+  position: relative;
+  box-shadow: 0 0 12px rgba(90, 156, 245, 0.30);
+}
+.po-widget .po-rr-gchips .pp-gchip-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 50%);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCATTER TOOLBAR — Soft refresh (PR-3)
+═══════════════════════════════════════════════════════════ */
+
+.po-widget .po-toolbar {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.po-widget .po-toolbar-group {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.po-widget .po-toolbar-meta-accent {
+  background: rgba(90, 156, 245, 0.15);
+  color: var(--gold);
+  border: 1px solid rgba(90, 156, 245, 0.25);
+  padding: 3px 10px;
+  border-radius: var(--rad-pill);
+  font-weight: 700;
+}
+
+/* Recalculer button — primary CTA */
+.po-widget .po-btn-recalc-inline {
+  background: linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 80%, white) 100%);
+  border: 1px solid color-mix(in srgb, var(--gold) 75%, white);
+  color: white;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow:
+    0 6px 18px rgba(90, 156, 245, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.po-widget .po-btn-recalc-inline:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 10px 24px rgba(90, 156, 245, 0.50),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
+}
+
+/* Toggle buttons (Isoler Top, Reset zoom) */
+.po-widget .po-btn-toggle {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+.po-widget .po-btn-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text-primary);
+}
+.po-widget .po-btn-toggle.is-active {
+  background: rgba(90, 156, 245, 0.15);
+  border-color: rgba(90, 156, 245, 0.30);
+  color: var(--gold);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RANKING TABLE — Soft refresh (PR-3)
+═══════════════════════════════════════════════════════════ */
+
+.po-widget .po-ranking thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+.po-widget .po-ranking thead th {
+  padding: 10px;
+  font-size: 9px;
+  letter-spacing: 0.10em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.po-widget .po-ranking td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.po-widget .po-ranking .po-row {
+  transition: background 0.12s, transform 0.12s;
+}
+.po-widget .po-ranking .po-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.po-widget .po-ranking .po-row.is-selected {
+  background: rgba(90, 156, 245, 0.10);
+  border-left: 2px solid var(--gold);
+}
+.po-widget .po-ranking .po-row.is-selected td:first-child {
+  padding-left: 8px;
+}
+
+/* Sort header indicator (PR-A) refresh */
+.po-widget .po-ranking th.po-th-sortable {
+  position: relative;
+}
+.po-widget .po-ranking th.po-th-sortable:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.po-widget .po-ranking th.is-sorted {
+  color: var(--gold);
+}
+
+/* Badges (sig / ns / base) refresh */
+.po-widget .po-badge {
+  padding: 2px 8px;
+  border-radius: var(--rad-pill);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border: 1px solid transparent;
+}
+.po-widget .po-badge-sig {
+  background: rgba(93, 214, 168, 0.18);
+  color: var(--g);
+  border-color: color-mix(in srgb, var(--g) 25%, transparent);
+}
+.po-widget .po-badge-ns {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.po-widget .po-badge-base {
+  background: rgba(90, 156, 245, 0.15);
+  color: var(--gold);
+  border-color: rgba(90, 156, 245, 0.25);
+}
+
 /* Responsive: stack everything under 900px ─── */
 @media (max-width: 900px) {
   .po-body {
