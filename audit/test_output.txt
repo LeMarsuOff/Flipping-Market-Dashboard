@@ -1,0 +1,244 @@
+═══════════════════════════════════════════════════════════════════════════
+  AUDIT TEST RUNNER — Flipping Market Dashboard calc engine
+  Dataset: 14 synthetic trades
+  TP modes: fixed, multi, personalised
+  BE modes: be-fallback, flipping-be
+  Total cells per trade: 6
+═══════════════════════════════════════════════════════════════════════════
+
+─────────────────────────────────────────────────────────────────────
+PHASE 2 — effectiveR matrix (expected → observed, gap if any)
+─────────────────────────────────────────────────────────────────────
+
+▶ Trade: TP-clean  (outcome=TP, r=2.4, rrMax=3.1, beMgmt=[BE si set à 1RR], tp1_rr=1, tp2_rr=2.4)
+    fixed         × be-fallback   → observed=  2.40  exp=  2.40
+    fixed         × flipping-be   → observed=  2.40  exp=  2.40
+    multi         × be-fallback   → observed=  1.70  exp=  1.70
+    multi         × flipping-be   → observed=  1.70  exp=  1.70
+    personalised  × be-fallback   → observed=  1.70  exp=  1.70
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: SL-clean  (outcome=SL, r=-1, rrMax=0.4, beMgmt=[], tp1_rr=null, tp2_rr=null)
+    fixed         × be-fallback   → observed= -1.00  exp= -1.00
+    fixed         × flipping-be   → observed= -1.00  exp= -1.00
+    multi         × be-fallback   → observed= -1.00  exp= -1.00
+    multi         × flipping-be   → observed= -1.00  exp= -1.00
+    personalised  × be-fallback   → observed= -1.00  exp= -1.00
+    personalised  × flipping-be   → observed= -1.00  exp= -1.00
+
+▶ Trade: BETP-1R-low  (outcome=BE-TP, r=0, rrMax=1.5, beMgmt=[BE si set à 1RR], tp1_rr=1, tp2_rr=null)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  0.50  exp=  0.50
+    multi         × flipping-be   → observed=  0.50  exp=  0.50
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  0.50  exp=  0.50
+
+▶ Trade: BETP-multi-high  (outcome=BE-TP, r=0, rrMax=3.5, beMgmt=[BE si set à 1RR,BE si set à 2RR], tp1_rr=1, tp2_rr=2)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  1.50  exp=  1.50
+    multi         × flipping-be   → observed=  1.50  exp=  1.50
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: BESL-2R-high  (outcome=BE-SL, r=-1, rrMax=2.8, beMgmt=[BE si set à 2RR], tp1_rr=1, tp2_rr=2)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  1.50  exp=  1.50
+    multi         × flipping-be   → observed=  1.50  exp=  1.50
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: BESL-empty-chip  (outcome=BE-SL, r=-1, rrMax=1.7, beMgmt=[], tp1_rr=1, tp2_rr=null)
+    fixed         × be-fallback   → observed= -1.00  exp= -1.00
+    fixed         × flipping-be   → observed= -1.00  exp= -1.00
+    multi         × be-fallback   → observed=  0.00  exp=  0.00
+    multi         × flipping-be   → observed= -1.00  exp= -1.00
+    personalised  × be-fallback   → observed=  0.00  exp=  0.00
+    personalised  × flipping-be   → observed=  0.50  exp=  0.50
+
+▶ Trade: BETP-1R-rrMax5  (outcome=BE-TP, r=0, rrMax=5, beMgmt=[BE si set à 1RR], tp1_rr=1, tp2_rr=null)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  0.50  exp=  0.50
+    multi         × flipping-be   → observed=  0.50  exp=  0.50
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: BETP-multipart-overcap  (outcome=BE-TP, r=0, rrMax=3.2, beMgmt=[BE si set à 1RR], tp1_rr=1, tp2_rr=3)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  0.50  exp=  0.50
+    multi         × flipping-be   → observed=  2.00  exp=  2.00
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: BESL-boundary  (outcome=BE-SL, r=-1, rrMax=2.4, beMgmt=[BE si set à 2RR], tp1_rr=1, tp2_rr=2)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  1.50  exp=  1.50
+    multi         × flipping-be   → observed=  1.50  exp=  1.50
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: TP-no-rrMax  (outcome=TP, r=2.4, rrMax=null, beMgmt=[BE si set à 1RR], tp1_rr=1, tp2_rr=2.4)
+    fixed         × be-fallback   → observed=  2.40  exp=  2.40
+    fixed         × flipping-be   → observed=  2.40  exp=  2.40
+    multi         × be-fallback   → observed=  1.70  exp=  1.70
+    multi         × flipping-be   → observed=  1.70  exp=  1.70
+    personalised  × be-fallback   → observed=  1.70  exp=  1.70
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: BESL-bucket  (outcome=BE-SL, r=-1, rrMax=1.5, beMgmt=[BE si set à 1RR], tp1_rr=1, tp2_rr=null)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed= -1.00  exp= -1.00
+    multi         × be-fallback   → observed=  0.50  exp=  0.50
+    multi         × flipping-be   → observed= -1.00  exp= -1.00
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  0.50  exp=  0.50
+
+▶ Trade: BETP-mid  (outcome=BE-TP, r=0, rrMax=2.5, beMgmt=[BE si set à 2RR], tp1_rr=1, tp2_rr=2)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  1.50  exp=  1.50
+    multi         × flipping-be   → observed=  1.50  exp=  1.50
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  1.70  exp=  1.70
+
+▶ Trade: BETP-rrMax-below-TP1  (outcome=BE-TP, r=0, rrMax=0.6, beMgmt=[BE si set à 0.5RR], tp1_rr=0.5, tp2_rr=null)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  0.25  exp=  0.25
+    multi         × flipping-be   → observed=  0.25  exp=  0.25
+    personalised  × be-fallback   → observed=  0.00  exp=  0.00
+    personalised  × flipping-be   → observed=  0.00  exp=  0.00
+
+▶ Trade: BETP-no-rrMax  (outcome=BE-TP, r=0, rrMax=null, beMgmt=[BE si set à 1RR], tp1_rr=1, tp2_rr=null)
+    fixed         × be-fallback   → observed=  0.00  exp=  0.00
+    fixed         × flipping-be   → observed=  0.00  exp=  0.00
+    multi         × be-fallback   → observed=  0.50  exp=  0.50
+    multi         × flipping-be   → observed=  0.50  exp=  0.50
+    personalised  × be-fallback   → observed=  0.50  exp=  0.50
+    personalised  × flipping-be   → observed=  0.00  exp=  0.00
+
+Cells tested: 84  ·  Gaps vs expected: 0
+
+─────────────────────────────────────────────────────────────────────
+PHASE 3 — inter-widget convergence
+─────────────────────────────────────────────────────────────────────
+
+PO ↔ Personalised (Total R) — expect convergence to rounding for every BE mode
+  BE=be-fallback   : Personalised=6.9000  PO=6.9000  Δ=0.0000  ✓
+  BE=flipping-be   : Personalised=14.1000  PO=14.1000  Δ=0.0000  ✓
+
+Multi ↔ PO (Total R) — divergence ACCEPTED on runners (tp_N_rr > leg lv) ; check structural
+  BE=be-fallback   : Multi=11.1500  PO(plan 1R/2.4R 50/50)=6.9000  Δ=4.2500
+  BE=flipping-be   : Multi=10.1500  PO(plan 1R/2.4R 50/50)=14.1000  Δ=-3.9500
+
+ORR cumR ↔ Σ _getSimulatedR  (at TP=2.4R, BE-fallback ORR mode) — expect convergence
+  BE=be-fallback   : ORR cumR(tp=2.4)=3.8  Σ_getSimulatedR=3.80  excluded=0  Δ=0.0000  ✓
+  BE=flipping-be   : ORR cumR(tp=2.4)=16.2  Σ_getSimulatedR=16.20  excluded=1  Δ=0.0000  ✓
+
+calcStats summary across all (TP × BE) combos (n=14)
+  TP-mode      | BE-mode      |  n |  w |  l | be | WR%   | totalR  | PF      | maxDD
+  -------------+--------------+----+----+----+----+-------+---------+---------+--------
+  fixed        | be-fallback  | 14 |  2 |  2 | 10 |  14.3 |    2.80 |    2.40 |   -2.00
+  fixed        | flipping-be  | 14 |  2 |  3 |  9 |  14.3 |    1.80 |    1.60 |   -2.00
+  multi        | be-fallback  | 14 | 12 |  1 |  1 |  85.7 |   11.15 |   12.15 |   -1.00
+  multi        | flipping-be  | 14 | 11 |  3 |  0 |  78.6 |   10.15 |    4.38 |   -1.00
+  personalised | be-fallback  | 14 | 11 |  1 |  2 |  78.6 |    6.90 |    7.90 |   -1.00
+  personalised | flipping-be  | 14 | 11 |  1 |  2 |  78.6 |   14.10 |   15.10 |   -1.00
+
+─────────────────────────────────────────────────────────────────────
+PHASE 4 — edge cases & cross-mode consistency probes
+─────────────────────────────────────────────────────────────────────
+
+Cross-TP-mode divergence per trade per BE mode (max - min over TP modes):
+  BETP-multipart-overcap       BE=flipping-be   spread= 2.00  fixed=0.00  multi=2.00  personalised=1.70
+  BETP-multi-high              BE=flipping-be   spread= 1.70  fixed=0.00  multi=1.50  personalised=1.70
+  BESL-2R-high                 BE=flipping-be   spread= 1.70  fixed=0.00  multi=1.50  personalised=1.70
+  BETP-1R-rrMax5               BE=flipping-be   spread= 1.70  fixed=0.00  multi=0.50  personalised=1.70
+  BESL-boundary                BE=flipping-be   spread= 1.70  fixed=0.00  multi=1.50  personalised=1.70
+  BETP-mid                     BE=flipping-be   spread= 1.70  fixed=0.00  multi=1.50  personalised=1.70
+  BETP-multi-high              BE=be-fallback   spread= 1.50  fixed=0.00  multi=1.50  personalised=0.50
+  BESL-2R-high                 BE=be-fallback   spread= 1.50  fixed=0.00  multi=1.50  personalised=0.50
+  BESL-empty-chip              BE=flipping-be   spread= 1.50  fixed=-1.00  multi=-1.00  personalised=0.50
+  BESL-boundary                BE=be-fallback   spread= 1.50  fixed=0.00  multi=1.50  personalised=0.50
+  BESL-bucket                  BE=flipping-be   spread= 1.50  fixed=-1.00  multi=-1.00  personalised=0.50
+  BETP-mid                     BE=be-fallback   spread= 1.50  fixed=0.00  multi=1.50  personalised=0.50
+  BESL-empty-chip              BE=be-fallback   spread= 1.00  fixed=-1.00  multi=0.00  personalised=0.00
+  TP-clean                     BE=be-fallback   spread= 0.70  fixed=2.40  multi=1.70  personalised=1.70
+  TP-clean                     BE=flipping-be   spread= 0.70  fixed=2.40  multi=1.70  personalised=1.70
+  TP-no-rrMax                  BE=be-fallback   spread= 0.70  fixed=2.40  multi=1.70  personalised=1.70
+  TP-no-rrMax                  BE=flipping-be   spread= 0.70  fixed=2.40  multi=1.70  personalised=1.70
+  BETP-1R-low                  BE=be-fallback   spread= 0.50  fixed=0.00  multi=0.50  personalised=0.50
+  BETP-1R-low                  BE=flipping-be   spread= 0.50  fixed=0.00  multi=0.50  personalised=0.50
+  BETP-1R-rrMax5               BE=be-fallback   spread= 0.50  fixed=0.00  multi=0.50  personalised=0.50
+  BETP-multipart-overcap       BE=be-fallback   spread= 0.50  fixed=0.00  multi=0.50  personalised=0.50
+  BESL-bucket                  BE=be-fallback   spread= 0.50  fixed=0.00  multi=0.50  personalised=0.50
+  BETP-no-rrMax                BE=be-fallback   spread= 0.50  fixed=0.00  multi=0.50  personalised=0.50
+  BETP-no-rrMax                BE=flipping-be   spread= 0.50  fixed=0.00  multi=0.50  personalised=0.00
+  BETP-rrMax-below-TP1         BE=be-fallback   spread= 0.25  fixed=0.00  multi=0.25  personalised=0.00
+  BETP-rrMax-below-TP1         BE=flipping-be   spread= 0.25  fixed=0.00  multi=0.25  personalised=0.00
+
+Cache invalidation : switch BE mode and verify computeEffectiveRR recomputes
+  Trade BESL-bucket in Fixed mode :
+    BE=be-fallback : effectiveR=0  class=be  hash=fixed|be:be-fallback
+    BE=flipping-be : effectiveR=-1  class=loss  hash=fixed|be:flipping-be
+    Hash differs ? ✓    Reclassified ? ✓ (be→loss)
+
+Multi-chip BE trigger parsing : ["BE si set à 1RR","BE si set à 2RR"] → expect MAX=2
+  parsed forward order  : 2    expected: 2  ✓
+  parsed inverted order : 2    expected: 2  ✓
+
+Empty / malformed beManagement → expect null trigger, applyBEAware=false
+  empty array          → trigger=null
+  null                 → trigger=null
+  undefined            → trigger=null
+  no-R chip            → trigger=null
+  mixed types          → trigger=3
+
+Personalised invariants : sum != 100 → fallback to trade.r
+  partials sum=140 (invalid) → effectiveR=5  expected fallback to trade.r=5  ✓
+
+─────────────────────────────────────────────────────────────────────
+PHASE 4b — computeOptimalRR full curve per BE mode (be-fallback ORR)
+─────────────────────────────────────────────────────────────────────
+
+BE=be-fallback
+  TP    | wins | losses | beOut | excluded | cumR    | WR%    | EV     | PF
+  ------+------+--------+-------+----------+---------+--------+--------+-------
+   0.5  |   12 |      1 |     1 |        0 |    5.00 |  85.7 |   0.38 |   6.00
+   1.0  |   11 |      1 |     2 |        0 |   10.00 |  78.6 |   0.83 |  11.00
+   1.5  |    6 |      1 |     7 |        0 |    8.00 |  42.9 |   1.14 |   9.00
+   2.0  |    6 |      1 |     7 |        0 |   11.00 |  42.9 |   1.57 |  12.00
+   2.4  |    2 |      1 |    11 |        0 |    3.80 |  14.3 |   1.27 |   4.80
+   2.5  |    1 |      1 |    12 |        0 |    1.50 |   7.1 |   0.75 |   2.50
+   3.0  |    1 |      1 |    12 |        0 |    2.00 |   7.1 |   1.00 |   3.00
+   3.3  |    0 |      1 |    13 |        0 |   -1.00 |   0.0 |  -1.00 |   0.00
+   3.5  |    0 |      1 |    13 |        0 |   -1.00 |   0.0 |  -1.00 |   0.00
+   4.0  |    0 |      1 |    13 |        0 |   -1.00 |   0.0 |  -1.00 |   0.00
+   4.5  |    0 |      1 |    13 |        0 |   -1.00 |   0.0 |  -1.00 |   0.00
+   5.0  |    0 |      1 |    13 |        0 |   -1.00 |   0.0 |  -1.00 |   0.00
+
+BE=flipping-be
+  TP    | wins | losses | beOut | excluded | cumR    | WR%    | EV     | PF
+  ------+------+--------+-------+----------+---------+--------+--------+-------
+   0.5  |   12 |      1 |     0 |        1 |    5.00 |  85.7 |   0.38 |   6.00
+   1.0  |   11 |      1 |     1 |        1 |   10.00 |  78.6 |   0.83 |  11.00
+   1.5  |   11 |      1 |     1 |        1 |   15.50 |  78.6 |   1.29 |  16.50
+   2.0  |    8 |      3 |     2 |        1 |   13.00 |  57.1 |   1.18 |   5.33
+   2.4  |    8 |      3 |     2 |        1 |   16.20 |  57.1 |   1.47 |   6.40
+   2.5  |    5 |      3 |     5 |        1 |    9.50 |  35.7 |   1.19 |   4.17
+   3.0  |    4 |      3 |     6 |        1 |    9.00 |  28.6 |   1.29 |   4.00
+   3.3  |    2 |      3 |     8 |        1 |    3.60 |  14.3 |   0.72 |   2.20
+   3.5  |    2 |      3 |     8 |        1 |    4.00 |  14.3 |   0.80 |   2.33
+   4.0  |    1 |      3 |     9 |        1 |    1.00 |   7.1 |   0.25 |   1.33
+   4.5  |    1 |      3 |     9 |        1 |    1.50 |   7.1 |   0.38 |   1.50
+   5.0  |    1 |      3 |     9 |        1 |    2.00 |   7.1 |   0.50 |   1.67
+
+═══════════════════════════════════════════════════════════════════════════
+SUMMARY : 84 cells tested · 0 gap(s) vs expected
+cross-TP divergences > 0.01 : 26 cases
+═══════════════════════════════════════════════════════════════════════════

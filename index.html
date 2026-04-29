@@ -1,0 +1,2196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Flipping Strategy — Research Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Anybody:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- GridStack CSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
+<link rel="stylesheet" href="dashboard.css?v=94">
+</head>
+<body>
+
+<!-- ══ MOBILE SHELL ══ -->
+<div id="mobile-shell">
+
+  <!-- Sticky header: topbar + presets fused -->
+  <div class="mob-header">
+
+    <!-- Topbar -->
+    <div class="mob-topbar">
+      <div class="mob-logo">
+        <div class="mob-logo-dot"></div>
+        Flipping Research
+      </div>
+      <span class="dhb-badge" id="tpm-badge-mob" data-state="idle" title="Active TP Management mode">
+        <span class="dhb-badge-text" id="tpm-badge-mob-text">TP: Fixed</span>
+      </span>
+    </div>
+
+    <!-- Preset pills -->
+    <div class="mob-presets" id="mob-presets"></div>
+
+  </div><!-- /mob-header -->
+
+  <!-- Scrollable body -->
+  <div class="mob-body">
+
+    <!-- KPI 3×3 -->
+    <div class="mob-kpi-grid" id="mob-kpi-grid"></div>
+
+    <!-- Equity -->
+    <div class="mob-card">
+      <div class="mob-card-title">Equity</div>
+      <div class="mob-canvas-wrap" id="mob-equity-wrap">
+        <canvas id="mobEquityCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Outcome donut -->
+    <div class="mob-card">
+      <div class="mob-card-title">Outcome</div>
+      <div class="mob-donut-wrap">
+        <div class="mob-donut-canvas"><canvas id="mobDonutCanvas"></canvas></div>
+        <div id="mob-donut-legend" class="mob-donut-legend"></div>
+      </div>
+    </div>
+
+    <!-- Monthly P&L -->
+    <div class="mob-card">
+      <div class="mob-card-title">Monthly P&amp;L</div>
+      <div id="mob-monthly-wrap" class="mob-card-block mob-card-block-sm"></div>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="mob-card">
+      <div class="mob-card-title">Heatmap — Session × Day</div>
+      <div class="mob-heatmap-wrap">
+        <div id="mob-heatmap-container"></div>
+      </div>
+    </div>
+
+    <!-- Pair Performance -->
+    <div class="mob-card">
+      <div class="mob-card-title">Pair Performance</div>
+      <div id="mob-pair-wrap" class="mob-card-block"></div>
+    </div>
+
+    <!-- Setup Performance -->
+    <div class="mob-card" id="mob-card-setup">
+      <div class="mob-card-title">Setup Performance</div>
+      <div id="mob-setup-wrap" class="mob-card-block"></div>
+    </div>
+
+    <!-- M15 Obstacles -->
+    <div class="mob-card">
+      <div class="mob-card-title">M15 Obstacles</div>
+      <div id="mob-obs-wrap" class="mob-card-block"></div>
+    </div>
+
+    <!-- Trade Log -->
+    <div class="mob-card" id="mob-card-tradelog">
+      <div class="mob-card-title">Trade Log</div>
+      <div id="mob-tradelog-wrap" class="mob-tradelog-wrap"></div>
+    </div>
+
+  </div><!-- /mob-body -->
+
+  <!-- Footer -->
+  <div class="mob-footer">
+    <button class="mob-import-btn" data-action="open-csv-overlay">⬆ Import CSV</button>
+  </div>
+
+</div><!-- /mobile-shell -->
+
+<!-- ══ CSV DRAG & DROP OVERLAY ══ -->
+<div class="csv-overlay" id="csv-overlay">
+  <button class="csv-close-btn" data-action="close-csv-overlay" title="Close">✕</button>
+  <div class="csv-drop-box" id="csv-drop-box">
+    <div class="csv-drop-box-icon">⬇</div>
+    <div class="csv-drop-box-title">Drop your CSV here</div>
+    <div class="csv-drop-box-sub">or click to browse</div>
+    <label class="csv-browse-btn">
+      📂 Browse file
+      <input type="file" id="csv-file-input" class="visually-hidden" accept=".csv">
+    </label>
+    <div class="csv-status" id="csv-status"></div>
+    <div class="csv-format-hint csv-format-hint-inline">
+      <div class="csv-fh-intro">
+        <strong class="csv-format-highlight">How the importer reads your file</strong>
+        <p>These are the Notion properties the dashboard reads from your CSV. Required properties are mandatory; optional ones unlock additional widgets and filters.</p>
+      </div>
+
+      <div class="csv-doc-callout">
+        <div class="csv-doc-callout-icon" aria-hidden="true">!</div>
+        <div class="csv-doc-callout-content">
+          <span class="csv-doc-callout-title">Property naming — read this first</span>
+          <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — click the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, open the <strong>Mapping</strong> tab, then hit the <code>✏</code> pencil next to the dimension you want to remap. Missing a required field? The <strong>Health</strong> tab lists them with the same pencil affordance. The dashboard only cares about the data inside, not the column label.</div>
+        </div>
+      </div>
+
+      <div class="csv-doc-section-title">
+        <span>Required properties</span>
+        <span class="csv-doc-section-title-badge is-required">3 mandatory</span>
+      </div>
+      <table class="csv-doc-table" aria-label="Required CSV properties">
+        <thead>
+          <tr>
+            <th scope="col" class="csv-doc-col-prop">Property</th>
+            <th scope="col" class="csv-doc-col-type">Type</th>
+            <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+            <th scope="col" class="csv-doc-col-desc">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Position Result</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip is-critical">All widgets</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade outcome: <code>Take profit</code>, <code>Stop loss</code>, <code>BE - TP</code>, <code>BE - SL</code>. Rows missing this are skipped.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">RR TP 1</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip is-critical">All R-based widgets</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R on first take profit (e.g. <code>2.4</code> or <code>-1</code>). Feeds equity, expectancy, drawdown.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Date</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-date">Date</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip is-critical">All time-based widgets</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade date. Format: <code>Month DD, YYYY</code> or <code>YYYY-MM-DD</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="csv-doc-section-title">
+        <span>Optional properties</span>
+        <span class="csv-doc-section-title-badge is-optional">12 unlock more</span>
+      </div>
+      <table class="csv-doc-table" aria-label="Optional CSV properties">
+        <thead>
+          <tr>
+            <th scope="col" class="csv-doc-col-prop">Property</th>
+            <th scope="col" class="csv-doc-col-type">Type</th>
+            <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+            <th scope="col" class="csv-doc-col-desc">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Pair</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Pair Performance</span><span class="csv-doc-chip">Pair × Session</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Currency pair traded (e.g. <code>EURUSD</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Position Type</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Backtest vs Live filter</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade classification: <code>BackTest</code>, <code>Live</code>, <code>Invalid</code>.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Day</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Day Performance</span><span class="csv-doc-chip">Session × Day Heatmap</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Day of week, full English name (<code>Monday</code> … <code>Sunday</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Session</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Session Performance</span><span class="csv-doc-chip">Session × Day Heatmap</span><span class="csv-doc-chip">Pair × Session</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trading session (e.g. <code>London KZ</code>, <code>New York KZ</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Time</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Hour Heatmap</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Entry hour: <code>HHh</code> format (e.g. <code>10h</code>) or integer 0-23.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Order</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Long / Short breakdown</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade direction: <code>Buy</code> (long) or <code>Sell</code> (short).</td>
+          </tr>
+          <tr>
+            <td data-label="Property">
+              <code class="csv-doc-prop">M15 Type Detailed</code>
+            </td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Setup Performance</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Setup family (e.g. <code>Internal Continuation</code>, <code>Reversal</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">M15 Obstacles</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">M15 Obstacles</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">M15 obstacle tags, comma-separated (e.g. <code>Big Volume, Range Sweep</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">H4 Obstacles</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">H4 Obstacles</span><span class="csv-doc-chip">S3 Filter</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">H4 obstacle tags, comma-separated. Powers the H4 No-Sweep filter.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">RR Max</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Optimal RR</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Bad feeling</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-checkbox">Checkbox</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Emotional filter</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Checkbox flag for emotion-marked trades. Lets you filter them out.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Notion URL</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-formula">Formula</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade log link button</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Deep link to the Notion page (adds the 🔗 button on each trade row). In Notion, use a <code>Formula</code> property with this formula (click to copy): <button type="button" class="csv-doc-copy-snippet" data-action="copy-snippet" data-copy-text='&quot;https://www.notion.so/&quot; + id()' title="Click to copy"><code>&quot;https://www.notion.so/&quot; + id()</code><span class="csv-doc-copy-icon" aria-hidden="true">📋</span></button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ EMPTY STATE SPLASH ══ -->
+<div class="empty-state" id="empty-state">
+  <div class="empty-state-card">
+    <div class="empty-state-icon">📊</div>
+    <div class="empty-state-title">Trading Performance Dashboard</div>
+    <div class="empty-state-sub">Import your CSV file to see your statistics.</div>
+    <button class="empty-state-cta" data-action="open-csv-overlay">⬆ Import CSV</button>
+    <div class="empty-state-formats">
+      <div class="empty-state-formats-title">2 formats supported — auto-detected</div>
+      <div class="empty-state-formats-list">
+        <span>① Flipping Market M15 (Pro Template)</span>
+        <span>② Beginner Template</span>
+      </div>
+      <div class="empty-state-sample">
+        Don't have a CSV yet? Download a
+        <a href="samples/flipping_market_sample.csv" download>sample file</a>
+        to test the dashboard.
+      </div>
+
+      <!-- ── Detailed CSV column reference ── -->
+      <div class="csv-format-hint csv-format-hint-inline">
+        <div class="csv-fh-intro">
+          <strong class="csv-format-highlight">How the importer reads your file</strong>
+          <p>These are the Notion properties the dashboard reads from your CSV. Required properties are mandatory; optional ones unlock additional widgets and filters.</p>
+        </div>
+
+        <div class="csv-doc-callout">
+          <div class="csv-doc-callout-icon" aria-hidden="true">!</div>
+          <div class="csv-doc-callout-content">
+            <span class="csv-doc-callout-title">Property naming — read this first</span>
+            <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — click the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, open the <strong>Mapping</strong> tab, then hit the <code>✏</code> pencil next to the dimension you want to remap. Missing a required field? The <strong>Health</strong> tab lists them with the same pencil affordance. The dashboard only cares about the data inside, not the column label.</div>
+          </div>
+        </div>
+
+        <div class="csv-doc-section-title">
+          <span>Required properties</span>
+          <span class="csv-doc-section-title-badge is-required">3 mandatory</span>
+        </div>
+        <table class="csv-doc-table" aria-label="Required CSV properties">
+          <thead>
+            <tr>
+              <th scope="col" class="csv-doc-col-prop">Property</th>
+              <th scope="col" class="csv-doc-col-type">Type</th>
+              <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+              <th scope="col" class="csv-doc-col-desc">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Position Result</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip is-critical">All widgets</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Trade outcome: <code>Take profit</code>, <code>Stop loss</code>, <code>BE - TP</code>, <code>BE - SL</code>. Rows missing this are skipped.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">RR TP 1</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip is-critical">All R-based widgets</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Realized R on first take profit (e.g. <code>2.4</code> or <code>-1</code>). Feeds equity, expectancy, drawdown.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Date</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-date">Date</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip is-critical">All time-based widgets</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Trade date. Format: <code>Month DD, YYYY</code> or <code>YYYY-MM-DD</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="csv-doc-section-title">
+          <span>Optional properties</span>
+          <span class="csv-doc-section-title-badge is-optional">12 unlock more</span>
+        </div>
+        <table class="csv-doc-table" aria-label="Optional CSV properties">
+          <thead>
+            <tr>
+              <th scope="col" class="csv-doc-col-prop">Property</th>
+              <th scope="col" class="csv-doc-col-type">Type</th>
+              <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+              <th scope="col" class="csv-doc-col-desc">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Pair</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Pair Performance</span>
+                  <span class="csv-doc-chip">Pair × Session</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Currency pair traded (e.g. <code>EURUSD</code>).</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Position Type</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Backtest vs Live filter</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Trade classification: <code>BackTest</code>, <code>Live</code>, <code>Invalid</code>.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Day</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Day Performance</span>
+                  <span class="csv-doc-chip">Session × Day Heatmap</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Day of week, full English name (<code>Monday</code> … <code>Sunday</code>).</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Session</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Session Performance</span>
+                  <span class="csv-doc-chip">Session × Day Heatmap</span>
+                  <span class="csv-doc-chip">Pair × Session</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Trading session (e.g. <code>London KZ</code>, <code>New York KZ</code>).</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Time</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Hour Heatmap</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Entry hour: <code>HHh</code> format (e.g. <code>10h</code>) or integer 0-23.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Order</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Long / Short breakdown</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Trade direction: <code>Buy</code> (long) or <code>Sell</code> (short).</td>
+            </tr>
+            <tr>
+              <td data-label="Property">
+                <code class="csv-doc-prop">M15 Type Detailed</code>
+              </td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Setup Performance</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Setup family (e.g. <code>Internal Continuation</code>, <code>Reversal</code>).</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">M15 Obstacles</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">M15 Obstacles</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">M15 obstacle tags, comma-separated (e.g. <code>Big Volume, Range Sweep</code>).</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">H4 Obstacles</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">H4 Obstacles</span>
+                  <span class="csv-doc-chip">S3 Filter</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">H4 obstacle tags, comma-separated. Powers the H4 No-Sweep filter.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">RR Max</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Optimal RR</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure).</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Bad feeling</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-checkbox">Checkbox</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Emotional filter</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Checkbox flag for emotion-marked trades. Lets you filter them out.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">Notion URL</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-formula">Formula</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Trade log link button</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Deep link to the Notion page (adds the 🔗 button on each trade row). In Notion, use a <code>Formula</code> property with this formula (click to copy): <button type="button" class="csv-doc-copy-snippet" data-action="copy-snippet" data-copy-text='&quot;https://www.notion.so/&quot; + id()' title="Click to copy"><code>&quot;https://www.notion.so/&quot; + id()</code><span class="csv-doc-copy-icon" aria-hidden="true">📋</span></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    Flipping Research
+    <button class="data-hub-btn"
+            id="data-hub-btn"
+            data-action="toggle-data-hub"
+            title="Data Setup — configure how your Notion data feeds the dashboard"
+            aria-expanded="false">
+      <svg class="dhb-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+        <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
+        <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+      </svg>
+      <span class="dhb-label">Data</span>
+      <span class="dhb-badge" id="dhb-badge" data-state="idle">
+        <span class="dhb-badge-dot"></span>
+        <span class="dhb-badge-text" id="dhb-badge-text">Setup</span>
+      </span>
+    </button>
+    <div class="logo-guide-panel" id="logo-guide-panel" role="dialog" aria-labelledby="lgp-title">
+      <div class="lgp-head">
+        <span class="lgp-title" id="lgp-title">CSV guide</span>
+        <button class="lgp-close" data-action="toggle-guide-panel" aria-label="Close">✕</button>
+      </div>
+      <div class="lgp-sub">Every Notion property the dashboard reads from your CSV. Required ones are mandatory; optional ones unlock additional widgets and filters.</div>
+
+      <div class="csv-format-hint lgp-callout-host">
+        <div class="csv-doc-callout">
+          <div class="csv-doc-callout-icon" aria-hidden="true">!</div>
+          <div class="csv-doc-callout-content">
+            <span class="csv-doc-callout-title">Property naming — read this first</span>
+            <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — open the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, then use the <strong>Mapping</strong> tab (for every dimension) or the <strong>Health</strong> tab (for missing required fields) and hit the <code>✏</code> pencil to remap. The dashboard only cares about the data inside, not the column label.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="csv-doc-section-title">
+        <span>Required properties</span>
+        <span class="csv-doc-section-title-badge is-required">3 mandatory</span>
+      </div>
+      <table class="csv-doc-table" aria-label="Required CSV properties">
+        <thead>
+          <tr>
+            <th scope="col" class="csv-doc-col-prop">Property</th>
+            <th scope="col" class="csv-doc-col-type">Type</th>
+            <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+            <th scope="col" class="csv-doc-col-desc">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Position Result</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip is-critical">All widgets</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade outcome: <code>Take profit</code>, <code>Stop loss</code>, <code>BE - TP</code>, <code>BE - SL</code>. Rows missing this are skipped.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">RR TP 1</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip is-critical">All R-based widgets</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R on first take profit (e.g. <code>2.4</code> or <code>-1</code>). Feeds equity, expectancy, drawdown.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Date</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-date">Date</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip is-critical">All time-based widgets</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade date. Format: <code>Month DD, YYYY</code> or <code>YYYY-MM-DD</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="csv-doc-section-title">
+        <span>Optional properties</span>
+        <span class="csv-doc-section-title-badge is-optional">12 unlock more</span>
+      </div>
+      <table class="csv-doc-table" aria-label="Optional CSV properties">
+        <thead>
+          <tr>
+            <th scope="col" class="csv-doc-col-prop">Property</th>
+            <th scope="col" class="csv-doc-col-type">Type</th>
+            <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+            <th scope="col" class="csv-doc-col-desc">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Pair</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Pair Performance</span><span class="csv-doc-chip">Pair × Session</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Currency pair traded (e.g. <code>EURUSD</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Position Type</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Backtest vs Live filter</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade classification: <code>BackTest</code>, <code>Live</code>, <code>Invalid</code>.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Day</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Day Performance</span><span class="csv-doc-chip">Session × Day Heatmap</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Day of week, full English name (<code>Monday</code> … <code>Sunday</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Session</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Session Performance</span><span class="csv-doc-chip">Session × Day Heatmap</span><span class="csv-doc-chip">Pair × Session</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trading session (e.g. <code>London KZ</code>, <code>New York KZ</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Time</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Hour Heatmap</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Entry hour: <code>HHh</code> format (e.g. <code>10h</code>) or integer 0-23.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Order</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Long / Short breakdown</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Trade direction: <code>Buy</code> (long) or <code>Sell</code> (short).</td>
+          </tr>
+          <tr>
+            <td data-label="Property">
+              <code class="csv-doc-prop">M15 Type Detailed</code>
+            </td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-select">Select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Setup Performance</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Setup family (e.g. <code>Internal Continuation</code>, <code>Reversal</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">M15 Obstacles</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">M15 Obstacles</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">M15 obstacle tags, comma-separated (e.g. <code>Big Volume, Range Sweep</code>).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">H4 Obstacles</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">H4 Obstacles</span><span class="csv-doc-chip">S3 Filter</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">H4 obstacle tags, comma-separated. Powers the H4 No-Sweep filter.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">RR Max</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Optimal RR</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure).</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Bad feeling</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-checkbox">Checkbox</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Emotional filter</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Checkbox flag for emotion-marked trades. Lets you filter them out.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">Notion URL</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-formula">Formula</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade log link button</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Deep link to the Notion page (adds the 🔗 button on each trade row). In Notion, use a <code>Formula</code> property with this formula (click to copy): <button type="button" class="csv-doc-copy-snippet" data-action="copy-snippet" data-copy-text='&quot;https://www.notion.so/&quot; + id()' title="Click to copy"><code>&quot;https://www.notion.so/&quot; + id()</code><span class="csv-doc-copy-icon" aria-hidden="true">📋</span></button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="topbar-stats" id="topbar-stats"></div>
+  <div class="topbar-right">
+    <!-- ── Clear RR filter (visible only when rrMinFilter is active) ── -->
+    <button class="rr-clear-topbar-btn" id="rr-clear-topbar-btn"
+            style="display:none"
+            onclick="_rrClearFilter()">
+      ✕ RR Filter
+    </button>
+    <!-- ── Active TPM mode badge — text/icon/title set dynamically by _ppSyncActivePresetBadge ── -->
+    <button class="tpm-active-preset-topbar-btn" id="tpm-active-preset-topbar-btn"
+            onclick="_tpmDeactivateActivePreset()">
+    </button>
+    <!-- ── Data Source Toggle ── -->
+    <div class="ds-toggle-group" title="Switch data source">
+      <button class="ds-toggle-btn" id="ds-btn-demo" data-action="set-data-source" data-source="demo">◎<span class="ds-btn-label"> Demo</span></button>
+      <button class="ds-toggle-btn" id="ds-btn-csv" data-action="set-data-source" data-source="csv">⬡<span class="ds-btn-label"> CSV</span></button>
+      <button class="ds-toggle-btn" id="ds-btn-api" data-action="set-data-source" data-source="api">◉<span class="ds-btn-label"> API Live</span><span class="ds-btn-age" id="ds-btn-age"></span></button>
+    </div>
+    <button class="ds-refresh-btn" id="ds-refresh-btn" data-action="refresh-api-source" title="Refresh API data">↺ Refresh</button>
+    <div class="ds-status-bar" id="ds-status-bar">
+      <div class="ds-status-dot csv" id="ds-status-dot"></div>
+      <span id="ds-status-text">CSV mode</span>
+    </div>
+    <div class="tpm-badge-wrap">
+      <span class="dhb-badge" id="tpm-badge" data-state="idle" data-action="toggle-tpm-dropdown" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" title="Switch TP Management mode">
+        <span class="dhb-badge-text" id="tpm-badge-text">TP: Fixed</span>
+      </span>
+      <div class="tpm-mode-menu" id="tpm-mode-menu" role="menu" aria-label="TP Management mode"></div>
+    </div>
+    <div class="topbar-more-wrap">
+      <button class="topbar-more-btn" data-action="toggle-more-menu" title="More options">⋯</button>
+      <div class="topbar-more-menu" id="topbar-more-menu">
+        <button class="settings-btn" id="settings-toggle-btn" data-action="toggle-settings-panel" title="Display settings">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>Settings</span>
+        </button>
+        <button class="theme-btn" id="theme-toggle-btn" data-action="toggle-theme-panel" title="Customize colors">🎨 Theme Editor</button>
+        <button class="tpm-toggle-btn" id="tpm-toggle-btn" data-action="toggle-tpm-panel" title="Configure how effective RR is computed">🎯 TP Management</button>
+        <button class="reset-btn" data-action="reset-all">↺ Reset</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ══ ONBOARDING BANNER (demo-mode first-visit hint) ══ -->
+<div class="onboard-banner is-hidden" id="onboard-banner">
+  <div class="onboard-banner-content">
+    <div class="onboard-banner-title">👋 Welcome — You're viewing demo data</div>
+    <div class="onboard-banner-steps">
+      <span class="onboard-pill">1. Export your Notion journal as CSV</span>
+      <span class="onboard-pill">2. Click Import CSV to load your data</span>
+      <span class="onboard-pill">3. Use presets & filters to find your edge</span>
+    </div>
+  </div>
+  <button class="onboard-banner-close" data-action="dismiss-onboard" title="Dismiss">✕</button>
+</div>
+
+<!-- ══ SETTINGS PANEL ══ -->
+<div class="settings-panel" id="settings-panel">
+  <div class="sp-row">
+    <span class="sp-label">Bar metric</span>
+    <div class="bar-mode-toggle">
+      <button class="bmt-btn active" id="bmt-total" data-action="set-bar-mode" data-mode="total">Total R</button>
+      <button class="bmt-btn" id="bmt-ev" data-action="set-bar-mode" data-mode="ev">Avg R</button>
+      <button class="bmt-btn" id="bmt-wr" data-action="set-bar-mode" data-mode="wr">Win Rate</button>
+    </div>
+  </div>
+  <div class="sp-row">
+    <span class="sp-label">Bar view</span>
+    <div class="bar-mode-toggle">
+      <button class="bmt-btn active" id="bvt-global" data-action="set-bar-view" data-view="global">Consolidated</button>
+      <button class="bmt-btn" id="bvt-split" data-action="set-bar-view" data-view="split">By Outcome</button>
+    </div>
+  </div>
+  <div class="sp-sep"></div>
+  <div class="sp-row">
+    <span class="sp-label">Ghost mode</span>
+    <div class="bar-mode-toggle">
+      <button class="bmt-btn" id="ghost-on" data-action="toggle-ghost-mode" data-ghost="true">On</button>
+      <button class="bmt-btn" id="ghost-off" data-action="toggle-ghost-mode" data-ghost="false">Off</button>
+    </div>
+  </div>
+  <div class="sp-row">
+    <span class="sp-label">⚠ threshold</span>
+    <div class="bar-mode-toggle">
+      <button class="bmt-btn ghost-th-btn" data-action="set-warning-threshold" data-threshold="0">0</button>
+      <button class="bmt-btn ghost-th-btn" data-action="set-warning-threshold" data-threshold="5">5</button>
+      <button class="bmt-btn ghost-th-btn" data-action="set-warning-threshold" data-threshold="10">10</button>
+      <button class="bmt-btn ghost-th-btn" data-action="set-warning-threshold" data-threshold="20">20</button>
+      <button class="bmt-btn ghost-th-btn" data-action="set-warning-threshold" data-threshold="50">50</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DATA HUB PANEL (unified: Health / Mapping / Custom fields) ══ -->
+<div class="data-hub-panel" id="data-hub-panel" role="dialog" aria-labelledby="dhp-title">
+  <div class="dhp-head">
+    <div class="dhp-head-left">
+      <span class="dhp-title" id="dhp-title">Data Setup</span>
+      <span class="dhp-subtitle">Configure how your Notion data powers the dashboard</span>
+    </div>
+    <div class="dhp-head-actions">
+      <button class="dhp-guide-link" data-action="toggle-guide-panel" title="Open the property reference guide">
+        <svg class="pgl-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+        <span class="pgl-label">Guide</span>
+      </button>
+      <button class="dhp-close" data-action="toggle-data-hub" aria-label="Close">✕</button>
+    </div>
+  </div>
+
+  <div class="dhp-tabs" role="tablist">
+    <button class="dhp-tab is-active"
+            data-action="switch-dh-tab"
+            data-tab="health"
+            role="tab"
+            aria-selected="true"
+            id="dhp-tab-health">
+      <span class="dhp-tab-icon" aria-hidden="true">✓</span>
+      <span class="dhp-tab-label">Health</span>
+      <span class="dhp-tab-badge" id="dhp-tab-health-badge"></span>
+    </button>
+    <button class="dhp-tab"
+            data-action="switch-dh-tab"
+            data-tab="mapping"
+            role="tab"
+            aria-selected="false"
+            id="dhp-tab-mapping">
+      <span class="dhp-tab-icon" aria-hidden="true">🔗</span>
+      <span class="dhp-tab-label">Mapping</span>
+    </button>
+    <button class="dhp-tab"
+            data-action="switch-dh-tab"
+            data-tab="custom"
+            role="tab"
+            aria-selected="false"
+            id="dhp-tab-custom">
+      <span class="dhp-tab-icon" aria-hidden="true">⊕</span>
+      <span class="dhp-tab-label">Custom fields</span>
+      <span class="dhp-tab-badge" id="dhp-tab-custom-badge"></span>
+    </button>
+  </div>
+
+  <!-- TAB 1: HEALTH -->
+  <div class="dhp-tab-panel is-active"
+       id="dhp-panel-health"
+       role="tabpanel"
+       aria-labelledby="dhp-tab-health">
+    <div class="dhp-section-intro">
+      <span class="dhp-intro-label">What's this?</span>
+      <span class="dhp-intro-text">Check which required fields aren't connected yet. Widgets that need missing data are hidden. Click the pencil to fix.</span>
+    </div>
+    <div class="dhp-health-body" id="dhp-health-body">
+      <ul class="lap-list" id="lap-list"></ul>
+    </div>
+    <!-- Feature Requirements block (Phase 3.A.final) — populated by renderFeatureRequirementsBlock() -->
+    <div class="dhp-feature-reqs" id="dhp-feature-reqs"></div>
+  </div>
+
+  <!-- TAB 2: MAPPING -->
+  <div class="dhp-tab-panel"
+       id="dhp-panel-mapping"
+       role="tabpanel"
+       aria-labelledby="dhp-tab-mapping">
+    <div class="dhp-section-intro">
+      <span class="dhp-intro-label">What's this?</span>
+      <span class="dhp-intro-text">Full view of which CSV column feeds each widget dimension. Override any mapping here.</span>
+    </div>
+    <div class="dhp-mapping-body">
+      <div class="ljp-sub" id="ljp-sub">Which CSV column feeds each widget dimension.</div>
+      <div class="ljp-format-row">
+        <div class="ljp-format" id="ljp-format"></div>
+        <button class="ljp-reset-btn" id="ljp-reset-btn" data-action="reset-csv-overrides">↺ Reset all overrides</button>
+      </div>
+      <ul class="ljp-list" id="ljp-list"></ul>
+    </div>
+  </div>
+
+  <!-- TAB 3: CUSTOM FIELDS -->
+  <div class="dhp-tab-panel"
+       id="dhp-panel-custom"
+       role="tabpanel"
+       aria-labelledby="dhp-tab-custom">
+    <div class="dhp-section-intro">
+      <span class="dhp-intro-label">What's this?</span>
+      <span class="dhp-intro-text">Declare your own Notion properties (select, multi-select, checkbox) to unlock custom sidebar filters.</span>
+    </div>
+    <div class="dhp-custom-body">
+      <div id="np-detected" class="np-detected-section"></div>
+      <div id="np-form-host"></div>
+      <div id="np-list" class="np-list"></div>
+      <div class="np-footer-actions">
+        <button class="np-add-btn" id="np-add-btn" data-action="notion-prop-show-add-form">+ Add property</button>
+      </div>
+      <div id="np-counter" class="np-counter"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ THEME PANEL ══ -->
+<div class="theme-panel" id="theme-panel">
+  <div class="tp-header">
+    <span class="tp-title">Theme Editor</span>
+    <button class="tp-close" data-action="toggle-theme-panel">✕</button>
+  </div>
+  <div class="tp-body">
+
+    <!-- Live preview bar -->
+    <div class="tp-preview" id="tp-preview"></div>
+
+    <!-- 1. Presets -->
+    <div>
+      <div class="tp-section">Built-in Themes</div>
+      <div class="tp-presets" id="tp-presets"></div>
+    </div>
+
+    <div>
+      <div class="tp-section tp-section-with-action">
+        <span>My Themes</span>
+        <button class="tp-section-btn" data-action="create-user-theme" title="Create from current theme">+ New</button>
+      </div>
+      <div class="tp-presets" id="tp-user-themes"></div>
+    </div>
+
+    <!-- 2. Color groups (7 accordions) -->
+    <div>
+      <div class="tp-section">Colors</div>
+      <details class="tp-group" open>
+        <summary class="tp-group-header">Backgrounds</summary>
+        <div id="tp-bg-colors" class="tp-color-grid tp-color-list"></div>
+      </details>
+      <details class="tp-group">
+        <summary class="tp-group-header">Borders &amp; Lines</summary>
+        <div id="tp-border-colors" class="tp-color-grid tp-color-list"></div>
+      </details>
+      <details class="tp-group">
+        <summary class="tp-group-header">Text</summary>
+        <div id="tp-text-colors" class="tp-color-grid tp-color-list"></div>
+      </details>
+      <details class="tp-group" open>
+        <summary class="tp-group-header">Accent &amp; Semantic</summary>
+        <div id="tp-accent-colors" class="tp-color-grid tp-color-list"></div>
+      </details>
+      <details class="tp-group">
+        <summary class="tp-group-header">States</summary>
+        <div id="tp-state-colors" class="tp-color-grid tp-color-list"></div>
+      </details>
+      <details class="tp-group">
+        <summary class="tp-group-header">Chart Palette</summary>
+        <div id="tp-chart-colors" class="tp-color-grid tp-color-list"></div>
+      </details>
+      <details class="tp-group">
+        <summary class="tp-group-header">Component Overrides</summary>
+        <div id="tp-component-colors" class="tp-color-grid tp-color-list"></div>
+      </details>
+    </div>
+
+    <!-- 4. Typography — 15 groups -->
+    <div>
+      <div class="tp-section">Typography</div>
+      <div id="tp-typography"></div>
+    </div>
+
+    <!-- 6. Notion Options -->
+    <div>
+      <div class="tp-section">Notion</div>
+      <div class="tp-option-list" id="nlm-opt-app">
+        <label class="tp-option-label">
+          <input type="radio" name="notionOpenMode" value="app" class="tp-radio">
+          <span class="tp-option-content">
+            <span class="tp-option-title">Desktop app</span>
+            <span class="tp-option-desc">Opens via notion:// — stays in the dashboard</span>
+          </span>
+        </label>
+        <label class="tp-option-label" id="nlm-opt-tab">
+          <input type="radio" name="notionOpenMode" value="tab" class="tp-radio">
+          <span class="tp-option-content">
+            <span class="tp-option-title">New tab</span>
+            <span class="tp-option-desc">Opens notion.so in the browser</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 7. Bar Color Mode -->
+    <div>
+      <div class="tp-section">Bar Color Mode</div>
+      <div class="tp-option-list">
+        <label class="tp-option-label" id="bcm-opt-quality">
+          <input type="radio" name="barColorMode" value="quality" class="tp-radio">
+          <span class="tp-option-content">
+            <span class="tp-option-title">Quality (Avg R thresholds)</span>
+            <span class="tp-option-desc">≥0.5R green · ≥0.2R gold · ≥0 teal · negative red</span>
+          </span>
+        </label>
+        <label class="tp-option-label" id="bcm-opt-binary">
+          <input type="radio" name="barColorMode" value="binary" class="tp-radio">
+          <span class="tp-option-content">
+            <span class="tp-option-title">Binary (positive / negative)</span>
+            <span class="tp-option-desc">positive green · negative red · zero gold</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 8. Accessibility -->
+    <div>
+      <div class="tp-section">Accessibility</div>
+      <div class="tp-option-list">
+        <label class="tp-option-label">
+          <input type="checkbox" id="colorblind-toggle" class="tp-radio">
+          <span class="tp-option-content">
+            <span class="tp-option-title">Colorblind mode</span>
+            <span class="tp-option-desc">Blue/Orange palette — replaces green/red for better contrast</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+  </div>
+  <div class="tp-footer">
+    <div class="tp-btn-row">
+      <button class="tp-btn tp-btn-secondary" data-action="export-theme">⬇ Export JSON</button>
+      <label class="tp-btn tp-btn-secondary tp-btn-upload">
+        ⬆ Import JSON
+        <input type="file" id="theme-import-input" class="visually-hidden" accept=".json">
+      </label>
+    </div>
+    <button class="tp-btn tp-btn-primary" data-action="save-theme">💾 Save theme</button>
+    <div class="tp-btn-row" id="tp-user-theme-actions" hidden style="display:none">
+      <button class="tp-btn tp-btn-secondary" data-action="rename-active-user-theme">✎ Rename</button>
+      <button class="tp-btn tp-btn-danger" data-action="delete-active-user-theme">✕ Delete</button>
+    </div>
+    <button class="tp-btn tp-btn-danger" data-action="reset-theme">↺ Reset to default</button>
+  </div>
+</div>
+
+<!-- ══ TP MANAGEMENT PANEL (Phase 2.A — Fixed mode only; Multi/Personalised are placeholders) ══ -->
+<div class="tpm-panel" id="tpm-panel" role="dialog" aria-labelledby="tpm-title">
+  <div class="tpm-header">
+    <span class="tpm-title" id="tpm-title">TP Management</span>
+    <button class="tpm-close" data-action="toggle-tpm-panel" aria-label="Close">✕</button>
+  </div>
+  <div class="tpm-body">
+    <div>
+      <div class="tpm-section">Mode</div>
+      <div class="tpm-option-list" id="tpm-mode-list">
+        <label class="tpm-option-label">
+          <input type="radio" name="tpmMode" value="fixed" class="tpm-radio">
+          <span class="tpm-option-content">
+            <span class="tpm-option-title">Fixed TP</span>
+            <span class="tpm-option-desc">Uses the final RR of each trade as recorded in your <code>RR TP 1</code> property.</span>
+          </span>
+        </label>
+        <label class="tpm-option-label">
+          <input type="radio" name="tpmMode" value="multi" class="tpm-radio">
+          <span class="tpm-option-content">
+            <span class="tpm-option-title">Multi TP (Notion data)</span>
+            <span class="tpm-option-desc">Weighted sum of TP1/TP2/TP3 hits using your journal fields.</span>
+          </span>
+        </label>
+        <label class="tpm-option-label">
+          <input type="radio" name="tpmMode" value="personalised" class="tpm-radio">
+          <span class="tpm-option-content">
+            <span class="tpm-option-title">Personalised TP</span>
+            <span class="tpm-option-desc">Simulate custom TP targets against your rrMax data.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+    <div id="tpm-mode-body"></div>
+    <div class="tpm-be-section">
+      <div class="tpm-section">BE Management</div>
+      <div class="tpm-be-desc">How BE-TP / BE-SL trades are credited across the dashboard.</div>
+      <div class="tpm-option-list" id="tpm-be-list">
+        <label class="tpm-option-label">
+          <input type="radio" name="tpmBeMode" value="be-fallback" class="tpm-radio">
+          <span class="tpm-option-content">
+            <span class="tpm-option-title">BE Fallback <span class="tpm-default-tag">default</span></span>
+            <span class="tpm-option-desc">Path-aware. Caps payouts at the parsed BE trigger; legs above the trigger return 0R.</span>
+          </span>
+        </label>
+        <label class="tpm-option-label">
+          <input type="radio" name="tpmBeMode" value="flipping-be" class="tpm-radio">
+          <span class="tpm-option-content">
+            <span class="tpm-option-title">Flipping BE</span>
+            <span class="tpm-option-desc">Counterfactual BE armed at 2.4R when reach ≥ 2.4. Trades that never reached 2.4 are treated as if they had no BE management.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ FILTER CONTEXT STRIP ══ -->
+<div id="filter-context-strip">
+  <span class="fcs-label">Context</span>
+  <span class="fcs-empty" id="fcs-empty">No filters active — showing full dataset</span>
+</div>
+
+<!-- ══ TPM INVALID CONFIG BANNER (Phase 4 Bug 6) ══
+     Shown when the active TP Management mode has a global config failure
+     (mapping incomplete, partials sum !== 100, required dim unmapped).
+     Populated + toggled by _showTpmInvalidBanner / _hideTpmInvalidBanner. -->
+<div id="tpm-invalid-banner" class="tpm-invalid-banner" hidden>
+  <span class="tpm-invalid-banner-icon" aria-hidden="true">⚠</span>
+  <span class="tpm-invalid-banner-copy" id="tpm-invalid-banner-copy"></span>
+  <button type="button" class="tpm-invalid-banner-btn" id="tpm-invalid-banner-btn">Configure</button>
+</div>
+
+<!-- ══ VIEW TABS ══ -->
+<div class="view-tabs">
+  <div class="view-tab active" id="tab-section-global" data-action="set-section" data-section="global">
+    <span>⬡</span> Global Overview
+  </div>
+  <div class="view-tab" id="tab-section-optimal-rr" data-action="set-section" data-section="optimal-rr">
+    Optimal RR Analysis
+  </div>
+  <div class="view-tab" id="tab-section-partials" data-action="set-section" data-section="partials">
+    Partial Planers
+  </div>
+  <div class="view-tab" id="tab-share" data-action="switch-view" data-view="share">
+    <span>◈</span> Share your data
+  </div>
+  <div class="view-tab" id="tab-api" data-action="switch-to-api" title="Reload from Notion">
+    <span id="tab-api-icon">↺</span> Notion Live
+    <span id="tab-api-badge">LIVE</span>
+    <span id="tab-api-loading" class="is-hidden">API LOADING</span>
+  </div>
+</div>
+
+<!-- ══ PERIOD COMPARISON SUB-HEADER ══ -->
+<div class="pcb-bar hidden" id="pcb-bar">
+  <div class="pcb-bar-periods">
+    <button class="pcb-bar-btn active" id="pcb-btn-current" data-action="pcb-switch-period" data-period="current">
+      <span class="pcb-bar-btn-label">Current Period</span>
+      <span class="pcb-bar-btn-value" id="pcb-bar-current">—</span>
+      <span class="pcb-bar-btn-count" id="pcb-bar-curr-count"></span>
+    </button>
+    <span class="pcb-bar-vs">vs</span>
+    <button class="pcb-bar-btn" id="pcb-btn-prev" data-action="pcb-switch-period" data-period="previous">
+      <span class="pcb-bar-btn-label">Previous Period</span>
+      <span class="pcb-bar-btn-value" id="pcb-bar-prev">—</span>
+      <span class="pcb-bar-btn-count" id="pcb-bar-prev-count"></span>
+    </button>
+    <button class="pcb-bar-close" data-action="tf-disable-compare" title="Close comparison">✕</button>
+  </div>
+</div>
+
+<!-- ══ LAYOUT ══ -->
+<div class="layout">
+
+  <!-- ══ SIDEBAR TOGGLE ══ -->
+  <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+  </button>
+
+  <!-- ══ SIDEBAR ══ -->
+  <aside class="sidebar">
+
+    <!-- ══ TEMPORAL FILTER ══ -->
+    <div class="filter-group">
+      <div class="fg-label fg-label-spaced">Period</div>
+
+      <!-- Mode buttons -->
+      <div class="tf-mode-row">
+        <button class="tf-mode-btn active" id="tfm-global" data-action="tf-set-mode" data-mode="global">All Time</button>
+        <button class="tf-mode-btn" id="tfm-year" data-action="tf-set-mode" data-mode="year">Year</button>
+        <button class="tf-mode-btn" id="tfm-quarter" data-action="tf-set-mode" data-mode="quarter">Quarter</button>
+        <button class="tf-mode-btn" id="tfm-month" data-action="tf-set-mode" data-mode="month">Month</button>
+      </div>
+
+      <!-- Year selector (shown for year / quarter / month) -->
+      <div class="tf-row-single is-hidden" id="tf-year-row">
+        <select class="tf-select" id="tf-year-sel"></select>
+      </div>
+
+      <!-- Quarter selectors -->
+      <div class="tf-row is-hidden" id="tf-quarter-row">
+        <select class="tf-select" id="tf-quarter-sel">
+          <option value="all">All Q</option>
+          <option value="1">Q1</option>
+          <option value="2">Q2</option>
+          <option value="3">Q3</option>
+          <option value="4">Q4</option>
+        </select>
+        <div></div><!-- spacer -->
+      </div>
+
+      <!-- Month selector -->
+      <div class="tf-row is-hidden" id="tf-month-row">
+        <select class="tf-select" id="tf-month-sel"></select>
+        <div></div>
+      </div>
+
+      <!-- Active period badge -->
+      <div id="tf-badge-wrap"></div>
+
+      <!-- Compare toggle -->
+      <div class="tf-compare-row is-hidden" id="tf-compare-row">
+        <div>
+          <div class="tf-compare-label">vs Prev. Period</div>
+          <div class="tf-compare-period" id="tf-prev-label">—</div>
+        </div>
+        <label class="tf-toggle">
+          <input type="checkbox" id="tf-compare-chk">
+          <span class="tf-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- PRESETS -->
+    <div class="filter-group">
+      <div class="fg-label fg-label-spaced">Presets</div>
+      <div class="preset-list" id="preset-list"></div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <!-- ══ PRESET COMPARISON ══ -->
+    <div class="filter-group" id="preset-compare-section">
+      <div class="fg-label fg-label-row fg-label-spaced fg-label-toggle" data-action="toggle-preset-compare" role="button" tabindex="0" aria-expanded="false" id="preset-cmp-header">
+        <span>Compare Presets</span>
+        <span class="fg-chevron" id="preset-cmp-toggle" aria-hidden="true">▸</span>
+      </div>
+      <div id="preset-cmp-panel" class="is-hidden">
+        <div class="preset-cmp-grid">
+          <select id="pcmp-a" class="preset-cmp-select">
+            <option value="0">P0 — Baseline</option>
+            <option value="1">P1 — Standard</option>
+            <option value="2">P2 — Strict</option>
+            <option value="3" selected>P3 — Research</option>
+            <option value="4">P4 — Notion Sync</option>
+            <option value="5">P5 — Custom</option>
+          </select>
+          <select id="pcmp-b" class="preset-cmp-select">
+            <option value="0" selected>P0 — Baseline</option>
+            <option value="1">P1 — Standard</option>
+            <option value="2">P2 — Strict</option>
+            <option value="3">P3 — Research</option>
+            <option value="4">P4 — Notion Sync</option>
+            <option value="5">P5 — Custom</option>
+          </select>
+        </div>
+        <div id="preset-cmp-table"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <!-- ══ FILTERS ACCORDION ══ -->
+    <div class="filter-group" id="filters-accordion-section">
+      <div class="fg-label fg-label-row fg-label-spaced fg-label-toggle" data-action="toggle-filters-panel" role="button" tabindex="0" aria-expanded="false" id="filters-accordion-header">
+        <span>Filters</span>
+        <div class="filters-header-btns">
+          <button data-action="filters-clear-all" id="filters-clear-btn" class="preset-cmp-toggle-btn filters-clear-btn" title="Reset all filters to neutral">Clear<span class="filters-clear-count" id="filters-clear-count"></span></button>
+          <span class="fg-chevron" id="filters-panel-toggle" aria-hidden="true">▸</span>
+        </div>
+      </div>
+      <div id="filters-panel-body" class="is-hidden">
+
+        <!-- Save button (contextual — rendered by renderSaveButton()) -->
+        <div class="filters-save-row" id="filters-save-row">
+          <div class="filters-save-container" id="filters-save-container"></div>
+        </div>
+
+        <div class="filters-panel-dims" id="filters-panel-dims">
+
+    <div class="filter-group" data-dim-key="outcome">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot outcome"></span>TP Result</span>
+        <span class="fg-count" id="cnt-outcome">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="outcome" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="outcome" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="outcome" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-outcome"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="setup">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot setup"></span>Setup Type</span>
+        <span class="fg-count" id="cnt-setup">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="setup" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="setup" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="setup" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-setup"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="session">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot session"></span>Session</span>
+        <span class="fg-count" id="cnt-session">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="session" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="session" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="session" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-session"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="day">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot day"></span>Day of Week</span>
+        <span class="fg-count" id="cnt-day">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="day" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="day" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="day" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-day"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="pair">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot pair"></span>Currency Pair</span>
+        <span class="fg-count" id="cnt-pair">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="pair" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="pair" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="pair" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-pair"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="direction">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot direction"></span>Order</span>
+        <span class="fg-count" id="cnt-direction">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="direction" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="direction" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="direction" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-direction"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="obstacles">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot obstacles"></span>M15 Obstacle</span>
+        <span class="fg-count" id="cnt-obs">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="obstacles" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="obstacles" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="obstacles" data-mode="include">Include</button>
+      </div>
+      <div class="chips obs" id="chips-obs"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="h4obs">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot h4obs"></span>H4 Obstacle</span>
+        <span class="fg-count" id="cnt-h4obs">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="h4obs" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="h4obs" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="h4obs" data-mode="include">Include</button>
+      </div>
+      <div class="chips obs" id="chips-h4obs"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="tradeType">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot pair"></span>Trade Type</span>
+        <span class="fg-count" id="cnt-tradetype">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="tradeType" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="tradeType" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="tradeType" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-tradetype"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="beManagement">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot bemgmt"></span>BE Management</span>
+        <span class="fg-count" id="cnt-bemgmt">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="beManagement" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="beManagement" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="beManagement" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-bemgmt"></div>
+    </div>
+
+    <div class="filter-group" data-dim-key="badFeeling">
+      <div class="fg-head">
+        <span class="fg-label"><span class="fg-dot badfeeling"></span>Bad Feeling</span>
+        <span class="fg-count" id="cnt-badfeeling">0</span>
+      </div>
+      <div class="chip-mode-row">
+        <button class="chip-mode-btn active" data-action="set-chip-mode" data-key="badFeeling" data-mode="neutral">Neutral</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="badFeeling" data-mode="exclude">Exclude</button>
+        <button class="chip-mode-btn" data-action="set-chip-mode" data-key="badFeeling" data-mode="include">Include</button>
+      </div>
+      <div class="chips" id="chips-badfeeling"></div>
+    </div>
+
+    <!-- Custom Notion properties declared by the user — content injected by renderCustomFilterChips() -->
+    <div id="filters-custom-section" class="filters-custom-section"></div>
+
+        </div><!-- /filters-panel-dims -->
+      </div><!-- /filters-panel-body -->
+    </div><!-- /filters-accordion-section -->
+
+  </aside>
+
+  <!-- ══ MAIN ══ -->
+  <main class="main" id="main-panel">
+
+    <!-- period-compare-bar replaced by #pcb-bar sub-header above layout -->
+
+    <!-- ══ WIDGET: Equity & Drawdown ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-equity" data-section="global">
+      <div class="cc-head cc-head-fixed">
+        <span class="cc-title">Equity &amp; Drawdown</span>
+        <div class="cc-head-controls cc-head-controls-lg">
+          <div class="equity-legend">
+            <span class="equity-legend-item">
+              <span class="equity-legend-line tone-info"></span>Equity
+            </span>
+            <span id="dd-legend-item" class="equity-legend-item">
+              <span class="equity-legend-line tone-danger"></span>Drawdown
+            </span>
+            <span id="wr-legend-item" class="equity-legend-item faded">
+              <span class="equity-legend-line dashed tone-info-text"></span>Rolling WR
+            </span>
+          </div>
+          <div class="dd-stats">
+            <div class="dd-stat-item"><span class="dd-stat-label">Max DD</span><span class="dd-stat-val" id="dd-max-val">—</span></div>
+            <div class="dd-stat-item"><span class="dd-stat-label">Current DD</span><span class="dd-stat-val neutral" id="dd-curr-val">—</span></div>
+            <div class="dd-stat-item divider">
+              <span class="dd-stat-label">Best Run</span>
+              <span class="dd-stat-val positive" id="dd-best-run">—</span>
+            </div>
+            <div class="dd-stat-item divider">
+              <span class="dd-stat-label">Worst Run</span>
+              <span class="dd-stat-val" id="dd-worst-run">—</span>
+            </div>
+          </div>
+          <button class="dd-toggle" id="eq-mode-btn" data-action="toggle-equity-mode" title="Display by trade or by date">
+            <span>Trades</span>
+          </button>
+          <button class="dd-toggle" id="dd-toggle-btn" data-action="toggle-drawdown" title="Show / hide drawdown overlay">
+            <span class="dd-toggle-icon" id="dd-toggle-icon">▶</span>
+            <span>DD</span>
+          </button>
+          <div class="control-group control-group-compact">
+            <button class="dd-toggle dd-toggle-segment" id="wr-toggle-btn" data-action="toggle-win-rate"
+              title="Rolling win rate">
+              <span class="dd-toggle-icon" id="wr-toggle-icon">▶</span>
+              <span>WR</span>
+            </button>
+            <select id="wr-window-sel">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="equity-wrap equity-wrap-clipped" id="equity-chart-wrap">
+        <canvas id="equityCanvas"></canvas>
+        <canvas id="ddCanvas" class="canvas-passive"></canvas>
+        <canvas id="wrCanvas" class="canvas-passive"></canvas>
+        <canvas id="crossCanvas" class="canvas-crosshair"></canvas>
+        <div class="eq-tooltip" id="eq-tooltip">
+          <div class="eq-tt-date" id="eq-tt-date"></div>
+          <div class="eq-tt-row"><span class="eq-tt-dot eq"></span><span class="eq-tt-label">Equity</span><span class="eq-tt-val eq" id="eq-tt-equity"></span></div>
+          <div class="eq-tt-row" id="eq-tt-dd-row"><span class="eq-tt-dot dd"></span><span class="eq-tt-label">Drawdown</span><span class="eq-tt-val dd" id="eq-tt-dd"></span></div>
+        <div class="eq-tt-row is-hidden" id="eq-tt-wr-row"><span class="eq-tt-dot tone-info"></span><span class="eq-tt-label">WR <span id="eq-tt-wr-n" class="eq-tt-wr-n"></span></span><span class="eq-tt-val eq-tt-wr-val" id="eq-tt-wr"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Outcome Breakdown ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-outcome" data-section="global">
+      <div class="cc-head cc-head-spaced"><span class="cc-title">Outcome Breakdown</span></div>
+      <div class="donut-wrap donut-wrap-centered">
+        <div class="donut-canvas-wrap"><canvas id="donutCanvas"></canvas></div>
+        <div class="donut-legend" id="donut-legend"></div>
+      </div>
+    </div>
+
+
+    <!-- ══ WIDGET: Equity Selection ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-selection" data-section="global" id="w-selection-card">
+      <div class="cc-head cc-head-fixed">
+        <div class="cc-head-controls">
+          <span class="cc-title">Selection</span>
+          <span class="sel-badge is-hidden" id="sel-badge"></span>
+        </div>
+          <div class="cc-head-controls cc-head-controls-sm">
+            <div class="sel-kpis is-hidden" id="sel-kpis"></div>
+            <button class="sel-clear-btn is-hidden" id="sel-clear-btn" data-action="clear-equity-selection" title="Clear selection">✕ Clear</button>
+        </div>
+      </div>
+      <!-- Empty state -->
+      <div class="sel-empty" id="sel-empty">
+        <div class="sel-empty-icon">⬡</div>
+        <div class="sel-empty-title">No selection</div>
+        <div class="sel-empty-sub">Click a day or drag a range on the Equity chart</div>
+      </div>
+      <!-- Trade table — hidden until a selection is made -->
+      <div class="sel-table-wrap is-hidden" id="sel-table-wrap">
+        <table class="sel-table">
+          <colgroup>
+            <col style="width:78px">  <!-- Date -->
+            <col style="width:70px">  <!-- Pair -->
+            <col style="width:52px">  <!-- Outcome -->
+            <col style="width:42px">  <!-- R -->
+            <col style="width:40px">  <!-- Dir -->
+            <col>                     <!-- Setup (flex) -->
+            <col style="width:52px">  <!-- Session -->
+            <col>                     <!-- H4 (flex) -->
+            <col>                     <!-- M15 Obs. (flex) -->
+            <col style="width:56px">  <!-- Buttons -->
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Pair</th>
+              <th>Outcome</th>
+              <th class="r">R</th>
+              <th>Dir</th>
+              <th>Setup</th>
+              <th>Session</th>
+              <th>H4</th>
+              <th>M15 Obs.</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="sel-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Statistics Overview ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-stats" data-section="global" id="w-stats-card">
+      <div class="cc-head cc-head-fixed">
+        <span class="cc-title">Statistics Overview</span>
+      </div>
+      <div class="wst-body" id="wst-body">
+        <!-- populated by updateStatsWidget() -->
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Monthly P&L ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-monthly" data-section="global" id="monthly-card">
+      <div class="cc-head">
+        <span class="cc-title">Monthly P&amp;L</span>
+        <div class="cc-head-controls cc-head-controls-xs">
+          <button class="mc-toggle" id="mt-stacked" data-action="set-monthly-mode" data-mode="stacked">Stacked</button>
+          <button class="mc-toggle active" id="mt-net" data-action="set-monthly-mode" data-mode="net">Net</button>
+          <button class="mc-toggle" id="mt-volume" data-action="set-monthly-mode" data-mode="volume">Volume</button>
+        </div>
+          <div class="cc-tabs cc-tabs-offset" id="monthly-curve-btns">
+          <button class="cc-tab" id="mc-btn-3m" data-action="toggle-monthly-curve" data-mode="rolling">3M Avg</button>
+          <button class="cc-tab" id="mc-btn-cumul" data-action="toggle-monthly-curve" data-mode="cumul">Cumul</button>
+        </div>
+      </div>
+      <div class="monthly-wrap monthly-wrap-clipped">
+        <canvas id="monthlyCanvas"></canvas>
+        <div id="monthly-tooltip" class="monthly-tooltip is-hidden"></div>
+      </div>
+      <div class="monthly-legend monthly-legend-fixed">
+        <div class="ml-item"><span class="ml-dot tone-success"></span>TP</div>
+        <div class="ml-item"><span class="ml-dot tone-accent"></span>BE-TP</div>
+        <div class="ml-item"><span class="ml-dot tone-danger"></span>Losses</div>
+        <div class="ml-item ml-sep"><span class="ml-line tone-accent"></span>3M Trend</div>
+        <div class="ml-item"><span class="ml-line ml-line-dashed"></span>Avg</div>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Setup Performance ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-setup" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">Setup Performance</span>
+        <button id="setup-detail-btn" class="bar-sort-btn" data-action="toggle-setup-detail" title="Switch between M15 Type and M15 Type Detail">Detail</button>
+      </div>
+      <div class="bar-sort-row" id="sort-setup">
+        <button class="bar-sort-btn sort-sync-btn" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="setup" data-sort="alpha">A → Z</button>
+        <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="setup" data-sort="desc">Best → Worst</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="setup" data-sort="asc">Worst → Best</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="setup" data-sort="volume">Volume</button>
+      </div>
+      <div class="bar-list" id="bars-setup"></div>
+    </div>
+
+    <!-- ══ WIDGET: Session Performance ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-session" data-section="global">
+      <div class="cc-head"><span class="cc-title">Session Performance</span></div>
+      <div class="bar-sort-row" id="sort-session">
+        <button class="bar-sort-btn sort-sync-btn" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+        <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="session" data-sort="canonical">A → Z</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="session" data-sort="desc">Best → Worst</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="session" data-sort="asc">Worst → Best</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="session" data-sort="volume">Volume</button>
+      </div>
+      <div class="bar-list" id="bars-session"></div>
+    </div>
+
+    <!-- ══ WIDGET: Day Performance ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-day" data-section="global">
+      <div class="cc-head"><span class="cc-title">Day Performance</span></div>
+      <div class="bar-sort-row" id="sort-day">
+        <button class="bar-sort-btn sort-sync-btn" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+        <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="day" data-sort="canonical">A → Z</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="day" data-sort="desc">Best → Worst</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="day" data-sort="asc">Worst → Best</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="day" data-sort="volume">Volume</button>
+      </div>
+      <div class="bar-list" id="bars-day"></div>
+    </div>
+
+    <!-- ══ WIDGET: Pair Performance ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-pair" data-section="global">
+      <div class="cc-head"><span class="cc-title">Pair Performance</span></div>
+      <div class="bar-sort-row" id="sort-pair">
+        <button class="bar-sort-btn sort-sync-btn" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="pair" data-sort="alpha">A → Z</button>
+        <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="pair" data-sort="desc">Best → Worst</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="pair" data-sort="asc">Worst → Best</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="pair" data-sort="volume">Volume</button>
+      </div>
+      <div class="bar-list" id="bars-pair"></div>
+    </div>
+
+    <!-- ══ WIDGET: Session × Day Heatmap ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-heatmap" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">Session × Day Heatmap</span>
+        <div class="cc-head-controls cc-head-controls-sm">
+          <button class="bar-sort-btn hm-sync-btn" data-action="toggle-heatmap-sync" title="Sync both heatmaps together">⛓</button>
+          <button class="cc-tab hm-hardmode-btn" data-action="toggle-hard-mode" title="Hardmode: red/green around 40%">Hardmode</button>
+          <div class="cc-tabs" id="sd-metric-btns">
+            <button class="cc-tab active" data-action="set-heatmap-metric" data-metric="ev">Avg R</button>
+            <button class="cc-tab" data-action="set-heatmap-metric" data-metric="n">Volume</button>
+          </div>
+          <div class="cc-tabs" id="sd-threshold-btns" title="Hachures on cells with n &lt; threshold">
+            <button class="cc-tab" data-action="set-heatmap-threshold" data-threshold="0">0</button>
+            <button class="cc-tab active" data-action="set-heatmap-threshold" data-threshold="5">5</button>
+            <button class="cc-tab" data-action="set-heatmap-threshold" data-threshold="10">10</button>
+            <button class="cc-tab" data-action="set-heatmap-threshold" data-threshold="20">20</button>
+          </div>
+        </div>
+      </div>
+      <div id="heatmap-container"></div>
+    </div>
+
+    <!-- ══ WIDGET: M15 Obstacle Performance ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-m15" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">M15 Obstacle Performance</span>
+        <div class="cc-head-controls cc-head-controls-md">
+          <span class="cc-sub">avg R · n≥5</span>
+          <div class="bar-sort-row bar-sort-row-tight" id="sort-obs">
+            <button class="bar-sort-btn sort-sync-btn" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+            <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="obs" data-sort="alpha">A → Z</button>
+            <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="obs" data-sort="desc">Best → Worst</button>
+            <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="obs" data-sort="asc">Worst → Best</button>
+            <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="obs" data-sort="volume">Volume</button>
+          </div>
+        </div>
+      </div>
+      <div class="dual-bar-grid" id="bars-obs"></div>
+    </div>
+
+    <!-- ══ WIDGET: H4 Obstacle Performance ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-h4" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">H4 Obstacle Performance</span>
+        <div class="cc-head-controls cc-head-controls-md">
+          <span class="cc-sub">avg R · n≥5</span>
+          <div class="bar-sort-row bar-sort-row-tight" id="sort-h4obs">
+            <button class="bar-sort-btn sort-sync-btn" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+            <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="h4obs" data-sort="alpha">A → Z</button>
+            <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="h4obs" data-sort="desc">Best → Worst</button>
+            <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="h4obs" data-sort="asc">Worst → Best</button>
+            <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="h4obs" data-sort="volume">Volume</button>
+          </div>
+        </div>
+      </div>
+      <div class="dual-bar-grid" id="bars-h4obs"></div>
+    </div>
+
+
+    <!-- ══ WIDGET: Streak Analytics ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-streak-analytics" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">Streak Analytics</span>
+        <div class="cc-tabs" id="streak-tab-btns">
+          <button class="cc-tab" data-action="set-streak-tab" data-tab="timeline">Timeline</button>
+          <button class="cc-tab active" data-action="set-streak-tab" data-tab="histogram">Histogram</button>
+        </div>
+      </div>
+      <!-- Timeline view -->
+      <div id="streak-timeline-view" class="streak-view streak-view-timeline is-hidden">
+        <div id="streak-timeline-row" class="streak-timeline-row"></div>
+        <div id="streak-timeline-legend" class="streak-timeline-legend">
+          <label class="tf-toggle stl-be-toggle" title="Distinguish BE-TP / BE-SL colors">
+            <input type="checkbox" id="stl-be-toggle-input">
+            <span class="tf-slider"></span>
+          </label>
+          <div class="legend-item"><div class="legend-dot tone-success"></div><span id="stl-leg-win">Win</span></div>
+          <div class="legend-item"><div class="legend-dot tone-danger"></div><span id="stl-leg-loss">Loss</span></div>
+          <div class="legend-item is-hidden" id="stl-leg-betp"><div class="legend-dot" style="background:var(--oc-betp)"></div>BE-TP</div>
+          <div class="legend-item is-hidden" id="stl-leg-besl"><div class="legend-dot" style="background:var(--oc-besl)"></div>BE-SL</div>
+        </div>
+      </div>
+      <!-- Histogram view -->
+      <div id="streak-histogram-view" class="streak-view streak-view-histogram">
+        <canvas id="streakHistCanvas" class="canvas-fill"></canvas>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Hour Performance ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-hour" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">Hour DST Performance</span>
+        <div class="bar-sort-row bar-sort-row-flush" id="sort-hour">
+          <button class="bar-sort-btn sort-sync-btn" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+          <button class="bar-sort-btn active" data-action="set-hour-sort" data-sort="canonical">A → Z</button>
+          <button class="bar-sort-btn" data-action="set-hour-sort" data-sort="desc">Best → Worst</button>
+          <button class="bar-sort-btn" data-action="set-hour-sort" data-sort="asc">Worst → Best</button>
+          <button class="bar-sort-btn" data-action="set-hour-sort" data-sort="volume">Volume</button>
+        </div>
+      </div>
+      <div class="bar-list bar-list-fill" id="bars-hour"></div>
+    </div>
+
+    <!-- ══ WIDGET: Pair × Session ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-pair-session" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">Pair × Session</span>
+        <div class="cc-head-controls cc-head-controls-sm">
+          <button class="bar-sort-btn hm-sync-btn" data-action="toggle-heatmap-sync" title="Sync both heatmaps together">⛓</button>
+          <button class="cc-tab hm-hardmode-btn" data-action="toggle-hard-mode" title="Hardmode: red/green around 40%">Hardmode</button>
+          <div class="cc-tabs" id="ps-metric-btns">
+            <button class="cc-tab active" data-action="set-pair-session-metric" data-metric="ev">Avg R</button>
+            <button class="cc-tab" data-action="set-pair-session-metric" data-metric="n">Volume</button>
+          </div>
+          <div class="cc-tabs" id="ps-threshold-btns" title="Hachures on cells with n &lt; threshold">
+            <button class="cc-tab" data-action="set-pair-session-threshold" data-threshold="0">0</button>
+            <button class="cc-tab active" data-action="set-pair-session-threshold" data-threshold="5">5</button>
+            <button class="cc-tab" data-action="set-pair-session-threshold" data-threshold="10">10</button>
+            <button class="cc-tab" data-action="set-pair-session-threshold" data-threshold="20">20</button>
+          </div>
+        </div>
+      </div>
+      <div id="pair-session-container" class="scroll-panel-fill"></div>
+    </div>
+
+
+    <!-- ══ WIDGET: DD Recovery ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-recovery" data-section="global">
+      <div class="cc-head">
+        <span class="cc-title">Post-Drawdown Recovery</span>
+        <span class="cc-hint">DD (R) × Trades to recover peak</span>
+      </div>
+      <div class="canvas-stage">
+        <canvas id="recoveryCanvas" class="canvas-absolute-fill"></canvas>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Streak Calendar ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-calendar" data-section="global">
+      <div class="cc-head cc-head-fixed cc-head-wrap">
+        <span class="cc-title">P&amp;L Calendar</span>
+        <div class="cc-head-controls cc-head-controls-wrap">
+          <!-- Mode toggle -->
+          <div class="control-group control-group-calendar">
+            <button id="cal-btn-annual" data-action="set-cal-mode" data-mode="annual" class="bar-sort-btn bar-sort-btn-segment active">Annual</button>
+            <button id="cal-btn-monthly" data-action="set-cal-mode" data-mode="monthly" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split">Monthly</button>
+          </div>
+          <!-- Year selector -->
+          <select id="cal-year-sel" class="widget-select"></select>
+          <!-- Month selector (monthly mode only) -->
+          <select id="cal-month-sel" class="widget-select is-hidden">
+            <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+            <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+            <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+          </select>
+          <!-- Monthly sort (by hour only) -->
+          <div id="cal-month-sort-btns" class="control-group control-group-calendar is-hidden">
+            <button id="cal-sort-hour" data-action="set-cal-month-sort" data-sort="hour" class="bar-sort-btn bar-sort-btn-segment active">By Hour</button>
+          </div>
+          <!-- Legend -->
+          <div class="legend-inline">
+            <span class="legend-item"><span class="legend-dot-sm tone-success"></span>Positive</span>
+            <span class="legend-item"><span class="legend-dot-sm tone-danger"></span>Negative</span>
+          </div>
+        </div>
+      </div>
+      <div id="calendar-grid" class="scroll-panel-fill"></div>
+    </div>
+
+    <!-- ══ WIDGET: Monte Carlo ══ -->
+    <div class="chart-card gs-widget mc2-widget" data-gs-id="w-montecarlo" data-section="optimal-rr">
+      <div class="cc-head cc-head-fixed">
+        <div class="stack-tight">
+          <span class="cc-title">Monte Carlo Simulation</span>
+          <span class="cc-hint">2,000 iterations · 5th / 50th / 95th percentile outcomes</span>
+        </div>
+      </div>
+
+      <div class="mc2-body mc2-main-grid" id="mc2-main-grid">
+
+        <!-- ══ SECTION: Inputs (settings) ══ -->
+        <section class="mc2-section-block" data-mc2-section="inputs" aria-label="Inputs">
+          <div class="gs-drag-handle mc2-inner-drag-handle" data-drag-key="inputs" title="Drag to move">Inputs</div>
+          <div class="ui-resizable-handle ui-resizable-n"  data-resize-key="inputs" data-resize-dir="n"></div>
+          <div class="ui-resizable-handle ui-resizable-e"  data-resize-key="inputs" data-resize-dir="e"></div>
+          <div class="ui-resizable-handle ui-resizable-s"  data-resize-key="inputs" data-resize-dir="s"></div>
+          <div class="ui-resizable-handle ui-resizable-w"  data-resize-key="inputs" data-resize-dir="w"></div>
+          <div class="ui-resizable-handle ui-resizable-ne" data-resize-key="inputs" data-resize-dir="ne"></div>
+          <div class="ui-resizable-handle ui-resizable-nw" data-resize-key="inputs" data-resize-dir="nw"></div>
+          <div class="ui-resizable-handle ui-resizable-se" data-resize-key="inputs" data-resize-dir="se"></div>
+          <div class="ui-resizable-handle ui-resizable-sw" data-resize-key="inputs" data-resize-dir="sw"></div>
+          <div class="mc2-inputs">
+            <div class="mc2-field">
+              <label for="mc2-in-balance">Initial Balance</label>
+              <div class="mc2-input-wrap"><span class="mc2-prefix">$</span><input id="mc2-in-balance" type="number" step="1000" min="1" class="mc2-input mc2-input-prefixed"></div>
+            </div>
+            <div class="mc2-field">
+              <label for="mc2-in-risk">Risk % per trade</label>
+              <div class="mc2-input-wrap"><input id="mc2-in-risk" type="number" step="0.1" min="0.01" max="100" class="mc2-input"><span class="mc2-suffix">%</span></div>
+            </div>
+            <div class="mc2-field" data-mc2-field="wr">
+              <label for="mc2-in-wr">Win Rate %</label>
+              <div class="mc2-input-wrap"><input id="mc2-in-wr" type="number" step="0.1" min="0" max="100" class="mc2-input"><span class="mc2-suffix">%</span></div>
+              <span class="mc2-field-hint" data-mc2-mode-only="multi" hidden>Driven by TP1 reach%</span>
+            </div>
+            <div class="mc2-field">
+              <label for="mc2-in-tpm">Avg. trades / month</label>
+              <div class="mc2-input-wrap"><input id="mc2-in-tpm" type="number" step="1" min="1" class="mc2-input"></div>
+            </div>
+            <div class="mc2-field">
+              <label for="mc2-in-months">Total months</label>
+              <div class="mc2-input-wrap"><input id="mc2-in-months" type="number" step="1" min="1" class="mc2-input"></div>
+            </div>
+            <div class="mc2-field mc2-tp-mode-field">
+              <label>TP Mode</label>
+              <div class="mc2-tp-mode" role="tablist" aria-label="TP mode">
+                <button type="button" class="mc2-tp-mode-btn is-active" data-mc2-tp-mode="full" role="tab" aria-selected="true">Full TP</button>
+                <button type="button" class="mc2-tp-mode-btn"           data-mc2-tp-mode="multi" role="tab" aria-selected="false">Multi TP</button>
+              </div>
+            </div>
+            <div class="mc2-field" data-mc2-mode-only="full">
+              <label for="mc2-in-rr">TP / SL ratio</label>
+              <div class="mc2-input-wrap"><input id="mc2-in-rr" type="number" step="0.1" min="0.1" class="mc2-input"><span class="mc2-suffix">R</span></div>
+            </div>
+            <div class="mc2-multi-tp" data-mc2-mode-only="multi" hidden>
+              <div class="mc2-multi-tp-header" aria-hidden="true">
+                <span class="mc2-multi-tp-label"></span>
+                <div class="mc2-multi-tp-inputs mc2-multi-tp-colhead">
+                  <span tabindex="0" data-mc2-tip="Reward-to-risk ratio for this partial exit">R</span>
+                  <span tabindex="0" data-mc2-tip="Probability (%) that price reaches this TP level">Reach</span>
+                  <span tabindex="0" data-mc2-tip="Position size (%) closed at this TP">Size</span>
+                </div>
+              </div>
+              <div class="mc2-multi-tp-row" data-mc2-tp-idx="1">
+                <span class="mc2-multi-tp-label">TP1</span>
+                <div class="mc2-multi-tp-inputs">
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp1-r"     type="number" step="0.1" min="0"    class="mc2-input" aria-label="TP1 R ratio"><span class="mc2-suffix">R</span></div>
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp1-reach" type="number" step="0.1" min="0" max="100" class="mc2-input" aria-label="TP1 reach %"><span class="mc2-suffix">%</span></div>
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp1-size"  type="number" step="0.1" min="0" max="100" class="mc2-input" aria-label="TP1 size %"><span class="mc2-suffix">%</span></div>
+                </div>
+              </div>
+              <div class="mc2-multi-tp-row" data-mc2-tp-idx="2">
+                <span class="mc2-multi-tp-label">TP2</span>
+                <div class="mc2-multi-tp-inputs">
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp2-r"     type="number" step="0.1" min="0"    class="mc2-input" aria-label="TP2 R ratio"><span class="mc2-suffix">R</span></div>
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp2-reach" type="number" step="0.1" min="0" max="100" class="mc2-input" aria-label="TP2 reach %"><span class="mc2-suffix">%</span></div>
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp2-size"  type="number" step="0.1" min="0" max="100" class="mc2-input" aria-label="TP2 size %"><span class="mc2-suffix">%</span></div>
+                </div>
+              </div>
+              <div class="mc2-multi-tp-row" data-mc2-tp-idx="3">
+                <span class="mc2-multi-tp-label">TP3</span>
+                <div class="mc2-multi-tp-inputs">
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp3-r"     type="number" step="0.1" min="0"    class="mc2-input" aria-label="TP3 R ratio"><span class="mc2-suffix">R</span></div>
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp3-reach" type="number" step="0.1" min="0" max="100" class="mc2-input" aria-label="TP3 reach %"><span class="mc2-suffix">%</span></div>
+                  <div class="mc2-input-wrap mc2-multi-tp-input"><input id="mc2-in-tp3-size"  type="number" step="0.1" min="0" max="100" class="mc2-input" aria-label="TP3 size %"><span class="mc2-suffix">%</span></div>
+                </div>
+              </div>
+              <div class="mc2-multi-tp-helpers">
+                <div class="mc2-multi-tp-helper" id="mc2-multi-size-helper" data-tone="ok">TP sizes: 100%</div>
+                <div class="mc2-multi-tp-helper" id="mc2-multi-reach-helper" hidden data-tone="warn">Reach values should decrease (TP1 &ge; TP2 &ge; TP3)</div>
+                <div class="mc2-multi-tp-ev" id="mc2-multi-ev" data-tone="dim">EV = 0.00 R/trade</div>
+              </div>
+            </div>
+
+            <label class="mc2-field-check" for="mc2-in-compound">
+              <input type="checkbox" id="mc2-in-compound">
+              <span class="mc2-check-box"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5 l2 2 l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="mc2-check-text">
+                <span class="mc2-check-title">Compounding</span>
+                <span class="mc2-check-hint">Risk the same % of current balance each trade</span>
+              </span>
+            </label>
+
+            <div class="mc2-simulate-row">
+              <button data-action="run-monte-carlo" class="mc2-simulate-btn" id="mc2-simulate-btn" type="button">Simulate</button>
+              <span class="mc2-status" id="mc2-status">Ready</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ══ SECTION: Chart ══ -->
+        <section class="mc2-section-block" data-mc2-section="chart" aria-label="Equity chart">
+          <div class="gs-drag-handle mc2-inner-drag-handle" data-drag-key="chart" title="Drag to move">Chart</div>
+          <div class="ui-resizable-handle ui-resizable-n"  data-resize-key="chart" data-resize-dir="n"></div>
+          <div class="ui-resizable-handle ui-resizable-e"  data-resize-key="chart" data-resize-dir="e"></div>
+          <div class="ui-resizable-handle ui-resizable-s"  data-resize-key="chart" data-resize-dir="s"></div>
+          <div class="ui-resizable-handle ui-resizable-w"  data-resize-key="chart" data-resize-dir="w"></div>
+          <div class="ui-resizable-handle ui-resizable-ne" data-resize-key="chart" data-resize-dir="ne"></div>
+          <div class="ui-resizable-handle ui-resizable-nw" data-resize-key="chart" data-resize-dir="nw"></div>
+          <div class="ui-resizable-handle ui-resizable-se" data-resize-key="chart" data-resize-dir="se"></div>
+          <div class="ui-resizable-handle ui-resizable-sw" data-resize-key="chart" data-resize-dir="sw"></div>
+          <div class="mc2-chart-wrap canvas-stage canvas-stage-min">
+            <label class="mc2-toggle-spectrum mc2-toggle-spectrum-overlay" for="mc2-show-spectrum">
+              <input type="checkbox" id="mc2-show-spectrum">
+              <span class="mc2-toggle-track"><span class="mc2-toggle-thumb"></span></span>
+              <span class="mc2-toggle-label">Spectrum</span>
+            </label>
+            <canvas id="mcCanvas" class="canvas-absolute-fill"></canvas>
+            <div class="mc2-chart-empty" id="mc2-chart-empty">Click <strong>Simulate</strong> to project 2,000 future equity paths.</div>
+          </div>
+        </section>
+
+        <!-- ══ SECTION: Bilan (scenario cards, stacked vertically) ══ -->
+        <section class="mc2-section-block" data-mc2-section="bilan" aria-label="Scenario summary">
+          <div class="gs-drag-handle mc2-inner-drag-handle" data-drag-key="bilan" title="Drag to move">Bilan</div>
+          <div class="ui-resizable-handle ui-resizable-n"  data-resize-key="bilan" data-resize-dir="n"></div>
+          <div class="ui-resizable-handle ui-resizable-e"  data-resize-key="bilan" data-resize-dir="e"></div>
+          <div class="ui-resizable-handle ui-resizable-s"  data-resize-key="bilan" data-resize-dir="s"></div>
+          <div class="ui-resizable-handle ui-resizable-w"  data-resize-key="bilan" data-resize-dir="w"></div>
+          <div class="ui-resizable-handle ui-resizable-ne" data-resize-key="bilan" data-resize-dir="ne"></div>
+          <div class="ui-resizable-handle ui-resizable-nw" data-resize-key="bilan" data-resize-dir="nw"></div>
+          <div class="ui-resizable-handle ui-resizable-se" data-resize-key="bilan" data-resize-dir="se"></div>
+          <div class="ui-resizable-handle ui-resizable-sw" data-resize-key="bilan" data-resize-dir="sw"></div>
+          <div class="mc2-scenarios" id="mc2-scenarios">
+            <button class="mc2-card mc2-card-best" data-mc2-tab="best" type="button">
+              <div class="mc2-card-head"><span class="mc2-card-dot"></span><span class="mc2-card-title">Best</span><span class="mc2-card-pct">95<sup>th</sup> pct</span></div>
+              <div class="mc2-card-main">
+                <div class="mc2-card-result" data-mc2-slot="result">—</div>
+                <div class="mc2-card-return" data-mc2-slot="return">—</div>
+              </div>
+              <dl class="mc2-card-stats">
+                <div class="mc2-stat"><dt>Initial Balance</dt><dd data-mc2-slot="initial">—</dd></div>
+                <div class="mc2-stat"><dt>Total months</dt><dd data-mc2-slot="months">—</dd></div>
+                <div class="mc2-stat"><dt>Avg Return / Month</dt><dd data-mc2-slot="avgmo">—</dd></div>
+                <div class="mc2-stat"><dt>Max Drawdown</dt><dd data-mc2-slot="maxdd">—</dd></div>
+                <div class="mc2-stat"><dt>Max Consecutive Losses</dt><dd data-mc2-slot="maxll">—</dd></div>
+                <div class="mc2-stat"><dt>Max Consecutive Wins</dt><dd data-mc2-slot="maxww">—</dd></div>
+                <div class="mc2-stat"><dt>Win Trade %</dt><dd data-mc2-slot="wr">—</dd></div>
+              </dl>
+            </button>
+
+            <button class="mc2-card mc2-card-median is-active" data-mc2-tab="median" type="button">
+              <div class="mc2-card-head"><span class="mc2-card-dot"></span><span class="mc2-card-title">Most Possible</span><span class="mc2-card-pct">50<sup>th</sup> pct</span></div>
+              <div class="mc2-card-main">
+                <div class="mc2-card-result" data-mc2-slot="result">—</div>
+                <div class="mc2-card-return" data-mc2-slot="return">—</div>
+              </div>
+              <dl class="mc2-card-stats">
+                <div class="mc2-stat"><dt>Initial Balance</dt><dd data-mc2-slot="initial">—</dd></div>
+                <div class="mc2-stat"><dt>Total months</dt><dd data-mc2-slot="months">—</dd></div>
+                <div class="mc2-stat"><dt>Avg Return / Month</dt><dd data-mc2-slot="avgmo">—</dd></div>
+                <div class="mc2-stat"><dt>Max Drawdown</dt><dd data-mc2-slot="maxdd">—</dd></div>
+                <div class="mc2-stat"><dt>Max Consecutive Losses</dt><dd data-mc2-slot="maxll">—</dd></div>
+                <div class="mc2-stat"><dt>Max Consecutive Wins</dt><dd data-mc2-slot="maxww">—</dd></div>
+                <div class="mc2-stat"><dt>Win Trade %</dt><dd data-mc2-slot="wr">—</dd></div>
+              </dl>
+            </button>
+
+            <button class="mc2-card mc2-card-worst"    data-mc2-tab="worst"   type="button">
+              <div class="mc2-card-head"><span class="mc2-card-dot"></span><span class="mc2-card-title">Worst</span><span class="mc2-card-pct">5<sup>th</sup> pct</span></div>
+              <div class="mc2-card-main">
+                <div class="mc2-card-result" data-mc2-slot="result">—</div>
+                <div class="mc2-card-return" data-mc2-slot="return">—</div>
+              </div>
+              <dl class="mc2-card-stats">
+                <div class="mc2-stat"><dt>Initial Balance</dt><dd data-mc2-slot="initial">—</dd></div>
+                <div class="mc2-stat"><dt>Total months</dt><dd data-mc2-slot="months">—</dd></div>
+                <div class="mc2-stat"><dt>Avg Return / Month</dt><dd data-mc2-slot="avgmo">—</dd></div>
+                <div class="mc2-stat"><dt>Max Drawdown</dt><dd data-mc2-slot="maxdd">—</dd></div>
+                <div class="mc2-stat"><dt>Max Consecutive Losses</dt><dd data-mc2-slot="maxll">—</dd></div>
+                <div class="mc2-stat"><dt>Max Consecutive Wins</dt><dd data-mc2-slot="maxww">—</dd></div>
+                <div class="mc2-stat"><dt>Win Trade %</dt><dd data-mc2-slot="wr">—</dd></div>
+              </dl>
+            </button>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Trade Log ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-tradelog" data-section="global">
+    <div class="trade-table-wrap trade-table-wrap-fill">
+      <div class="tt-header">
+        <div class="tt-left">
+          <span class="tt-title">Trade Log</span>
+          <span class="tt-count" id="trade-count">0 trades</span>
+        </div>
+        <div class="tt-sort-row">
+          <span class="tt-sort-label">Sort</span>
+          <button class="sort-btn active" id="sort-date-desc" data-action="set-sort" data-key="date" data-dir="desc">
+            Date <span class="sort-arrow">↓</span>
+          </button>
+          <button class="sort-btn" id="sort-date-asc" data-action="set-sort" data-key="date" data-dir="asc">
+            Date <span class="sort-arrow">↑</span>
+          </button>
+          <button class="sort-btn" id="sort-r-desc" data-action="set-sort" data-key="r" data-dir="desc">
+            R <span class="sort-arrow">↓</span>
+          </button>
+          <button class="sort-btn" id="sort-r-asc" data-action="set-sort" data-key="r" data-dir="asc">
+            R <span class="sort-arrow">↑</span>
+          </button>
+          <button class="sort-btn" id="sort-pair-asc" data-action="set-sort" data-key="pair" data-dir="asc">
+            Pair <span class="sort-arrow">A-Z</span>
+          </button>
+          <button class="sort-btn" id="sort-outcome-asc" data-action="set-sort" data-key="outcome" data-dir="asc">
+            Outcome <span class="sort-arrow">A-Z</span>
+          </button>
+        </div>
+      </div>
+      <div class="table-scroll table-scroll-fill">
+        <table>
+          <thead>
+            <tr>
+              <th data-col="date" data-action="cycle-sort-col">Date<span class="th-arrow" id="tharr-date"></span></th>
+              <th data-col="pair" data-action="cycle-sort-col">Pair<span class="th-arrow" id="tharr-pair"></span></th>
+              <th data-col="outcome" data-action="cycle-sort-col">Outcome<span class="th-arrow" id="tharr-outcome"></span></th>
+              <th data-col="r" data-action="cycle-sort-col" class="r">R<span class="th-arrow" id="tharr-r"></span></th>
+              <th>Dir</th>
+              <th>Setup</th>
+              <th>Session</th>
+              <th>Day</th>
+              <th>Obstacles</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="trade-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Period Comparison Table ── -->
+    <div class="cmp-table-wrap hidden" id="cmp-table-wrap">
+      <div class="cmp-table-title">Period Comparison — <span id="cmp-table-subtitle">—</span></div>
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th class="text-left">Metric</th>
+            <th id="cmp-th-curr">Current</th>
+            <th id="cmp-th-prev">Previous</th>
+            <th>Δ</th>
+            <th>Signal</th>
+          </tr>
+        </thead>
+        <tbody id="cmp-table-body"></tbody>
+      </table>
+    </div>
+    </div><!-- /w-tradelog gs-widget -->
+
+    <!-- ══ WIDGET: Optimal RR Analysis ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-optimal-rr" data-section="optimal-rr">
+      <div class="cc-head cc-head-controls-sm">
+        <div class="stack-tight">
+          <span class="cc-title-row">
+            <span class="cc-title">Optimal RR Analysis</span>
+            <div class="orr-sim-mode-info" tabindex="0" aria-label="Simulation mode">?
+              <div class="orr-sim-mode-info-pop" role="tooltip">
+                <div class="orr-sim-mode-info-title">Simulation mode</div>
+                <div class="orr-sim-mode-info-body">
+                  <p><strong>BE Fallback</strong> (default): when a winning trade reached TP1 (2.4R) but not the simulated TP, it is <strong>removed from the dataset</strong> (treated as a break-even exit) and counted only in the BE Trades KPI. If the trade didn't even reach TP1, it's counted as a loss in the simulation.</p>
+                  <p><strong>Strict Loss</strong>: any winning trade that didn't reach the simulated TP is counted as a full loss (−1R), remaining in the dataset. More realistic when simulating a fixed SL at −1R with no BE management.</p>
+                  <p>BE Fallback reduces the effective sample size above TP1 and is optimistic. Strict Loss preserves the sample and is conservative.</p>
+                </div>
+              </div>
+            </div>
+          </span>
+          <span class="cc-hint">EV-based TP optimization</span>
+        </div>
+        <div id="orr-dataset-a-warning-slot" class="orr-dataset-a-warning-slot"></div>
+        <div class="cc-head-controls cc-head-controls-sm ml-auto shrink-0">
+          <div id="orr-bemgmt-wrap" class="orr-bemgmt-wrap"></div>
+          <div id="orr-sim-mode-host"></div>
+        </div>
+      </div>
+      <div class="panel-stack panel-stack-padded">
+        <div class="canvas-stage">
+          <canvas id="optimalRRCanvas" class="canvas-absolute-fill"></canvas>
+        </div>
+        <div id="optimal-rr-summary" class="shrink-0"></div>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Partial Optimizer ══ -->
+    <div class="chart-card gs-widget po-widget" id="partial-optimizer-widget" data-gs-id="w-partial-optimizer" data-section="partials">
+      <div class="cc-head cc-head-fixed cc-head-controls-md">
+        <div class="stack-tight">
+          <span class="cc-title-row">
+            <span class="cc-title">Partial Optimizer</span>
+            <div class="pp-be-info" tabindex="0" aria-label="Optimizer rules">?
+              <div class="pp-be-info-pop" role="tooltip">
+                <div class="pp-be-info-title">Hypothèses du simulateur</div>
+                <div class="pp-be-info-body">
+                  <ul>
+                    <li><strong>SL fixe à −1R</strong> (convention R-multiples)</li>
+                    <li>BE armé après <strong>TP1 atteint</strong> (universel, non désactivable)</li>
+                    <li>Si <strong>rrMax &lt; TP1</strong> → −1R full size</li>
+                    <li>Legs non atteints → exit à <strong>0R (BE)</strong></li>
+                    <li>TP1 obligatoirement <strong>≥ 1R</strong> (path-order vs rrMax)</li>
+                    <li>Full-TP baseline = <strong>100% au TP final</strong></li>
+                    <li><strong>R Saved / Sacrificed</strong> = diff trade-par-trade vs Full-TP baseline</li>
+                    <li><strong>Bootstrap CI95%</strong> : 500 itérations (100 en sweep mode)</li>
+                  </ul>
+                  <div class="pp-be-info-warn">
+                    ⚠ Standardized TP1/TP2 across all trades. Brute-force comparator — not a forward optimization.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </span>
+          <span class="pp-head-sub">Brute-force exit strategy comparator</span>
+        </div>
+        <div class="cc-head-controls cc-head-controls-sm ml-auto shrink-0">
+          <span class="pp-head-n" id="po-head-n">— trades</span>
+        </div>
+      </div>
+      <div id="po-body" class="po-body"></div>
+    </div>
+
+  </main>
+</div>
+
+
+<!-- ══ SHARE VIEW ══ -->
+<div id="share-view" class="is-hidden">
+
+  <!-- Controls bar -->
+  <div class="sv-controls">
+    <div id="sv-preset-wrap">
+      <select id="sv-preset-sel"></select>
+    </div>
+    <div class="sv-mode-toggle">
+      <button class="sv-mode-btn active" id="sv-btn-year" data-action="set-share-mode" data-mode="year">Year</button>
+      <button class="sv-mode-btn" id="sv-btn-month" data-action="set-share-mode" data-mode="month">Month</button>
+    </div>
+    <div id="sv-month-wrap">
+      <select id="sv-year-sel"></select>
+      <select id="sv-month-sel" class="is-hidden"></select>
+    </div>
+    <div class="sv-controls-right">
+      <button class="sv-share-btn" id="sv-share-btn" data-action="export-share-view">
+⧉ Copy Image
+      </button>
+    </div>
+  </div>
+
+  <!-- Exportable snapshot container -->
+  <div id="sv-export">
+
+    <!-- Date Label -->
+    <div class="chart-card sv-date-widget sv-gs-widget" id="sv-w-date" data-sv-gs-id="sv-w-date">
+      <div id="sv-date-label" class="sv-date-value">-</div>
+    </div>
+
+    <!-- Stats Overview (no header — share view only shows the cells) -->
+    <div class="chart-card sv-widget-stats sv-gs-widget" id="sv-w-stats" data-sv-gs-id="sv-w-stats">
+      <span id="sv-stats-badge" class="wst-dataset-badge"></span>
+      <div id="sv-stats-body" class="wst-body"></div>
+    </div>
+
+    <div class="sv-widget sv-gs-widget" id="sv-w-equity" data-sv-gs-id="sv-w-equity">
+      <div class="sv-widget-head">Equity &amp; Drawdown
+        <span id="sv-eq-info" class="sv-head-meta"></span>
+      </div>
+      <div id="sv-equity-wrap" class="sv-equity-wrap">
+        <canvas id="sv-equity-canvas" class="canvas-anchor-top-left"></canvas>
+      </div>
+    </div>
+
+    <div class="sv-widget sv-gs-widget" id="sv-w-cal" data-sv-gs-id="sv-w-cal">
+      <div class="sv-widget-head">P&amp;L Calendar
+        <span id="sv-cal-label" class="sv-head-meta"></span>
+      </div>
+      <div id="sv-cal-grid" class="sv-cal-grid"></div>
+    </div>
+
+    <div class="sv-widget sv-gs-widget" id="sv-w-pair" data-sv-gs-id="sv-w-pair">
+      <div class="sv-widget-head">Pair Performance</div>
+      <div id="sv-bars-pair" class="bar-list"></div>
+    </div>
+
+    <div class="sv-widget sv-gs-widget" id="sv-w-setup" data-sv-gs-id="sv-w-setup">
+      <div class="sv-widget-head">Setup Performance</div>
+      <div id="sv-bars-setup" class="bar-list"></div>
+    </div>
+
+  </div><!-- /sv-export -->
+</div><!-- /share-view -->
+
+<!-- ════════════════════════════════════════════════════════
+     GRIDSTACK JS
+════════════════════════════════════════════════════════ -->
+
+<!-- External libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-all.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="dashboard.js?v=108"></script>
+</body>
+</html>
