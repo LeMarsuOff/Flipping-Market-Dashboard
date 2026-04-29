@@ -14443,7 +14443,9 @@ const _FLIPPING_BE_R = 2.4;
 // the BE-TP / BE-SL trade should produce under the active mode:
 //
 //   { applyBEAware: true,  triggerR: <number>, fallbackToNoBE: false }
-//     → cap legs at triggerR (BE-aware capping logic).
+//     → BE armed and held: legs at lv ≤ triggerR captured, legs above → 0R.
+//       In Fixed mode (no plan): always 0R (BE-TP and BE-SL symmetric).
+//       Doctrine: BE mechanism ran its course, no no-cut counterfactual.
 //
 //   { applyBEAware: false, triggerR: null,    fallbackToNoBE: true }
 //     → BE-unaware fallback (per fallbackVariant): BE-TP runs plan as TP,
@@ -14501,6 +14503,9 @@ function _resolveBEDecision(trade) {
 function _resolveBeR(trade, partials, reachR) {
   const d = _resolveBEDecision(trade);
   if (d.applyBEAware) {
+    // be-fallback / flipping-be (reach≥2.4): legs at lv ≤ triggerR are
+    // captured before BE retrace; legs above triggerR are credited 0R
+    // (closed at BE before reaching them). Symmetric for BE-TP and BE-SL.
     let r = 0;
     for (const { pct, lv } of partials) {
       if (lv <= d.triggerR) r += pct * lv;
@@ -14531,6 +14536,9 @@ function _resolveBeR(trade, partials, reachR) {
 function _resolveBeRMulti(trade, mCfg) {
   const d = _resolveBEDecision(trade);
   if (d.applyBEAware) {
+    // be-fallback / flipping-be (reach≥2.4): tp_N_rr tiers below triggerR
+    // are captured before BE retrace; tiers above are 0R (closed at BE).
+    // Symmetric for BE-TP and BE-SL.
     const p = mCfg.partials, n = mCfg.tpCount;
     let rr = 0;
     if (trade.tp1_rr != null && trade.tp1_rr <= d.triggerR)            rr += (p.tp1 / 100) * trade.tp1_rr;
@@ -14555,27 +14563,38 @@ function _resolveBeRMulti(trade, mCfg) {
   return 0;
 }
 
-// Fixed mode path. No plan — uses trade.r and the BE decision to pick
-// between passthrough (BE-TP), BE-armed-and-held (BE-SL with rrMax≥2.4 in
-// flipping-be → 0R), and rrMax-driven counterfactual (BE-SL under
-// flipping-be reach<2.4: rrMax≥2.4 → +2.4R, else -1R).
+// Fixed mode path. No plan — uses the BE decision to pick the policy:
+//   - be-fallback applyBEAware (chip parsable):
+//       BE-TP and BE-SL both → 0R (BE armed and held, position closed at BE).
+//   - flipping-be applyBEAware (reach ≥ 2.4):
+//       BE-TP and BE-SL both → 0R (same mechanics, BE armed at 2.4R).
+//   - flipping-be fallbackToNoBE (BE never armed counterfactually):
+//       BE-TP → trade.r (journaled TP); BE-SL → rrMax≥2.4 ? +2.4R : -1.
+//   - be-fallback null chip:
+//       passthrough trade.r (matches pre-feature behavior).
 function _resolveBeRFixed(trade) {
   const d = _resolveBEDecision(trade);
   if (d.applyBEAware) {
-    // Fixed mode + BE armed: BE-TP exited at TP normal (= trade.r). BE-SL
-    // had BE armed and got trapped at 0R after retrace → 0R.
-    if (trade.outcome === 'BE-TP') return trade.r;
+    // be-fallback doctrine: BE armed and held — position closed at 0R by the
+    // moved SL. Symmetric for BE-TP and BE-SL: the BE mechanism ran its
+    // course, payout = 0R. (No no-cut counterfactual in be-fallback; for
+    // counterfactual semantics, switch to flipping-be mode.)
     return 0;
   }
   if (d.fallbackToNoBE) {
+    // flipping-be branch only. Reached only when BE never armed
+    // counterfactually (reach < 2.4R) for BE-SL, or always for BE-TP
+    // (variant 'pure-tp-no-sl').
     if (trade.outcome === 'BE-SL') {
-      // Fixed mode has no plan to simulate — use a binary classification
-      // based on whether the price reached the system TP (2.4R). Above
-      // _SYSTEM_TP_R → counterfactually exited at TP. Below → real loser.
+      // Fixed mode has no plan — binary counterfactual: rrMax ≥ 2.4 → +2.4R,
+      // else -1R. NOTE: this branch is only entered when reach < 2.4R, so
+      // the rrMax ≥ _SYSTEM_TP_R sub-condition is effectively unreachable
+      // (dead branch preserved for defensive symmetry; safe to retire if
+      // _resolveBEDecision invariant is hardened).
       const rrMax = trade.rrMax;
       return (Number.isFinite(rrMax) && rrMax >= _SYSTEM_TP_R) ? _SYSTEM_TP_R : -1;
     }
-    return trade.r; // BE-TP keeps journaled value
+    return trade.r; // BE-TP under flipping-be: journaled TP value
   }
   // be-fallback null chip → passthrough (matches pre-feature behavior).
   return trade.r;
