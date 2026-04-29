@@ -14697,7 +14697,7 @@ window._poState = window._poState || {
   config: {
     tpFinal: 2.4,
     partialMode: 'both',     // 'one' | 'two' | 'both'
-    rankMode: 'ev',          // ev | stability | compromise | dd | pf | netSaved
+    rankMode: 'totalR',      // totalR | ev | stability | compromise | dd | pf | wr
     rankDir:  'desc',        // 'asc' | 'desc' — direction du tri du Classement
     topN: 50,
     colorMode: 'type',       // 'type' | 'sig' | 'tpfinal'
@@ -15330,6 +15330,7 @@ function _poRankResults(results, mode, dir) {
   const sorted = results.slice();
   const score = (r) => {
     switch (mode) {
+      case 'totalR':     return r.sim.totalR;
       case 'ev':         return r.sim.ev;
       case 'wr':         return r.sim.wr;
       case 'stability':  return r.stability;
@@ -15340,7 +15341,7 @@ function _poRankResults(results, mode, dir) {
       case 'dd':         return -r.sim.maxDD;
       case 'pf':         return r.sim.pf;
       case 'netSaved':   return r.vsBaseline ? r.vsBaseline.net : 0;
-      default:           return r.sim.ev;
+      default:           return r.sim.totalR;
     }
   };
   // Direction multiplier: desc (default) = largest score first, asc = smallest
@@ -15446,28 +15447,35 @@ function _poBuildScaffold() {
       <div class="po-legend" id="po-legend"></div>
     </div>
 
-    <div class="po-block po-block-best-ev po-stat-card" data-po-stat="ev">
-      <div class="po-stat-head"><span class="po-stat-icon">🏆</span><span class="po-stat-lbl">Best EV</span></div>
-      <div class="po-stat-name">—</div>
-      <div class="po-stat-val">—</div>
-    </div>
-    <div class="po-block po-block-best-stab po-stat-card" data-po-stat="stability">
-      <div class="po-stat-head"><span class="po-stat-icon">🛡</span><span class="po-stat-lbl">Best Stability</span></div>
-      <div class="po-stat-name">—</div>
-      <div class="po-stat-val">—</div>
+    <div class="po-block-bandeau">
+      <div class="po-block po-block-best-totalr po-stat-card" data-po-stat="totalR">
+        <div class="po-stat-head"><span class="po-stat-icon">📈</span><span class="po-stat-lbl">Best Total R</span></div>
+        <div class="po-stat-name">—</div>
+        <div class="po-stat-val">—</div>
+      </div>
+      <div class="po-block po-block-best-ev po-stat-card" data-po-stat="ev">
+        <div class="po-stat-head"><span class="po-stat-icon">🏆</span><span class="po-stat-lbl">Best EV</span></div>
+        <div class="po-stat-name">—</div>
+        <div class="po-stat-val">—</div>
+      </div>
+      <div class="po-block po-block-best-stab po-stat-card" data-po-stat="stability">
+        <div class="po-stat-head"><span class="po-stat-icon">🛡</span><span class="po-stat-lbl">Best Stability</span></div>
+        <div class="po-stat-name">—</div>
+        <div class="po-stat-val">—</div>
+      </div>
+      <div class="po-block po-block-min-dd po-stat-card" data-po-stat="dd">
+        <div class="po-stat-head"><span class="po-stat-icon">📉</span><span class="po-stat-lbl">Min Drawdown</span></div>
+        <div class="po-stat-name">—</div>
+        <div class="po-stat-val">—</div>
+      </div>
+      <div class="po-block po-block-best-tpf po-stat-card" data-po-stat="tpfinal">
+        <div class="po-stat-head"><span class="po-stat-icon">🎯</span><span class="po-stat-lbl">Best TP Final</span></div>
+        <div class="po-stat-name">—</div>
+        <div class="po-stat-val">—</div>
+      </div>
     </div>
     <div class="po-block po-block-best-comp po-stat-card" data-po-stat="compromise">
       <div class="po-stat-head"><span class="po-stat-icon">⚖</span><span class="po-stat-lbl">Best Compromise</span></div>
-      <div class="po-stat-name">—</div>
-      <div class="po-stat-val">—</div>
-    </div>
-    <div class="po-block po-block-min-dd po-stat-card" data-po-stat="dd">
-      <div class="po-stat-head"><span class="po-stat-icon">📉</span><span class="po-stat-lbl">Min Drawdown</span></div>
-      <div class="po-stat-name">—</div>
-      <div class="po-stat-val">—</div>
-    </div>
-    <div class="po-block po-block-best-tpf po-stat-card" data-po-stat="tpfinal">
-      <div class="po-stat-head"><span class="po-stat-icon">🎯</span><span class="po-stat-lbl">Best TP Final</span></div>
       <div class="po-stat-name">—</div>
       <div class="po-stat-val">—</div>
     </div>
@@ -15493,13 +15501,12 @@ function _poBuildScaffold() {
             <tr>
               <th>#</th>
               <th>Modèle</th>
-              <th class="po-num-col po-th-sortable" data-po-sort="ev">EV<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="totalR">Total R<span class="po-th-arrow"></span></th>
               <th class="po-num-col po-th-sortable" data-po-sort="wr">WR<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="ev">EV<span class="po-th-arrow"></span></th>
               <th class="po-num-col po-th-sortable" data-po-sort="pf">PF<span class="po-th-arrow"></span></th>
-              <th class="po-num-col po-th-sortable" data-po-sort="dd">DD<span class="po-th-arrow"></span></th>
-              <th class="po-num-col po-th-sortable" data-po-sort="stability">Stab.<span class="po-th-arrow"></span></th>
-              <th class="po-num-col po-th-sortable" data-po-sort="netSaved">Net<span class="po-th-arrow"></span></th>
-              <th>IC</th>
+              <th class="po-num-col po-th-sortable" data-po-sort="dd">Max DD<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="stability">Stability<span class="po-th-arrow"></span></th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -15684,7 +15691,8 @@ function _poWireScaffold() {
         candidates.sort((a, b) => b.sim.ev - a.sim.ev);
         pick = candidates[0];
       } else {
-        const mode = key === 'ev' ? 'ev'
+        const mode = key === 'totalR' ? 'totalR'
+          : key === 'ev' ? 'ev'
           : key === 'stability' ? 'stability'
           : key === 'compromise' ? 'compromise' : 'dd';
         const ranked = _poRankResults(st.results, mode);
@@ -16009,21 +16017,15 @@ function _poRenderRanking() {
     const r = ranked[i];
     const isSel = r.idx === st.selectedIdx;
     const isBase = r.idx === st.baselineIdx;
-    const sigBadge = r.bootstrap
-      ? (isBase ? '<span class="po-badge po-badge-base">base</span>'
-                : (r.significant ? '<span class="po-badge po-badge-sig">sig</span>'
-                                 : '<span class="po-badge po-badge-ns">ns</span>'))
-      : '';
     rows.push(`<tr class="po-row${isSel ? ' is-selected' : ''}${isBase ? ' is-baseline' : ''}" data-po-idx="${r.idx}">
       <td>${i + 1}</td>
       <td class="po-row-name">${r.model.name}</td>
-      <td class="po-num-col">${_poFmtR(r.sim.ev)}</td>
-      <td class="po-num-col">${_poFmtPct(r.sim.wr)}</td>
-      <td class="po-num-col">${_poFmtNum(r.sim.pf)}</td>
-      <td class="po-num-col">${_poFmtR(-r.sim.maxDD)}</td>
+      <td class="po-num-col ${_poColorClass(r.sim.totalR, 0, 0)}">${_poFmtR(r.sim.totalR)}</td>
+      <td class="po-num-col ${_poColorClass(r.sim.wr - 0.5)}">${_poFmtPct(r.sim.wr)}</td>
+      <td class="po-num-col ${_poColorClass(r.sim.ev)}">${_poFmtR(r.sim.ev)}</td>
+      <td class="po-num-col ${_poColorClass(r.sim.pf - 1, 0.01, -0.01)}">${_poFmtNum(r.sim.pf)}</td>
+      <td class="po-num-col ${_poColorClass(-r.sim.maxDD)}">${_poFmtR(-r.sim.maxDD)}</td>
       <td class="po-num-col">${r.stability}</td>
-      <td class="po-num-col">${_poFmtR(r.vsBaseline ? r.vsBaseline.net : 0)}</td>
-      <td>${sigBadge}</td>
     </tr>`);
   }
   tbody.innerHTML = rows.join('');
@@ -16663,6 +16665,7 @@ function _poRenderStatCards() {
       }
     }
   };
+  setCard('totalR',     _poRankResults(st.results, 'totalR'),     (r) => _poFmtR(r.sim.totalR),     (r) => r.sim.totalR);
   setCard('ev',         _poRankResults(st.results, 'ev'),         (r) => _poFmtR(r.sim.ev),         (r) => r.sim.ev);
   setCard('stability',  _poRankResults(st.results, 'stability'),  (r) => `${r.stability}`,          null);
   setCard('compromise', _poRankResults(st.results, 'compromise'), null,                             null);
@@ -23936,7 +23939,7 @@ const OPTIMAL_RR_LAYOUT = {
   'w-montecarlo': {x:0, y:77, w:12, h:82, minW:4, minH:80},
 };
 const PARTIAL_PLANNERS_LAYOUT = {
-  'w-partial-optimizer': {x:0, y:0,   w:12, h:175, minW:8, minH:140},
+  'w-partial-optimizer': {x:0, y:0,   w:12, h:236, minW:8, minH:189},
 };
 
 // Merged view used by code that still references a single full layout

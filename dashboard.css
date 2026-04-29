@@ -11971,10 +11971,10 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .po-body {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  /* Layout v13 + post-redesign sizing fix: rows 188 → 208 to give Best stat
-     cards / Bilan / Saved Presets more vertical room without shrinking the
-     other blocks proportionally. */
-  grid-template-rows: repeat(208, minmax(0, 1fr));
+  /* Layout v13 + PR-A sizing fix (2026-04-29): rows 208 → 280 to grant Bilan
+     +50% and Saved Presets ×2 height while keeping the upper blocks at their
+     existing pixel size. GridStack outer h has been bumped in lockstep. */
+  grid-template-rows: repeat(280, minmax(0, 1fr));
   gap: var(--space-2);
   flex: 1;
   width: 100%;
@@ -12067,29 +12067,37 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
    - Equity & Ranking-tbl côte à côte en bas (rows 109-168)
    - Scatter étendu d'1 row (107→108) pour aligner avec le détail */
 .po-block-rr-dist     { grid-column: 1 / span 4;  grid-row: 1   / span 36;  }
-/* Scatter spans the right side of the entire left stack — extended from 108
-   to 124 to remain aligned with the new Bilan end (post-sizing fix). */
-.po-block-scatter     { grid-column: 5 / span 8;  grid-row: 1   / span 124; }
+/* Scatter spans the right side of the entire left stack — extended to row 164
+   to remain aligned with the Bilan end after PR-A sizing (+40 rows on Bilan). */
+.po-block-scatter     { grid-column: 5 / span 8;  grid-row: 1   / span 164; }
 
-/* Tuiles stats — bandeau 4×1 cols 1-4, rows 37-52 (span 13 → 16, +3 each) */
-.po-block-best-ev     { grid-column: 1 / span 1;  grid-row: 37  / span 16;  }
-.po-block-best-stab   { grid-column: 2 / span 1;  grid-row: 37  / span 16;  }
-.po-block-min-dd      { grid-column: 3 / span 1;  grid-row: 37  / span 16;  }
-.po-block-best-tpf    { grid-column: 4 / span 1;  grid-row: 37  / span 16;  }
+/* Tuiles stats — bandeau 5×1 cols 1-4, rows 37-52. Wrapper hosts an internal
+   5-col sub-grid (Best Total R + Best EV + Best Stab + Min DD + Best TPF). */
+.po-block-bandeau {
+  grid-column: 1 / span 4;
+  grid-row: 37 / span 16;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 0;
+}
+.po-block-bandeau > .po-stat-card { min-width: 0; }
 
 /* Best Compromise — full-width sous le bandeau, rows 53-68 (span 13 → 16) */
 .po-block-best-comp   { grid-column: 1 / span 4;  grid-row: 53  / span 16;  }
 
-/* Detail (Bilan) — zone gauche, rows 69-124 (span 46 → 56, +10 for 9 metrics
-   to breathe and title to wrap on 2 lines) */
-.po-block-detail      { grid-column: 1 / span 4;  grid-row: 69  / span 56;  }
+/* Detail (Bilan) — zone gauche, rows 69-164 (span 56 → 96, +50% PR-A sizing
+   with headroom to compensate for inner-grid gap consumption) */
+.po-block-detail      { grid-column: 1 / span 4;  grid-row: 69  / span 96;  }
 
-/* Zone basse (rows 125-184) — Ranking-tbl à gauche, Equity à droite (shifted +16) */
-.po-block-ranking-tbl     { grid-column: 1 / span 4;  grid-row: 125 / span 60; }
-.po-block-equity          { grid-column: 6 / span 6;  grid-row: 125 / span 60; }
+/* Zone basse (rows 165-224) — Ranking-tbl à gauche, Equity à droite */
+.po-block-ranking-tbl     { grid-column: 1 / span 4;  grid-row: 165 / span 60; }
+.po-block-equity          { grid-column: 6 / span 6;  grid-row: 165 / span 60; }
 
-/* Saved presets block — full-width at the bottom, rows 185-208 (span 20 → 24) */
-.po-block-presets         { grid-column: 1 / span 12; grid-row: 185 / span 24; }
+/* Saved presets block — full-width at the bottom, rows 225-280 (span 24 → 56,
+   ×2 height per PR-A so all stats / deltas / actions render without scroll) */
+.po-block-presets         { grid-column: 1 / span 12; grid-row: 225 / span 56; }
 
 .po-ctrl-row {
   display: flex;
@@ -12821,7 +12829,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 200px;
+  min-height: 400px;
   overflow: hidden;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
               border-color 0.2s, box-shadow 0.2s;
@@ -13330,6 +13338,33 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   line-height: 1.2;
 }
 
+/* PR-A bandeau (5 stat cards in cols 1-4) — compact card sizing so values
+   like "+24.30R" fit without ellipsis at the cramped per-card width. */
+.po-widget .po-block-bandeau .po-stat-card {
+  padding: 8px 6px;
+  gap: 4px;
+  min-height: 100px;
+}
+.po-widget .po-block-bandeau .po-stat-head {
+  gap: 4px;
+}
+.po-widget .po-block-bandeau .po-stat-icon {
+  font-size: 13px;
+}
+.po-widget .po-block-bandeau .po-stat-lbl {
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+.po-widget .po-block-bandeau .po-stat-name {
+  font-size: 9.5px;
+  line-height: 1.25;
+}
+.po-widget .po-block-bandeau .po-stat-val {
+  font-size: 11px;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Saved Presets — taller tiles, wrapping names, tighter stats to prevent
    delta overflow on narrow grids */
 .po-widget .po-preset-tile {
@@ -13630,19 +13665,18 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   .po-block-testgrid     { order: 2; }
   .po-block-ranking      { order: 3; }
   .po-block-bootstrap    { order: 4; }
-  /* Mobile order matches the desktop top-down reading flow (v12):
-     scatter (with Setup integrated) → RR-dist → 5 stat cards → detail → equity → tbl → rank-compact */
+  /* Mobile order matches the desktop top-down reading flow (v12 + PR-A):
+     scatter → RR-dist → bandeau (5 stat cards) → best-comp → detail → equity → tbl → presets */
   .po-block-scatter         { order: 1;  min-height: 480px; }
   .po-block-rr-dist         { order: 2;  min-height: 280px; }
-  .po-block-best-ev         { order: 3;  min-height: 100px; }
-  .po-block-best-tpf        { order: 4;  min-height: 100px; }
-  .po-block-min-dd          { order: 5;  min-height: 100px; }
-  .po-block-best-stab       { order: 6;  min-height: 100px; }
-  .po-block-best-comp       { order: 7;  min-height: 100px; }
-  .po-block-detail          { order: 8;  min-height: 320px; }
-  .po-block-equity          { order: 9;  min-height: 320px; }
-  .po-block-ranking-tbl     { order: 10; min-height: 320px; }
-  .po-block-presets         { order: 11; min-height: 240px; }
+  .po-block-bandeau         { order: 3;  grid-column: auto !important; grid-row: auto !important;
+                              grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .po-block-bandeau > .po-stat-card { min-height: 100px; }
+  .po-block-best-comp       { order: 4;  min-height: 100px; }
+  .po-block-detail          { order: 5;  min-height: 480px; }
+  .po-block-equity          { order: 6;  min-height: 320px; }
+  .po-block-ranking-tbl     { order: 7;  min-height: 320px; }
+  .po-block-presets         { order: 8;  min-height: 480px; }
   .po-presets-grid          { grid-template-columns: 1fr; }
   .po-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
