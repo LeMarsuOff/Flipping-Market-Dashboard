@@ -16270,10 +16270,10 @@ function _poRenderRanking() {
     rows.push(`<tr class="po-row${isSel ? ' is-selected' : ''}${isBase ? ' is-baseline' : ''}" data-po-idx="${r.idx}">
       <td class="po-rank-cell"><span class="po-rank-pill ${rankPillCls}">${i + 1}</span></td>
       <td class="po-row-name">${r.model.name}</td>
-      <td class="po-num-col ${_poKpiTone(r.sim.totalR, 'totalR')}">${_poFmtR(r.sim.totalR)}</td>
+      <td class="po-num-col ${r.sim.totalR > 0 ? 'po-v-green' : r.sim.totalR < 0 ? 'po-v-red' : 'po-v-neutral'}">${_poFmtR(r.sim.totalR)}</td>
       <td class="po-num-col ${_poKpiTone(r.sim.wr, 'wr')}">${_poFmtPct(r.sim.wr)}</td>
       <td class="po-num-col ${_poKpiTone(r.sim.ev, 'ev')}">${_poFmtR(r.sim.ev)}</td>
-      <td class="po-num-col ${_poKpiTone(r.sim.maxDD, 'dd')}">${_poFmtR(-r.sim.maxDD)}</td>
+      <td class="po-num-col po-v-red">${_poFmtR(-r.sim.maxDD)}</td>
       <td class="po-num-col">${r.stability}</td>
     </tr>`);
   }
@@ -16336,9 +16336,9 @@ function _poRenderDetail() {
       </div>`;
   }
 
-  const savedCls = _poKpiTone(saved,  'rSaved');
-  const sacriCls = _poKpiTone(sacri,  'rSacrificed'); // valeurs négatives → red, descend la palette
-  const netCls   = _poKpiTone(net,    'net');
+  const netCls = net >= 0 ? 'po-v-pos' : 'po-v-neg';
+  const savedCls = saved > 0 ? 'po-v-pos' : 'po-v-neutral';
+  const sacriCls = sacri < 0 ? 'po-v-neg' : 'po-v-neutral';
 
   wrap.innerHTML = `
     <div class="po-bilan-card">
@@ -16351,7 +16351,7 @@ function _poRenderDetail() {
         <div class="po-bilan-row">
           <span class="po-bilan-row-lbl">Total R</span>
           <span class="po-bilan-row-val">
-            <span class="${_poKpiTone(sel.sim.totalR, 'totalR')}">${_poFmtR(sel.sim.totalR)}</span>
+            <span class="${sel.sim.totalR > 0 ? 'po-v-green' : sel.sim.totalR < 0 ? 'po-v-red' : 'po-v-neutral'}">${_poFmtR(sel.sim.totalR)}</span>
             ${_poDeltaSpan(dTot)}
           </span>
         </div>
@@ -16379,7 +16379,7 @@ function _poRenderDetail() {
         <div class="po-bilan-row">
           <span class="po-bilan-row-lbl">Max Drawdown</span>
           <span class="po-bilan-row-val">
-            <span class="${_poKpiTone(sel.sim.maxDD, 'dd')}">${_poFmtR(-sel.sim.maxDD)}</span>
+            <span class="po-v-red">${_poFmtR(-sel.sim.maxDD)}</span>
             ${_poDeltaSpan(dDD)}
           </span>
         </div>
@@ -16528,11 +16528,12 @@ function _poRenderPresetsBlock() {
     const ddTxt   = sim ? _poFmtR(-sim.maxDD) : '—';
     const totTxt  = sim ? _poFmtR(sim.totalR) : '—';
     const isFull = stored.type === 'full';
-    // 6-tier dynamic color classes — aligned on _poKpiTone palette.
-    const evClass  = sim ? _poKpiTone(sim.ev,     'ev')     : '';
-    const totClass = sim ? _poKpiTone(sim.totalR, 'totalR') : '';
-    const wrClass  = sim ? _poKpiTone(sim.wr,     'wr')     : '';
-    const ddClass  = sim ? _poKpiTone(sim.maxDD,  'dd')     : '';
+    // EV / WR keep 6-tier dynamic palette (quality metrics).
+    // Total R is signed binary; DD is fixed red (semantic alignment with rest of dashboard).
+    const evClass  = sim ? _poKpiTone(sim.ev, 'ev') : '';
+    const wrClass  = sim ? _poKpiTone(sim.wr, 'wr') : '';
+    const totClass = sim ? (sim.totalR > 0 ? 'po-v-green' : sim.totalR < 0 ? 'po-v-red' : 'po-v-neutral') : '';
+    const ddClass  = sim ? 'po-v-red' : '';
 
     const st2 = window._poState;
     const baselineForSlot = (st2 && Array.isArray(st2.results))
@@ -16991,8 +16992,10 @@ function _poRenderStatCards() {
   if (!cards.length || !st.results.length) return;
 
   // applyColor: function returning the value to color-classify (null = no coloring)
-  // kind: KPI kind passed to _poKpiTone (null = no coloring)
-  const setCard = (key, ranked, valFmt, applyColor, kind) => {
+  // colorMode: 'kpiTone' (6-tier dynamic via _poKpiTone) | 'signed' (binary
+  //            green/red/neutral) | 'fixedRed' (always po-v-red) | null (no coloring).
+  // kind:      KPI kind passed to _poKpiTone (only used when colorMode === 'kpiTone').
+  const setCard = (key, ranked, valFmt, applyColor, colorMode, kind) => {
     const card = document.querySelector(`.po-stat-card[data-po-stat="${key}"]`);
     if (!card || !ranked.length) return;
     const top = ranked[0];
@@ -17012,18 +17015,24 @@ function _poRenderStatCards() {
         valEl.innerHTML = `<span class="${evCls}">${_poFmtR(evVal)}</span> <span class="po-stat-val-secondary">· ${top.stability}</span>`;
       } else {
         valEl.textContent = valFmt(top);
-        if (applyColor && kind) {
+        if (colorMode === 'fixedRed') {
+          valEl.classList.add('po-v-red');
+        } else if (colorMode === 'signed' && applyColor) {
+          const v = applyColor(top);
+          const cls = Number.isFinite(v) ? (v > 0 ? 'po-v-green' : v < 0 ? 'po-v-red' : 'po-v-neutral') : '';
+          if (cls) valEl.classList.add(cls);
+        } else if (colorMode === 'kpiTone' && applyColor && kind) {
           const cls = _poKpiTone(applyColor(top), kind);
           if (cls) valEl.classList.add(cls);
         }
       }
     }
   };
-  setCard('totalR',     _poRankResults(st.results, 'totalR'),     (r) => _poFmtR(r.sim.totalR),     (r) => r.sim.totalR,  'totalR');
-  setCard('ev',         _poRankResults(st.results, 'ev'),         (r) => _poFmtR(r.sim.ev),         (r) => r.sim.ev,      'ev');
-  setCard('stability',  _poRankResults(st.results, 'stability'),  (r) => `${r.stability}`,          null,                  null);
-  setCard('compromise', _poRankResults(st.results, 'compromise'), null,                             null,                  null);
-  setCard('dd',         _poRankResults(st.results, 'dd'),         (r) => _poFmtR(-r.sim.maxDD),     (r) => r.sim.maxDD,    'dd');
+  setCard('totalR',     _poRankResults(st.results, 'totalR'),     (r) => _poFmtR(r.sim.totalR),     (r) => r.sim.totalR,  'signed',   null);
+  setCard('ev',         _poRankResults(st.results, 'ev'),         (r) => _poFmtR(r.sim.ev),         (r) => r.sim.ev,      'kpiTone',  'ev');
+  setCard('stability',  _poRankResults(st.results, 'stability'),  (r) => `${r.stability}`,          null,                  null,       null);
+  setCard('compromise', _poRankResults(st.results, 'compromise'), null,                             null,                  null,       null);
+  setCard('dd',         _poRankResults(st.results, 'dd'),         (r) => _poFmtR(-r.sim.maxDD),     null,                  'fixedRed', null);
 
   // Best TP Final — only meaningful in sweep mode (otherwise all models share
   // a single TP final). AVG EV part colored dynamically like Total R.
