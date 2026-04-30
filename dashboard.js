@@ -15365,11 +15365,244 @@ function _poTypeLabel(type) {
   return type === 'full' ? 'Full TP' : type === 'one' ? '1 partial' : '2 partials';
 }
 
+// ══════════════════════════════════════════════════════
+// PARTIAL OPTIMIZER — Internal layout editor (PR-5, Phase A)
+// Custom drag/resize on a 12-col × 280-row CSS grid (#po-body).
+// Pattern mirrors _mc2InitSectionLayoutEdit. Persists to localStorage.
+// Hooks into the global _editMode flag via toggleEditMode.
+// Phase A: 7 main blocks. Phase B (bandeau internal cards) = future PR-6.
+// ══════════════════════════════════════════════════════
+const _PO_INTERNAL_LAYOUT_KEY = 'po-section-layout-v1';
+const _PO_INTERNAL_GRID_COLS = 12;
+const _PO_INTERNAL_MIN = {
+  rrdist:  { w: 3,  h: 6  },
+  bandeau: { w: 6,  h: 8  },
+  scatter: { w: 5,  h: 24 },
+  detail:  { w: 3,  h: 24 },
+  ranking: { w: 3,  h: 12 },
+  equity:  { w: 4,  h: 12 },
+  presets: { w: 6,  h: 10 },
+};
+// Defaults reflect the PR-4-bis layout (bandeau top-right, scatter compressed,
+// Bilan full-left under RR-dist).
+const _PO_DEFAULT_INTERNAL_LAYOUT = {
+  rrdist:  { x: 1,  y: 1,   w: 4,  h: 36  },
+  bandeau: { x: 5,  y: 1,   w: 8,  h: 36  },
+  detail:  { x: 1,  y: 37,  w: 4,  h: 128 },
+  scatter: { x: 5,  y: 37,  w: 8,  h: 128 },
+  ranking: { x: 1,  y: 165, w: 4,  h: 60  },
+  equity:  { x: 6,  y: 165, w: 6,  h: 60  },
+  presets: { x: 1,  y: 225, w: 12, h: 56  },
+};
+let _poInternalEditBound = false;
+
+function _poInternalCloneLayout(layout) {
+  return Object.fromEntries(Object.entries(layout).map(([k, v]) => [k, { ...v }]));
+}
+function _poInternalRectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function _poInternalClampSectionRect(key, rect) {
+  const min = _PO_INTERNAL_MIN[key] || { w: 2, h: 4 };
+  const w = Math.max(min.w, Math.min(_PO_INTERNAL_GRID_COLS, Math.round(rect.w || min.w)));
+  const h = Math.max(min.h, Math.round(rect.h || min.h));
+  const x = Math.max(1, Math.min(_PO_INTERNAL_GRID_COLS - w + 1, Math.round(rect.x || 1)));
+  const y = Math.max(1, Math.round(rect.y || 1));
+  return { x, y, w, h };
+}
+function _poInternalCompactLayout(layout) {
+  const keys = Object.keys(layout).sort((a, b) => layout[a].y - layout[b].y || layout[a].x - layout[b].x);
+  keys.forEach(key => {
+    const rect = layout[key];
+    let nextY = rect.y;
+    while (nextY > 1) {
+      const probe = { ...rect, y: nextY - 1 };
+      const blocked = keys.some(other => other !== key && _poInternalRectsOverlap(probe, layout[other]));
+      if (blocked) break;
+      nextY -= 1;
+    }
+    rect.y = nextY;
+  });
+  return layout;
+}
+function _poInternalNormalizeLayout(raw) {
+  const layout = _poInternalCloneLayout(_PO_DEFAULT_INTERNAL_LAYOUT);
+  if (raw && typeof raw === 'object') {
+    Object.keys(_PO_DEFAULT_INTERNAL_LAYOUT).forEach(key => {
+      if (raw[key]) layout[key] = _poInternalClampSectionRect(key, raw[key]);
+    });
+  }
+  const keys = Object.keys(layout).sort((a, b) => layout[a].y - layout[b].y || layout[a].x - layout[b].x);
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      if (_poInternalRectsOverlap(layout[keys[i]], layout[keys[j]])) {
+        layout[keys[j]].y = layout[keys[i]].y + layout[keys[i]].h;
+      }
+    }
+  }
+  return _poInternalCompactLayout(layout);
+}
+function _poInternalGetLayout() {
+  try { return _poInternalNormalizeLayout(JSON.parse(localStorage.getItem(_PO_INTERNAL_LAYOUT_KEY))); }
+  catch { return _poInternalCloneLayout(_PO_DEFAULT_INTERNAL_LAYOUT); }
+}
+function _poInternalSaveLayout(layout) {
+  try { localStorage.setItem(_PO_INTERNAL_LAYOUT_KEY, JSON.stringify(_poInternalNormalizeLayout(layout))); } catch {}
+}
+function _poInternalSetSectionRect(layout, key, nextRect) {
+  const next = _poInternalCloneLayout(layout);
+  next[key] = _poInternalClampSectionRect(key, nextRect);
+  const keys = Object.keys(next).filter(k => k !== key);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    keys.forEach(other => {
+      if (_poInternalRectsOverlap(next[key], next[other])) {
+        next[other] = { ...next[other], y: next[key].y + next[key].h };
+        changed = true;
+      }
+    });
+  }
+  return _poInternalCompactLayout(next);
+}
+function _poInternalApplyLayout() {
+  const grid = document.getElementById('po-body');
+  if (!grid) return;
+  const layout = _poInternalGetLayout();
+  let maxRow = 0;
+  Object.keys(layout).forEach(key => {
+    const block = grid.querySelector(`[data-po-section="${key}"]`);
+    if (!block) return;
+    const rect = layout[key];
+    block.style.gridColumn = `${rect.x} / span ${rect.w}`;
+    block.style.gridRow    = `${rect.y} / span ${rect.h}`;
+    maxRow = Math.max(maxRow, rect.y + rect.h - 1);
+  });
+  // Drive total rows dynamically — lets the user grow blocks beyond default.
+  grid.style.setProperty('--po-grid-rows', String(Math.max(280, maxRow)));
+  // Ping Chart.js charts so they redraw at the new pixel size.
+  requestAnimationFrame(() => {
+    try { window._poState?.equityChart?.resize(); } catch {}
+    try { window._poState?.scatterChart?.resize(); } catch {}
+  });
+}
+function _poInternalResetLayout() {
+  try { localStorage.removeItem(_PO_INTERNAL_LAYOUT_KEY); } catch {}
+  _poInternalApplyLayout();
+}
+function _poInternalInitEdit() {
+  if (_poInternalEditBound) return;
+  const grid = document.getElementById('po-body');
+  if (!grid) return;
+  _poInternalEditBound = true;
+
+  const getGridMetrics = () => {
+    const rect = grid.getBoundingClientRect();
+    const styles = getComputedStyle(grid);
+    const colGap = parseFloat(styles.columnGap || styles.gap || '0') || 0;
+    const rowGap = parseFloat(styles.rowGap    || styles.gap || '0') || 0;
+    const usableW = Math.max(1, rect.width - colGap * (_PO_INTERNAL_GRID_COLS - 1));
+    const colW = usableW / _PO_INTERNAL_GRID_COLS;
+    const totalRows = parseFloat(styles.getPropertyValue('--po-grid-rows')) || 280;
+    const usableH = Math.max(1, rect.height - rowGap * (totalRows - 1));
+    const rowH = usableH / totalRows;
+    return { rect, colW, rowH, colGap, rowGap };
+  };
+  const toGridPoint = (clientX, clientY) => {
+    const { rect, colW, rowH, colGap, rowGap } = getGridMetrics();
+    const colStep = colW + colGap;
+    const rowStep = rowH + rowGap;
+    return {
+      x: Math.max(1, Math.min(_PO_INTERNAL_GRID_COLS, Math.round((clientX - rect.left) / Math.max(1, colStep)) + 1)),
+      y: Math.max(1, Math.round((clientY - rect.top) / Math.max(1, rowStep)) + 1),
+    };
+  };
+
+  const begin = (key, mode, startEvent, dir = 'se') => {
+    if (!_editMode) return;
+    startEvent.preventDefault();
+    // Stop bubble so the outer GridStack's draggable doesn't also pick this up.
+    startEvent.stopPropagation();
+    const layout = _poInternalGetLayout();
+    const start = layout[key];
+    if (!start) return;
+    const block = grid.querySelector(`[data-po-section="${key}"]`);
+    block?.classList.add('is-dragging');
+
+    const origin = toGridPoint(startEvent.clientX, startEvent.clientY);
+    const s = { x: start.x, y: start.y, w: start.w, h: start.h };
+
+    const onMove = e => {
+      const p  = toGridPoint(e.clientX, e.clientY);
+      const dx = p.x - origin.x;
+      const dy = p.y - origin.y;
+      let next;
+      if (mode === 'move') {
+        next = { x: s.x + dx, y: s.y + dy, w: s.w, h: s.h };
+      } else {
+        const min = _PO_INTERNAL_MIN[key] || { w: 2, h: 4 };
+        let x = s.x, y = s.y, w = s.w, h = s.h;
+        if (dir.includes('e')) w = Math.max(min.w, s.w + dx);
+        if (dir.includes('s')) h = Math.max(min.h, s.h + dy);
+        if (dir.includes('w')) { const cw = Math.max(min.w, s.w - dx); x = s.x + (s.w - cw); w = cw; }
+        if (dir.includes('n')) { const ch = Math.max(min.h, s.h - dy); y = s.y + (s.h - ch); h = ch; }
+        next = { x, y, w, h };
+      }
+      if (mode === 'resize') {
+        const { rect, colW, colGap } = getGridMetrics();
+        const colStep = colW + colGap;
+        const nearRight = (rect.right - e.clientX) < Math.max(14, colStep * 0.6);
+        if (dir.includes('e') && nearRight) next.w = _PO_INTERNAL_GRID_COLS - next.x + 1;
+      }
+      const nextLayout = _poInternalSetSectionRect(layout, key, next);
+      _poInternalSaveLayout(nextLayout);
+      _poInternalApplyLayout();
+    };
+    const onUp = () => {
+      block?.classList.remove('is-dragging');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup',   onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup',   onUp);
+  };
+
+  grid.querySelectorAll('.po-internal-drag-handle').forEach(btn => {
+    btn.onpointerdown = e => begin(btn.dataset.dragKey, 'move', e);
+  });
+  grid.querySelectorAll('[data-po-section] > .ui-resizable-handle').forEach(btn => {
+    btn.onpointerdown = e => begin(btn.dataset.resizeKey, 'resize', e, btn.dataset.resizeDir || 'se');
+  });
+
+  const resetBtn = grid.querySelector('.po-internal-reset-btn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _poInternalResetLayout();
+    });
+  }
+}
+
 function _poBuildScaffold() {
   const body = document.getElementById('po-body');
   if (!body) return;
+  // PR-5: handles markup helper (drag label + 8 resize handles per block).
+  // Visible only via .gs-editing scope; pointer-bound by _poInternalInitEdit.
+  const _hh = (key, label) => `
+      <div class="gs-drag-handle po-internal-drag-handle" data-drag-key="${key}" title="Drag to move">${label}</div>
+      <div class="ui-resizable-handle ui-resizable-n"  data-resize-key="${key}" data-resize-dir="n"></div>
+      <div class="ui-resizable-handle ui-resizable-e"  data-resize-key="${key}" data-resize-dir="e"></div>
+      <div class="ui-resizable-handle ui-resizable-s"  data-resize-key="${key}" data-resize-dir="s"></div>
+      <div class="ui-resizable-handle ui-resizable-w"  data-resize-key="${key}" data-resize-dir="w"></div>
+      <div class="ui-resizable-handle ui-resizable-ne" data-resize-key="${key}" data-resize-dir="ne"></div>
+      <div class="ui-resizable-handle ui-resizable-nw" data-resize-key="${key}" data-resize-dir="nw"></div>
+      <div class="ui-resizable-handle ui-resizable-se" data-resize-key="${key}" data-resize-dir="se"></div>
+      <div class="ui-resizable-handle ui-resizable-sw" data-resize-key="${key}" data-resize-dir="sw"></div>`;
   body.innerHTML = `
-    <div class="po-block po-block-rr-dist">
+    <button type="button" class="po-internal-reset-btn" title="Reset internal layout to default">⟲ Reset layout</button>
+    <div class="po-block po-block-rr-dist" data-po-section="rrdist">
+      ${_hh('rrdist', 'RR dist')}
       <div class="po-block-header">
         <span class="po-block-title">RR distribution</span>
         <span class="po-block-count" id="po-rr-count">— trades</span>
@@ -15377,7 +15610,8 @@ function _poBuildScaffold() {
       <div class="pp-gchips po-rr-gchips" id="po-rr-gchips"></div>
     </div>
 
-    <div class="po-block po-block-scatter">
+    <div class="po-block po-block-scatter" data-po-section="scatter">
+      ${_hh('scatter', 'Scatter')}
       <div class="po-toolbar po-toolbar-setup">
         <div class="po-ctrl-row po-ctrl-row-inline">
           <label class="po-ctrl-lbl-sm" for="po-tpfinal">TP final</label>
@@ -15447,42 +15681,47 @@ function _poBuildScaffold() {
       <div class="po-legend" id="po-legend"></div>
     </div>
 
-    <div class="po-block-bandeau">
+    <div class="po-block-bandeau" data-po-section="bandeau">
+      ${_hh('bandeau', 'Best stats')}
+      <div class="po-block po-block-best-comp po-stat-card" data-po-stat="compromise">
+        <div class="po-stat-head"><span class="po-stat-icon">★</span><span class="po-stat-lbl">Best Compromise</span></div>
+        <div class="po-stat-val">—</div>
+        <div class="po-stat-name">—</div>
+      </div>
       <div class="po-block po-block-best-totalr po-stat-card" data-po-stat="totalR">
         <div class="po-stat-head"><span class="po-stat-icon">📈</span><span class="po-stat-lbl">Best Total R</span></div>
-        <div class="po-stat-name">—</div>
         <div class="po-stat-val">—</div>
+        <div class="po-stat-name">—</div>
       </div>
       <div class="po-block po-block-best-ev po-stat-card" data-po-stat="ev">
         <div class="po-stat-head"><span class="po-stat-icon">🏆</span><span class="po-stat-lbl">Best EV</span></div>
-        <div class="po-stat-name">—</div>
         <div class="po-stat-val">—</div>
+        <div class="po-stat-name">—</div>
       </div>
       <div class="po-block po-block-best-stab po-stat-card" data-po-stat="stability">
         <div class="po-stat-head"><span class="po-stat-icon">🛡</span><span class="po-stat-lbl">Best Stability</span></div>
-        <div class="po-stat-name">—</div>
         <div class="po-stat-val">—</div>
+        <div class="po-stat-name">—</div>
       </div>
       <div class="po-block po-block-min-dd po-stat-card" data-po-stat="dd">
         <div class="po-stat-head"><span class="po-stat-icon">📉</span><span class="po-stat-lbl">Min Drawdown</span></div>
-        <div class="po-stat-name">—</div>
         <div class="po-stat-val">—</div>
+        <div class="po-stat-name">—</div>
       </div>
       <div class="po-block po-block-best-tpf po-stat-card" data-po-stat="tpfinal">
         <div class="po-stat-head"><span class="po-stat-icon">🎯</span><span class="po-stat-lbl">Best TP Final</span></div>
-        <div class="po-stat-name">—</div>
         <div class="po-stat-val">—</div>
+        <div class="po-stat-name">—</div>
       </div>
     </div>
-    <div class="po-block po-block-best-comp po-stat-card" data-po-stat="compromise">
-      <div class="po-stat-head"><span class="po-stat-icon">⚖</span><span class="po-stat-lbl">Best Compromise</span></div>
-      <div class="po-stat-name">—</div>
-      <div class="po-stat-val">—</div>
+
+    <div class="po-block po-block-detail" data-po-section="detail">
+      ${_hh('detail', 'Bilan')}
+      <div id="po-detail" class="po-detail-inner"></div>
     </div>
 
-    <div class="po-block po-block-detail" id="po-detail"></div>
-
-    <div class="po-block po-block-equity">
+    <div class="po-block po-block-equity" data-po-section="equity">
+      ${_hh('equity', 'Equity')}
       <div class="po-block-title">Equity curve · modèle vs baseline</div>
       <div class="po-equity-toolbar">
         <label class="po-ctrl-check po-ctrl-check-inline" title="Applique le filtre BE Management uniquement à la ligne baseline pour comparaison.">
@@ -15493,7 +15732,8 @@ function _poBuildScaffold() {
       <div class="po-canvas-stage"><canvas id="po-equity"></canvas></div>
     </div>
 
-    <div class="po-block po-block-ranking-tbl">
+    <div class="po-block po-block-ranking-tbl" data-po-section="ranking">
+      ${_hh('ranking', 'Ranking')}
       <div class="po-block-title">Classement</div>
       <div class="po-ranking-scroll">
         <table class="po-ranking" id="po-ranking">
@@ -15513,13 +15753,16 @@ function _poBuildScaffold() {
       </div>
     </div>
 
-    <div class="po-block po-block-presets">
+    <div class="po-block po-block-presets" data-po-section="presets">
+      ${_hh('presets', 'Presets')}
       <div class="po-block-title">Saved presets</div>
       <div class="po-presets-grid" id="po-presets-grid">
         <!-- Tiles injected by _poRenderPresetsBlock -->
       </div>
     </div>
   `;
+  // PR-5: apply saved/default internal layout right after the scaffold mounts.
+  _poInternalApplyLayout();
   _poWireScaffold();
 }
 
@@ -23995,7 +24238,7 @@ const OPTIMAL_RR_LAYOUT = {
   'w-montecarlo': {x:0, y:77, w:12, h:82, minW:4, minH:80},
 };
 const PARTIAL_PLANNERS_LAYOUT = {
-  'w-partial-optimizer': {x:0, y:0,   w:12, h:236, minW:8, minH:189},
+  'w-partial-optimizer': {x:0, y:0,   w:12, h:236},
 };
 
 // Merged view used by code that still references a single full layout
@@ -24390,6 +24633,8 @@ function toggleEditMode() {
     _svGrid?.enableResize(true);
     _mc2ApplySectionLayout();
     _mc2InitSectionLayoutEdit();
+    _poInternalApplyLayout();
+    _poInternalInitEdit();
     _showToast(currentView === 'share'
       ? 'Share layout edit ON — drag ⠿ to move · corner to resize'
       : 'Edit mode ON — drag ⠿ to move · corner to resize');
@@ -24399,6 +24644,7 @@ function toggleEditMode() {
     _svGrid?.enableMove(false);
     _svGrid?.enableResize(false);
     _mc2ApplySectionLayout();
+    _poInternalApplyLayout();
     _saveCurrentLayout('active');
     _saveCurrentShareLayout();
     _showToast(currentView === 'share' ? 'Share layout saved' : 'Layout saved');

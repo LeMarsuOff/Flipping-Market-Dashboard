@@ -14307,3 +14307,296 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   border-color: color-mix(in srgb, var(--g) 35%, transparent);
   color: var(--text-primary);
 }
+
+/* ── PR-4-bis : Bandeau full-width-droite + hero Best Compromise ──────
+   New layout (overrides Layout v13 + PR-A):
+     · RR-dist        : 1-4  / 1-36     (unchanged)
+     · BANDEAU 6 cards: 5-12 / 1-36     (NEW — was 1-4 / 37-52, 5 cards)
+     · SCATTER        : 5-12 / 37-164   (NEW — was 1-164 full right column)
+     · BILAN (detail) : 1-4  / 37-164   (NEW — was 1-4 / 69-164)
+     · Best Compromise: integrated as the 1st child of the bandeau (hero 3fr)
+   Old PR-A bandeau styles & old standalone best-comp positioning remain
+   untouched in the CSS for rollback safety; this block wins by cascade.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Grid repositioning */
+.po-widget .po-block-bandeau {
+  grid-column: 5 / span 8;
+  grid-row: 1 / span 36;
+  grid-template-columns: 3fr 1fr 1fr 1fr 1fr 1fr;
+  gap: 10px;
+}
+.po-widget .po-block-scatter {
+  grid-column: 5 / span 8;
+  grid-row: 37 / span 128;
+}
+.po-widget .po-block-detail {
+  grid-column: 1 / span 4;
+  grid-row: 37 / span 128;
+}
+/* Neutralise the old absolute placement on .po-block-best-comp now that it
+   lives as a flow child inside .po-block-bandeau. */
+.po-widget .po-block-bandeau > .po-block-best-comp {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+/* ── Stat cards (5 normales + 1 hero) base style ── */
+.po-widget .po-block-bandeau .po-stat-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.po-widget .po-block-bandeau .po-stat-card:hover {
+  border-color: var(--border-normal);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.22);
+}
+.po-widget .po-block-bandeau .po-stat-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  position: relative;
+  z-index: 1;
+}
+.po-widget .po-block-bandeau .po-stat-icon {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.85;
+}
+.po-widget .po-block-bandeau .po-stat-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.po-widget .po-block-bandeau .po-stat-val {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+  z-index: 1;
+}
+.po-widget .po-block-bandeau .po-stat-name {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Hero variant (Best Compromise) ── */
+.po-widget .po-block-bandeau > .po-block-best-comp {
+  background: linear-gradient(135deg,
+    var(--surface-1) 0%,
+    color-mix(in srgb, var(--gold) 8%, transparent) 100%);
+  border-color: color-mix(in srgb, var(--gold) 25%, var(--border-subtle));
+  padding: 14px 18px;
+}
+.po-widget .po-block-bandeau > .po-block-best-comp::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 160px;
+  height: 160px;
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--gold) 14%, transparent) 0%,
+    transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.po-widget .po-block-bandeau > .po-block-best-comp:hover {
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--gold) 18%, transparent);
+}
+.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-icon {
+  color: var(--gold);
+  font-size: 14px;
+  opacity: 1;
+}
+.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-lbl {
+  color: var(--gold);
+  font-size: 10px;
+  letter-spacing: 0.10em;
+}
+.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-val {
+  font-size: 32px;
+  letter-spacing: -0.03em;
+  white-space: normal;
+  line-height: 1.15;
+}
+/* Hero secondary span (· stability) — readable at hero scale */
+.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-val .po-stat-val-secondary {
+  font-size: 0.55em;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-left: 2px;
+}
+.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Mobile (<900px): keep hero first in stacked bandeau */
+@media (max-width: 900px) {
+  .po-widget .po-block-bandeau > .po-block-best-comp {
+    order: 0;
+    grid-column: 1 / -1;
+  }
+}
+
+/* ── PR-5 : Internal layout editor (po-internal-*) ────────────────────
+   Custom drag/resize on the 12-col × 280-row CSS grid (#po-body).
+   Pattern mirrors .mc2-* (Monte Carlo internal layout).
+   Drag/resize handles only render in edit mode (#gs-container.gs-editing).
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Make the body host an absolutely-positioned reset button + dynamic rows */
+.po-widget .po-body {
+  position: relative;
+  grid-template-rows: repeat(var(--po-grid-rows, 280), minmax(0, 1fr));
+}
+
+/* Each section block must establish a positioning context for its handles */
+.po-widget [data-po-section] {
+  position: relative;
+}
+
+/* PR-5 fix: #po-detail is now a child of .po-block-detail (handles live on the
+   parent so _poRenderDetail's innerHTML wipe doesn't kill them). Inner needs
+   to claim the flex column space so .po-bilan-card { height: 100% } resolves. */
+.po-widget .po-block-detail > .po-detail-inner {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Drag handle (label pill) — visible only in edit mode */
+.po-widget .po-internal-drag-handle {
+  display: none;
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  padding: 2px 8px;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+  border-radius: 3px;
+  cursor: grab;
+  z-index: 12;
+  user-select: none;
+  pointer-events: auto;
+}
+.po-widget .po-internal-drag-handle:active { cursor: grabbing; }
+.gs-editing .po-widget .po-internal-drag-handle { display: block; }
+
+/* Resize handles — hidden by default, visible in edit mode */
+.po-widget [data-po-section] > .ui-resizable-handle { display: none; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-handle {
+  display: block !important;
+  position: absolute;
+  background: color-mix(in srgb, var(--gold) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  border-radius: 3px;
+  z-index: 12;
+  opacity: 1 !important;
+  pointer-events: all !important;
+}
+.gs-editing .po-widget [data-po-section] > .ui-resizable-se { width: 20px; height: 20px; right: 0; bottom: 0; cursor: se-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-s  { height: 8px; left: 10px; right: 10px; bottom: 0; cursor: s-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-e  { width: 8px; top: 10px; right: 0; bottom: 10px; cursor: e-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-n  { height: 8px; top: 0; left: 10px; right: 10px; cursor: n-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-w  { width: 8px; top: 10px; left: 0; bottom: 10px; cursor: w-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-ne { width: 14px; height: 14px; top: 0; right: 0; cursor: ne-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-nw { width: 14px; height: 14px; top: 0; left: 0; cursor: nw-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-sw { width: 14px; height: 14px; bottom: 0; left: 0; cursor: sw-resize; }
+.gs-editing .po-widget [data-po-section] > .ui-resizable-se::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Outline blocks in edit mode for clear visual feedback */
+.gs-editing .po-widget [data-po-section] {
+  outline: 1.5px dashed color-mix(in srgb, var(--gold) 35%, transparent);
+  outline-offset: -1px;
+  transition: outline-color .15s, box-shadow .15s;
+}
+.gs-editing .po-widget [data-po-section]:hover {
+  outline-color: color-mix(in srgb, var(--gold) 65%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 12%, transparent),
+              inset 0 0 0 1px color-mix(in srgb, var(--gold) 8%, transparent);
+}
+.po-widget [data-po-section].is-dragging { opacity: .55; }
+
+/* Reset layout button — top-right of the body, only visible in edit mode */
+.po-widget .po-internal-reset-btn {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 50;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all .12s ease;
+  align-items: center;
+  gap: 6px;
+}
+.po-widget .po-internal-reset-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.gs-editing .po-widget .po-internal-reset-btn {
+  display: inline-flex;
+}
