@@ -12972,6 +12972,26 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   opacity: 0.85;
 }
 
+/* PR-8: Glow on the Saved Preset PO tile whose config matches the currently
+   applied dashboard tpConfig. Same visual language as the bandeau is-active.
+   transition excludes box-shadow: Chromium interpolation from `none` to a
+   multi-shadow color-mix value gets stuck at zero alpha. */
+.po-widget .po-preset-tile.is-active {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border-subtle));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--gold) 22%, transparent);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s;
+}
+
+/* PR-8-fix: preserve the gold glow when hovering an active preset tile. The
+   .po-preset-tile-filled:hover rule overrides border-color and box-shadow with
+   neutral values during hover, killing the glow visually. Re-impose the gold
+   values explicitly for is-active + :hover. The hover translateY(-2px) remains
+   active via the existing rule. */
+.po-widget .po-preset-tile-filled.is-active:hover {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border-subtle));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--gold) 22%, transparent);
+}
+
 .po-preset-tile-head {
   display: flex;
   align-items: center;
@@ -13476,12 +13496,22 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
    Universal value coloring — applied dynamically based on sign.
    Used by stat cards, Bilan metrics, saved preset stats.
 ═══════════════════════════════════════════════════════════ */
-.po-widget .po-v-pos { color: var(--g) !important; }
-.po-widget .po-v-neg { color: var(--r) !important; }
+/* 6-tier KPI palette — aligned on _KPI_THRESHOLD_LEGENDS / _svProgressTone */
+.po-widget .po-v-red    { color: var(--r) !important; }
+.po-widget .po-v-orange { color: var(--streak-orange, #f39a3d) !important; }
+.po-widget .po-v-yellow { color: var(--a) !important; }
+.po-widget .po-v-green  { color: var(--g) !important; }
+.po-widget .po-v-blue   { color: var(--b) !important; }
+.po-widget .po-v-purple { color: var(--streak-purple, #9b6dff) !important; }
 .po-widget .po-v-neutral { color: var(--text-primary) !important; }
 
+/* Backward-compat aliases — used by signed-binary metrics (Total R, Net,
+   R Saved, R Sacrificed) which keep the legacy 3-tier scheme. */
+.po-widget .po-v-pos { color: var(--g) !important; }
+.po-widget .po-v-neg { color: var(--r) !important; }
+
 /* Stat card values with no .po-v-* class fall back to primary text */
-.po-widget .po-stat-val:not(.po-v-pos):not(.po-v-neg):not(.po-v-neutral) {
+.po-widget .po-stat-val:not(.po-v-red):not(.po-v-orange):not(.po-v-yellow):not(.po-v-green):not(.po-v-blue):not(.po-v-purple):not(.po-v-neutral):not(.po-v-pos):not(.po-v-neg) {
   color: var(--text-primary);
 }
 /* Best Compromise: secondary part (· stability) stays primary */
@@ -13489,6 +13519,18 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   color: var(--text-primary);
   font-weight: 600;
 }
+
+/* Preset tile stat values — higher-specificity selector forces the palette
+   over the default `color: var(--text-primary)` rule. */
+.po-widget .po-preset-stat-val.po-v-red    { color: var(--r) !important; }
+.po-widget .po-preset-stat-val.po-v-orange { color: var(--streak-orange, #f39a3d) !important; }
+.po-widget .po-preset-stat-val.po-v-yellow { color: var(--a) !important; }
+.po-widget .po-preset-stat-val.po-v-green  { color: var(--g) !important; }
+.po-widget .po-preset-stat-val.po-v-blue   { color: var(--b) !important; }
+.po-widget .po-preset-stat-val.po-v-purple { color: var(--streak-purple, #9b6dff) !important; }
+.po-widget .po-preset-stat-val.po-v-pos    { color: var(--g) !important; }
+.po-widget .po-preset-stat-val.po-v-neg    { color: var(--r) !important; }
+.po-widget .po-preset-stat-val.po-v-neutral { color: var(--text-primary) !important; }
 
 /* ═══════════════════════════════════════════════════════════
    RR DISTRIBUTION — Soft refresh (PR-3, KEEP gold colors)
@@ -14414,65 +14456,27 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   z-index: 1;
 }
 
-/* ── Hero variant (Best Compromise) ── */
-.po-widget .po-block-bandeau > .po-block-best-comp {
-  background: linear-gradient(135deg,
-    var(--surface-1) 0%,
-    color-mix(in srgb, var(--gold) 8%, transparent) 100%);
-  border-color: color-mix(in srgb, var(--gold) 25%, var(--border-subtle));
-  padding: 14px 18px;
+/* PR-8: Glow on the actively-selected bandeau card. The selection is per
+   dashboard preset (persisted via poSelectedCard). One card max at a time.
+   transition excludes box-shadow: Chromium interpolation from `none` to a
+   multi-shadow color-mix value gets stuck at zero alpha. */
+.po-widget .po-stat-card.is-active {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border-subtle));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--gold) 22%, transparent);
+  transition: border-color .15s ease, transform .15s ease;
 }
-.po-widget .po-block-bandeau > .po-block-best-comp::before {
-  content: "";
-  position: absolute;
-  top: -40px;
-  right: -40px;
-  width: 160px;
-  height: 160px;
-  background: radial-gradient(circle,
-    color-mix(in srgb, var(--gold) 14%, transparent) 0%,
-    transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-.po-widget .po-block-bandeau > .po-block-best-comp:hover {
-  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--gold) 18%, transparent);
-}
-.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-icon {
+.po-widget .po-stat-card.is-active .po-stat-lbl {
   color: var(--gold);
-  font-size: 14px;
-  opacity: 1;
-}
-.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-lbl {
-  color: var(--gold);
-  font-size: 10px;
-  letter-spacing: 0.10em;
-}
-.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-val {
-  font-size: 32px;
-  letter-spacing: -0.03em;
-  white-space: normal;
-  line-height: 1.15;
-}
-/* Hero secondary span (· stability) — readable at hero scale */
-.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-val .po-stat-val-secondary {
-  font-size: 0.55em;
-  color: var(--text-secondary);
-  font-weight: 500;
-  margin-left: 2px;
-}
-.po-widget .po-block-bandeau > .po-block-best-comp .po-stat-name {
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 
-/* Mobile (<900px): keep hero first in stacked bandeau */
-@media (max-width: 900px) {
-  .po-widget .po-block-bandeau > .po-block-best-comp {
-    order: 0;
-    grid-column: 1 / -1;
-  }
+/* PR-8-fix: preserve the gold glow when hovering an active card. The bandeau
+   :hover rule overrides border-color and box-shadow with neutral values, which
+   makes the glow visually disappear under the cursor. Re-impose the glow values
+   explicitly for is-active + :hover, while keeping the hover's translateY
+   transform for tactile feedback (still applied by the generic :hover rule). */
+.po-widget .po-block-bandeau .po-stat-card.is-active:hover {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border-subtle));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--gold) 22%, transparent);
 }
 
 /* ── PR-5 : Internal layout editor (po-internal-*) ────────────────────

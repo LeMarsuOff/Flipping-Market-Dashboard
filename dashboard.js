@@ -16271,9 +16271,9 @@ function _poRenderRanking() {
       <td class="po-rank-cell"><span class="po-rank-pill ${rankPillCls}">${i + 1}</span></td>
       <td class="po-row-name">${r.model.name}</td>
       <td class="po-num-col ${_poColorClass(r.sim.totalR, 0, 0)}">${_poFmtR(r.sim.totalR)}</td>
-      <td class="po-num-col ${_poColorClass(r.sim.wr - 0.5)}">${_poFmtPct(r.sim.wr)}</td>
-      <td class="po-num-col ${_poColorClass(r.sim.ev)}">${_poFmtR(r.sim.ev)}</td>
-      <td class="po-num-col ${_poColorClass(-r.sim.maxDD)}">${_poFmtR(-r.sim.maxDD)}</td>
+      <td class="po-num-col ${_poKpiTone(r.sim.wr, 'wr')}">${_poFmtPct(r.sim.wr)}</td>
+      <td class="po-num-col ${_poKpiTone(r.sim.ev, 'ev')}">${_poFmtR(r.sim.ev)}</td>
+      <td class="po-num-col po-v-red">${_poFmtR(-r.sim.maxDD)}</td>
       <td class="po-num-col">${r.stability}</td>
     </tr>`);
   }
@@ -16358,28 +16358,28 @@ function _poRenderDetail() {
         <div class="po-bilan-row">
           <span class="po-bilan-row-lbl">EV</span>
           <span class="po-bilan-row-val">
-            <span class="${_poColorClass(sel.sim.ev)}">${_poFmtR(sel.sim.ev)}</span>
+            <span class="${_poKpiTone(sel.sim.ev, 'ev')}">${_poFmtR(sel.sim.ev)}</span>
             ${_poDeltaSpan(dEV)}
           </span>
         </div>
         <div class="po-bilan-row">
           <span class="po-bilan-row-lbl">Win Rate</span>
           <span class="po-bilan-row-val">
-            <span class="${_poColorClass(sel.sim.wr - 0.5)}">${_poFmtPct(sel.sim.wr)}</span>
+            <span class="${_poKpiTone(sel.sim.wr, 'wr')}">${_poFmtPct(sel.sim.wr)}</span>
             ${_poDeltaSpan(dWR * 100, 'pp')}
           </span>
         </div>
         <div class="po-bilan-row">
           <span class="po-bilan-row-lbl">Profit Factor</span>
           <span class="po-bilan-row-val">
-            <span class="${_poColorClass(sel.sim.pf - 1, 0.01, -0.01)}">${_poFmtNum(sel.sim.pf)}</span>
+            <span class="${_poKpiTone(sel.sim.pf, 'pf')}">${_poFmtNum(sel.sim.pf)}</span>
             ${_poDeltaSpan(dPF, '')}
           </span>
         </div>
         <div class="po-bilan-row">
           <span class="po-bilan-row-lbl">Max Drawdown</span>
           <span class="po-bilan-row-val">
-            <span class="${_poColorClass(-sel.sim.maxDD)}">${_poFmtR(-sel.sim.maxDD)}</span>
+            <span class="po-v-red">${_poFmtR(-sel.sim.maxDD)}</span>
             ${_poDeltaSpan(dDD)}
           </span>
         </div>
@@ -16433,6 +16433,68 @@ function _poRenderDetail() {
 
   // Equity curve is rendered into its own block (po-block-equity) every render.
   _poRenderEquity(sel, base);
+}
+
+/** PR-9: Returns true if the given preset slot stored config matches the
+ *  config of the currently selected model in the Bilan. Used to show the glow
+ *  on the tile that corresponds to what's currently displayed.
+ *
+ *  Replaces PR-8 logic that compared to appState.ui.tpConfig.personalised.
+ *  The glow now follows Selected Model, not the dashboard application state. */
+function _poTileMatchesAppliedConfig(stored) {
+  if (!stored || !Array.isArray(stored.legs)) return false;
+  const st = window._poState;
+  if (!st || !Array.isArray(st.results)) return false;
+  const sel = st.results.find(r => r.idx === st.selectedIdx);
+  if (!sel || !sel.model) return false;
+
+  // Type + tpFinal must match exactly.
+  if (sel.model.type !== stored.type) return false;
+  if (Math.abs((sel.model.tpFinal ?? -999) - (stored.tpFinal ?? -998)) > 1e-6) return false;
+
+  // Legs count + each leg (lv + pct) must match.
+  const sLegs = sel.model.legs || [];
+  if (sLegs.length !== stored.legs.length) return false;
+  for (let i = 0; i < sLegs.length; i++) {
+    const lvA = sLegs[i].lv;
+    const lvB = stored.legs[i].lv;
+    const pctA = sLegs[i].pct ?? 0;
+    const pctB = stored.legs[i].pct ?? 0;
+    if (Math.abs(lvA - lvB) > 1e-6 || Math.abs(pctA - pctB) > 1e-4) return false;
+  }
+  return true;
+}
+
+/** PR-8-fix: Returns the index in st.results of the model that matches the
+ *  given stored preset config (legs + tpFinal exact match). Returns -1 if
+ *  no model in the current grid matches.
+ *
+ *  Used when clicking a Saved Preset tile to update selectedIdx and surface
+ *  the preset's stats in the Bilan, without applying to the dashboard. */
+function _poFindMatchingResultIdx(stored) {
+  const st = window._poState;
+  if (!stored || !Array.isArray(stored.legs) || !st || !Array.isArray(st.results)) return -1;
+  for (let i = 0; i < st.results.length; i++) {
+    const r = st.results[i];
+    if (!r || !r.model) continue;
+    if (r.model.type !== stored.type) continue;
+    if (Math.abs((r.model.tpFinal ?? -999) - (stored.tpFinal ?? -998)) > 1e-6) continue;
+    const mLegs = r.model.legs || [];
+    if (mLegs.length !== stored.legs.length) continue;
+    let allMatch = true;
+    for (let j = 0; j < mLegs.length; j++) {
+      const lvA = mLegs[j].lv;
+      const lvB = stored.legs[j].lv;
+      const pctA = mLegs[j].pct ?? 0;
+      const pctB = stored.legs[j].pct ?? 0;
+      if (Math.abs(lvA - lvB) > 1e-6 || Math.abs(pctA - pctB) > 1e-4) {
+        allMatch = false;
+        break;
+      }
+    }
+    if (allMatch) return r.idx;
+  }
+  return -1;
 }
 
 // PR-B: push the selected PO model's params into appState.ui.tpConfig as a
@@ -16528,12 +16590,12 @@ function _poRenderPresetsBlock() {
     const ddTxt   = sim ? _poFmtR(-sim.maxDD) : '—';
     const totTxt  = sim ? _poFmtR(sim.totalR) : '—';
     const isFull = stored.type === 'full';
-    // Dynamic color classes — pos=green, neg=red, neutral=primary.
-    // sim.maxDD is positive (peak - cum, ≥ 0) → maxDD > 0 = drawdown exists → red.
-    const evClass  = sim ? (sim.ev > 0 ? 'pos' : sim.ev < 0 ? 'neg' : '') : '';
-    const totClass = sim ? (sim.totalR > 0 ? 'pos' : sim.totalR < 0 ? 'neg' : '') : '';
-    const wrClass  = sim ? (sim.wr > 0.5 ? 'pos' : sim.wr < 0.5 ? 'neg' : '') : '';
-    const ddClass  = sim ? (sim.maxDD > 0 ? 'neg' : '') : '';
+    // EV / WR on 6-tier dynamic palette (quality metrics).
+    // Total R signed-binary; DD always red (semantic alignment with rest of dashboard).
+    const evClass  = sim ? _poKpiTone(sim.ev, 'ev') : '';
+    const totClass = sim ? (sim.totalR > 0 ? 'po-v-pos' : sim.totalR < 0 ? 'po-v-neg' : 'po-v-neutral') : '';
+    const wrClass  = sim ? _poKpiTone(sim.wr, 'wr') : '';
+    const ddClass  = sim ? 'po-v-red' : '';
 
     const st2 = window._poState;
     const baselineForSlot = (st2 && Array.isArray(st2.results))
@@ -16553,9 +16615,11 @@ function _poRenderPresetsBlock() {
 
     const trashSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
     const typeLabel = stored.type === 'two' ? '2 Partials' : stored.type === 'one' ? '1 Partial' : 'Full TP';
+    // PR-8: glow class when stored config matches currently-applied tpConfig
+    const isActiveClass = _poTileMatchesAppliedConfig(stored) ? ' is-active' : '';
 
     return `
-      <div class="po-preset-tile po-preset-tile-filled" data-po-slot="${key}">
+      <div class="po-preset-tile po-preset-tile-filled${isActiveClass}" data-po-slot="${key}">
         <div class="po-preset-tile-head">
           <span class="po-preset-tile-badge" data-slot="${key}">${key}</span>
           <div class="po-preset-tile-head-actions">
@@ -16621,6 +16685,52 @@ function _poRenderPresetsBlock() {
     tile.addEventListener('click', handler);
     tile.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); handler(); }
+    });
+  });
+
+  // PR-8-fix: Click on a filled preset tile (anywhere except Apply/Trash buttons,
+  // which stop propagation) → select the matching model in the Bilan without
+  // applying to the dashboard. Apply remains the only path to dashboard-level
+  // application; this gives the user a way to inspect a preset's stats first.
+  wrap.querySelectorAll('.po-preset-tile-filled').forEach(tile => {
+    tile.addEventListener('click', (ev) => {
+      // Defensive: if Apply or Trash button bubble made it here despite
+      // stopPropagation, ignore it (target inside an interactive control).
+      if (ev.target.closest('[data-po-slot-apply], [data-po-slot-delete]')) return;
+      const key = tile.getAttribute('data-po-slot');
+      if (!key) return;
+      const slots = _poGetPresetSlots();
+      const stored = slots[key];
+      if (!stored) return;
+      const st = window._poState;
+
+      // Try to find the model in the current grid.
+      let matchIdx = _poFindMatchingResultIdx(stored);
+
+      // PR-10: if no match, the stored config uses a different tpFinal than the
+      // current grid. Force the toolbar TP final to the stored value, regenerate
+      // the grid, then re-search. Sweep mode is NOT modified — only TP final.
+      if (matchIdx < 0 && Number.isFinite(stored.tpFinal)) {
+        const currentTpf = st.config?.tpFinal;
+        if (Math.abs((currentTpf ?? -999) - stored.tpFinal) > 1e-6) {
+          if (st.config) st.config.tpFinal = stored.tpFinal;
+          // Sync the toolbar input visually so the user sees the change.
+          const tpfInput = document.getElementById('po-tpfinal');
+          if (tpfInput) tpfInput.value = stored.tpFinal;
+          // Regenerate the grid synchronously (rerunSim:true triggers _poRecompute).
+          _poRender({ rerunSim: true });
+          // After regeneration, retry the match.
+          matchIdx = _poFindMatchingResultIdx(stored);
+        }
+      }
+
+      if (matchIdx < 0) {
+        console.warn('[poTileClick] No match after tpFinal sync for slot', key, stored);
+        return;
+      }
+
+      st.selectedIdx = matchIdx;
+      _poRender({ rerunSim: false });
     });
   });
 
@@ -16928,8 +17038,54 @@ function _poRenderEquity(sel, base) {
   });
 }
 
+/**
+ * Returns a `po-v-*` CSS class for a quality KPI value, calibrated on the
+ * dashboard's 6-tier thresholds (see _KPI_THRESHOLD_LEGENDS @ dashboard.js:8945
+ * and _getWinRateTone @ dashboard.js:26872).
+ *
+ * Use only for QUALITY metrics: EV, Win Rate, Profit Factor.
+ * For accounting metrics (Total R, Net, R Saved, R Sacrificed) and risk
+ * metrics (Max DD), keep the legacy semantic colors via _poColorClass or
+ * inline literals — those are not on this 6-tier ladder.
+ *
+ * @param {number} value - The raw KPI value (decimal for WR, R-multiple for EV).
+ * @param {string} kind  - 'ev' | 'wr' | 'pf'.
+ * @returns {string}     - CSS class name, or '' if value is not finite.
+ */
+function _poKpiTone(value, kind = 'ev') {
+  if (!Number.isFinite(value)) return '';
+
+  if (kind === 'pf') {
+    if (value < 1)    return 'po-v-red';
+    if (value < 1.3)  return 'po-v-orange';
+    if (value < 1.7)  return 'po-v-yellow';
+    if (value < 2.2)  return 'po-v-green';
+    if (value < 3)    return 'po-v-blue';
+    return 'po-v-purple';
+  }
+
+  if (kind === 'wr') {
+    // value in [0, 1]. Aligned on _getWinRateTone (which takes percent 0-100).
+    if (value < 0.30)  return 'po-v-red';
+    if (value < 0.35)  return 'po-v-orange';
+    if (value < 0.40)  return 'po-v-yellow';
+    if (value < 0.48)  return 'po-v-green';
+    if (value <= 0.55) return 'po-v-blue';
+    return 'po-v-purple';
+  }
+
+  // Default ladder for EV / avgR (R-multiple values)
+  if (value < 0)     return 'po-v-red';
+  if (value < 0.1)   return 'po-v-orange';
+  if (value < 0.3)   return 'po-v-yellow';
+  if (value < 0.6)   return 'po-v-green';
+  if (value < 1.0)   return 'po-v-blue';
+  return 'po-v-purple';
+}
+
 // Maps a numeric value to a color class. Wider-than-zero threshold avoids
-// flickering between colors on near-zero values.
+// flickering between colors on near-zero values. Kept for signed-binary
+// accounting metrics (Total R, Net, R Saved, R Sacrificed).
 function _poColorClass(value, thresholdPos = 0.005, thresholdNeg = -0.005) {
   if (!Number.isFinite(value)) return '';
   if (value > thresholdPos) return 'po-v-pos';
@@ -16937,13 +17093,65 @@ function _poColorClass(value, thresholdPos = 0.005, thresholdNeg = -0.005) {
   return 'po-v-neutral';
 }
 
+/** PR-9: Returns the set of bandeau card keys whose "best of category" model
+ *  matches the currently selected model (st.selectedIdx).
+ *
+ *  Rule per key:
+ *    - totalR / ev / stability / compromise / dd → glow if selectedIdx is the
+ *      top result for that ranking
+ *    - tpfinal → glow if the selected model uses the tpFinal returned by
+ *      _poBestTpFinal()
+ *
+ *  Multiple keys can match simultaneously (e.g. a model that's top on both
+ *  EV and Compromise will glow both cards).
+ *
+ *  Returns a Set<string>.
+ */
+function _poComputeActiveCardKeys() {
+  const st = window._poState;
+  const active = new Set();
+  if (!st || !Array.isArray(st.results) || !st.results.length) return active;
+  const selIdx = st.selectedIdx;
+  const sel = st.results.find(r => r.idx === selIdx);
+  if (!sel) return active;
+
+  // For each ranking-based card, check if the top result matches the selected model.
+  const rankingKeys = ['totalR', 'ev', 'stability', 'compromise', 'dd'];
+  for (const key of rankingKeys) {
+    const ranked = _poRankResults(st.results, key);
+    if (ranked.length && ranked[0].idx === selIdx) {
+      active.add(key);
+    }
+  }
+
+  // PR-10: Best TP Final glow — only glow if the card actually displays useful
+  // content. The card shows "—" when sweep is OFF or when no best is computable,
+  // and we don't want to imply selection on an empty card.
+  //
+  // Note: this checks the rendered DOM textContent. Slightly fragile (if the
+  // placeholder string changes from "—" to "N/A" in _poRenderStatCards, this
+  // check needs to be updated). Documented here for future maintainers.
+  const best = _poBestTpFinal(st.results);
+  const tpfValEl = document.querySelector('.po-stat-card[data-po-stat="tpfinal"] .po-stat-val');
+  const tpfHasContent = tpfValEl && tpfValEl.textContent.trim() !== '—' && tpfValEl.textContent.trim() !== '';
+  if (best && tpfHasContent && sel.model && Math.abs((sel.model.tpFinal ?? -999) - best.tpf) < 1e-6) {
+    active.add('tpfinal');
+  }
+
+  return active;
+}
+
 function _poRenderStatCards() {
   const st = window._poState;
   const cards = document.querySelectorAll('.po-stat-card');
   if (!cards.length || !st.results.length) return;
 
-  // applyColor: function returning the value to color-classify (null = no coloring)
-  const setCard = (key, ranked, valFmt, applyColor) => {
+  // colorMode pilots the coloring strategy per card:
+  //   'kpiTone'  → 6-tier palette via _poKpiTone (EV)
+  //   'signed'   → green > 0, red < 0, neutral = 0 (Total R)
+  //   'fixedRed' → always red (Min DD)
+  //   null       → no coloring (Stability, Compromise handled separately)
+  const setCard = (key, ranked, valFmt, applyColor, kind, colorMode = 'kpiTone') => {
     const card = document.querySelector(`.po-stat-card[data-po-stat="${key}"]`);
     if (!card || !ranked.length) return;
     const top = ranked[0];
@@ -16951,26 +17159,37 @@ function _poRenderStatCards() {
     const valEl  = card.querySelector('.po-stat-val');
     if (nameEl) nameEl.textContent = top.model.name;
     if (valEl) {
-      valEl.classList.remove('po-v-pos', 'po-v-neg', 'po-v-neutral');
+      // Strip ALL po-v-* classes (legacy 3-tier + new 6-tier palette)
+      valEl.classList.remove(
+        'po-v-pos', 'po-v-neg', 'po-v-neutral',
+        'po-v-red', 'po-v-orange', 'po-v-yellow', 'po-v-green', 'po-v-blue', 'po-v-purple'
+      );
       if (key === 'compromise') {
-        // Mixed coloring: EV dynamic, stability primary
+        // Compromise card: EV part on 6-tier palette, stability stays primary
         const evVal = top.sim.ev;
-        const evCls = _poColorClass(evVal);
+        const evCls = _poKpiTone(evVal, 'ev');
         valEl.innerHTML = `<span class="${evCls}">${_poFmtR(evVal)}</span> <span class="po-stat-val-secondary">· ${top.stability}</span>`;
       } else {
         valEl.textContent = valFmt(top);
-        if (applyColor) {
-          const cls = _poColorClass(applyColor(top));
+        if (colorMode === 'fixedRed') {
+          valEl.classList.add('po-v-red');
+        } else if (colorMode === 'signed' && applyColor) {
+          const v = applyColor(top);
+          if (Number.isFinite(v)) {
+            valEl.classList.add(v > 0 ? 'po-v-pos' : v < 0 ? 'po-v-neg' : 'po-v-neutral');
+          }
+        } else if (colorMode === 'kpiTone' && applyColor && kind) {
+          const cls = _poKpiTone(applyColor(top), kind);
           if (cls) valEl.classList.add(cls);
         }
       }
     }
   };
-  setCard('totalR',     _poRankResults(st.results, 'totalR'),     (r) => _poFmtR(r.sim.totalR),     (r) => r.sim.totalR);
-  setCard('ev',         _poRankResults(st.results, 'ev'),         (r) => _poFmtR(r.sim.ev),         (r) => r.sim.ev);
-  setCard('stability',  _poRankResults(st.results, 'stability'),  (r) => `${r.stability}`,          null);
-  setCard('compromise', _poRankResults(st.results, 'compromise'), null,                             null);
-  setCard('dd',         _poRankResults(st.results, 'dd'),         (r) => _poFmtR(-r.sim.maxDD),     (r) => -r.sim.maxDD);
+  setCard('totalR',     _poRankResults(st.results, 'totalR'),     (r) => _poFmtR(r.sim.totalR),     (r) => r.sim.totalR,  null,   'signed');
+  setCard('ev',         _poRankResults(st.results, 'ev'),         (r) => _poFmtR(r.sim.ev),         (r) => r.sim.ev,      'ev',   'kpiTone');
+  setCard('stability',  _poRankResults(st.results, 'stability'),  (r) => `${r.stability}`,          null,                  null,   null);
+  setCard('compromise', _poRankResults(st.results, 'compromise'), null,                             null,                  null,   null);
+  setCard('dd',         _poRankResults(st.results, 'dd'),         (r) => _poFmtR(-r.sim.maxDD),     null,                  null,   'fixedRed');
 
   // Best TP Final — only meaningful in sweep mode (otherwise all models share
   // a single TP final). AVG EV part colored dynamically like Total R.
@@ -16978,14 +17197,17 @@ function _poRenderStatCards() {
   if (tpfCard) {
     const nameEl = tpfCard.querySelector('.po-stat-name');
     const valEl  = tpfCard.querySelector('.po-stat-val');
-    if (valEl) valEl.classList.remove('po-v-pos', 'po-v-neg', 'po-v-neutral');
+    if (valEl) valEl.classList.remove(
+      'po-v-pos', 'po-v-neg', 'po-v-neutral',
+      'po-v-red', 'po-v-orange', 'po-v-yellow', 'po-v-green', 'po-v-blue', 'po-v-purple'
+    );
     if (st.config.sweepMode) {
       const best = _poBestTpFinal(st.results);
       if (best) {
         if (nameEl) nameEl.textContent = `top 20% (n=${best.n})`;
         if (valEl) {
           valEl.textContent = `${best.tpf}R · ${_poFmtR(best.avgEV)}`;
-          const cls = _poColorClass(best.avgEV);
+          const cls = _poKpiTone(best.avgEV, 'ev');
           if (cls) valEl.classList.add(cls);
         }
       } else {
@@ -16997,6 +17219,13 @@ function _poRenderStatCards() {
       if (valEl) valEl.textContent = '—';
     }
   }
+
+  // PR-9: glow follows Selected Model. Multiple cards can be active at once.
+  const activeKeys = _poComputeActiveCardKeys();
+  document.querySelectorAll('.po-stat-card').forEach(card => {
+    const key = card.getAttribute('data-po-stat');
+    card.classList.toggle('is-active', activeKeys.has(key));
+  });
 }
 
 function _poRenderRRDist() {
