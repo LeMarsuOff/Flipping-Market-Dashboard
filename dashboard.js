@@ -16853,30 +16853,32 @@ function _poRenderEquity(sel, base) {
       data: sel.sim.equity,
       borderColor: tc('--gold') || '#5a9cf5',
       backgroundColor: 'transparent',
-      borderWidth: 2,
+      borderWidth: 2.6,
       pointRadius: 0,
       tension: 0.1,
+      order: 1,
     },
     {
       label: baseLabel,
       data: baseEquityData,
       borderColor: tc('--dim') || '#6B8AB0',
       backgroundColor: 'transparent',
-      borderWidth: 1.5,
-      borderDash: [4, 4],
+      borderWidth: 2,
       pointRadius: 0,
       tension: 0.1,
+      order: 1,
     },
   ];
   for (const curve of presetCurves) {
     datasets.push({
       label: curve.label,
       data: curve.data,
-      borderColor: curve.color,
+      borderColor: `rgba(${_mc2Hex2Rgb(curve.color)},0.55)`,
       backgroundColor: 'transparent',
-      borderWidth: 1.5,
+      borderWidth: 1.4,
       pointRadius: 0,
       tension: 0.1,
+      order: 2,
       hidden: st.hiddenPresetCurves.has(curve.key),
       // Custom property to identify this dataset on legend toggle. Chart.js
       // ignores unknown keys but they remain accessible via dataset reference.
