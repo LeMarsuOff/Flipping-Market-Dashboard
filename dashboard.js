@@ -16949,12 +16949,14 @@ function _poKpiTone(value, kind = 'avgR') {
   }
 
   if (kind === 'wr') {
-    // value in [0, 1]
-    if (value < 0.40) return 'po-v-red';
-    if (value < 0.45) return 'po-v-orange';
-    if (value < 0.50) return 'po-v-yellow';
-    if (value < 0.55) return 'po-v-green';
-    if (value < 0.65) return 'po-v-blue';
+    // Aligned on _getWinRateTone (dashboard.js:26939). Note: _getWinRateTone
+    // takes percent (0-100). Here value is decimal (0-1). The 'value <= 0.55'
+    // branch matches the strict '> 55' boundary of _getWinRateTone.
+    if (value < 0.30) return 'po-v-red';
+    if (value < 0.35) return 'po-v-orange';
+    if (value < 0.40) return 'po-v-yellow';
+    if (value < 0.48) return 'po-v-green';
+    if (value <= 0.55) return 'po-v-blue';
     return 'po-v-purple';
   }
 
