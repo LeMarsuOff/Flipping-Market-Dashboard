@@ -13680,3 +13680,630 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   .po-presets-grid          { grid-template-columns: 1fr; }
   .po-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── PR-1 : Bilan refonte (po-bilan-*) ─────────────────────────────────
+   Modern card layout for the Partial Optimizer "Selected model" detail.
+   Replaces the visual rendering of the old .po-detail-* / .po-metric-*
+   blocks (those classes are kept untouched for rollback safety).
+   Cobalt palette only — uses semantic tokens from Layer B.
+   ────────────────────────────────────────────────────────────────────── */
+.po-widget .po-bilan-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.035);
+}
+.po-widget .po-bilan-hero {
+  position: relative;
+  padding: 14px 16px 12px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--gold) 9%, transparent) 0%,
+    color-mix(in srgb, var(--g) 5%, transparent) 100%);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.po-widget .po-bilan-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-secondary);
+}
+.po-widget .po-bilan-tag::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--g);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--g) 60%, transparent);
+  animation: po-bilan-pulse 2s infinite;
+}
+@keyframes po-bilan-pulse {
+  0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--g) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--g) 0%,  transparent); }
+  100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--g) 0%,  transparent); }
+}
+.po-widget .po-bilan-name {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.po-widget .po-bilan-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.po-widget .po-bilan-rows {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.po-widget .po-bilan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-subtle);
+  transition: background .12s ease;
+}
+.po-widget .po-bilan-row:first-child { border-top: 0; }
+.po-widget .po-bilan-row:hover { background: var(--surface-2); }
+.po-widget .po-bilan-row-lbl {
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+.po-widget .po-bilan-row-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.po-widget .po-bilan-conf {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex-shrink: 0;
+}
+.po-widget .po-bilan-conf-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.po-widget .po-bilan-conf-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-muted);
+}
+.po-widget .po-bilan-conf-val {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.po-widget .po-bilan-conf-bar {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: var(--rad-pill);
+  overflow: hidden;
+}
+.po-widget .po-bilan-conf-fill {
+  height: 100%;
+  border-radius: var(--rad-pill);
+  background: linear-gradient(90deg, var(--a) 0%, var(--g) 100%);
+  transition: width .25s ease;
+}
+.po-widget .po-bilan-conf-meta {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.po-widget .po-bilan-foot {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.po-widget .po-bilan-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-normal);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.po-widget .po-bilan-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+.po-widget .po-bilan-btn-ic {
+  font-size: 13px;
+  opacity: 0.9;
+}
+.po-widget .po-bilan-btn-primary {
+  background: linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 80%, white) 100%);
+  border-color: color-mix(in srgb, var(--gold) 75%, white);
+  color: var(--text-inverse);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--gold) 35%, transparent),
+              inset 0 1px 0 rgba(255,255,255,.20);
+}
+.po-widget .po-bilan-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--gold) 92%, white) 0%,
+    color-mix(in srgb, var(--gold) 70%, white) 100%);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--gold) 45%, transparent),
+              inset 0 1px 0 rgba(255,255,255,.25);
+}
+.po-widget .po-bilan-btn-primary:disabled {
+  opacity: 0.40;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.po-widget .po-bilan-btn-arrow {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ── PR-2 : Saved Presets refonte (override po-preset-*) ──────────────
+   Sober Linear/Vercel-style tiles overriding the existing Soft Glow
+   preset block. All older rules above remain untouched for rollback.
+   Cobalt palette only — design system tokens.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Container — 3 cols equal, gap-driven separation (no 1px divider) */
+.po-widget .po-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Common tile reset — relax old min-height and radius */
+.po-widget .po-preset-tile {
+  min-height: 0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  gap: 12px;
+}
+
+/* ── Filled tile ── */
+.po-widget .po-preset-tile-filled {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 8px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.03);
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.po-widget .po-preset-tile-filled::before {
+  content: none;
+}
+.po-widget .po-preset-tile-filled:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  transform: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+/* Head: badge LEFT + actions RIGHT */
+.po-widget .po-preset-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* Badge → plain text tag (NOT pill), uniform muted dot */
+.po-widget .po-preset-tile-badge,
+.po-widget .po-preset-tile-badge[data-slot="P1"],
+.po-widget .po-preset-tile-badge[data-slot="P2"],
+.po-widget .po-preset-tile-badge[data-slot="P3"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+.po-widget .po-preset-tile-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  box-shadow: none;
+}
+
+/* Head actions wrapper (trash on right) */
+.po-widget .po-preset-tile-head-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0.5;
+  transition: opacity .15s ease;
+}
+.po-widget .po-preset-tile-filled:hover .po-preset-tile-head-actions {
+  opacity: 1;
+}
+
+/* Trash button override — visible border by default (mockup-aligned) */
+.po-widget .po-preset-btn-trash {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  transition: all .12s ease;
+}
+.po-widget .po-preset-btn-trash:hover {
+  background: color-mix(in srgb, var(--r) 12%, transparent);
+  border-color: var(--r);
+  color: var(--r);
+}
+
+/* Identity block (separated from header) */
+.po-widget .po-preset-tile-name-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 0;
+  min-width: 0;
+}
+.po-widget .po-preset-tile-name {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.po-widget .po-preset-tile-type {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 0;
+}
+
+/* Stats grid: 4 cols, top separator only (mockup-aligned) */
+.po-widget .po-preset-tile-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 0;
+}
+.po-widget .po-preset-stat {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  gap: 3px;
+  min-width: 0;
+}
+.po-widget .po-preset-stat-lbl {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.po-widget .po-preset-stat-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.po-widget .po-preset-stat-val,
+.po-widget .po-preset-stat:not(.po-preset-stat-primary) .po-preset-stat-val {
+  font-size: 15px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.po-widget .po-preset-stat-val.pos,
+.po-widget .po-preset-stat:not(.po-preset-stat-primary) .po-preset-stat-val.pos {
+  color: var(--g);
+}
+.po-widget .po-preset-stat-val.neg,
+.po-widget .po-preset-stat:not(.po-preset-stat-primary) .po-preset-stat-val.neg {
+  color: var(--r);
+}
+.po-widget .po-preset-stat-delta {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.po-widget .po-preset-stat-delta.pos {
+  background: color-mix(in srgb, var(--g) 14%, transparent);
+  color: var(--g);
+}
+.po-widget .po-preset-stat-delta.neg {
+  background: color-mix(in srgb, var(--r) 14%, transparent);
+  color: var(--r);
+}
+.po-widget .po-preset-stat-delta.neutral {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+/* Footer: full-width Apply (no trash next to it anymore) */
+.po-widget .po-preset-tile-actions {
+  display: flex;
+  margin-top: auto;
+  gap: 0;
+}
+.po-widget .po-preset-btn-apply {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 9px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all .12s ease;
+}
+.po-widget .po-preset-btn-apply:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+.po-widget .po-preset-btn-apply:disabled {
+  opacity: 0.40;
+  cursor: not-allowed;
+}
+.po-widget .po-preset-btn-apply-arrow {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+/* ── Empty tile ── */
+.po-widget .po-preset-tile-empty {
+  border: 1.5px dashed var(--border-subtle);
+  border-radius: 12px;
+  background:
+    repeating-linear-gradient(45deg,
+      transparent 0,
+      transparent 12px,
+      color-mix(in srgb, var(--gold) 4%, transparent) 12px,
+      color-mix(in srgb, var(--gold) 4%, transparent) 13px
+    ),
+    var(--surface-1);
+  transition: border-color .15s ease, background .15s ease, border-style .15s ease;
+}
+.po-widget .po-preset-tile-empty:hover {
+  border-style: solid;
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.po-widget .po-preset-tile-watermark {
+  color: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+.po-widget .po-preset-tile-empty:hover .po-preset-tile-watermark {
+  color: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+.po-widget .po-preset-tile-empty-content {
+  gap: 8px;
+}
+.po-widget .po-preset-tile-plus {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 80%, white) 100%);
+  color: var(--text-inverse);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--gold) 35%, transparent),
+              inset 0 1px 0 rgba(255,255,255,.20);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.po-widget .po-preset-tile-empty:hover .po-preset-tile-plus {
+  transform: scale(1.08);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--gold) 45%, transparent),
+              inset 0 1px 0 rgba(255,255,255,.24);
+}
+.po-widget .po-preset-tile-hint {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.po-widget .po-preset-tile-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: normal;
+}
+
+/* Responsive: collapse to auto-fit on narrow widgets */
+@media (max-width: 720px) {
+  .po-widget .po-presets-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
+/* ── PR-3 modern : Ranking compact (5 cols + rank pill) ───────────────
+   Overrides the older "RANKING TABLE — Soft refresh (PR-3)" block above.
+   PF column removed (decision Max). Rank cell becomes a colored pill for
+   the top 3. All older rules remain untouched for rollback safety.
+   ────────────────────────────────────────────────────────────────────── */
+.po-widget .po-ranking-scroll {
+  border-radius: 10px;
+  border-color: var(--border-subtle);
+}
+.po-widget .po-ranking thead th {
+  padding: 9px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: default;
+  user-select: none;
+}
+.po-widget .po-ranking thead th.po-th-sortable {
+  cursor: pointer;
+  transition: color .12s ease, background .12s ease;
+}
+.po-widget .po-ranking thead th.po-th-sortable:hover {
+  color: var(--text-primary);
+  background: var(--surface-3);
+}
+.po-widget .po-ranking thead th.is-sorted {
+  color: var(--gold);
+}
+.po-widget .po-ranking td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.po-widget .po-ranking td.po-row-name {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 1px;
+  width: auto;
+}
+.po-widget .po-ranking td.po-num-col {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.po-widget .po-ranking .po-row {
+  cursor: pointer;
+  transition: background .12s ease;
+}
+.po-widget .po-ranking .po-row:hover {
+  background: var(--surface-2);
+  transform: none;
+}
+.po-widget .po-ranking .po-row.is-selected {
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  border-left: 2px solid var(--gold);
+}
+.po-widget .po-ranking .po-row.is-selected td {
+  color: var(--text-primary);
+}
+.po-widget .po-ranking .po-row.is-selected td:first-child {
+  padding-left: 6px;
+}
+.po-widget .po-ranking .po-row.is-baseline td {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Rank cell: narrow column hosting the pill */
+.po-widget .po-ranking thead th:first-child,
+.po-widget .po-ranking td.po-rank-cell {
+  width: 36px;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 6px;
+}
+
+/* Rank pill base + tiers */
+.po-widget .po-rank-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  border: 1px solid transparent;
+  transition: transform .12s ease;
+}
+.po-widget .po-rank-pill.is-gold {
+  background: linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 75%, white) 100%);
+  color: var(--text-inverse);
+  border-color: color-mix(in srgb, var(--gold) 60%, white);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--gold) 30%, transparent);
+}
+.po-widget .po-rank-pill.is-silver {
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 35%, transparent);
+  color: var(--text-primary);
+}
+.po-widget .po-rank-pill.is-bronze {
+  background: color-mix(in srgb, var(--g) 18%, transparent);
+  border-color: color-mix(in srgb, var(--g) 35%, transparent);
+  color: var(--text-primary);
+}

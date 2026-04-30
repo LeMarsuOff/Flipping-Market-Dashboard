@@ -15504,9 +15504,8 @@ function _poBuildScaffold() {
               <th class="po-num-col po-th-sortable" data-po-sort="totalR">Total R<span class="po-th-arrow"></span></th>
               <th class="po-num-col po-th-sortable" data-po-sort="wr">WR<span class="po-th-arrow"></span></th>
               <th class="po-num-col po-th-sortable" data-po-sort="ev">EV<span class="po-th-arrow"></span></th>
-              <th class="po-num-col po-th-sortable" data-po-sort="pf">PF<span class="po-th-arrow"></span></th>
-              <th class="po-num-col po-th-sortable" data-po-sort="dd">Max DD<span class="po-th-arrow"></span></th>
-              <th class="po-num-col po-th-sortable" data-po-sort="stability">Stability<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="dd">DD<span class="po-th-arrow"></span></th>
+              <th class="po-num-col po-th-sortable" data-po-sort="stability">Stab<span class="po-th-arrow"></span></th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -15998,6 +15997,13 @@ function _poRenderRanking() {
   if (!tbody) return;
   if (!st.results.length) { tbody.innerHTML = ''; return; }
 
+  // PR-3: PF column was removed but legacy state may still have rankMode === 'pf'.
+  // Fall back to 'totalR' to keep the sortable arrow visible.
+  if (st.config.rankMode === 'pf') {
+    st.config.rankMode = 'totalR';
+    st.config.rankDir = 'desc';
+  }
+
   const ranked = _poRankResults(st.results, st.config.rankMode, st.config.rankDir);
   const limit = Math.min(50, ranked.length);
 
@@ -16017,13 +16023,13 @@ function _poRenderRanking() {
     const r = ranked[i];
     const isSel = r.idx === st.selectedIdx;
     const isBase = r.idx === st.baselineIdx;
+    const rankPillCls = i === 0 ? 'is-gold' : i === 1 ? 'is-silver' : i === 2 ? 'is-bronze' : '';
     rows.push(`<tr class="po-row${isSel ? ' is-selected' : ''}${isBase ? ' is-baseline' : ''}" data-po-idx="${r.idx}">
-      <td>${i + 1}</td>
+      <td class="po-rank-cell"><span class="po-rank-pill ${rankPillCls}">${i + 1}</span></td>
       <td class="po-row-name">${r.model.name}</td>
       <td class="po-num-col ${_poColorClass(r.sim.totalR, 0, 0)}">${_poFmtR(r.sim.totalR)}</td>
       <td class="po-num-col ${_poColorClass(r.sim.wr - 0.5)}">${_poFmtPct(r.sim.wr)}</td>
       <td class="po-num-col ${_poColorClass(r.sim.ev)}">${_poFmtR(r.sim.ev)}</td>
-      <td class="po-num-col ${_poColorClass(r.sim.pf - 1, 0.01, -0.01)}">${_poFmtNum(r.sim.pf)}</td>
       <td class="po-num-col ${_poColorClass(-r.sim.maxDD)}">${_poFmtR(-r.sim.maxDD)}</td>
       <td class="po-num-col">${r.stability}</td>
     </tr>`);
@@ -16063,59 +16069,107 @@ function _poRenderDetail() {
   else if (dEV > 0.02 && (sel.vsBaseline?.net ?? 0) > 0) { verdictCls = 'po-verdict-good'; verdictTxt = '✓ Stratégie supérieure au Full TP'; }
   else if (dEV < -0.02 || (sel.vsBaseline?.net ?? 0) < -1) { verdictCls = 'po-verdict-bad'; verdictTxt = '✗ Stratégie inférieure au Full TP'; }
 
-  const ic = sel.bootstrap;
-  const icHtml = ic
-    ? `<div class="po-ic">
-         <span class="po-ic-lbl">Bootstrap IC95%</span>
-         <span class="po-ic-val">[${ic.low.toFixed(2)}R, ${ic.high.toFixed(2)}R]</span>
-         <span class="po-ic-mean">μ ${ic.mean.toFixed(2)}R</span>
-       </div>`
-    : '';
-
   const saved = sel.vsBaseline?.saved ?? 0;
   const sacri = sel.vsBaseline?.sacrificed ?? 0;
   const net   = sel.vsBaseline?.net ?? 0;
 
+  // Bootstrap confidence approximation: visual % of where mean sits inside CI95.
+  // Not a true p-value — readability over statistical purity.
+  const ic = sel.bootstrap;
+  let confPct = 50;
+  let confBlock = '';
+  if (ic && Number.isFinite(ic.low) && Number.isFinite(ic.high) && Number.isFinite(ic.mean)) {
+    const span = ic.high - ic.low;
+    const raw = span > 1e-9 ? ((ic.mean - ic.low) / span) * 100 : 50;
+    confPct = Math.max(0, Math.min(100, Math.round(raw)));
+    confBlock = `
+      <div class="po-bilan-conf">
+        <div class="po-bilan-conf-row">
+          <span class="po-bilan-conf-lbl">Bootstrap confidence</span>
+          <span class="po-bilan-conf-val">${confPct}%</span>
+        </div>
+        <div class="po-bilan-conf-bar"><div class="po-bilan-conf-fill" style="width:${confPct}%"></div></div>
+        <div class="po-bilan-conf-meta">500 iterations · CI95% [${ic.low.toFixed(2)}R, ${ic.high.toFixed(2)}R]</div>
+      </div>`;
+  }
+
+  const netCls = net >= 0 ? 'po-v-pos' : 'po-v-neg';
+  const savedCls = saved > 0 ? 'po-v-pos' : 'po-v-neutral';
+  const sacriCls = sacri < 0 ? 'po-v-neg' : 'po-v-neutral';
+
   wrap.innerHTML = `
-    <div class="po-detail-head">
-      <div class="po-detail-title">${sel.model.name}</div>
-      <div class="po-verdict ${verdictCls}">${verdictTxt}</div>
-    </div>
-    <div class="po-metric-grid">
-      <div class="po-metric"><div class="po-metric-lbl">EV</div>
-        <div class="po-metric-val ${_poColorClass(sel.sim.ev)}">${_poFmtR(sel.sim.ev)}</div>
-        <div class="po-metric-delta">${_poDeltaSpan(dEV)}</div></div>
-      <div class="po-metric"><div class="po-metric-lbl">WR</div>
-        <div class="po-metric-val ${_poColorClass(sel.sim.wr - 0.5)}">${_poFmtPct(sel.sim.wr)}</div>
-        <div class="po-metric-delta">${_poDeltaSpan(dWR * 100, 'pp')}</div></div>
-      <div class="po-metric"><div class="po-metric-lbl">PF</div>
-        <div class="po-metric-val ${_poColorClass(sel.sim.pf - 1, 0.01, -0.01)}">${_poFmtNum(sel.sim.pf)}</div>
-        <div class="po-metric-delta">${_poDeltaSpan(dPF, '')}</div></div>
-      <div class="po-metric"><div class="po-metric-lbl">Max DD</div>
-        <div class="po-metric-val ${_poColorClass(-sel.sim.maxDD)}">${_poFmtR(-sel.sim.maxDD)}</div>
-        <div class="po-metric-delta">${_poDeltaSpan(dDD)}</div></div>
-      <div class="po-metric"><div class="po-metric-lbl">Total R</div>
-        <div class="po-metric-val ${_poColorClass(sel.sim.totalR)}">${_poFmtR(sel.sim.totalR)}</div>
-        <div class="po-metric-delta">${_poDeltaSpan(dTot)}</div></div>
-      <div class="po-metric"><div class="po-metric-lbl">Stability</div>
-        <div class="po-metric-val">${sel.stability}</div>
-        <div class="po-metric-delta">${_poDeltaSpan(dStab, '')}</div></div>
-      <div class="po-metric po-metric-good"><div class="po-metric-lbl">R Saved</div>
-        <div class="po-metric-val">${_poFmtR(saved)}</div></div>
-      <div class="po-metric po-metric-bad"><div class="po-metric-lbl">R Sacrificed</div>
-        <div class="po-metric-val">${_poFmtR(sacri)}</div></div>
-      <div class="po-metric ${net >= 0 ? 'po-metric-good' : 'po-metric-bad'}"><div class="po-metric-lbl">Net</div>
-        <div class="po-metric-val">${_poFmtR(net)}</div></div>
-    </div>
-    ${icHtml}
-    <div class="po-detail-actions">
-      <button type="button" class="po-btn-save" id="po-btn-save-preset">
-        <span class="po-btn-icon">💾</span><span>Save</span>
-      </button>
-      <button type="button" class="po-btn-apply" id="po-btn-apply-dashboard"
-        ${sel.model.type === 'full' ? 'disabled title="Full TP models cannot be applied as Personalised. Switch to Fixed mode manually if needed."' : ''}>
-        Apply to Dashboard
-      </button>
+    <div class="po-bilan-card">
+      <div class="po-bilan-hero">
+        <span class="po-bilan-tag">Selected model</span>
+        <div class="po-bilan-name">${sel.model.name}</div>
+        <div class="po-bilan-sub">${verdictTxt}</div>
+      </div>
+      <div class="po-bilan-rows">
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">Total R</span>
+          <span class="po-bilan-row-val">
+            <span class="${_poColorClass(sel.sim.totalR)}">${_poFmtR(sel.sim.totalR)}</span>
+            ${_poDeltaSpan(dTot)}
+          </span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">EV</span>
+          <span class="po-bilan-row-val">
+            <span class="${_poColorClass(sel.sim.ev)}">${_poFmtR(sel.sim.ev)}</span>
+            ${_poDeltaSpan(dEV)}
+          </span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">Win Rate</span>
+          <span class="po-bilan-row-val">
+            <span class="${_poColorClass(sel.sim.wr - 0.5)}">${_poFmtPct(sel.sim.wr)}</span>
+            ${_poDeltaSpan(dWR * 100, 'pp')}
+          </span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">Profit Factor</span>
+          <span class="po-bilan-row-val">
+            <span class="${_poColorClass(sel.sim.pf - 1, 0.01, -0.01)}">${_poFmtNum(sel.sim.pf)}</span>
+            ${_poDeltaSpan(dPF, '')}
+          </span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">Max Drawdown</span>
+          <span class="po-bilan-row-val">
+            <span class="${_poColorClass(-sel.sim.maxDD)}">${_poFmtR(-sel.sim.maxDD)}</span>
+            ${_poDeltaSpan(dDD)}
+          </span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">Stability</span>
+          <span class="po-bilan-row-val">
+            <span>${sel.stability}</span>
+            ${_poDeltaSpan(dStab, '')}
+          </span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">R Saved</span>
+          <span class="po-bilan-row-val"><span class="${savedCls}">${_poFmtR(saved)}</span></span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">R Sacrificed</span>
+          <span class="po-bilan-row-val"><span class="${sacriCls}">${_poFmtR(sacri)}</span></span>
+        </div>
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">Net</span>
+          <span class="po-bilan-row-val"><span class="${netCls}">${_poFmtR(net)}</span></span>
+        </div>
+      </div>
+      ${confBlock}
+      <div class="po-bilan-foot">
+        <button type="button" class="po-bilan-btn" id="po-btn-save-preset">
+          <span class="po-bilan-btn-ic">💾</span><span>Save preset</span>
+        </button>
+        <button type="button" class="po-bilan-btn po-bilan-btn-primary" id="po-btn-apply-dashboard"
+          ${sel.model.type === 'full' ? 'disabled title="Full TP models cannot be applied as Personalised. Switch to Fixed mode manually if needed."' : ''}>
+          <span>Apply to Dashboard</span><span class="po-bilan-btn-arrow">→</span>
+        </button>
+      </div>
     </div>
   `;
 
@@ -16261,10 +16315,15 @@ function _poRenderPresetsBlock() {
       <div class="po-preset-tile po-preset-tile-filled" data-po-slot="${key}">
         <div class="po-preset-tile-head">
           <span class="po-preset-tile-badge" data-slot="${key}">${key}</span>
-          <div class="po-preset-tile-name-block">
-            <span class="po-preset-tile-name" title="${stored.name}">${stored.name}</span>
-            <span class="po-preset-tile-type">${typeLabel}</span>
+          <div class="po-preset-tile-head-actions">
+            <button type="button" class="po-preset-btn-trash" data-po-slot-delete="${key}" aria-label="Delete ${key}" title="Delete ${key}">
+              ${trashSVG}
+            </button>
           </div>
+        </div>
+        <div class="po-preset-tile-name-block">
+          <span class="po-preset-tile-name" title="${stored.name}">${stored.name}</span>
+          <span class="po-preset-tile-type">${typeLabel}</span>
         </div>
         <div class="po-preset-tile-stats">
           <div class="po-preset-stat po-preset-stat-primary">
@@ -16297,10 +16356,7 @@ function _poRenderPresetsBlock() {
         <div class="po-preset-tile-actions">
           <button type="button" class="po-preset-btn-apply" data-po-slot-apply="${key}"
             ${isFull ? 'disabled title="Full TP models cannot be applied as Personalised."' : ''}>
-            Apply
-          </button>
-          <button type="button" class="po-preset-btn-trash" data-po-slot-delete="${key}" aria-label="Delete ${key}" title="Delete ${key}">
-            ${trashSVG}
+            <span>Apply</span><span class="po-preset-btn-apply-arrow">→</span>
           </button>
         </div>
       </div>
