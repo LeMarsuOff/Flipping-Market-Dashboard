@@ -13476,33 +13476,14 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
    Universal value coloring — applied dynamically based on sign.
    Used by stat cards, Bilan metrics, saved preset stats.
 ═══════════════════════════════════════════════════════════ */
-/* 6-tier KPI palette — aligned on _KPI_THRESHOLD_LEGENDS / _svProgressTone */
-.po-widget .po-v-red    { color: var(--r) !important; }
-.po-widget .po-v-orange { color: var(--streak-orange, #f39a3d) !important; }
-.po-widget .po-v-yellow { color: var(--a) !important; }
-.po-widget .po-v-green  { color: var(--g) !important; }
-.po-widget .po-v-blue   { color: var(--b) !important; }
-.po-widget .po-v-purple { color: var(--streak-purple, #9b6dff) !important; }
-.po-widget .po-v-neutral { color: var(--text-primary) !important; }
-
-/* Backward-compat aliases — kept until all callers migrate to _poKpiTone.
-   Remove in a follow-up cleanup PR (R9). */
 .po-widget .po-v-pos { color: var(--g) !important; }
 .po-widget .po-v-neg { color: var(--r) !important; }
+.po-widget .po-v-neutral { color: var(--text-primary) !important; }
 
 /* Stat card values with no .po-v-* class fall back to primary text */
-.po-widget .po-stat-val:not(.po-v-red):not(.po-v-orange):not(.po-v-yellow):not(.po-v-green):not(.po-v-blue):not(.po-v-purple):not(.po-v-neutral):not(.po-v-pos):not(.po-v-neg) {
+.po-widget .po-stat-val:not(.po-v-pos):not(.po-v-neg):not(.po-v-neutral) {
   color: var(--text-primary);
 }
-
-/* Preset tile stat values — higher-specificity selector forces the 6-tier
-   palette over the default `color: var(--text-primary)` rule at L14064. */
-.po-widget .po-preset-stat-val.po-v-red    { color: var(--r) !important; }
-.po-widget .po-preset-stat-val.po-v-orange { color: var(--streak-orange, #f39a3d) !important; }
-.po-widget .po-preset-stat-val.po-v-yellow { color: var(--a) !important; }
-.po-widget .po-preset-stat-val.po-v-green  { color: var(--g) !important; }
-.po-widget .po-preset-stat-val.po-v-blue   { color: var(--b) !important; }
-.po-widget .po-preset-stat-val.po-v-purple { color: var(--streak-purple, #9b6dff) !important; }
 /* Best Compromise: secondary part (· stability) stays primary */
 .po-widget .po-stat-val .po-stat-val-secondary {
   color: var(--text-primary);
