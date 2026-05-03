@@ -15722,7 +15722,7 @@ function _poBuildScaffold() {
   // PR-5: handles markup helper (drag label + 8 resize handles per block).
   // Visible only via .gs-editing scope; pointer-bound by _poInternalInitEdit.
   const _hh = (key, label) => `
-      <div class="gs-drag-handle po-internal-drag-handle" data-drag-key="${key}" title="Drag to move">${label}</div>
+      <div class="gs-drag-handle po-internal-drag-handle" data-drag-key="${key}" title="Drag to move — ${label}">⠿</div>
       <div class="ui-resizable-handle ui-resizable-n"  data-resize-key="${key}" data-resize-dir="n"></div>
       <div class="ui-resizable-handle ui-resizable-e"  data-resize-key="${key}" data-resize-dir="e"></div>
       <div class="ui-resizable-handle ui-resizable-s"  data-resize-key="${key}" data-resize-dir="s"></div>
@@ -24796,7 +24796,7 @@ const OPTIMAL_RR_LAYOUT = {
   'w-montecarlo': {x:0, y:77, w:12, h:82, minW:4, minH:80},
 };
 const PARTIAL_PLANNERS_LAYOUT = {
-  'w-partial-optimizer': {x:0, y:0,   w:12, h:236},
+  'w-partial-optimizer': {x:0, y:0,   w:12, h:236, minW: 8, minH: 100},
 };
 
 // Merged view used by code that still references a single full layout
