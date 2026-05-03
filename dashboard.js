@@ -2120,6 +2120,7 @@ function _normalizeHourKey(value) {
 const _HOUR_HEADER_ALIASES = new Set([
   'hour',
   'heure',
+  'time',
   'time utc 1',
   'time utc 2',
   'hour 1',
@@ -18003,7 +18004,7 @@ function parseFlippingMarketCSV(text) {
   // Required dims routed through _colForDim so user overrides set via the
   // Mapping panel take precedence over the format default.
   const iDate       = _colForDim(headers,'date','date');
-  const iResultat   = _colForDim(headers,'outcome','résultat tp 1','resultat tp 1');
+  const iResultat   = _colForDim(headers,'outcome','résultat tp 1','resultat tp 1','position result');
   const iRR         = _colForDim(headers,'r','rr tp 1');
   const iPair       = _colAny(headers,'pair','actif');   // journal = 'Pair', ancien = 'Actif'
   const iSetup      = _colForDim(headers,'setup','m15 type');
@@ -19928,7 +19929,7 @@ function _dimResolvesInCsv(dimKey) {
   const fmt = _csvFormat || 'flipping';
   const defaults = {
     flipping: {
-      outcome: ['résultat tp 1', 'resultat tp 1'],
+      outcome: ['résultat tp 1', 'resultat tp 1', 'position result'],
       r: ['rr tp 1'], date: ['date'],
       setup: ['m15 type'],
       setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
@@ -19985,7 +19986,7 @@ function _resolvedHeaderFor(dimKey) {
         const fmt = _csvFormat || 'flipping';
         const defaults = {
           flipping: {
-            outcome: ['résultat tp 1', 'resultat tp 1'],
+            outcome: ['résultat tp 1', 'resultat tp 1', 'position result'],
             r: ['rr tp 1'], date: ['date'],
             setup: ['m15 type'],
             setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
