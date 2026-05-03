@@ -18010,14 +18010,14 @@ function parseFlippingMarketCSV(text) {
   const iSetup      = _colForDim(headers,'setup','m15 type');
   const iSetupDetail= _colForDim(headers,'setupDetail','m15 type détail','m15 type detail','m15 type détails','m15 type details','m15 type d\xe9tail','m15 type d\xe9tails');
   const iSession    = _colForDim(headers,'session','session');
-  const iJour       = _colForDim(headers,'day','jour');
+  const iJour       = _colForDim(headers,'day','jour','day');
   const iRRMax      = _colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr      = _colForDim(headers,'tp1_rr');
   const iTp2Rr      = _colForDim(headers,'tp2_rr');
   const iTp3Rr      = _colForDim(headers,'tp3_rr');
-  const iObsM15     = _colForDim(headers,'obstacles','obstacles m15');
-  const iObsH4      = _colForDim(headers,'h4','obstacles h4');
+  const iObsM15     = _colForDim(headers,'obstacles','obstacles m15','m15 obstacles');
+  const iObsH4      = _colForDim(headers,'h4','obstacles h4','h4 obstacles');
   const iBE         = _colForDim(headers,'beManagement','be management','gestion be');
   const iType       = _colForDim(headers,'positionType','type de trade');
   const iBadFeeling = _colFirst(headers,'bad feeling');
@@ -18037,14 +18037,14 @@ function parseFlippingMarketCSV(text) {
     }
     // Prefer explicit screenshot column names, including 'TV M15 Before' (TV-URL
     // convention), then fall back to standalone 'M15' / 'M15 Before' header.
-    const named = _colAny(headers,'tv m15 before','screenshot m15','m15 screenshot','image m15','m15 image','photo m15','m15 photo','m15 before');
+    const named = _colAny(headers,'tv m15 before','url m15 before','screenshot m15','m15 screenshot','image m15','m15 image','photo m15','m15 photo','m15 before');
     if (named >= 0) return named;
     // Exact standalone 'M15' or 'M15 Before' header (must not already be claimed by m15 type columns)
     const idx = headers.findIndex(h => { const v = h.trim().toLowerCase(); return v === 'm15' || v === 'm15 before'; });
     return (idx >= 0 && idx !== iSetup && idx !== iSetupDetail) ? idx : -1;
   })();
-  const iImgH4Before = _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
-  const iImgM15After = _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
+  const iImgH4Before = _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
+  const iImgM15After = _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
 
   const missing = _checkMissingCols([
     { label: 'Résultat TP 1', index: iResultat },
@@ -18156,9 +18156,9 @@ function parseProTemplateCSV(text) {
   // because Pro Template exports commonly include a Notion Files column named
   // 'M15' whose cells are filenames (e.g. "Capture_decran_....png") rather than
   // URLs — picking it would produce broken <img> links.
-  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
-  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
-  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
+  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
+  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
+  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
   const missing = _checkMissingCols([
     { label: 'Position Result', index: iResult },
     { label: 'RR TP 1',         index: iRR },
@@ -18247,9 +18247,9 @@ function parseBeginnerCSV(text) {
   const iNotionUrl=_colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
   const iHour  = _hourColForDim(headers);
   // Screenshot/image columns: explicit aliases only (same policy as Pro Template).
-  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
-  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
-  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
+  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
+  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
+  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
   const missing = _checkMissingCols([
     { label: 'Position Result', index: iResult },
     { label: 'Pair',             index: iPair },
@@ -19933,15 +19933,15 @@ function _dimResolvesInCsv(dimKey) {
       r: ['rr tp 1'], date: ['date'],
       setup: ['m15 type'],
       setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
-      session: ['session'], day: ['jour'],
-      obstacles: ['obstacles m15'], h4: ['obstacles h4'],
+      session: ['session'], day: ['jour', 'day'],
+      obstacles: ['obstacles m15', 'm15 obstacles'], h4: ['obstacles h4', 'h4 obstacles'],
       beManagement: ['be management', 'gestion be'],
       pair: ['paire', 'pair'], positionType: ['type de trade', 'position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-      img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-      img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-      img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+      img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+      img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
     },
     pro: {
       outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -19953,9 +19953,9 @@ function _dimResolvesInCsv(dimKey) {
       pair: ['pair'], positionType: ['position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-      img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-      img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-      img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+      img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+      img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
     },
     beginner: {
       outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -19967,9 +19967,9 @@ function _dimResolvesInCsv(dimKey) {
       pair: ['pair'], positionType: ['position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-      img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-      img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-      img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+      img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+      img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
     },
   };
   const names = defaults[fmt]?.[dimKey];
@@ -19990,15 +19990,15 @@ function _resolvedHeaderFor(dimKey) {
             r: ['rr tp 1'], date: ['date'],
             setup: ['m15 type'],
             setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
-            session: ['session'], day: ['jour'],
-            obstacles: ['obstacles m15'], h4: ['obstacles h4'],
+            session: ['session'], day: ['jour', 'day'],
+            obstacles: ['obstacles m15', 'm15 obstacles'], h4: ['obstacles h4', 'h4 obstacles'],
             beManagement: ['be management', 'gestion be'],
             pair: ['paire', 'pair'], positionType: ['type de trade', 'position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-            img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-            img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-            img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+            img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+            img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
           },
           pro: {
             outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -20010,9 +20010,9 @@ function _resolvedHeaderFor(dimKey) {
             pair: ['pair'], positionType: ['position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-            img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-            img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-            img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+            img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+            img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
           },
           beginner: {
             outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -20024,9 +20024,9 @@ function _resolvedHeaderFor(dimKey) {
             pair: ['pair'], positionType: ['position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-            img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-            img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-            img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+            img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+            img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
           },
         };
         const names = defaults[fmt]?.[dimKey];
