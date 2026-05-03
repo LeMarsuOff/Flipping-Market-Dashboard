@@ -2524,11 +2524,13 @@ function _normalizeAPITrade(t, _rawRowIndex) {
       const n = _parseNumeric(t.rrMax ?? t.rrMaxAtteint ?? t['RR Max'] ?? t['RR Max '] ?? t['RR max atteint']);
       return n !== null && Number.isFinite(n) ? n : null;
     })(),
-    // Multi TP (Phase 3): override-only — user wires their Notion property via the Mapping tab.
-    // null when no override is set, the mapped field is absent, or the value is empty / non-numeric.
-    tp1_rr:      _parseNumeric(_pick('tp1_rr', null)),
-    tp2_rr:      _parseNumeric(_pick('tp2_rr', null)),
-    tp3_rr:      _parseNumeric(_pick('tp3_rr', null)),
+    // Multi TP (Phase 3): default to standard Notion property names, fall
+    // back to user override via the Mapping tab. null when neither resolves
+    // or the value is empty / non-numeric. Mirrors the CSV parser fallback
+    // chain so API and CSV modes auto-detect the same set of headers.
+    tp1_rr:      _parseNumeric(_pick('tp1_rr', t['RR TP 1'])),
+    tp2_rr:      _parseNumeric(_pick('tp2_rr', t['RR TP 2'] ?? t['RR TP -27'])),
+    tp3_rr:      _parseNumeric(_pick('tp3_rr', t['RR TP 3'] ?? t['RR Trailing'])),
     direction:   _firstText(t.order || t['Order']),
     tradeType:   positionTypes,
     badFeeling:  Boolean(t.badFeeling),
