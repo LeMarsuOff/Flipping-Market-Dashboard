@@ -167,7 +167,7 @@
 
       <div class="csv-doc-section-title">
         <span>Optional properties</span>
-        <span class="csv-doc-section-title-badge is-optional">12 unlock more</span>
+        <span class="csv-doc-section-title-badge is-optional">16 unlock more</span>
       </div>
       <table class="csv-doc-table" aria-label="Optional CSV properties">
         <thead>
@@ -238,8 +238,8 @@
           <tr>
             <td data-label="Property"><code class="csv-doc-prop">RR Max</code></td>
             <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
-            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Optimal RR</span></div></td>
-            <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure).</td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Optimal RR</span><span class="csv-doc-chip">Partial Optimizer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure). Drives the Partial Optimizer's full simulation engine — without this field, the Partial Optimizer cannot model partial-take strategies.</td>
           </tr>
           <tr>
             <td data-label="Property"><code class="csv-doc-prop">Bad feeling</code></td>
@@ -252,6 +252,66 @@
             <td data-label="Type"><span class="csv-doc-type-pill is-formula">Formula</span></td>
             <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade log link button</span></div></td>
             <td data-label="Description" class="csv-doc-desc">Deep link to the Notion page (adds the 🔗 button on each trade row). In Notion, use a <code>Formula</code> property with this formula (click to copy): <button type="button" class="csv-doc-copy-snippet" data-action="copy-snippet" data-copy-text='&quot;https://www.notion.so/&quot; + id()' title="Click to copy"><code>&quot;https://www.notion.so/&quot; + id()</code><span class="csv-doc-copy-icon" aria-hidden="true">📋</span></button></td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">BE Management</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">BE filter (sidebar)</span><span class="csv-doc-chip">Optimal RR BE exclusion</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">BE management tags, comma-separated (e.g. <code>TP Direct</code>, <code>BE si set à 1RR</code>, <code>No BE available</code>). Drives BE-aware classification and the BE Management filter.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">M15 Before</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade Log screenshots</span><span class="csv-doc-chip">Selection drawer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">M15 chart screenshot before entry. Accepts a Notion <code>Files &amp; media</code> property or a plain URL. TradingView share URLs (<code>/x/&lt;ID&gt;/</code>) are auto-converted to S3 snapshot PNGs. Surfaces as a 📷 button on each trade row.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">H4 Before</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade Log screenshots</span><span class="csv-doc-chip">Selection drawer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">H4 chart screenshot before entry. Same format as <code>M15 Before</code>. Surfaces as a 📷 button on each trade row.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">M15 After</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade Log screenshots</span><span class="csv-doc-chip">Selection drawer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">M15 chart screenshot after the trade closes. Same format as <code>M15 Before</code>. Surfaces as a 📸 button on each trade row.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="csv-doc-section-title">
+        <span>Multi TP mode (advanced)</span>
+        <span class="csv-doc-section-title-badge is-optional">3 fields · no defaults</span>
+      </div>
+      <div class="csv-doc-multi-tp-note">These fields are only required when the active TP Management mode is set to <strong>Multi TP</strong>. They have no canonical Notion name — wire your own Notion properties via the <strong>Mapping</strong> tab in the Data panel. A <code>null</code> value means that tier was not hit.</div>
+      <table class="csv-doc-table" aria-label="Multi TP mode CSV properties">
+        <thead>
+          <tr>
+            <th scope="col" class="csv-doc-col-prop">Property</th>
+            <th scope="col" class="csv-doc-col-type">Type</th>
+            <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+            <th scope="col" class="csv-doc-col-desc">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">TP 1 realized R</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Multi TP simulation</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R at the first take-profit tier. <code>null</code> if TP1 was not hit.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">TP 2 realized R</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Multi TP simulation</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R at the second take-profit tier. <code>null</code> if TP2 was not hit.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">TP 3 realized R</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Multi TP simulation (3-tier)</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R at the third take-profit tier. Only required when Multi TP is configured for 3 tiers. <code>null</code> if TP3 was not hit.</td>
           </tr>
         </tbody>
       </table>
@@ -342,7 +402,7 @@
 
         <div class="csv-doc-section-title">
           <span>Optional properties</span>
-          <span class="csv-doc-section-title-badge is-optional">12 unlock more</span>
+          <span class="csv-doc-section-title-badge is-optional">16 unlock more</span>
         </div>
         <table class="csv-doc-table" aria-label="Optional CSV properties">
           <thead>
@@ -457,9 +517,10 @@
               <td data-label="Powers">
                 <div class="csv-doc-chips">
                   <span class="csv-doc-chip">Optimal RR</span>
+                  <span class="csv-doc-chip">Partial Optimizer</span>
                 </div>
               </td>
-              <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure).</td>
+              <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure). Drives the Partial Optimizer's full simulation engine — without this field, the Partial Optimizer cannot model partial-take strategies.</td>
             </tr>
             <tr>
               <td data-label="Property"><code class="csv-doc-prop">Bad feeling</code></td>
@@ -480,6 +541,98 @@
                 </div>
               </td>
               <td data-label="Description" class="csv-doc-desc">Deep link to the Notion page (adds the 🔗 button on each trade row). In Notion, use a <code>Formula</code> property with this formula (click to copy): <button type="button" class="csv-doc-copy-snippet" data-action="copy-snippet" data-copy-text='&quot;https://www.notion.so/&quot; + id()' title="Click to copy"><code>&quot;https://www.notion.so/&quot; + id()</code><span class="csv-doc-copy-icon" aria-hidden="true">📋</span></button></td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">BE Management</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">BE filter (sidebar)</span>
+                  <span class="csv-doc-chip">Optimal RR BE exclusion</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">BE management tags, comma-separated (e.g. <code>TP Direct</code>, <code>BE si set à 1RR</code>, <code>No BE available</code>). Drives BE-aware classification and the BE Management filter.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">M15 Before</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Trade Log screenshots</span>
+                  <span class="csv-doc-chip">Selection drawer</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">M15 chart screenshot before entry. Accepts a Notion <code>Files &amp; media</code> property or a plain URL. TradingView share URLs (<code>/x/&lt;ID&gt;/</code>) are auto-converted to S3 snapshot PNGs. Surfaces as a 📷 button on each trade row.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">H4 Before</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Trade Log screenshots</span>
+                  <span class="csv-doc-chip">Selection drawer</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">H4 chart screenshot before entry. Same format as <code>M15 Before</code>. Surfaces as a 📷 button on each trade row.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">M15 After</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Trade Log screenshots</span>
+                  <span class="csv-doc-chip">Selection drawer</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">M15 chart screenshot after the trade closes. Same format as <code>M15 Before</code>. Surfaces as a 📸 button on each trade row.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="csv-doc-section-title">
+          <span>Multi TP mode (advanced)</span>
+          <span class="csv-doc-section-title-badge is-optional">3 fields · no defaults</span>
+        </div>
+        <div class="csv-doc-multi-tp-note">These fields are only required when the active TP Management mode is set to <strong>Multi TP</strong>. They have no canonical Notion name — wire your own Notion properties via the <strong>Mapping</strong> tab in the Data panel. A <code>null</code> value means that tier was not hit.</div>
+        <table class="csv-doc-table" aria-label="Multi TP mode CSV properties">
+          <thead>
+            <tr>
+              <th scope="col" class="csv-doc-col-prop">Property</th>
+              <th scope="col" class="csv-doc-col-type">Type</th>
+              <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+              <th scope="col" class="csv-doc-col-desc">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">TP 1 realized R</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Multi TP simulation</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Realized R at the first take-profit tier. <code>null</code> if TP1 was not hit.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">TP 2 realized R</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Multi TP simulation</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Realized R at the second take-profit tier. <code>null</code> if TP2 was not hit.</td>
+            </tr>
+            <tr>
+              <td data-label="Property"><code class="csv-doc-prop">TP 3 realized R</code></td>
+              <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+              <td data-label="Powers">
+                <div class="csv-doc-chips">
+                  <span class="csv-doc-chip">Multi TP simulation (3-tier)</span>
+                </div>
+              </td>
+              <td data-label="Description" class="csv-doc-desc">Realized R at the third take-profit tier. Only required when Multi TP is configured for 3 tiers. <code>null</code> if TP3 was not hit.</td>
             </tr>
           </tbody>
         </table>
@@ -562,7 +715,7 @@
 
       <div class="csv-doc-section-title">
         <span>Optional properties</span>
-        <span class="csv-doc-section-title-badge is-optional">12 unlock more</span>
+        <span class="csv-doc-section-title-badge is-optional">16 unlock more</span>
       </div>
       <table class="csv-doc-table" aria-label="Optional CSV properties">
         <thead>
@@ -633,8 +786,8 @@
           <tr>
             <td data-label="Property"><code class="csv-doc-prop">RR Max</code></td>
             <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
-            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Optimal RR</span></div></td>
-            <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure).</td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Optimal RR</span><span class="csv-doc-chip">Partial Optimizer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Hypothetical peak R the trade could have reached if left open (also valid after closure). Drives the Partial Optimizer's full simulation engine — without this field, the Partial Optimizer cannot model partial-take strategies.</td>
           </tr>
           <tr>
             <td data-label="Property"><code class="csv-doc-prop">Bad feeling</code></td>
@@ -647,6 +800,66 @@
             <td data-label="Type"><span class="csv-doc-type-pill is-formula">Formula</span></td>
             <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade log link button</span></div></td>
             <td data-label="Description" class="csv-doc-desc">Deep link to the Notion page (adds the 🔗 button on each trade row). In Notion, use a <code>Formula</code> property with this formula (click to copy): <button type="button" class="csv-doc-copy-snippet" data-action="copy-snippet" data-copy-text='&quot;https://www.notion.so/&quot; + id()' title="Click to copy"><code>&quot;https://www.notion.so/&quot; + id()</code><span class="csv-doc-copy-icon" aria-hidden="true">📋</span></button></td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">BE Management</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-multiselect">Multi-select</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">BE filter (sidebar)</span><span class="csv-doc-chip">Optimal RR BE exclusion</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">BE management tags, comma-separated (e.g. <code>TP Direct</code>, <code>BE si set à 1RR</code>, <code>No BE available</code>). Drives BE-aware classification and the BE Management filter.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">M15 Before</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade Log screenshots</span><span class="csv-doc-chip">Selection drawer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">M15 chart screenshot before entry. Accepts a Notion <code>Files &amp; media</code> property or a plain URL. TradingView share URLs (<code>/x/&lt;ID&gt;/</code>) are auto-converted to S3 snapshot PNGs. Surfaces as a 📷 button on each trade row.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">H4 Before</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade Log screenshots</span><span class="csv-doc-chip">Selection drawer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">H4 chart screenshot before entry. Same format as <code>M15 Before</code>. Surfaces as a 📷 button on each trade row.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">M15 After</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-url">URL / File</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Trade Log screenshots</span><span class="csv-doc-chip">Selection drawer</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">M15 chart screenshot after the trade closes. Same format as <code>M15 Before</code>. Surfaces as a 📸 button on each trade row.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="csv-doc-section-title">
+        <span>Multi TP mode (advanced)</span>
+        <span class="csv-doc-section-title-badge is-optional">3 fields · no defaults</span>
+      </div>
+      <div class="csv-doc-multi-tp-note">These fields are only required when the active TP Management mode is set to <strong>Multi TP</strong>. They have no canonical Notion name — wire your own Notion properties via the <strong>Mapping</strong> tab in the Data panel. A <code>null</code> value means that tier was not hit.</div>
+      <table class="csv-doc-table" aria-label="Multi TP mode CSV properties">
+        <thead>
+          <tr>
+            <th scope="col" class="csv-doc-col-prop">Property</th>
+            <th scope="col" class="csv-doc-col-type">Type</th>
+            <th scope="col" class="csv-doc-col-powers">Powers these widgets</th>
+            <th scope="col" class="csv-doc-col-desc">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">TP 1 realized R</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Multi TP simulation</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R at the first take-profit tier. <code>null</code> if TP1 was not hit.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">TP 2 realized R</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Multi TP simulation</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R at the second take-profit tier. <code>null</code> if TP2 was not hit.</td>
+          </tr>
+          <tr>
+            <td data-label="Property"><code class="csv-doc-prop">TP 3 realized R</code></td>
+            <td data-label="Type"><span class="csv-doc-type-pill is-number">Number</span></td>
+            <td data-label="Powers"><div class="csv-doc-chips"><span class="csv-doc-chip">Multi TP simulation (3-tier)</span></div></td>
+            <td data-label="Description" class="csv-doc-desc">Realized R at the third take-profit tier. Only required when Multi TP is configured for 3 tiers. <code>null</code> if TP3 was not hit.</td>
           </tr>
         </tbody>
       </table>
