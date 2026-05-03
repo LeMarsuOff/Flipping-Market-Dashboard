@@ -21117,15 +21117,22 @@ function _getMultiMappingStatus(tpCount) {
   const n = (tpCount === 3) ? 3 : 2;
   const dimKeys = n === 3 ? ['tp1_rr', 'tp2_rr', 'tp3_rr'] : ['tp1_rr', 'tp2_rr'];
   const dsMode = localStorage.getItem(DS_KEY) || 'demo';
-  let overrides = {};
-  if (dsMode === 'api') {
-    overrides = _getAPIFieldOverrides();
-  } else if (_lastCsvHeaders && _lastCsvHeaders.length) {
-    overrides = _csvColumnOverrides || {};
-  }
+  const apiOverrides = (dsMode === 'api') ? _getAPIFieldOverrides() : {};
+  const csvOverrides = (dsMode !== 'api' && _lastCsvHeaders && _lastCsvHeaders.length)
+    ? (_csvColumnOverrides || {})
+    : {};
+  const items = (appState.trades && appState.trades.items) || [];
+  const _hasData = (dim) => items.some(t => t && t[dim] != null && Number.isFinite(t[dim]));
   const rows = dimKeys.map(dim => {
     const label = JOURNAL_DIMS.find(d => d.key === dim)?.label || dim;
-    const mapped = overrides[dim] || null;
+    let mapped = null;
+    if (dsMode === 'api') {
+      mapped = apiOverrides[dim] || (_hasData(dim) ? '(auto-detected)' : null);
+    } else if (_lastCsvHeaders && _lastCsvHeaders.length) {
+      mapped = csvOverrides[dim] || _resolvedHeaderFor(dim) || null;
+    } else {
+      mapped = _hasData(dim) ? '(auto-detected)' : null;
+    }
     return { dim, label, mapped };
   });
   return { complete: rows.every(r => !!r.mapped), rows, dsMode };
