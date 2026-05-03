@@ -133,6 +133,18 @@ Indispensable pour `calcStats(trades, presetTpConfig)` qui doit classifier sous 
 
 ---
 
+## Décisions UI documentées (trade-offs intentionnels)
+
+### Edit-mode resize handles débordent visuellement sur la topbar — **intentionnel**
+
+`.gs-editing .grid-stack-item > .ui-resizable-*` est volontairement à `z-index: 999` (supérieur à `--z-topbar: 400`). Conséquence visuelle : en mode edit, les diamants de resize aux coins des widgets paraissent par-dessus la topbar lorsqu'un widget est scrollé sous le header.
+
+**Pourquoi on garde ce comportement** : abaisser le z-index sous celui de la topbar (tenté en PR #14, revertée commit `7fb01ea`) rend la topbar interceptrice des pointer events sur les top handles → les coins NW / NE / N edge deviennent **non cliquables** dès qu'un widget passe sous la topbar. Diagnostic confirmé runtime : `document.elementFromPoint(NW)` retourne `<header class="topbar">`. Le trade-off "moche mais fonctionnel" l'emporte sur "joli mais cassé".
+
+**Pour un vrai fix** : nécessite un changement structurel (clipper le grid container à `var(--topbar-h)`, ou déplacer le scroll dans `<main>` plutôt que sur `body` pour empêcher les widgets de passer sous la topbar). Hors-scope tant que personne ne se plaint du visuel.
+
+---
+
 ## TODOs actifs
 
 ### En cours
