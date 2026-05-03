@@ -2516,7 +2516,7 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     day:         _normDay(_firstText(_pick('day', t.jour || t['Jour']))),
     obstacles:   _parseField(_pick('obstacles', t.obstaclesM15 ?? t['M15 Obstacles']), _normObs),
     h4:          _parseField(_pick('h4', t.obstaclesH4 ?? t['H4 Obstacles']), _normObs),
-    beManagement: _parseField(t.beManagement ?? t['BE Management'], v => v),
+    beManagement: _parseField(_pick('beManagement', t.beManagement ?? t['BE Management']), v => v),
     outcome:     oc,
     r:           _mapR(oc, t.rrTp1 ?? t['RR TP 1']),
     rrMax:       (() => {
@@ -18000,14 +18000,16 @@ function parseFlippingMarketCSV(text) {
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers = splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
 
-  const iDate       = _colFirst(headers,'date');
+  // Required dims routed through _colForDim so user overrides set via the
+  // Mapping panel take precedence over the format default.
+  const iDate       = _colForDim(headers,'date','date');
+  const iResultat   = _colForDim(headers,'outcome','résultat tp 1','resultat tp 1');
+  const iRR         = _colForDim(headers,'r','rr tp 1');
   const iPair       = _colAny(headers,'pair','actif');   // journal = 'Pair', ancien = 'Actif'
   const iSetup      = _colForDim(headers,'setup','m15 type');
-  const iSetupDetail= _colAny(headers,'m15 type détail','m15 type detail','m15 type détails','m15 type details','m15 type d\xe9tail','m15 type d\xe9tails');
+  const iSetupDetail= _colForDim(headers,'setupDetail','m15 type détail','m15 type detail','m15 type détails','m15 type details','m15 type d\xe9tail','m15 type d\xe9tails');
   const iSession    = _colForDim(headers,'session','session');
   const iJour       = _colForDim(headers,'day','jour');
-  const iResultat   = _colAny(headers,'résultat tp 1','resultat tp 1');
-  const iRR         = _colFirst(headers,'rr tp 1');
   const iRRMax      = _colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr      = _colForDim(headers,'tp1_rr');
@@ -18015,7 +18017,8 @@ function parseFlippingMarketCSV(text) {
   const iTp3Rr      = _colForDim(headers,'tp3_rr');
   const iObsM15     = _colForDim(headers,'obstacles','obstacles m15');
   const iObsH4      = _colForDim(headers,'h4','obstacles h4');
-  const iType       = _colFirst(headers,'type de trade');
+  const iBE         = _colForDim(headers,'beManagement','be management','gestion be');
+  const iType       = _colForDim(headers,'positionType','type de trade');
   const iBadFeeling = _colFirst(headers,'bad feeling');
   const iOrdre      = _colAny(headers,'ordre','order');  // journal = 'Order', ancien = 'Ordre'
   const iNotionUrl  = _colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
@@ -18077,6 +18080,7 @@ function parseFlippingMarketCSV(text) {
       day:         get(iJour)||'',             // already French in journal
       obstacles:   _parseObs(get(iObsM15)),
       h4:          _parseObs(get(iObsH4)),
+      beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome,
       r:           _mapR(outcome, get(iRR)),
       rrMax:       iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null,
@@ -18124,20 +18128,24 @@ function parseProTemplateCSV(text) {
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
   const iPair   =_colLast(headers,'pair');      // last occurrence = full pair name
-  const iResult =_colFirst(headers,'position result');
-  const iType   =_colFirst(headers,'position type');
-  const iDate   =_colFirst(headers,'date');
-  const iRR     =_colFirst(headers,'rr tp 1');
+  // Required dims routed through _colForDim so user overrides set via the
+  // Mapping panel take precedence over the format default.
+  const iResult =_colForDim(headers,'outcome','position result');
+  const iDate   =_colForDim(headers,'date','date');
+  const iRR     =_colForDim(headers,'r','rr tp 1');
+  const iType   =_colForDim(headers,'positionType','position type');
   const iRRMax  =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr  =_colForDim(headers,'tp1_rr');
   const iTp2Rr  =_colForDim(headers,'tp2_rr');
   const iTp3Rr  =_colForDim(headers,'tp3_rr');
   const iSetup  =_colForDim(headers,'setup','m15 confirmation / continu');
+  const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iSess   =_colForDim(headers,'session','session');
   const iDay    =_colForDim(headers,'day','day');
   const iObsM15 =_colForDim(headers,'obstacles','m15 obstacles');
   const iObsH4  =_colForDim(headers,'h4','h4 obstacles');
+  const iBE     =_colForDim(headers,'beManagement','be management','gestion be');
   const iBad    =_colFirst(headers,'bad feeling');
   const iOrder  =_colFirst(headers,'order');
   const iNotionUrl=_colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
@@ -18171,10 +18179,12 @@ function parseProTemplateCSV(text) {
       date,month:date.slice(0,7),
       pair:     get(iPair).trim()|| '',
       setup:    get(iSetup),
+      setupDetail: iSetupDetail >= 0 ? get(iSetupDetail) : '',
       session:  _normSession(get(iSess)),
       day:      _normDay(get(iDay)),
       obstacles:_parseObs(get(iObsM15)),
       h4:       _parseObs(get(iObsH4)),
+      beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome,  r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
       tp1_rr: iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
       tp2_rr: iTp2Rr >= 0 ? _parseNumeric(get(iTp2Rr)) : null,
@@ -18214,19 +18224,23 @@ function parseBeginnerCSV(text) {
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,'').replace(/^\uFEFF/,''));
   const iPair  =_colLast(headers,'pair');
-  const iResult=_colFirst(headers,'position result');
-  const iType  =_colFirst(headers,'position type');
-  const iDate  =_colFirst(headers,'date');
-  const iRR    =_colFirst(headers,'rr tp 1');
+  // Required dims routed through _colForDim so user overrides set via the
+  // Mapping panel take precedence over the format default.
+  const iResult=_colForDim(headers,'outcome','position result');
+  const iDate  =_colForDim(headers,'date','date');
+  const iRR    =_colForDim(headers,'r','rr tp 1');
+  const iType  =_colForDim(headers,'positionType','position type');
   const iRRMax =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr =_colForDim(headers,'tp1_rr');
   const iTp2Rr =_colForDim(headers,'tp2_rr');
   const iTp3Rr =_colForDim(headers,'tp3_rr');
   const iSetup =_colForDim(headers,'setup','m15 confirmation / continu');
+  const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iDay   =_colForDim(headers,'day','day');
   const iSession=_colForDim(headers,'session','session');
   const iObs   =_colForDim(headers,'obstacles','m15 obstacles');
+  const iBE    =_colForDim(headers,'beManagement','be management','gestion be');
   const iBad   =_colFirst(headers,'bad feeling');
   const iOrder =_colFirst(headers,'order');
   const iNotionUrl=_colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
@@ -18258,10 +18272,12 @@ function parseBeginnerCSV(text) {
       date,month:date.slice(0,7),
       pair:    get(iPair).trim()|| '',
       setup:   get(iSetup),
+      setupDetail: iSetupDetail >= 0 ? get(iSetupDetail) : '',
       session: _normSession(get(iSession)),
       day:     _normDay(get(iDay)),
       obstacles:_parseObs(get(iObs)),
       h4:      [],
+      beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome, r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
       tp1_rr: iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
       tp2_rr: iTp2Rr >= 0 ? _parseNumeric(get(iTp2Rr)) : null,
@@ -19811,6 +19827,17 @@ const WIDGET_DIM_KEY = {
 
 // Journal rows — one per remappable dimension. Defaults per format.
 const JOURNAL_DIMS = [
+  // ── Required dims (CSV import refuses to ingest without these,
+  //    BUT Phase 2 of this PR adds a degraded mode) ──
+  { key: 'outcome', label: 'Position Result', required: true, defaults: {
+    flipping: 'Résultat TP 1', pro: 'Position Result', beginner: 'Position Result',
+  }, widgets: [] },
+  { key: 'r', label: 'RR TP 1', required: true, defaults: {
+    flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
+  }, widgets: [] },
+  { key: 'date', label: 'Date', required: true, defaults: {
+    flipping: 'Date', pro: 'Date', beginner: 'Date',
+  }, widgets: [] },
   { key: 'pair',     label: 'Pair',          defaults: {
     flipping: 'Paire', pro: 'Pair', beginner: 'Pair',
   }, widgets: ['w-pair', 'w-pair-session'] },
@@ -19819,6 +19846,9 @@ const JOURNAL_DIMS = [
     pro:      'M15 Type Detailed',
     beginner: 'M15 Type Detailed',
   }, widgets: ['w-setup'] },
+  { key: 'setupDetail', label: 'Setup detail', defaults: {
+    flipping: 'M15 Type Détail', pro: 'M15 Type Detailed', beginner: 'M15 Type Detailed',
+  }, widgets: [] },
   { key: 'session',   label: 'Session',      defaults: {
     flipping: 'Session', pro: 'Session', beginner: '—',
   }, widgets: ['w-session', 'w-heatmap', 'w-pair-session'] },
@@ -19831,11 +19861,14 @@ const JOURNAL_DIMS = [
   { key: 'h4',        label: 'H4 Obstacles', defaults: {
     flipping: 'Obstacles H4', pro: 'H4 Obstacles', beginner: '—',
   }, widgets: ['w-h4'] },
+  { key: 'beManagement', label: 'BE Management', defaults: {
+    flipping: 'BE Management', pro: 'BE Management', beginner: 'BE Management',
+  }, widgets: [] },
   { key: 'hour',      label: 'Hour',         defaults: {
     flipping: '(auto-detect)', pro: '(auto-detect)', beginner: '(auto-detect)',
   }, widgets: ['w-hour'] },
   { key: 'positionType', label: 'Position Type', defaults: {
-    flipping: 'Position Type', pro: 'Position Type', beginner: 'Position Type',
+    flipping: 'Type de trade', pro: 'Position Type', beginner: 'Position Type',
   }, widgets: [] },
   { key: 'direction',    label: 'Order (direction)', defaults: {
     flipping: 'Order', pro: 'Order', beginner: 'Order',
@@ -19895,9 +19928,14 @@ function _dimResolvesInCsv(dimKey) {
   const fmt = _csvFormat || 'flipping';
   const defaults = {
     flipping: {
-      setup: ['m15 type'], session: ['session'], day: ['jour'],
+      outcome: ['résultat tp 1', 'resultat tp 1'],
+      r: ['rr tp 1'], date: ['date'],
+      setup: ['m15 type'],
+      setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
+      session: ['session'], day: ['jour'],
       obstacles: ['obstacles m15'], h4: ['obstacles h4'],
-      pair: ['paire', 'pair'], positionType: ['position type'],
+      beManagement: ['be management', 'gestion be'],
+      pair: ['paire', 'pair'], positionType: ['type de trade', 'position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
       img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
@@ -19905,8 +19943,12 @@ function _dimResolvesInCsv(dimKey) {
       img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
     },
     pro: {
-      setup: ['m15 type detailed', 'm15 confirmation / continu'], session: ['session'], day: ['day'],
+      outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+      setup: ['m15 type detailed', 'm15 confirmation / continu'],
+      setupDetail: ['m15 type detailed'],
+      session: ['session'], day: ['day'],
       obstacles: ['m15 obstacles'], h4: ['h4 obstacles'],
+      beManagement: ['be management', 'gestion be'],
       pair: ['pair'], positionType: ['position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
@@ -19915,8 +19957,12 @@ function _dimResolvesInCsv(dimKey) {
       img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
     },
     beginner: {
-      setup: ['m15 type detailed', 'm15 confirmation / continu'], day: ['day'],
+      outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+      setup: ['m15 type detailed', 'm15 confirmation / continu'],
+      setupDetail: ['m15 type detailed'],
+      day: ['day'],
       obstacles: ['m15 obstacles'],
+      beManagement: ['be management', 'gestion be'],
       pair: ['pair'], positionType: ['position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
@@ -19939,9 +19985,14 @@ function _resolvedHeaderFor(dimKey) {
         const fmt = _csvFormat || 'flipping';
         const defaults = {
           flipping: {
-            setup: ['m15 type'], session: ['session'], day: ['jour'],
+            outcome: ['résultat tp 1', 'resultat tp 1'],
+            r: ['rr tp 1'], date: ['date'],
+            setup: ['m15 type'],
+            setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
+            session: ['session'], day: ['jour'],
             obstacles: ['obstacles m15'], h4: ['obstacles h4'],
-            pair: ['paire', 'pair'], positionType: ['position type'],
+            beManagement: ['be management', 'gestion be'],
+            pair: ['paire', 'pair'], positionType: ['type de trade', 'position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
             img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
@@ -19949,8 +20000,12 @@ function _resolvedHeaderFor(dimKey) {
             img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
           },
           pro: {
-            setup: ['m15 type detailed', 'm15 confirmation / continu'], session: ['session'], day: ['day'],
+            outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+            setup: ['m15 type detailed', 'm15 confirmation / continu'],
+            setupDetail: ['m15 type detailed'],
+            session: ['session'], day: ['day'],
             obstacles: ['m15 obstacles'], h4: ['h4 obstacles'],
+            beManagement: ['be management', 'gestion be'],
             pair: ['pair'], positionType: ['position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
@@ -19959,8 +20014,12 @@ function _resolvedHeaderFor(dimKey) {
             img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
           },
           beginner: {
-            setup: ['m15 type detailed', 'm15 confirmation / continu'], day: ['day'],
+            outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+            setup: ['m15 type detailed', 'm15 confirmation / continu'],
+            setupDetail: ['m15 type detailed'],
+            day: ['day'],
             obstacles: ['m15 obstacles'],
+            beManagement: ['be management', 'gestion be'],
             pair: ['pair'], positionType: ['position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
@@ -20354,9 +20413,10 @@ function updateJournalPanel() {
         shown       = override ? override : (resolved || declaredDefault);
         defaultNote = override ? ` <span style="opacity:.6">(default: ${_escapeHtml(declaredDefault)})</span>` : '';
       }
+      const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
       return `<li class="ljp-item ${status}" data-dim-key="${_escapeHtml(dim.key)}">
                 <div class="ljp-item-row">
-                  <span class="ljp-item-label">${_escapeHtml(dim.label)}</span>
+                  <span class="ljp-item-label">${_escapeHtml(dim.label)}${requiredBadge}</span>
                   <span class="ljp-status ${status}">${statusTxt}</span>
                 </div>
                 <div class="ljp-item-col">column · <strong>${_escapeHtml(shown)}</strong>${defaultNote}</div>
@@ -20455,9 +20515,10 @@ function updateJournalPanel() {
            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
          </button>`
       : '';
+    const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
     return `<li class="ljp-item ${status}${canRemap ? '' : ' is-readonly'}" data-dim-key="${_escapeHtml(dim.key)}">
               <div class="ljp-item-row">
-                <span class="ljp-item-label">${_escapeHtml(dim.label)}</span>
+                <span class="ljp-item-label">${_escapeHtml(dim.label)}${requiredBadge}</span>
                 <span class="ljp-status ${status}">${statusTxt}</span>
               </div>
               <div class="ljp-item-col">sample · <strong>${_escapeHtml(shown)}</strong> <span style="opacity:.55">· ${_escapeHtml(coverage)}</span>${overrideNote}</div>
