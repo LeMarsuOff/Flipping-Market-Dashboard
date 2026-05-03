@@ -18013,9 +18013,9 @@ function parseFlippingMarketCSV(text) {
   const iJour       = _colForDim(headers,'day','jour','day');
   const iRRMax      = _colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
-  const iTp1Rr      = _colForDim(headers,'tp1_rr');
-  const iTp2Rr      = _colForDim(headers,'tp2_rr');
-  const iTp3Rr      = _colForDim(headers,'tp3_rr');
+  const iTp1Rr      = _colForDim(headers,'tp1_rr','rr tp 1');
+  const iTp2Rr      = _colForDim(headers,'tp2_rr','rr tp 2','rr tp-27');
+  const iTp3Rr      = _colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
   const iObsM15     = _colForDim(headers,'obstacles','obstacles m15','m15 obstacles');
   const iObsH4      = _colForDim(headers,'h4','obstacles h4','h4 obstacles');
   const iBE         = _colForDim(headers,'beManagement','be management','gestion be');
@@ -18137,9 +18137,9 @@ function parseProTemplateCSV(text) {
   const iType   =_colForDim(headers,'positionType','position type');
   const iRRMax  =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
-  const iTp1Rr  =_colForDim(headers,'tp1_rr');
-  const iTp2Rr  =_colForDim(headers,'tp2_rr');
-  const iTp3Rr  =_colForDim(headers,'tp3_rr');
+  const iTp1Rr  =_colForDim(headers,'tp1_rr','rr tp 1');
+  const iTp2Rr  =_colForDim(headers,'tp2_rr','rr tp 2','rr tp-27');
+  const iTp3Rr  =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
   const iSetup  =_colForDim(headers,'setup','m15 confirmation / continu');
   const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iSess   =_colForDim(headers,'session','session');
@@ -18233,9 +18233,9 @@ function parseBeginnerCSV(text) {
   const iType  =_colForDim(headers,'positionType','position type');
   const iRRMax =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
-  const iTp1Rr =_colForDim(headers,'tp1_rr');
-  const iTp2Rr =_colForDim(headers,'tp2_rr');
-  const iTp3Rr =_colForDim(headers,'tp3_rr');
+  const iTp1Rr =_colForDim(headers,'tp1_rr','rr tp 1');
+  const iTp2Rr =_colForDim(headers,'tp2_rr','rr tp 2','rr tp-27');
+  const iTp3Rr =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
   const iSetup =_colForDim(headers,'setup','m15 confirmation / continu');
   const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iDay   =_colForDim(headers,'day','day');
@@ -19898,20 +19898,19 @@ const JOURNAL_DIMS = [
   }, widgets: [] },
   // ── Multi TP mode fields (Phase 3) ──
   // Per-tier realized R. Nullable: null = tier not hit (value-presence = hit flag).
-  // No default column names per format — users wire their own Notion properties
-  // via the Mapping tab. overrideOnly:true tells updateJournalPanel() to render
-  // the row (and expose the pencil) even though defaults are '—'; without the
-  // flag the CSV branch strips '—' rows entirely. widgets:[] intentional:
+  // Defaults follow standard Notion conventions ('RR TP N'); the maps below
+  // include additional aliases (e.g. 'rr trailing', 'rr tp-27') so journals
+  // with custom tier naming auto-detect too. widgets:[] intentional:
   // Multi TP requirements are surfaced via FEATURE_REQS (Phase 3.A), not
   // MISSING_DATA_META.
-  { key: 'tp1_rr',       label: 'TP 1 realized R', overrideOnly: true, defaults: {
-    flipping: '—', pro: '—', beginner: '—',
+  { key: 'tp1_rr',       label: 'TP 1 realized R', defaults: {
+    flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
   }, widgets: [] },
-  { key: 'tp2_rr',       label: 'TP 2 realized R', overrideOnly: true, defaults: {
-    flipping: '—', pro: '—', beginner: '—',
+  { key: 'tp2_rr',       label: 'TP 2 realized R', defaults: {
+    flipping: 'RR TP 2', pro: 'RR TP 2', beginner: 'RR TP 2',
   }, widgets: [] },
-  { key: 'tp3_rr',       label: 'TP 3 realized R', overrideOnly: true, defaults: {
-    flipping: '—', pro: '—', beginner: '—',
+  { key: 'tp3_rr',       label: 'TP 3 realized R', defaults: {
+    flipping: 'RR TP 3', pro: 'RR TP 3', beginner: 'RR TP 3',
   }, widgets: [] },
 ];
 const FORMAT_LABEL = {
@@ -19942,6 +19941,9 @@ function _dimResolvesInCsv(dimKey) {
       img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
       img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
       img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      tp1_rr: ['rr tp 1'],
+      tp2_rr: ['rr tp 2', 'rr tp-27'],
+      tp3_rr: ['rr tp 3', 'rr trailing'],
     },
     pro: {
       outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -19956,6 +19958,9 @@ function _dimResolvesInCsv(dimKey) {
       img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
       img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
       img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      tp1_rr: ['rr tp 1'],
+      tp2_rr: ['rr tp 2', 'rr tp-27'],
+      tp3_rr: ['rr tp 3', 'rr trailing'],
     },
     beginner: {
       outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -19970,6 +19975,9 @@ function _dimResolvesInCsv(dimKey) {
       img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
       img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
       img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      tp1_rr: ['rr tp 1'],
+      tp2_rr: ['rr tp 2', 'rr tp-27'],
+      tp3_rr: ['rr tp 3', 'rr trailing'],
     },
   };
   const names = defaults[fmt]?.[dimKey];
@@ -19999,6 +20007,9 @@ function _resolvedHeaderFor(dimKey) {
             img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
             img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
             img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            tp1_rr: ['rr tp 1'],
+            tp2_rr: ['rr tp 2', 'rr tp-27'],
+            tp3_rr: ['rr tp 3', 'rr trailing'],
           },
           pro: {
             outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -20013,6 +20024,9 @@ function _resolvedHeaderFor(dimKey) {
             img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
             img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
             img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            tp1_rr: ['rr tp 1'],
+            tp2_rr: ['rr tp 2', 'rr tp-27'],
+            tp3_rr: ['rr tp 3', 'rr trailing'],
           },
           beginner: {
             outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
@@ -20027,6 +20041,9 @@ function _resolvedHeaderFor(dimKey) {
             img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
             img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
             img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            tp1_rr: ['rr tp 1'],
+            tp2_rr: ['rr tp 2', 'rr tp-27'],
+            tp3_rr: ['rr tp 3', 'rr trailing'],
           },
         };
         const names = defaults[fmt]?.[dimKey];
@@ -20388,7 +20405,6 @@ function updateJournalPanel() {
     if (subEl) subEl.textContent = 'Which CSV column feeds each widget dimension.';
     if (resetBtn) resetBtn.style.display = '';
     fmtEl.innerHTML = `Format · <strong>${_escapeHtml(FORMAT_LABEL[_csvFormat] || _csvFormat)}</strong> · ${_lastCsvHeaders.length} columns`;
-    const activeTpCount = appState.ui?.tpConfig?.multi?.tpCount === 3 ? 3 : 2;
     list.innerHTML = JOURNAL_DIMS.map(dim => {
       const declaredDefault = dim.defaults[_csvFormat];
       const isOverrideOnly  = dim.overrideOnly === true;
@@ -20396,9 +20412,6 @@ function updateJournalPanel() {
       // has no Session). overrideOnly rows bypass this filter — they are
       // expected to have '—' defaults and are surfaced for manual mapping.
       if (!isOverrideOnly && (!declaredDefault || declaredDefault === '—')) return '';
-      // For overrideOnly TP rows, gate tp3_rr on the active tpCount so the
-      // Mapping tab matches what Multi TP actually requires.
-      if (isOverrideOnly && dim.key === 'tp3_rr' && activeTpCount !== 3) return '';
       const override   = _csvColumnOverrides[dim.key];
       const resolved   = _resolvedHeaderFor(dim.key);
       const ok         = !!resolved;
@@ -20484,15 +20497,11 @@ function updateJournalPanel() {
     : '';
   fmtEl.innerHTML = `Source · <strong>${_escapeHtml(sourceLabel)}</strong> · ${items.length} trades${fieldCount}`;
 
-  const activeTpCount = appState.ui?.tpConfig?.multi?.tpCount === 3 ? 3 : 2;
   list.innerHTML = JOURNAL_DIMS.map(dim => {
     const isOverrideOnly = dim.overrideOnly === true;
     // Demo has no user columns to map against — hide overrideOnly rows
     // entirely rather than render a dead "missing / no pencil" line.
     if (isOverrideOnly && !isAPI) return '';
-    // Gate tp3_rr on the active tpCount in API mode so the Mapping tab
-    // matches what Multi TP actually requires.
-    if (isOverrideOnly && dim.key === 'tp3_rr' && activeTpCount !== 3) return '';
     const { sample, populated } = _inspectDimInTrades(dim.key);
     const override   = apiOverrides[dim.key];
     const ok         = populated > 0;
