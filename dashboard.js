@@ -2510,7 +2510,7 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     date:        dateRaw,
     month:       dateRaw.slice(0, 7),
     pair:        _firstText(_pick('pair', t.pair || t['Pair'] || t.paire || t['Paire'])),
-    setup:       _firstText(_pick('setup', t.m15Type || t['M15 Type'] || t.confirmation || t['Confirmation / Continunation'])),
+    setup:       _firstText(_pick('setup', t['M15 Confirmation / Continuation'] || t['M15 Confirmation / Continu'] || t.confirmation || t['Confirmation / Continunation'] || t.m15Type || t['M15 Type'])),
     setupDetail: _firstText(t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail),
     session:     _normSession(_firstText(_pick('session', t.session || t['Session'] || t.sessionFormule || t['Session Formula']))),
     sessionUtc:  _normSession(_firstText(t.sessionUtc || t['Session UTC'] || t.sessionFormuleUtc || t.session || t['Session'] || t.sessionFormule || t['Session Formula'])),
@@ -18007,7 +18007,7 @@ function parseFlippingMarketCSV(text) {
   const iResultat   = _colForDim(headers,'outcome','résultat tp 1','resultat tp 1','position result');
   const iRR         = _colForDim(headers,'r','rr tp 1');
   const iPair       = _colAny(headers,'pair','actif');   // journal = 'Pair', ancien = 'Actif'
-  const iSetup      = _colForDim(headers,'setup','m15 type');
+  const iSetup      = _colForDim(headers,'setup','m15 confirmation / continuation','m15 confirmation / continu','m15 type');
   const iSetupDetail= _colForDim(headers,'setupDetail','m15 type détail','m15 type detail','m15 type détails','m15 type details','m15 type d\xe9tail','m15 type d\xe9tails');
   const iSession    = _colForDim(headers,'session','session');
   const iJour       = _colForDim(headers,'day','jour','day');
@@ -18140,7 +18140,7 @@ function parseProTemplateCSV(text) {
   const iTp1Rr  =_colForDim(headers,'tp1_rr','rr tp 1');
   const iTp2Rr  =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
   const iTp3Rr  =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
-  const iSetup  =_colForDim(headers,'setup','m15 confirmation / continu');
+  const iSetup  =_colForDim(headers,'setup','m15 confirmation / continuation','m15 confirmation / continu','m15 type detailed');
   const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iSess   =_colForDim(headers,'session','session');
   const iDay    =_colForDim(headers,'day','day');
@@ -18236,7 +18236,7 @@ function parseBeginnerCSV(text) {
   const iTp1Rr =_colForDim(headers,'tp1_rr','rr tp 1');
   const iTp2Rr =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
   const iTp3Rr =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
-  const iSetup =_colForDim(headers,'setup','m15 confirmation / continu');
+  const iSetup =_colForDim(headers,'setup','m15 confirmation / continuation','m15 confirmation / continu','m15 type detailed');
   const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iDay   =_colForDim(headers,'day','day');
   const iSession=_colForDim(headers,'session','session');
@@ -19843,9 +19843,9 @@ const JOURNAL_DIMS = [
     flipping: 'Paire', pro: 'Pair', beginner: 'Pair',
   }, widgets: ['w-pair', 'w-pair-session'] },
   { key: 'setup',     label: 'Setup',        defaults: {
-    flipping: 'M15 Type',
-    pro:      'M15 Type Detailed',
-    beginner: 'M15 Type Detailed',
+    flipping: 'M15 Confirmation / Continuation',
+    pro:      'M15 Confirmation / Continuation',
+    beginner: 'M15 Confirmation / Continuation',
   }, widgets: ['w-setup'] },
   { key: 'setupDetail', label: 'Setup detail', defaults: {
     flipping: 'M15 Type Détail', pro: 'M15 Type Detailed', beginner: 'M15 Type Detailed',
@@ -19930,7 +19930,7 @@ function _dimResolvesInCsv(dimKey) {
     flipping: {
       outcome: ['résultat tp 1', 'resultat tp 1', 'position result'],
       r: ['rr tp 1'], date: ['date'],
-      setup: ['m15 type'],
+      setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type'],
       setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
       session: ['session'], day: ['jour', 'day'],
       obstacles: ['obstacles m15', 'm15 obstacles'], h4: ['obstacles h4', 'h4 obstacles'],
@@ -19947,7 +19947,7 @@ function _dimResolvesInCsv(dimKey) {
     },
     pro: {
       outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
-      setup: ['m15 type detailed', 'm15 confirmation / continu'],
+      setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
       setupDetail: ['m15 type detailed'],
       session: ['session'], day: ['day'],
       obstacles: ['m15 obstacles'], h4: ['h4 obstacles'],
@@ -19964,7 +19964,7 @@ function _dimResolvesInCsv(dimKey) {
     },
     beginner: {
       outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
-      setup: ['m15 type detailed', 'm15 confirmation / continu'],
+      setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
       setupDetail: ['m15 type detailed'],
       day: ['day'],
       obstacles: ['m15 obstacles'],
@@ -19996,7 +19996,7 @@ function _resolvedHeaderFor(dimKey) {
           flipping: {
             outcome: ['résultat tp 1', 'resultat tp 1', 'position result'],
             r: ['rr tp 1'], date: ['date'],
-            setup: ['m15 type'],
+            setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type'],
             setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
             session: ['session'], day: ['jour', 'day'],
             obstacles: ['obstacles m15', 'm15 obstacles'], h4: ['obstacles h4', 'h4 obstacles'],
@@ -20013,7 +20013,7 @@ function _resolvedHeaderFor(dimKey) {
           },
           pro: {
             outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
-            setup: ['m15 type detailed', 'm15 confirmation / continu'],
+            setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
             setupDetail: ['m15 type detailed'],
             session: ['session'], day: ['day'],
             obstacles: ['m15 obstacles'], h4: ['h4 obstacles'],
@@ -20030,7 +20030,7 @@ function _resolvedHeaderFor(dimKey) {
           },
           beginner: {
             outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
-            setup: ['m15 type detailed', 'm15 confirmation / continu'],
+            setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
             setupDetail: ['m15 type detailed'],
             day: ['day'],
             obstacles: ['m15 obstacles'],
