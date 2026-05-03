@@ -3334,7 +3334,14 @@ async function _fetchAPICacheSilently(options = {}) {
     const parsed = json.trades.map((t, i) => _normalizeAPITrade(t, i)).filter(Boolean);
     setCachedAPIData(parsed);
     if (localStorage.getItem(DS_KEY) === 'api') {
-      _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+      // Preserve filter state across the silent refresh: when
+      // pendingRestoreState is null (the standalone "Notion Live" reload
+      // path), capture the current state before injection so _injectTrades
+      // doesn't fall into its else branch and reset activeId / chips.
+      // Mirrors the _reapplyAPIOverrides pattern (see line 2376).
+      const savedState = appState.settings.dataSource.pendingRestoreState
+                       ?? (typeof _saveFilterState === 'function' ? _saveFilterState() : null);
+      _injectTrades(parsed, 'Notion Live', savedState);
       appState.settings.dataSource.pendingRestoreState = null;
       setSourceIndicator('live');
       showDataStatus(_getAPICacheStatusLabel(), 'live');
