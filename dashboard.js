@@ -2120,6 +2120,7 @@ function _normalizeHourKey(value) {
 const _HOUR_HEADER_ALIASES = new Set([
   'hour',
   'heure',
+  'time',
   'time utc 1',
   'time utc 2',
   'hour 1',
@@ -2509,25 +2510,28 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     date:        dateRaw,
     month:       dateRaw.slice(0, 7),
     pair:        _firstText(_pick('pair', t.pair || t['Pair'] || t.paire || t['Paire'])),
-    setup:       _firstText(_pick('setup', t.m15Type || t['M15 Type'] || t.confirmation || t['Confirmation / Continunation'])),
+    setup:       _firstText(_pick('setup', t['M15 Confirmation / Continuation'] || t['M15 Confirmation / Continu'] || t.confirmation || t['Confirmation / Continunation'] || t.m15Type || t['M15 Type'])),
     setupDetail: _firstText(t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail),
     session:     _normSession(_firstText(_pick('session', t.session || t['Session'] || t.sessionFormule || t['Session Formula']))),
     sessionUtc:  _normSession(_firstText(t.sessionUtc || t['Session UTC'] || t.sessionFormuleUtc || t.session || t['Session'] || t.sessionFormule || t['Session Formula'])),
     day:         _normDay(_firstText(_pick('day', t.jour || t['Jour']))),
     obstacles:   _parseField(_pick('obstacles', t.obstaclesM15 ?? t['M15 Obstacles']), _normObs),
     h4:          _parseField(_pick('h4', t.obstaclesH4 ?? t['H4 Obstacles']), _normObs),
-    beManagement: _parseField(t.beManagement ?? t['BE Management'], v => v),
+    beManagement: _parseField(_pick('beManagement', t.beManagement ?? t['BE Management']), v => v),
     outcome:     oc,
     r:           _mapR(oc, t.rrTp1 ?? t['RR TP 1']),
     rrMax:       (() => {
       const n = _parseNumeric(t.rrMax ?? t.rrMaxAtteint ?? t['RR Max'] ?? t['RR Max '] ?? t['RR max atteint']);
       return n !== null && Number.isFinite(n) ? n : null;
     })(),
-    // Multi TP (Phase 3): override-only — user wires their Notion property via the Mapping tab.
-    // null when no override is set, the mapped field is absent, or the value is empty / non-numeric.
-    tp1_rr:      _parseNumeric(_pick('tp1_rr', null)),
-    tp2_rr:      _parseNumeric(_pick('tp2_rr', null)),
-    tp3_rr:      _parseNumeric(_pick('tp3_rr', null)),
+    // Multi TP (Phase 3): default to standard Notion property names. Notion
+    // API normalizes property keys to camelCase ('RR TP 1' → 'rrTp1',
+    // 'RR TP -27' → 'rrTpMinus27', 'RR TP H4 0' → 'rrTpH4_0'). _pick still
+    // consults the user override first when set. null when nothing resolves
+    // or the value is empty / non-numeric.
+    tp1_rr:      _parseNumeric(_pick('tp1_rr', t.rrTp1)),
+    tp2_rr:      _parseNumeric(_pick('tp2_rr', t.rrTpMinus27 ?? t.rrTp2)),
+    tp3_rr:      _parseNumeric(_pick('tp3_rr', t.rrTpH4_0 ?? t.rrTp3 ?? t.rrTrailing)),
     direction:   _firstText(t.order || t['Order']),
     tradeType:   positionTypes,
     badFeeling:  Boolean(t.badFeeling),
@@ -18000,22 +18004,25 @@ function parseFlippingMarketCSV(text) {
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers = splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
 
-  const iDate       = _colFirst(headers,'date');
+  // Required dims routed through _colForDim so user overrides set via the
+  // Mapping panel take precedence over the format default.
+  const iDate       = _colForDim(headers,'date','date');
+  const iResultat   = _colForDim(headers,'outcome','résultat tp 1','resultat tp 1','position result');
+  const iRR         = _colForDim(headers,'r','rr tp 1');
   const iPair       = _colAny(headers,'pair','actif');   // journal = 'Pair', ancien = 'Actif'
-  const iSetup      = _colForDim(headers,'setup','m15 type');
-  const iSetupDetail= _colAny(headers,'m15 type détail','m15 type detail','m15 type détails','m15 type details','m15 type d\xe9tail','m15 type d\xe9tails');
+  const iSetup      = _colForDim(headers,'setup','m15 confirmation / continuation','m15 confirmation / continu','m15 type');
+  const iSetupDetail= _colForDim(headers,'setupDetail','m15 type détail','m15 type detail','m15 type détails','m15 type details','m15 type d\xe9tail','m15 type d\xe9tails');
   const iSession    = _colForDim(headers,'session','session');
-  const iJour       = _colForDim(headers,'day','jour');
-  const iResultat   = _colAny(headers,'résultat tp 1','resultat tp 1');
-  const iRR         = _colFirst(headers,'rr tp 1');
+  const iJour       = _colForDim(headers,'day','jour','day');
   const iRRMax      = _colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
-  const iTp1Rr      = _colForDim(headers,'tp1_rr');
-  const iTp2Rr      = _colForDim(headers,'tp2_rr');
-  const iTp3Rr      = _colForDim(headers,'tp3_rr');
-  const iObsM15     = _colForDim(headers,'obstacles','obstacles m15');
-  const iObsH4      = _colForDim(headers,'h4','obstacles h4');
-  const iType       = _colFirst(headers,'type de trade');
+  const iTp1Rr      = _colForDim(headers,'tp1_rr','rr tp 1');
+  const iTp2Rr      = _colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
+  const iTp3Rr      = _colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
+  const iObsM15     = _colForDim(headers,'obstacles','obstacles m15','m15 obstacles');
+  const iObsH4      = _colForDim(headers,'h4','obstacles h4','h4 obstacles');
+  const iBE         = _colForDim(headers,'beManagement','be management','gestion be');
+  const iType       = _colForDim(headers,'positionType','type de trade');
   const iBadFeeling = _colFirst(headers,'bad feeling');
   const iOrdre      = _colAny(headers,'ordre','order');  // journal = 'Order', ancien = 'Ordre'
   const iNotionUrl  = _colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
@@ -18033,14 +18040,14 @@ function parseFlippingMarketCSV(text) {
     }
     // Prefer explicit screenshot column names, including 'TV M15 Before' (TV-URL
     // convention), then fall back to standalone 'M15' / 'M15 Before' header.
-    const named = _colAny(headers,'tv m15 before','screenshot m15','m15 screenshot','image m15','m15 image','photo m15','m15 photo','m15 before');
+    const named = _colAny(headers,'tv m15 before','url m15 before','screenshot m15','m15 screenshot','image m15','m15 image','photo m15','m15 photo','m15 before');
     if (named >= 0) return named;
     // Exact standalone 'M15' or 'M15 Before' header (must not already be claimed by m15 type columns)
     const idx = headers.findIndex(h => { const v = h.trim().toLowerCase(); return v === 'm15' || v === 'm15 before'; });
     return (idx >= 0 && idx !== iSetup && idx !== iSetupDetail) ? idx : -1;
   })();
-  const iImgH4Before = _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
-  const iImgM15After = _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
+  const iImgH4Before = _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
+  const iImgM15After = _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
 
   const missing = _checkMissingCols([
     { label: 'Résultat TP 1', index: iResultat },
@@ -18077,6 +18084,7 @@ function parseFlippingMarketCSV(text) {
       day:         get(iJour)||'',             // already French in journal
       obstacles:   _parseObs(get(iObsM15)),
       h4:          _parseObs(get(iObsH4)),
+      beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome,
       r:           _mapR(outcome, get(iRR)),
       rrMax:       iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null,
@@ -18124,20 +18132,24 @@ function parseProTemplateCSV(text) {
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
   const iPair   =_colLast(headers,'pair');      // last occurrence = full pair name
-  const iResult =_colFirst(headers,'position result');
-  const iType   =_colFirst(headers,'position type');
-  const iDate   =_colFirst(headers,'date');
-  const iRR     =_colFirst(headers,'rr tp 1');
+  // Required dims routed through _colForDim so user overrides set via the
+  // Mapping panel take precedence over the format default.
+  const iResult =_colForDim(headers,'outcome','position result');
+  const iDate   =_colForDim(headers,'date','date');
+  const iRR     =_colForDim(headers,'r','rr tp 1');
+  const iType   =_colForDim(headers,'positionType','position type');
   const iRRMax  =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
-  const iTp1Rr  =_colForDim(headers,'tp1_rr');
-  const iTp2Rr  =_colForDim(headers,'tp2_rr');
-  const iTp3Rr  =_colForDim(headers,'tp3_rr');
-  const iSetup  =_colForDim(headers,'setup','m15 confirmation / continu');
+  const iTp1Rr  =_colForDim(headers,'tp1_rr','rr tp 1');
+  const iTp2Rr  =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
+  const iTp3Rr  =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
+  const iSetup  =_colForDim(headers,'setup','m15 confirmation / continuation','m15 confirmation / continu','m15 type detailed');
+  const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iSess   =_colForDim(headers,'session','session');
   const iDay    =_colForDim(headers,'day','day');
   const iObsM15 =_colForDim(headers,'obstacles','m15 obstacles');
   const iObsH4  =_colForDim(headers,'h4','h4 obstacles');
+  const iBE     =_colForDim(headers,'beManagement','be management','gestion be');
   const iBad    =_colFirst(headers,'bad feeling');
   const iOrder  =_colFirst(headers,'order');
   const iNotionUrl=_colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
@@ -18147,9 +18159,9 @@ function parseProTemplateCSV(text) {
   // because Pro Template exports commonly include a Notion Files column named
   // 'M15' whose cells are filenames (e.g. "Capture_decran_....png") rather than
   // URLs — picking it would produce broken <img> links.
-  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
-  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
-  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
+  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
+  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
+  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
   const missing = _checkMissingCols([
     { label: 'Position Result', index: iResult },
     { label: 'RR TP 1',         index: iRR },
@@ -18171,10 +18183,12 @@ function parseProTemplateCSV(text) {
       date,month:date.slice(0,7),
       pair:     get(iPair).trim()|| '',
       setup:    get(iSetup),
+      setupDetail: iSetupDetail >= 0 ? get(iSetupDetail) : '',
       session:  _normSession(get(iSess)),
       day:      _normDay(get(iDay)),
       obstacles:_parseObs(get(iObsM15)),
       h4:       _parseObs(get(iObsH4)),
+      beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome,  r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
       tp1_rr: iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
       tp2_rr: iTp2Rr >= 0 ? _parseNumeric(get(iTp2Rr)) : null,
@@ -18214,27 +18228,31 @@ function parseBeginnerCSV(text) {
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,'').replace(/^\uFEFF/,''));
   const iPair  =_colLast(headers,'pair');
-  const iResult=_colFirst(headers,'position result');
-  const iType  =_colFirst(headers,'position type');
-  const iDate  =_colFirst(headers,'date');
-  const iRR    =_colFirst(headers,'rr tp 1');
+  // Required dims routed through _colForDim so user overrides set via the
+  // Mapping panel take precedence over the format default.
+  const iResult=_colForDim(headers,'outcome','position result');
+  const iDate  =_colForDim(headers,'date','date');
+  const iRR    =_colForDim(headers,'r','rr tp 1');
+  const iType  =_colForDim(headers,'positionType','position type');
   const iRRMax =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
-  const iTp1Rr =_colForDim(headers,'tp1_rr');
-  const iTp2Rr =_colForDim(headers,'tp2_rr');
-  const iTp3Rr =_colForDim(headers,'tp3_rr');
-  const iSetup =_colForDim(headers,'setup','m15 confirmation / continu');
+  const iTp1Rr =_colForDim(headers,'tp1_rr','rr tp 1');
+  const iTp2Rr =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
+  const iTp3Rr =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
+  const iSetup =_colForDim(headers,'setup','m15 confirmation / continuation','m15 confirmation / continu','m15 type detailed');
+  const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
   const iDay   =_colForDim(headers,'day','day');
   const iSession=_colForDim(headers,'session','session');
   const iObs   =_colForDim(headers,'obstacles','m15 obstacles');
+  const iBE    =_colForDim(headers,'beManagement','be management','gestion be');
   const iBad   =_colFirst(headers,'bad feeling');
   const iOrder =_colFirst(headers,'order');
   const iNotionUrl=_colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
   const iHour  = _hourColForDim(headers);
   // Screenshot/image columns: explicit aliases only (same policy as Pro Template).
-  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
-  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
-  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
+  const iImgM15     = _colForDim(headers, 'img_m15', 'tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo');
+  const iImgH4Before= _colForDim(headers, 'img_h4_before', 'tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image');
+  const iImgM15After= _colForDim(headers, 'img_m15_after', 'tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after');
   const missing = _checkMissingCols([
     { label: 'Position Result', index: iResult },
     { label: 'Pair',             index: iPair },
@@ -18258,10 +18276,12 @@ function parseBeginnerCSV(text) {
       date,month:date.slice(0,7),
       pair:    get(iPair).trim()|| '',
       setup:   get(iSetup),
+      setupDetail: iSetupDetail >= 0 ? get(iSetupDetail) : '',
       session: _normSession(get(iSession)),
       day:     _normDay(get(iDay)),
       obstacles:_parseObs(get(iObs)),
       h4:      [],
+      beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome, r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
       tp1_rr: iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
       tp2_rr: iTp2Rr >= 0 ? _parseNumeric(get(iTp2Rr)) : null,
@@ -19811,14 +19831,28 @@ const WIDGET_DIM_KEY = {
 
 // Journal rows — one per remappable dimension. Defaults per format.
 const JOURNAL_DIMS = [
+  // ── Required dims (CSV import refuses to ingest without these,
+  //    BUT Phase 2 of this PR adds a degraded mode) ──
+  { key: 'outcome', label: 'Position Result', required: true, defaults: {
+    flipping: 'Résultat TP 1', pro: 'Position Result', beginner: 'Position Result',
+  }, widgets: [] },
+  { key: 'r', label: 'RR TP 1', required: true, defaults: {
+    flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
+  }, widgets: [] },
+  { key: 'date', label: 'Date', required: true, defaults: {
+    flipping: 'Date', pro: 'Date', beginner: 'Date',
+  }, widgets: [] },
   { key: 'pair',     label: 'Pair',          defaults: {
     flipping: 'Paire', pro: 'Pair', beginner: 'Pair',
   }, widgets: ['w-pair', 'w-pair-session'] },
   { key: 'setup',     label: 'Setup',        defaults: {
-    flipping: 'M15 Type',
-    pro:      'M15 Type Detailed',
-    beginner: 'M15 Type Detailed',
+    flipping: 'M15 Confirmation / Continuation',
+    pro:      'M15 Confirmation / Continuation',
+    beginner: 'M15 Confirmation / Continuation',
   }, widgets: ['w-setup'] },
+  { key: 'setupDetail', label: 'Setup detail', defaults: {
+    flipping: 'M15 Type Détail', pro: 'M15 Type Detailed', beginner: 'M15 Type Detailed',
+  }, widgets: [] },
   { key: 'session',   label: 'Session',      defaults: {
     flipping: 'Session', pro: 'Session', beginner: '—',
   }, widgets: ['w-session', 'w-heatmap', 'w-pair-session'] },
@@ -19831,11 +19865,14 @@ const JOURNAL_DIMS = [
   { key: 'h4',        label: 'H4 Obstacles', defaults: {
     flipping: 'Obstacles H4', pro: 'H4 Obstacles', beginner: '—',
   }, widgets: ['w-h4'] },
+  { key: 'beManagement', label: 'BE Management', defaults: {
+    flipping: 'BE Management', pro: 'BE Management', beginner: 'BE Management',
+  }, widgets: [] },
   { key: 'hour',      label: 'Hour',         defaults: {
     flipping: '(auto-detect)', pro: '(auto-detect)', beginner: '(auto-detect)',
   }, widgets: ['w-hour'] },
   { key: 'positionType', label: 'Position Type', defaults: {
-    flipping: 'Position Type', pro: 'Position Type', beginner: 'Position Type',
+    flipping: 'Type de trade', pro: 'Position Type', beginner: 'Position Type',
   }, widgets: [] },
   { key: 'direction',    label: 'Order (direction)', defaults: {
     flipping: 'Order', pro: 'Order', beginner: 'Order',
@@ -19864,20 +19901,19 @@ const JOURNAL_DIMS = [
   }, widgets: [] },
   // ── Multi TP mode fields (Phase 3) ──
   // Per-tier realized R. Nullable: null = tier not hit (value-presence = hit flag).
-  // No default column names per format — users wire their own Notion properties
-  // via the Mapping tab. overrideOnly:true tells updateJournalPanel() to render
-  // the row (and expose the pencil) even though defaults are '—'; without the
-  // flag the CSV branch strips '—' rows entirely. widgets:[] intentional:
+  // Defaults follow standard Notion conventions ('RR TP N'); the maps below
+  // include additional aliases (e.g. 'rr trailing', 'rr tp -27') so journals
+  // with custom tier naming auto-detect too. widgets:[] intentional:
   // Multi TP requirements are surfaced via FEATURE_REQS (Phase 3.A), not
   // MISSING_DATA_META.
-  { key: 'tp1_rr',       label: 'TP 1 realized R', overrideOnly: true, defaults: {
-    flipping: '—', pro: '—', beginner: '—',
+  { key: 'tp1_rr',       label: 'TP 1 realized R', defaults: {
+    flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
   }, widgets: [] },
-  { key: 'tp2_rr',       label: 'TP 2 realized R', overrideOnly: true, defaults: {
-    flipping: '—', pro: '—', beginner: '—',
+  { key: 'tp2_rr',       label: 'TP 2 realized R', defaults: {
+    flipping: 'RR TP 2', pro: 'RR TP 2', beginner: 'RR TP 2',
   }, widgets: [] },
-  { key: 'tp3_rr',       label: 'TP 3 realized R', overrideOnly: true, defaults: {
-    flipping: '—', pro: '—', beginner: '—',
+  { key: 'tp3_rr',       label: 'TP 3 realized R', defaults: {
+    flipping: 'RR TP 3', pro: 'RR TP 3', beginner: 'RR TP 3',
   }, widgets: [] },
 ];
 const FORMAT_LABEL = {
@@ -19895,34 +19931,56 @@ function _dimResolvesInCsv(dimKey) {
   const fmt = _csvFormat || 'flipping';
   const defaults = {
     flipping: {
-      setup: ['m15 type'], session: ['session'], day: ['jour'],
-      obstacles: ['obstacles m15'], h4: ['obstacles h4'],
-      pair: ['paire', 'pair'], positionType: ['position type'],
+      outcome: ['résultat tp 1', 'resultat tp 1', 'position result'],
+      r: ['rr tp 1'], date: ['date'],
+      setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type'],
+      setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
+      session: ['session'], day: ['jour', 'day'],
+      obstacles: ['obstacles m15', 'm15 obstacles'], h4: ['obstacles h4', 'h4 obstacles'],
+      beManagement: ['be management', 'gestion be'],
+      pair: ['paire', 'pair'], positionType: ['type de trade', 'position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-      img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-      img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-      img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+      img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+      img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      tp1_rr: ['rr tp 1'],
+      tp2_rr: ['rr tp 2', 'rr tp -27'],
+      tp3_rr: ['rr tp 3', 'rr trailing'],
     },
     pro: {
-      setup: ['m15 type detailed', 'm15 confirmation / continu'], session: ['session'], day: ['day'],
+      outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+      setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
+      setupDetail: ['m15 type detailed'],
+      session: ['session'], day: ['day'],
       obstacles: ['m15 obstacles'], h4: ['h4 obstacles'],
+      beManagement: ['be management', 'gestion be'],
       pair: ['pair'], positionType: ['position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-      img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-      img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-      img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+      img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+      img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      tp1_rr: ['rr tp 1'],
+      tp2_rr: ['rr tp 2', 'rr tp -27'],
+      tp3_rr: ['rr tp 3', 'rr trailing'],
     },
     beginner: {
-      setup: ['m15 type detailed', 'm15 confirmation / continu'], day: ['day'],
+      outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+      setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
+      setupDetail: ['m15 type detailed'],
+      day: ['day'],
       obstacles: ['m15 obstacles'],
+      beManagement: ['be management', 'gestion be'],
       pair: ['pair'], positionType: ['position type'],
       direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
       badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-      img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-      img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-      img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+      img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+      img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+      tp1_rr: ['rr tp 1'],
+      tp2_rr: ['rr tp 2', 'rr tp -27'],
+      tp3_rr: ['rr tp 3', 'rr trailing'],
     },
   };
   const names = defaults[fmt]?.[dimKey];
@@ -19939,34 +19997,56 @@ function _resolvedHeaderFor(dimKey) {
         const fmt = _csvFormat || 'flipping';
         const defaults = {
           flipping: {
-            setup: ['m15 type'], session: ['session'], day: ['jour'],
-            obstacles: ['obstacles m15'], h4: ['obstacles h4'],
-            pair: ['paire', 'pair'], positionType: ['position type'],
+            outcome: ['résultat tp 1', 'resultat tp 1', 'position result'],
+            r: ['rr tp 1'], date: ['date'],
+            setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type'],
+            setupDetail: ['m15 type détail', 'm15 type detail', 'm15 type detailed'],
+            session: ['session'], day: ['jour', 'day'],
+            obstacles: ['obstacles m15', 'm15 obstacles'], h4: ['obstacles h4', 'h4 obstacles'],
+            beManagement: ['be management', 'gestion be'],
+            pair: ['paire', 'pair'], positionType: ['type de trade', 'position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-            img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-            img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-            img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+            img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+            img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            tp1_rr: ['rr tp 1'],
+            tp2_rr: ['rr tp 2', 'rr tp -27'],
+            tp3_rr: ['rr tp 3', 'rr trailing'],
           },
           pro: {
-            setup: ['m15 type detailed', 'm15 confirmation / continu'], session: ['session'], day: ['day'],
+            outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+            setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
+            setupDetail: ['m15 type detailed'],
+            session: ['session'], day: ['day'],
             obstacles: ['m15 obstacles'], h4: ['h4 obstacles'],
+            beManagement: ['be management', 'gestion be'],
             pair: ['pair'], positionType: ['position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-            img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-            img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-            img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+            img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+            img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            tp1_rr: ['rr tp 1'],
+            tp2_rr: ['rr tp 2', 'rr tp -27'],
+            tp3_rr: ['rr tp 3', 'rr trailing'],
           },
           beginner: {
-            setup: ['m15 type detailed', 'm15 confirmation / continu'], day: ['day'],
+            outcome: ['position result'], r: ['rr tp 1'], date: ['date'],
+            setup: ['m15 confirmation / continuation', 'm15 confirmation / continu', 'm15 type detailed'],
+            setupDetail: ['m15 type detailed'],
+            day: ['day'],
             obstacles: ['m15 obstacles'],
+            beManagement: ['be management', 'gestion be'],
             pair: ['pair'], positionType: ['position type'],
             direction: ['order'], rrMax: ['rr max', 'rr max atteint'],
             badFeeling: ['bad feeling'], notionUrl: ['notion url', 'page url', 'url notion'],
-            img_m15: ['tv m15 before', 'm15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
-            img_h4_before: ['tv h4 before', 'h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
-            img_m15_after: ['tv m15 after', 'm15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            img_m15: ['tv m15 before', 'm15 before', 'url m15 before', 'screenshot m15', 'm15 screenshot', 'image m15', 'm15 image', 'photo m15', 'm15 photo'],
+            img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
+            img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
+            tp1_rr: ['rr tp 1'],
+            tp2_rr: ['rr tp 2', 'rr tp -27'],
+            tp3_rr: ['rr tp 3', 'rr trailing'],
           },
         };
         const names = defaults[fmt]?.[dimKey];
@@ -20258,12 +20338,17 @@ document.addEventListener('mousedown', e => {
 // Per-dim extractor used by the API/Demo "inspection" view. Each function
 // returns a human-readable sample string, or '' when the trade lacks the field.
 const _JOURNAL_DIM_EXTRACTORS = {
+  outcome:      t => t.outcome || '',
+  r:            t => (t.r != null && Number.isFinite(Number(t.r))) ? String(t.r) : '',
+  date:         t => t.date || '',
   pair:         t => t.pair || '',
   setup:        t => t.setup || '',
+  setupDetail:  t => t.setupDetail || '',
   session:      t => t.session || '',
   day:          t => t.day || '',
   obstacles:    t => (Array.isArray(t.obstacles) && t.obstacles.length) ? t.obstacles.join(', ') : '',
   h4:           t => (Array.isArray(t.h4) && t.h4.length) ? t.h4.join(', ') : '',
+  beManagement: t => (Array.isArray(t.beManagement) && t.beManagement.length) ? t.beManagement.join(', ') : '',
   hour:         t => (t.hour != null && Number.isFinite(Number(t.hour))) ? `${t.hour}h` : '',
   positionType: t => t.positionType || t.tradeType || '',
   direction:    t => t.direction || '',
@@ -20276,6 +20361,12 @@ const _JOURNAL_DIM_EXTRACTORS = {
   tp3_rr:       t => (t.tp3_rr != null && Number.isFinite(Number(t.tp3_rr))) ? String(t.tp3_rr) : '',
   badFeeling:   t => (t.badFeeling === true ? 'yes' : (t.badFeeling === false ? 'no' : '')),
   notionUrl:    t => t.notionUrl || '',
+  // Screenshot URL fields. _normalizeAPITrade and CSV parsers both store the
+  // resolved URL on these camelCase keys (TV share links are pre-rewritten to
+  // the deterministic S3 PNG path; the *Orig pair preserves the original).
+  img_m15:       t => t.imgM15 || '',
+  img_h4_before: t => t.imgH4Before || '',
+  img_m15_after: t => t.imgM15After || '',
 };
 
 // Scan the current in-memory trade set for a non-empty value on `dimKey`.
@@ -20324,11 +20415,14 @@ function updateJournalPanel() {
   };
 
   // ── CSV mode: interactive mapping with remap pickers (existing behavior) ──
-  if (_lastCsvHeaders && _lastCsvHeaders.length && _csvFormat) {
+  // Gate on the active data source mode (DS_KEY) — _lastCsvHeaders / _csvFormat
+  // persist after a switch to API/Demo so the user can switch back without
+  // re-importing, but the panel must reflect the CURRENT mode, not the last
+  // CSV that was loaded.
+  if (localStorage.getItem(DS_KEY) === 'csv' && _lastCsvHeaders && _lastCsvHeaders.length && _csvFormat) {
     if (subEl) subEl.textContent = 'Which CSV column feeds each widget dimension.';
     if (resetBtn) resetBtn.style.display = '';
     fmtEl.innerHTML = `Format · <strong>${_escapeHtml(FORMAT_LABEL[_csvFormat] || _csvFormat)}</strong> · ${_lastCsvHeaders.length} columns`;
-    const activeTpCount = appState.ui?.tpConfig?.multi?.tpCount === 3 ? 3 : 2;
     list.innerHTML = JOURNAL_DIMS.map(dim => {
       const declaredDefault = dim.defaults[_csvFormat];
       const isOverrideOnly  = dim.overrideOnly === true;
@@ -20336,9 +20430,6 @@ function updateJournalPanel() {
       // has no Session). overrideOnly rows bypass this filter — they are
       // expected to have '—' defaults and are surfaced for manual mapping.
       if (!isOverrideOnly && (!declaredDefault || declaredDefault === '—')) return '';
-      // For overrideOnly TP rows, gate tp3_rr on the active tpCount so the
-      // Mapping tab matches what Multi TP actually requires.
-      if (isOverrideOnly && dim.key === 'tp3_rr' && activeTpCount !== 3) return '';
       const override   = _csvColumnOverrides[dim.key];
       const resolved   = _resolvedHeaderFor(dim.key);
       const ok         = !!resolved;
@@ -20354,9 +20445,10 @@ function updateJournalPanel() {
         shown       = override ? override : (resolved || declaredDefault);
         defaultNote = override ? ` <span style="opacity:.6">(default: ${_escapeHtml(declaredDefault)})</span>` : '';
       }
+      const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
       return `<li class="ljp-item ${status}" data-dim-key="${_escapeHtml(dim.key)}">
                 <div class="ljp-item-row">
-                  <span class="ljp-item-label">${_escapeHtml(dim.label)}</span>
+                  <span class="ljp-item-label">${_escapeHtml(dim.label)}${requiredBadge}</span>
                   <span class="ljp-status ${status}">${statusTxt}</span>
                 </div>
                 <div class="ljp-item-col">column · <strong>${_escapeHtml(shown)}</strong>${defaultNote}</div>
@@ -20423,15 +20515,11 @@ function updateJournalPanel() {
     : '';
   fmtEl.innerHTML = `Source · <strong>${_escapeHtml(sourceLabel)}</strong> · ${items.length} trades${fieldCount}`;
 
-  const activeTpCount = appState.ui?.tpConfig?.multi?.tpCount === 3 ? 3 : 2;
   list.innerHTML = JOURNAL_DIMS.map(dim => {
     const isOverrideOnly = dim.overrideOnly === true;
     // Demo has no user columns to map against — hide overrideOnly rows
     // entirely rather than render a dead "missing / no pencil" line.
     if (isOverrideOnly && !isAPI) return '';
-    // Gate tp3_rr on the active tpCount in API mode so the Mapping tab
-    // matches what Multi TP actually requires.
-    if (isOverrideOnly && dim.key === 'tp3_rr' && activeTpCount !== 3) return '';
     const { sample, populated } = _inspectDimInTrades(dim.key);
     const override   = apiOverrides[dim.key];
     const ok         = populated > 0;
@@ -20455,9 +20543,10 @@ function updateJournalPanel() {
            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
          </button>`
       : '';
+    const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
     return `<li class="ljp-item ${status}${canRemap ? '' : ' is-readonly'}" data-dim-key="${_escapeHtml(dim.key)}">
               <div class="ljp-item-row">
-                <span class="ljp-item-label">${_escapeHtml(dim.label)}</span>
+                <span class="ljp-item-label">${_escapeHtml(dim.label)}${requiredBadge}</span>
                 <span class="ljp-status ${status}">${statusTxt}</span>
               </div>
               <div class="ljp-item-col">sample · <strong>${_escapeHtml(shown)}</strong> <span style="opacity:.55">· ${_escapeHtml(coverage)}</span>${overrideNote}</div>

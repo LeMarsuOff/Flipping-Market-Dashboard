@@ -1618,6 +1618,21 @@ body {
 .ljp-status.is-ok       { color: var(--g);    background: color-mix(in srgb, var(--g) 14%, transparent); }
 .ljp-status.is-missing  { color: var(--r);    background: var(--r2); }
 .ljp-status.is-remapped { color: var(--gold); background: var(--gold2); }
+.ljp-required-badge {
+  display: inline-block;
+  font-size: 8.5px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  border-radius: 2px;
+  background: rgba(232, 92, 92, 0.12);
+  border: 1px solid rgba(232, 92, 92, 0.40);
+  color: #e85c5c;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-weight: 500;
+  vertical-align: middle;
+}
 .ljp-item-col {
   font-family: 'DM Mono', monospace;
   font-size: 9.5px;
