@@ -1407,6 +1407,28 @@ body {
   border-color: rgba(232, 108, 166, .40);
   background: rgba(232, 108, 166, .10);
 }
+.logo-guide-panel .csv-doc-type-pill.is-url {
+  color: #9aa6c4;
+  border-color: rgba(154, 166, 196, .40);
+  background: rgba(154, 166, 196, .10);
+}
+.logo-guide-panel .csv-doc-multi-tp-note {
+  font-size: var(--typo-micro-size);
+  color: var(--text-muted);
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+.logo-guide-panel .csv-doc-multi-tp-note code {
+  background: var(--bg3, var(--bg2));
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.95em;
+}
 .logo-guide-panel .csv-doc-section-title {
   display: flex;
   align-items: center;
@@ -10206,6 +10228,11 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   color: #e86ca6;
   border-color: rgba(232, 108, 166, .40);
   background: rgba(232, 108, 166, .10);
+}
+.csv-format-hint .csv-doc-type-pill.is-url {
+  color: #9aa6c4;
+  border-color: rgba(154, 166, 196, .40);
+  background: rgba(154, 166, 196, .10);
 }
 
 .csv-format-hint .csv-doc-btn-replica {
