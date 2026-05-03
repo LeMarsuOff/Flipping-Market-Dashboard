@@ -20335,12 +20335,17 @@ document.addEventListener('mousedown', e => {
 // Per-dim extractor used by the API/Demo "inspection" view. Each function
 // returns a human-readable sample string, or '' when the trade lacks the field.
 const _JOURNAL_DIM_EXTRACTORS = {
+  outcome:      t => t.outcome || '',
+  r:            t => (t.r != null && Number.isFinite(Number(t.r))) ? String(t.r) : '',
+  date:         t => t.date || '',
   pair:         t => t.pair || '',
   setup:        t => t.setup || '',
+  setupDetail:  t => t.setupDetail || '',
   session:      t => t.session || '',
   day:          t => t.day || '',
   obstacles:    t => (Array.isArray(t.obstacles) && t.obstacles.length) ? t.obstacles.join(', ') : '',
   h4:           t => (Array.isArray(t.h4) && t.h4.length) ? t.h4.join(', ') : '',
+  beManagement: t => (Array.isArray(t.beManagement) && t.beManagement.length) ? t.beManagement.join(', ') : '',
   hour:         t => (t.hour != null && Number.isFinite(Number(t.hour))) ? `${t.hour}h` : '',
   positionType: t => t.positionType || t.tradeType || '',
   direction:    t => t.direction || '',
@@ -20353,6 +20358,12 @@ const _JOURNAL_DIM_EXTRACTORS = {
   tp3_rr:       t => (t.tp3_rr != null && Number.isFinite(Number(t.tp3_rr))) ? String(t.tp3_rr) : '',
   badFeeling:   t => (t.badFeeling === true ? 'yes' : (t.badFeeling === false ? 'no' : '')),
   notionUrl:    t => t.notionUrl || '',
+  // Screenshot URL fields. _normalizeAPITrade and CSV parsers both store the
+  // resolved URL on these camelCase keys (TV share links are pre-rewritten to
+  // the deterministic S3 PNG path; the *Orig pair preserves the original).
+  img_m15:       t => t.imgM15 || '',
+  img_h4_before: t => t.imgH4Before || '',
+  img_m15_after: t => t.imgM15After || '',
 };
 
 // Scan the current in-memory trade set for a non-empty value on `dimKey`.
