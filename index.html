@@ -2082,16 +2082,16 @@
             <span class="cc-title">Partial Optimizer</span>
             <div class="pp-be-info" tabindex="0" aria-label="Optimizer rules">?
               <div class="pp-be-info-pop" role="tooltip">
-                <div class="pp-be-info-title">Hypothèses du simulateur</div>
+                <div class="pp-be-info-title">Simulator assumptions</div>
                 <div class="pp-be-info-body">
                   <ul>
-                    <li><strong>SL fixe à −1R</strong> (convention R-multiples)</li>
-                    <li>BE armé après <strong>TP1 atteint</strong> (universel, non désactivable)</li>
-                    <li>Si <strong>rrMax &lt; TP1</strong> → −1R full size</li>
-                    <li>Legs non atteints → exit à <strong>0R (BE)</strong></li>
-                    <li>TP1 obligatoirement <strong>≥ 1R</strong> (path-order vs rrMax)</li>
-                    <li>Full-TP baseline = <strong>100% au TP final</strong></li>
-                    <li><strong>Bootstrap CI95%</strong> : 500 itérations (100 en sweep mode)</li>
+                    <li><strong>Fixed SL at −1R</strong> (R-multiples convention)</li>
+                    <li>BE armed after <strong>TP1 hit</strong> (universal, non-disableable)</li>
+                    <li>If <strong>rrMax &lt; TP1</strong> → −1R full size</li>
+                    <li>Unreached legs → exit at <strong>0R (BE)</strong></li>
+                    <li>TP1 must be <strong>≥ 1R</strong> (path-order vs rrMax)</li>
+                    <li>Full-TP baseline = <strong>100% at TP final</strong></li>
+                    <li><strong>Bootstrap CI95%</strong>: 500 iterations (100 in sweep mode)</li>
                   </ul>
                   <div class="pp-be-info-warn">
                     ⚠ Standardized TP1/TP2 across all trades. Brute-force comparator — not a forward optimization.

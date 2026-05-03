@@ -5819,7 +5819,7 @@ function _installTvImageFallback(imgEl) {
       ph.appendChild(link);
     } else {
       const hint = document.createElement('div');
-      hint.textContent = '(vérifier le lien dans Notion)';
+      hint.textContent = '(check the link in Notion)';
       hint.style.cssText = 'color:var(--dim);font-size:var(--typo-panel-size)';
       ph.appendChild(hint);
     }
@@ -15746,7 +15746,7 @@ function _poBuildScaffold() {
           <input type="number" id="po-tpfinal" class="po-num po-num-sm" min="1.5" max="20" step="0.5" value="2.4">
           <span class="po-ctrl-suffix">R</span>
         </div>
-        <label class="po-ctrl-check po-ctrl-check-inline" title="Quand activé, teste les TP finals 1.5R à 20R simultanément.">
+        <label class="po-ctrl-check po-ctrl-check-inline" title="When enabled, tests TP finals 1.5R to 20R simultaneously.">
           <input type="checkbox" id="po-sweep-mode">
           <span>Sweep TP final</span>
         </label>
@@ -15759,7 +15759,7 @@ function _poBuildScaffold() {
           </select>
         </div>
         <div class="po-toolbar-spacer"></div>
-        <span id="po-setup-models" class="po-toolbar-meta">— modèles</span>
+        <span id="po-setup-models" class="po-toolbar-meta">— models</span>
         <span class="po-toolbar-meta-sep">·</span>
         <span id="po-setup-mode" class="po-toolbar-meta po-toolbar-meta-accent">single TP</span>
       </div>
@@ -15774,27 +15774,27 @@ function _poBuildScaffold() {
           </select>
         </div>
         <div class="po-toolbar-group">
-          <button type="button" id="po-hide-non-top" class="po-btn-toggle" title="Masquer toutes les bulles hors du Top sélectionné">
-            <span class="po-btn-toggle-dot"></span><span>Isoler Top</span>
+          <button type="button" id="po-hide-non-top" class="po-btn-toggle" title="Hide all bubbles outside the selected Top">
+            <span class="po-btn-toggle-dot"></span><span>Isolate Top</span>
           </button>
-          <button type="button" id="po-zoom-reset" class="po-btn-toggle" title="Réinitialiser le zoom du scatter">⟲ Reset zoom</button>
+          <button type="button" id="po-zoom-reset" class="po-btn-toggle" title="Reset scatter zoom">⟲ Reset zoom</button>
         </div>
         <div class="po-toolbar-group">
-          <select id="po-yaxis" class="po-sel po-sel-sm" title="Métrique de l'axe Y">
+          <select id="po-yaxis" class="po-sel po-sel-sm" title="Y-axis metric">
             <option value="calmar" selected>Y: Calmar (profit / DD)</option>
-            <option value="reliability">Y: Fiabilité bootstrap</option>
-            <option value="robust">Y: Robustesse (sans outliers)</option>
+            <option value="reliability">Y: Bootstrap reliability</option>
+            <option value="robust">Y: Robustness (no outliers)</option>
           </select>
-          <label class="po-ctrl-check po-ctrl-check-inline" title="Cache les modèles avec EV < -0.3R (poubelles)">
+          <label class="po-ctrl-check po-ctrl-check-inline" title="Hides models with EV < -0.3R (trash)">
             <input type="checkbox" id="po-hide-catastrophic" checked>
-            <span>Hide poubelles</span>
+            <span>Hide trash</span>
           </label>
         </div>
         <div class="po-toolbar-group">
-          <span class="po-toolbar-lbl">Couleur</span>
+          <span class="po-toolbar-lbl">Color</span>
           <select id="po-color-mode" class="po-sel po-sel-sm">
             <option value="type" selected>Type</option>
-            <option value="sig">Significativité IC</option>
+            <option value="sig">CI significance</option>
             <option value="tpfinal">TP final</option>
           </select>
         </div>
@@ -15847,19 +15847,19 @@ function _poBuildScaffold() {
 
     <div class="po-block po-block-equity" data-po-section="equity">
       ${_hh('equity', 'Equity')}
-      <div class="po-block-title">Equity curve · modèle vs baseline</div>
+      <div class="po-block-title">Equity curve · model vs baseline</div>
       <div class="po-canvas-stage"><canvas id="po-equity"></canvas></div>
     </div>
 
     <div class="po-block po-block-ranking-tbl" data-po-section="ranking">
       ${_hh('ranking', 'Ranking')}
-      <div class="po-block-title">Classement</div>
+      <div class="po-block-title">Ranking</div>
       <div class="po-ranking-scroll">
         <table class="po-ranking" id="po-ranking">
           <thead>
             <tr>
               <th>#</th>
-              <th>Modèle</th>
+              <th>Model</th>
               <th class="po-num-col po-th-sortable" data-po-sort="totalR">Total R<span class="po-th-arrow"></span></th>
               <th class="po-num-col po-th-sortable" data-po-sort="wr">WR<span class="po-th-arrow"></span></th>
               <th class="po-num-col po-th-sortable" data-po-sort="ev">EV<span class="po-th-arrow"></span></th>
@@ -16125,8 +16125,8 @@ function _poRenderScatter() {
   };
   const yAxisTitle = ({
     calmar:      'Calmar score (profit / drawdown)',
-    reliability: 'Fiabilité bootstrap',
-    robust:      'Robustesse (sans outliers)',
+    reliability: 'Bootstrap reliability',
+    robust:      'Robustness (no outliers)',
   })[st.config.yAxisMode] || 'Calmar score';
 
   const datasets = [];
@@ -16333,15 +16333,15 @@ function _poRenderScatter() {
   const countEl = document.getElementById('po-count');
   if (countEl) {
     const filterTag = filteredOut > 0
-      ? ` <span class="po-count-filter">(-${filteredOut} cachés)</span>`
+      ? ` <span class="po-count-filter">(-${filteredOut} hidden)</span>`
       : '';
-    countEl.innerHTML = `${top.length} / ${workingResults.length} modèles${filterTag}`;
+    countEl.innerHTML = `${top.length} / ${workingResults.length} models${filterTag}`;
   }
 
   // Setup panel feedback (replaces legacy po-grid-meta from v9 and earlier).
   const modelsEl = document.getElementById('po-setup-models');
   if (modelsEl) {
-    modelsEl.textContent = `${st.results.length} modèle${st.results.length > 1 ? 's' : ''}`;
+    modelsEl.textContent = `${st.results.length} model${st.results.length > 1 ? 's' : ''}`;
   }
   const modeEl = document.getElementById('po-setup-mode');
   if (modeEl) {
@@ -16427,10 +16427,10 @@ function _poRenderDetail() {
   const dStab = sel.stability - base.stability;
 
   // Verdict heuristic: positive EV vs base + positive net = good. Negative EV = bad. Otherwise neutral.
-  let verdictCls = 'po-verdict-neutral', verdictTxt = '≈ Comparable au baseline';
-  if (sel.idx === st.baselineIdx) { verdictCls = 'po-verdict-neutral'; verdictTxt = 'Baseline (référence)'; }
-  else if (dEV > 0.02 && (sel.vsBaseline?.net ?? 0) > 0) { verdictCls = 'po-verdict-good'; verdictTxt = '✓ Stratégie supérieure au Full TP'; }
-  else if (dEV < -0.02 || (sel.vsBaseline?.net ?? 0) < -1) { verdictCls = 'po-verdict-bad'; verdictTxt = '✗ Stratégie inférieure au Full TP'; }
+  let verdictCls = 'po-verdict-neutral', verdictTxt = '≈ Comparable to baseline';
+  if (sel.idx === st.baselineIdx) { verdictCls = 'po-verdict-neutral'; verdictTxt = 'Baseline (reference)'; }
+  else if (dEV > 0.02 && (sel.vsBaseline?.net ?? 0) > 0) { verdictCls = 'po-verdict-good'; verdictTxt = '✓ Strategy outperforms Full TP'; }
+  else if (dEV < -0.02 || (sel.vsBaseline?.net ?? 0) < -1) { verdictCls = 'po-verdict-bad'; verdictTxt = '✗ Strategy underperforms Full TP'; }
 
   const net   = sel.vsBaseline?.net ?? 0;
 
@@ -17126,7 +17126,7 @@ function _poRenderEquity(sel, base) {
   const datasets = [];
   if (!selectedPresetKey) {
     datasets.push({
-      label: 'Modèle',
+      label: 'Model',
       data: sel.sim.equity,
       borderColor: tc('--gold') || '#5a9cf5',
       backgroundColor: 'transparent',
@@ -17393,7 +17393,7 @@ function _poRenderStatCards() {
         if (valEl) valEl.textContent = '—';
       }
     } else {
-      if (nameEl) nameEl.textContent = '(sweep désactivé)';
+      if (nameEl) nameEl.textContent = '(sweep disabled)';
       if (valEl) valEl.textContent = '—';
     }
   }
