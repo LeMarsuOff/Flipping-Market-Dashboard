@@ -11510,6 +11510,95 @@ function _posUtip(cx, cy) {
   tt.style.left = x + 'px'; tt.style.top = y + 'px';
 }
 
+// ══════════════════════════════════════════════════════
+// ELEMENT-ANCHORED INFO POPS (.pp-be-info-pop, .orr-sim-mode-info-pop)
+// ──────────────────────────────────────────────────────
+// These tooltips originally sat inside .chart-card { overflow: hidden } AND
+// inside .po-widget > * { position: relative; z-index: 1 } — the latter
+// creates per-tile stacking contexts that trap any descendant z-index, so
+// even position:fixed + z-index:9999 was painted under the next sibling tile.
+// Fix: portal the popup to document.body at boot so it has no ancestor
+// stacking context. Show/hide is JS-driven (the previous CSS :hover cascade
+// can't fire once the pop leaves the trigger's subtree). A small grace
+// period preserves the mouse-bridge from the `?` to the popup body.
+
+const _INFO_POP_SELECTORS = '.pp-be-info, .orr-sim-mode-info';
+const _INFO_POP_OFFSET_Y = 6;
+const _INFO_POP_HIDE_GRACE_MS = 150;
+// Anchor → pop pairs, kept in an array (anchors live for the page lifetime
+// since they're declared statically in index.html — no leak risk).
+const _infoPopPairs = [];
+
+function _positionInfoPop(anchorEl, popEl, offsetY = _INFO_POP_OFFSET_Y) {
+  if (!anchorEl || !popEl) return;
+  const a = anchorEl.getBoundingClientRect();
+  const pw = popEl.offsetWidth || 340;
+  const ph = popEl.offsetHeight || 200;
+  const W = window.innerWidth, H = window.innerHeight;
+  let left = a.left;
+  let top  = a.bottom + offsetY;
+  if (left + pw > W - 8) left = W - pw - 8;
+  if (left < 8) left = 8;
+  if (top + ph > H - 8) top = a.top - ph - offsetY;
+  if (top < 8) top = 8;
+  popEl.style.left = left + 'px';
+  popEl.style.top  = top  + 'px';
+}
+
+function _showInfoPop(anchor, pop) {
+  clearTimeout(anchor._infoPopHideTimer);
+  pop.style.display = 'block';
+  _positionInfoPop(anchor, pop);
+}
+
+function _scheduleHideInfoPop(anchor, pop) {
+  clearTimeout(anchor._infoPopHideTimer);
+  anchor._infoPopHideTimer = setTimeout(() => {
+    pop.style.display = 'none';
+  }, _INFO_POP_HIDE_GRACE_MS);
+}
+
+let _infoPopRafPending = false;
+function _scheduleVisibleInfoPopReposition() {
+  if (_infoPopRafPending) return;
+  _infoPopRafPending = true;
+  requestAnimationFrame(() => {
+    _infoPopRafPending = false;
+    for (const { anchor, pop } of _infoPopPairs) {
+      if (!pop || pop.style.display === 'none') continue;
+      _positionInfoPop(anchor, pop);
+    }
+  });
+}
+
+function _initInfoPopPositioners() {
+  document.querySelectorAll(_INFO_POP_SELECTORS).forEach(anchor => {
+    if (anchor._infoPopBound) return;
+    const pop = anchor.querySelector('.pp-be-info-pop, .orr-sim-mode-info-pop');
+    if (!pop) return;
+    anchor._infoPopBound = true;
+    // Portal to body once — escapes the .po-widget > * stacking trap so
+    // z-index: 9999 paints above sibling tiles.
+    if (pop.parentElement !== document.body) document.body.appendChild(pop);
+    _infoPopPairs.push({ anchor, pop });
+
+    anchor.addEventListener('mouseenter', () => _showInfoPop(anchor, pop));
+    anchor.addEventListener('focus',      () => _showInfoPop(anchor, pop));
+    anchor.addEventListener('mouseleave', () => _scheduleHideInfoPop(anchor, pop));
+    anchor.addEventListener('blur',       () => _scheduleHideInfoPop(anchor, pop));
+    // Mouse-bridge from `?` → popup body: the hide timer started on
+    // anchor.mouseleave is cancelled when the cursor lands inside the pop,
+    // and re-armed when it leaves the pop.
+    pop.addEventListener('mouseenter', () => clearTimeout(anchor._infoPopHideTimer));
+    pop.addEventListener('mouseleave', () => _scheduleHideInfoPop(anchor, pop));
+  });
+  if (!window._infoPopGlobalListenersBound) {
+    window._infoPopGlobalListenersBound = true;
+    window.addEventListener('resize', _scheduleVisibleInfoPopReposition, { passive: true });
+    window.addEventListener('scroll', _scheduleVisibleInfoPopReposition, { passive: true, capture: true });
+  }
+}
+
 // ── Pair × Session tooltip (now uses unified system) ──
 function _showPSTip(e, text) { showUtipText(e, text); }
 function _hidePSTip() { hideUtip(); }
@@ -12278,8 +12367,9 @@ function closeWidgetDrawer() {
   const bd     = document.getElementById('wd-backdrop');
   if (drawer) drawer.classList.remove('is-open');
   if (bd) bd.classList.remove('is-open');
-  // Remove bar highlight
-  document.querySelectorAll('.bar-row.lb-active').forEach(r => r.classList.remove('lb-active'));
+  // Remove bar highlight (shared scope: Performance Bars + Partial Optimizer RR-dist chips)
+  document.querySelectorAll('.bar-row.lb-active, .pp-gchip.lb-active').forEach(r => r.classList.remove('lb-active'));
+  if (window._poState) window._poState.activeRRDistLv = null;
   // Remove cell highlight (calendar, pair×session)
   document.querySelectorAll('.wd-cell-active').forEach(el => el.classList.remove('wd-cell-active'));
   // Remove streak timeline run + square highlights
@@ -14710,8 +14800,8 @@ window._poState = window._poState || {
     // below — no longer surfaced in the Setup UI (v11).
   },
   hiddenTpFinals: new Set(), // TP final values hidden via legend click (sweep+tpfinal mode)
-  equityBaselineBeFilter: false, // v12: apply BE Management filter to the equity baseline line
   hiddenPresetCurves: new Set(), // PR-D: 'P1' | 'P2' | 'P3' if hidden via legend click — persists across re-renders
+  activeRRDistLv: null, // RR-distribution chip lv currently linked to the open drawer (re-applied to .pp-gchip.lb-active across re-renders)
   scatterChart: null,
   equityChart: null,
 };
@@ -14722,6 +14812,11 @@ window._poState = window._poState || {
 const PO_SL_DEFAULT = 1;
 const PO_BOOTSTRAP_ITERS = 500;
 const PO_BOOTSTRAP_ITERS_SWEEP = 100;
+// Locked TP target for the Equity Curve baseline. Independent of the PO
+// toolbar tpFinal (which drives partial models) and any ORR sync — the
+// baseline must stay anchored on a stable reference so Model vs Baseline
+// comparisons remain meaningful when the user explores other tpFinals.
+const PO_BASELINE_FIXED_TP_R = 2.4;
 
 // Fixed cumulative thresholds for the RR Distribution block (mirrors the
 // Partials Planner gchip pattern). Color follows the PP per-threshold gradient:
@@ -14972,18 +15067,31 @@ function _poSimulateSlotModel(slotKey) {
   const sim = _poSimulateModel(model, rrMaxArr, trades);
   if (!sim) return null;
 
-  // Compute vsBaseline against the matching tpFinal Full-TP baseline if available
-  // in the current results. Fallback: no comparison.
+  // Resolve the same-tpFinal Full-TP baseline. Prefer the existing grid result
+  // (avoids redundant work) but fall back to an on-demand simulation when the
+  // grid is generated for a different tpFinal — otherwise presets that store
+  // a Full TP at a non-active tpFinal would silently lose their EV/Total R
+  // delta arrows in the tile until the user clicks them and forces a regrid.
   const st = window._poState;
-  let vsBaseline = null;
+  let baselineSim = null;
   if (st && Array.isArray(st.results)) {
-    const baseline = st.results.find(r => r.model.type === 'full' && r.model.tpFinal === stored.tpFinal);
-    if (baseline) {
-      vsBaseline = _poComputeSavedSacrificed(sim.simR, baseline.sim.simR);
-    }
+    const found = st.results.find(r => r.model.type === 'full' && r.model.tpFinal === stored.tpFinal);
+    if (found) baselineSim = found.sim;
+  }
+  if (!baselineSim) {
+    const baselineModel = {
+      id: `slot_${slotKey}_baseline`,
+      name: `Full TP ${stored.tpFinal}R`,
+      type: 'full',
+      legs: [{ lv: stored.tpFinal, pct: 1.0 }],
+      sl: -1,
+      tpFinal: stored.tpFinal,
+    };
+    baselineSim = _poSimulateModel(baselineModel, rrMaxArr, trades);
   }
 
-  return { sim, vsBaseline, stability: 0, model };
+  const vsBaseline = baselineSim ? _poComputeSavedSacrificed(sim.simR, baselineSim.simR) : null;
+  return { sim, vsBaseline, baselineSim, stability: 0, model };
 }
 
 // Simulate one model on the rrMax array — returns per-trade R + aggregates.
@@ -15634,9 +15742,6 @@ function _poBuildScaffold() {
         <span id="po-setup-models" class="po-toolbar-meta">— modèles</span>
         <span class="po-toolbar-meta-sep">·</span>
         <span id="po-setup-mode" class="po-toolbar-meta po-toolbar-meta-accent">single TP</span>
-        <button type="button" id="po-recalc" class="po-btn-primary po-btn-recalc-inline">
-          <span class="po-btn-icon">▶</span><span>Recalculer</span>
-        </button>
       </div>
       <div class="po-toolbar">
         <div class="po-toolbar-group">
@@ -15723,12 +15828,6 @@ function _poBuildScaffold() {
     <div class="po-block po-block-equity" data-po-section="equity">
       ${_hh('equity', 'Equity')}
       <div class="po-block-title">Equity curve · modèle vs baseline</div>
-      <div class="po-equity-toolbar">
-        <label class="po-ctrl-check po-ctrl-check-inline" title="Applique le filtre BE Management uniquement à la ligne baseline pour comparaison.">
-          <input type="checkbox" id="po-equity-be-filter">
-          <span>Baseline avec BE Management filter</span>
-        </label>
-      </div>
       <div class="po-canvas-stage"><canvas id="po-equity"></canvas></div>
     </div>
 
@@ -15771,7 +15870,7 @@ function _poWireScaffold() {
   const $ = (id) => document.getElementById(id);
 
   // Initial values from state. v11: SL/Bootstrap/Iters retirés (constants).
-  const tpEl = $('po-tpfinal');      if (tpEl) { tpEl.value = cfg.tpFinal; tpEl.disabled = !!cfg.sweepMode; }
+  const tpEl = $('po-tpfinal');      if (tpEl) { tpEl.value = cfg.tpFinal; }
   const pmEl = $('po-partial-mode'); if (pmEl) pmEl.value = cfg.partialMode;
   const tnEl = $('po-top-n');        if (tnEl) tnEl.value = String(cfg.topN);
   const cmEl = $('po-color-mode');   if (cmEl) cmEl.value = cfg.colorMode;
@@ -15791,8 +15890,18 @@ function _poWireScaffold() {
   };
 
   tpEl?.addEventListener('change', () => {
-    cfg.tpFinal = Math.max(1.5, Math.min(20, parseFloat(tpEl.value) || 4));
-    tpEl.value = cfg.tpFinal;
+    const raw = tpEl.value.trim();
+    const parsed = parseFloat(raw);
+    // Empty / non-numeric / non-positive → reset to 2.4R default.
+    // Otherwise clamp to the [1.5, 20] grid bounds (existing behaviour).
+    // Sweep mode is intentionally left untouched — when Sweep is ON the
+    // typed value is stored on cfg but ignored by _poGenerateGrid; it
+    // takes effect once the user turns Sweep OFF.
+    const next = (raw === '' || !Number.isFinite(parsed) || parsed <= 0)
+      ? 2.4
+      : Math.max(1.5, Math.min(20, parsed));
+    cfg.tpFinal = next;
+    tpEl.value = next;
     debouncedRecompute();
   });
   pmEl?.addEventListener('change', () => {
@@ -15841,20 +15950,6 @@ function _poWireScaffold() {
     _poRenderScatter();
   });
 
-  // Equity baseline BE Management filter toggle (v12). Re-renders only the
-  // equity canvas — no recompute of the model batch.
-  const equityBeEl = $('po-equity-be-filter');
-  if (equityBeEl) {
-    equityBeEl.checked = !!window._poState.equityBaselineBeFilter;
-    equityBeEl.addEventListener('change', () => {
-      window._poState.equityBaselineBeFilter = equityBeEl.checked;
-      const st = window._poState;
-      const sel = st.results[st.selectedIdx];
-      const baseR = st.results[st.baselineIdx];
-      if (sel && baseR) _poRenderEquity(sel, baseR);
-    });
-  }
-
   // Hide-non-top toggle button
   const hideBtn = $('po-hide-non-top');
   if (hideBtn) {
@@ -15894,8 +15989,6 @@ function _poWireScaffold() {
   }
   sweepEl?.addEventListener('change', () => {
     cfg.sweepMode = sweepEl.checked;
-    // Visually grey out the TP Final input — its value is ignored in sweep mode.
-    if (tpEl) tpEl.disabled = !!cfg.sweepMode;
     // Auto-switch the colorMode to keep the legend meaningful, but only if
     // the user is on the default 'type' / coming back to it. Don't override
     // if they actively chose 'sig' or 'tpfinal'.
@@ -15955,7 +16048,14 @@ function _poWireScaffold() {
     if (!chip) return;
     const lv = parseFloat(chip.dataset.lv);
     const label = chip.dataset.label;
-    if (Number.isFinite(lv)) _poRRGchipDrawer(lv, label);
+    if (!Number.isFinite(lv)) return;
+    // Visual active state — shared with the .bar-row.lb-active pattern.
+    // Persisted in _poState so a re-render mid-drawer (filter/TPM change)
+    // can restore the highlight in _poRenderRRDist.
+    document.querySelectorAll('.pp-gchip.lb-active').forEach(c => c.classList.remove('lb-active'));
+    chip.classList.add('lb-active');
+    if (window._poState) window._poState.activeRRDistLv = lv;
+    _poRRGchipDrawer(lv, label);
   });
 }
 
@@ -16312,8 +16412,6 @@ function _poRenderDetail() {
   else if (dEV > 0.02 && (sel.vsBaseline?.net ?? 0) > 0) { verdictCls = 'po-verdict-good'; verdictTxt = '✓ Stratégie supérieure au Full TP'; }
   else if (dEV < -0.02 || (sel.vsBaseline?.net ?? 0) < -1) { verdictCls = 'po-verdict-bad'; verdictTxt = '✗ Stratégie inférieure au Full TP'; }
 
-  const saved = sel.vsBaseline?.saved ?? 0;
-  const sacri = sel.vsBaseline?.sacrificed ?? 0;
   const net   = sel.vsBaseline?.net ?? 0;
 
   // Bootstrap confidence approximation: visual % of where mean sits inside CI95.
@@ -16331,14 +16429,17 @@ function _poRenderDetail() {
           <span class="po-bilan-conf-lbl">Bootstrap confidence</span>
           <span class="po-bilan-conf-val">${confPct}%</span>
         </div>
-        <div class="po-bilan-conf-bar"><div class="po-bilan-conf-fill" style="width:${confPct}%"></div></div>
+        <div class="po-bilan-conf-action-row">
+          <div class="po-bilan-conf-bar"><div class="po-bilan-conf-fill" style="width:${confPct}%"></div></div>
+          <button type="button" id="po-recalc" class="po-bilan-conf-recalc" aria-label="Recalculer">
+            <span class="po-btn-icon">▶</span><span>Recalculer</span>
+          </button>
+        </div>
         <div class="po-bilan-conf-meta">500 iterations · CI95% [${ic.low.toFixed(2)}R, ${ic.high.toFixed(2)}R]</div>
       </div>`;
   }
 
   const netCls = net >= 0 ? 'po-v-pos' : 'po-v-neg';
-  const savedCls = saved > 0 ? 'po-v-pos' : 'po-v-neutral';
-  const sacriCls = sacri < 0 ? 'po-v-neg' : 'po-v-neutral';
 
   wrap.innerHTML = `
     <div class="po-bilan-card">
@@ -16348,6 +16449,10 @@ function _poRenderDetail() {
         <div class="po-bilan-sub">${verdictTxt}</div>
       </div>
       <div class="po-bilan-rows">
+        <div class="po-bilan-row">
+          <span class="po-bilan-row-lbl">Net</span>
+          <span class="po-bilan-row-val"><span class="${netCls}">${_poFmtR(net)}</span></span>
+        </div>
         <div class="po-bilan-row">
           <span class="po-bilan-row-lbl">Total R</span>
           <span class="po-bilan-row-val">
@@ -16390,26 +16495,13 @@ function _poRenderDetail() {
             ${_poDeltaSpan(dStab, '')}
           </span>
         </div>
-        <div class="po-bilan-row">
-          <span class="po-bilan-row-lbl">R Saved</span>
-          <span class="po-bilan-row-val"><span class="${savedCls}">${_poFmtR(saved)}</span></span>
-        </div>
-        <div class="po-bilan-row">
-          <span class="po-bilan-row-lbl">R Sacrificed</span>
-          <span class="po-bilan-row-val"><span class="${sacriCls}">${_poFmtR(sacri)}</span></span>
-        </div>
-        <div class="po-bilan-row">
-          <span class="po-bilan-row-lbl">Net</span>
-          <span class="po-bilan-row-val"><span class="${netCls}">${_poFmtR(net)}</span></span>
-        </div>
       </div>
       ${confBlock}
       <div class="po-bilan-foot">
         <button type="button" class="po-bilan-btn" id="po-btn-save-preset">
           <span class="po-bilan-btn-ic">💾</span><span>Save preset</span>
         </button>
-        <button type="button" class="po-bilan-btn po-bilan-btn-primary" id="po-btn-apply-dashboard"
-          ${sel.model.type === 'full' ? 'disabled title="Full TP models cannot be applied as Personalised. Switch to Fixed mode manually if needed."' : ''}>
+        <button type="button" class="po-bilan-btn po-bilan-btn-primary" id="po-btn-apply-dashboard">
           <span>Apply to Dashboard</span><span class="po-bilan-btn-arrow">→</span>
         </button>
       </div>
@@ -16418,7 +16510,7 @@ function _poRenderDetail() {
 
   // Wire the Apply button (after innerHTML assignment).
   const applyBtn = document.getElementById('po-btn-apply-dashboard');
-  if (applyBtn && sel.model.type !== 'full') {
+  if (applyBtn) {
     applyBtn.addEventListener('click', () => _poApplyToDashboard(sel));
   }
 
@@ -16497,14 +16589,71 @@ function _poFindMatchingResultIdx(stored) {
   return -1;
 }
 
-// PR-B: push the selected PO model's params into appState.ui.tpConfig as a
-// Personalised TP plan, with confirmation if one already exists. Stays on the
-// Partial Optimizer section. Full TP models (type === 'full') are not
-// supported — the button is disabled in those cases.
+// ORR bubble values used by the Full-TP apply path. Mirrors the `steps` array
+// in computeOptimalRR — keep in sync if the ORR widget grid changes.
+const _PO_ORR_BUBBLE_R_VALUES = [0.5, 1.0, 1.5, 2.0, 2.4, 2.5, 3.0, 3.3, 3.5, 4.0, 4.5, 5.0];
+
+// Shared "✓ Applied" feedback on the Apply button. Factored out so both the
+// partials branch and the Full-TP branch can call it.
+function _poApplyVisualFeedback() {
+  const btn = document.getElementById('po-btn-apply-dashboard');
+  if (!btn) return;
+  const original = btn.textContent;
+  btn.textContent = '✓ Applied';
+  btn.classList.add('is-applied');
+  setTimeout(() => {
+    const stillThere = document.getElementById('po-btn-apply-dashboard');
+    if (stillThere) {
+      stillThere.textContent = original;
+      stillThere.classList.remove('is-applied');
+    }
+  }, 1500);
+}
+
+// PR-B: push the selected PO model's params into appState.ui.tpConfig.
+// Partials (one/two) → Personalised TP. Full TP → either ORR bubble sync
+// (when tpFinal matches an ORR step) or Personalised fallback otherwise.
 function _poApplyToDashboard(sel) {
   if (!sel || !sel.model) return;
-  if (sel.model.type === 'full') return; // Defensive guard — button is disabled.
 
+  // ── Full TP branch ──
+  if (sel.model.type === 'full') {
+    const tpFinal = sel.model.tpFinal;
+    if (!Number.isFinite(tpFinal)) {
+      console.warn('[poApply] Full TP: invalid tpFinal:', tpFinal);
+      return;
+    }
+    const matchesBubble = _PO_ORR_BUBBLE_R_VALUES.some(b => Math.abs(tpFinal - b) < 1e-6);
+    if (matchesBubble) {
+      // Step 1 — Force Fixed mode (ORR↔TPM is a display convention, not an
+      // auto-mutex), then activate the bubble (toggle-guarded so an already
+      // active matching bubble is left untouched instead of being turned off).
+      if (appState.ui.tpConfig?.mode !== 'fixed' && typeof _setTpMode === 'function') {
+        _setTpMode('fixed');
+      }
+      if (appState.ui.rrMinFilter !== tpFinal && typeof _rrFilterBubbleClick === 'function') {
+        _rrFilterBubbleClick(tpFinal);
+      }
+      console.log(`[poApply] Full TP ${tpFinal}R → ORR bubble sync`);
+    } else {
+      // Step 2 — Personalised fallback. tp2 is a placeholder > tp1 (0% allocated
+      // so the engine never reads it), tp3 is filler to satisfy the validator.
+      const cfg = appState.ui.tpConfig;
+      if (cfg) {
+        cfg.personalised = {
+          tpCount: 2,
+          targets:  { tp1: tpFinal, tp2: tpFinal + 0.5, tp3: 3 },
+          partials: { tp1: 100, tp2: 0, tp3: 0 },
+        };
+      }
+      if (typeof _setTpMode === 'function') _setTpMode('personalised');
+      console.log(`[poApply] Full TP ${tpFinal}R → Personalised fallback (no ORR match)`);
+    }
+    _poApplyVisualFeedback();
+    return;
+  }
+
+  // ── Partials branch (unchanged behaviour) ──
   const legs = sel.model.legs;
   if (!Array.isArray(legs) || legs.length < 2 || legs.length > 3) {
     console.warn('[poApply] Unexpected legs shape:', legs);
@@ -16537,21 +16686,7 @@ function _poApplyToDashboard(sel) {
   cfg.personalised = newPersonalised;
   if (typeof _setTpMode === 'function') _setTpMode('personalised');
 
-  // Visual feedback on the button: temporarily change label.
-  const btn = document.getElementById('po-btn-apply-dashboard');
-  if (btn) {
-    const original = btn.textContent;
-    btn.textContent = '✓ Applied';
-    btn.classList.add('is-applied');
-    setTimeout(() => {
-      // Re-check element still exists (the detail block may have been re-rendered).
-      const stillThere = document.getElementById('po-btn-apply-dashboard');
-      if (stillThere) {
-        stillThere.textContent = original;
-        stillThere.classList.remove('is-applied');
-      }
-    }, 1500);
-  }
+  _poApplyVisualFeedback();
 }
 
 // ── PR-C 2/2: UI for P1/P2/P3 preset slots ────────────────────────────
@@ -16589,7 +16724,6 @@ function _poRenderPresetsBlock() {
     const wrTxt   = sim ? _poFmtPct(sim.wr) : '—';
     const ddTxt   = sim ? _poFmtR(-sim.maxDD) : '—';
     const totTxt  = sim ? _poFmtR(sim.totalR) : '—';
-    const isFull = stored.type === 'full';
     // EV / WR on 6-tier dynamic palette (quality metrics).
     // Total R signed-binary; DD always red (semantic alignment with rest of dashboard).
     const evClass  = sim ? _poKpiTone(sim.ev, 'ev') : '';
@@ -16597,14 +16731,14 @@ function _poRenderPresetsBlock() {
     const wrClass  = sim ? _poKpiTone(sim.wr, 'wr') : '';
     const ddClass  = sim ? 'po-v-red' : '';
 
-    const st2 = window._poState;
-    const baselineForSlot = (st2 && Array.isArray(st2.results))
-      ? st2.results.find(r => r.model.type === 'full' && r.model.tpFinal === stored.tpFinal)
-      : null;
+    // Use the same-tpFinal Full-TP baseline returned by _poSimulateSlotModel
+    // (which falls back to an on-demand simulation when the grid lacks it).
+    // This keeps the delta arrows visible regardless of the toolbar tpFinal.
+    const baselineSim = result?.baselineSim;
     let evDeltaHTML = '', totDeltaHTML = '';
-    if (sim && baselineForSlot) {
-      const dEV  = sim.ev - baselineForSlot.sim.ev;
-      const dTot = sim.totalR - baselineForSlot.sim.totalR;
+    if (sim && baselineSim) {
+      const dEV  = sim.ev - baselineSim.ev;
+      const dTot = sim.totalR - baselineSim.totalR;
       const evDeltaCls  = dEV  > 0.005 ? 'pos' : dEV  < -0.005 ? 'neg' : 'neutral';
       const totDeltaCls = dTot > 0.05  ? 'pos' : dTot < -0.05  ? 'neg' : 'neutral';
       const evArrow  = evDeltaCls  === 'pos' ? '▲' : evDeltaCls  === 'neg' ? '▼' : '•';
@@ -16661,8 +16795,7 @@ function _poRenderPresetsBlock() {
           </div>
         </div>
         <div class="po-preset-tile-actions">
-          <button type="button" class="po-preset-btn-apply" data-po-slot-apply="${key}"
-            ${isFull ? 'disabled title="Full TP models cannot be applied as Personalised."' : ''}>
+          <button type="button" class="po-preset-btn-apply" data-po-slot-apply="${key}">
             <span>Apply</span><span class="po-preset-btn-apply-arrow">→</span>
           </button>
         </div>
@@ -16901,32 +17034,31 @@ function _poRenderEquity(sel, base) {
   const st = window._poState;
   if (st.equityChart) { st.equityChart.destroy(); st.equityChart = null; }
 
-  // Optional toggle to re-simulate the baseline on a different sample.
-  // The selected model keeps its existing simulation. The toggle answers
-  // "à quoi ressemblerait ma baseline Full TP avec / sans le filtre BE
-  // Management ?". Default uses base.sim.equity (= the strict-sample
-  // simulation matching the model). When toggled, re-simulate on the
-  // BE-reintegrated dataset (computed on demand via _ppBuildReachDataset).
-  let baseEquityData = base.sim.equity;
-  let baseLabel = 'Baseline (Full TP)';
-  if (st.equityBaselineBeFilter) {
-    try {
-      const ctxTrades = (typeof _getContextFiltered === 'function') ? _getContextFiltered(true) : [];
-      const { trades: altTrades } = (typeof _ppBuildReachDataset === 'function')
-        ? _ppBuildReachDataset(ctxTrades)
-        : { trades: ctxTrades };
-      const altArr = altTrades.map(t => _getTradeReachR(t));
-      if (altArr.length && altArr.length !== base.sim.equity.length) {
-        const altSim = _poSimulateModel(base.model, altArr, altTrades);
-        if (altSim) {
-          baseEquityData = altSim.equity;
-          baseLabel = `Baseline (BE reintegrated, n=${altArr.length})`;
-        }
-      }
-    } catch (e) {
-      console.warn('[PO] equity baseline BE-reintegration failed:', e.message);
-    }
+  // Baseline locked at the dashboard's reference Fixed TP (2.4R) regardless
+  // of the PO toolbar tpFinal or any active ORR sync. This anchors the
+  // Model vs Baseline comparison on a stable, mode-independent reference
+  // instead of letting it drift with the partials grid's shared tpFinal.
+  // Falls back to the grid baseline if simulation fails (defensive).
+  const baselineFixedModel = {
+    id: `baseline_fixed_${PO_BASELINE_FIXED_TP_R}`,
+    name: `Full TP ${PO_BASELINE_FIXED_TP_R}R`,
+    type: 'full',
+    legs: [{ lv: PO_BASELINE_FIXED_TP_R, pct: 1.0 }],
+    sl: PO_SL_DEFAULT,
+    tpFinal: PO_BASELINE_FIXED_TP_R,
+  };
+  let baseEquityData;
+  try {
+    const { trades: ctxTrades, rrMaxArr } = _poGetTradesAndRRMax();
+    const fixedSim = _poSimulateModel(baselineFixedModel, rrMaxArr, ctxTrades);
+    baseEquityData = (fixedSim && Array.isArray(fixedSim.equity))
+      ? fixedSim.equity
+      : base.sim.equity;
+  } catch (e) {
+    console.warn('[PO] fixed baseline simulation failed, falling back to grid baseline:', e.message);
+    baseEquityData = base.sim.equity;
   }
+  const baseLabel = `Baseline (Fixed TP ${PO_BASELINE_FIXED_TP_R}R)`;
 
   // PR-D: Recompute equity for each filled preset slot (P1/P2/P3).
   // Stats stored in slots are just params — equity is recomputed against the
@@ -16948,6 +17080,20 @@ function _poRenderEquity(sel, base) {
     });
   }
 
+  // Detect whether the currently selected model corresponds to a saved preset
+  // slot. If so, the matching preset curve is highlighted in place (thicker,
+  // full opacity) and the redundant generic "Modèle" overlay is skipped — this
+  // preserves each preset's identity color instead of overwriting it with gold.
+  let selectedPresetKey = null;
+  const slotsForHighlight = (typeof _poGetPresetSlots === 'function') ? _poGetPresetSlots() : {};
+  for (const key of _PO_PRESET_SLOT_KEYS) {
+    const stored = slotsForHighlight[key];
+    if (stored && typeof _poTileMatchesAppliedConfig === 'function' && _poTileMatchesAppliedConfig(stored)) {
+      selectedPresetKey = key;
+      break;
+    }
+  }
+
   // Labels go up to the longest of all curves so they align.
   const allLengths = [sel.sim.equity.length, baseEquityData.length, ...presetCurves.map(c => c.data.length)];
   const maxLen = Math.max(...allLengths);
@@ -16957,8 +17103,9 @@ function _poRenderEquity(sel, base) {
 
   // Build the datasets array. Preset curves are appended after the 2 core ones.
   // Their hidden state is restored from st.hiddenPresetCurves (persists across renders).
-  const datasets = [
-    {
+  const datasets = [];
+  if (!selectedPresetKey) {
+    datasets.push({
       label: 'Modèle',
       data: sel.sim.equity,
       borderColor: tc('--gold') || '#5a9cf5',
@@ -16967,28 +17114,32 @@ function _poRenderEquity(sel, base) {
       pointRadius: 0,
       tension: 0.1,
       order: 1,
-    },
-    {
-      label: baseLabel,
-      data: baseEquityData,
-      borderColor: tc('--dim') || '#6B8AB0',
-      backgroundColor: 'transparent',
-      borderWidth: 2,
-      pointRadius: 0,
-      tension: 0.1,
-      order: 1,
-    },
-  ];
+    });
+  }
+  datasets.push({
+    label: baseLabel,
+    data: baseEquityData,
+    borderColor: tc('--dim') || '#6B8AB0',
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    pointRadius: 0,
+    tension: 0.1,
+    order: 1,
+  });
   for (const curve of presetCurves) {
+    const isActive = curve.key === selectedPresetKey;
+    const dimAlpha = selectedPresetKey ? 0.30 : 0.55;
     datasets.push({
       label: curve.label,
       data: curve.data,
-      borderColor: `rgba(${_mc2Hex2Rgb(curve.color)},0.55)`,
+      borderColor: isActive
+        ? curve.color
+        : `rgba(${_mc2Hex2Rgb(curve.color)},${dimAlpha})`,
       backgroundColor: 'transparent',
-      borderWidth: 1.4,
+      borderWidth: isActive ? 3.6 : 1.4,
       pointRadius: 0,
       tension: 0.1,
-      order: 2,
+      order: isActive ? 0 : 2,
       hidden: st.hiddenPresetCurves.has(curve.key),
       // Custom property to identify this dataset on legend toggle. Chart.js
       // ignores unknown keys but they remain accessible via dataset reference.
@@ -17004,7 +17155,14 @@ function _poRenderEquity(sel, base) {
       plugins: {
         legend: {
           display: true,
-          labels: { color: tc('--dim'), usePointStyle: true, font: { size: tipFs, family: '"DM Mono",monospace' } },
+          labels: {
+            color: tc('--dim'), usePointStyle: true, font: { size: tipFs, family: '"DM Mono",monospace' },
+            // Force legend order to match dataset insertion (Modèle?, Baseline,
+            // P1, P2, P3) regardless of `order` — which Chart.js otherwise uses
+            // to sort the legend, breaking the layout when an active preset's
+            // order is bumped to 0 to bring it to the front of the canvas.
+            sort: (a, b) => a.datasetIndex - b.datasetIndex,
+          },
           // PR-D: custom onClick to persist preset-curve hide state across re-renders.
           // Default Chart.js behaviour is preserved for non-preset datasets.
           onClick: (e, legendItem, legend) => {
@@ -17250,6 +17408,12 @@ function _poRenderRRDist() {
     </div>`;
   }).join('');
   wrap.innerHTML = html;
+  // Re-apply the lb-active highlight on the chip linked to the currently
+  // open drawer (innerHTML assignment above wipes class state).
+  const activeLv = window._poState?.activeRRDistLv;
+  if (Number.isFinite(activeLv)) {
+    wrap.querySelector(`.pp-gchip[data-lv="${activeLv}"]`)?.classList.add('lb-active');
+  }
 }
 
 // Open the trade drawer for a given threshold. Option A — simple filtering
@@ -17520,6 +17684,9 @@ document.addEventListener('DOMContentLoaded', () => {
   _syncTpmRadios();
   _updateTpmBadge();
   _renderTpmModeBody();
+  /* Element-anchored info tooltips (Partial Optimizer + Optimal RR header `?`).
+     Switched to position:fixed to escape .chart-card overflow:hidden clipping. */
+  try { _initInfoPopPositioners(); } catch (e) { console.warn('[infoPop] init failed:', e.message); }
   // Phase 3.A.final: first render of the Feature Requirements block. Subsequent
   // refreshes happen inside updateAttentionButton on every dashboard render.
   try { renderFeatureRequirementsBlock(); } catch (e) {}

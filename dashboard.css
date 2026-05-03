@@ -7917,7 +7917,8 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
    ignored the per-widget --typo-bar-*-val-size chain. */
 .bar-net { display: block; font-size: inherit; }
 .bar-list .bar-row           { grid-template-columns: 104px 1fr 66px; cursor: pointer; }
-.bar-row.lb-active           { box-shadow: inset 0 0 0 2px var(--gold); border-radius: 6px; }
+.bar-row.lb-active,
+.pp-gchip.lb-active          { box-shadow: inset 0 0 0 2px var(--gold); border-radius: 6px; }
 .wd-cell-active              { box-shadow: inset 0 0 0 2px var(--gold) !important; border-radius: 6px; }
 .bar-list .bar-row.sm        { grid-template-columns: 88px  1fr 62px; }
 .bar-list .bar-row.setup     { grid-template-columns: 170px 1fr 66px; }
@@ -9291,25 +9292,23 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 
 .pp-be-info-pop {
   display: none;
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
   width: 340px;
   padding: 12px 14px;
   background: var(--bg2);
   border: 1px solid var(--line);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  z-index: 200;
+  z-index: var(--z-tooltip);
   font-family: 'DM Mono', monospace;
   font-size: var(--fs-body);
   text-align: left;
   white-space: normal;
   cursor: auto;
 }
-.pp-be-info:hover .pp-be-info-pop,
-.pp-be-info:focus-visible .pp-be-info-pop,
-.pp-be-info-pop:hover { display: block; }
+/* Visibility is now driven by JS (popup is portaled to body to escape the
+   .po-widget > * { z-index: 1 } stacking trap), so the previous CSS :hover
+   cascade is intentionally retired. */
 .pp-be-info-title { font-weight: 700; color: var(--body); margin-bottom: 8px; }
 .pp-be-info-body ul { margin: 0; padding-left: 16px; color: var(--dim); line-height: 1.5; }
 .pp-be-info-body li { margin: 4px 0; }
@@ -9713,24 +9712,21 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 
 .orr-sim-mode-info-pop {
   display: none;
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
+  position: fixed;
   width: 360px;
   padding: 12px 14px;
   background: var(--bg2);
   border: 1px solid var(--line);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  z-index: 100;
+  z-index: var(--z-tooltip);
   font-family: 'DM Mono', monospace;
   font-size: var(--fs-body);
   text-align: left;
   cursor: auto;
 }
-.orr-sim-mode-info:hover .orr-sim-mode-info-pop,
-.orr-sim-mode-info:focus-visible .orr-sim-mode-info-pop,
-.orr-sim-mode-info-pop:hover { display: block; }
+/* Visibility now driven by JS (popup portaled to body); same rationale as
+   .pp-be-info-pop above. */
 .orr-sim-mode-info-title { font-weight: 700; color: var(--body); margin-bottom: 8px; }
 .orr-sim-mode-info-body p { margin: 6px 0; color: var(--dim); line-height: 1.4; }
 .orr-sim-mode-info-body strong { color: var(--body); }
@@ -12249,14 +12245,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   font-size: 11px;
 }
 .po-toolbar-meta-accent { color: var(--accent-primary); }
-.po-btn-recalc-inline {
-  padding: 6px 14px;
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
 .po-btn-icon { font-size: 11px; opacity: 0.85; }
 
 /* ═══════════════════════════════════════════════════════════
@@ -12282,15 +12270,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .po-block-equity > * {
   position: relative;
   z-index: 1;
-}
-
-.po-equity-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-  flex-shrink: 0;
 }
 
 /* Canvas wrapper / stage gets a subtle inner background to set the chart apart */
@@ -13585,26 +13564,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   font-weight: 700;
 }
 
-/* Recalculer button — primary CTA */
-.po-widget .po-btn-recalc-inline {
-  background: linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 80%, white) 100%);
-  border: 1px solid color-mix(in srgb, var(--gold) 75%, white);
-  color: white;
-  border-radius: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  box-shadow:
-    0 6px 18px rgba(90, 156, 245, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.20);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.po-widget .po-btn-recalc-inline:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 10px 24px rgba(90, 156, 245, 0.50),
-    inset 0 1px 0 rgba(255, 255, 255, 0.20);
-}
-
 /* Toggle buttons (Isoler Top, Reset zoom) */
 .po-widget .po-btn-toggle {
   background: rgba(255, 255, 255, 0.04);
@@ -13881,6 +13840,43 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   font-size: 10px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+.po-widget .po-bilan-conf-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.po-widget .po-bilan-conf-action-row .po-bilan-conf-bar {
+  flex: 1;
+  min-width: 120px;
+}
+.po-widget .po-bilan-conf-recalc {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-inverse);
+  background: linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 80%, white) 100%);
+  border: 1px solid color-mix(in srgb, var(--gold) 75%, white);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s ease, transform .15s ease;
+}
+.po-widget .po-bilan-conf-recalc:hover {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--gold) 92%, white) 0%,
+    color-mix(in srgb, var(--gold) 70%, white) 100%);
+}
+.po-widget .po-bilan-conf-recalc:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+.po-widget .po-bilan-conf-recalc:active {
+  transform: translateY(1px);
 }
 
 .po-widget .po-bilan-foot {
@@ -14367,6 +14363,11 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   grid-row: 1 / span 36;
   grid-template-columns: 3fr 1fr 1fr 1fr 1fr 1fr;
   gap: 10px;
+  /* Container queries scope: per-widget responsive font sizing for the stat
+     values, since GridStack resizes widgets independently of the viewport
+     (vw-based clamp would miss those changes). See @container rules below. */
+  container-type: inline-size;
+  container-name: po-bandeau;
 }
 .po-widget .po-block-scatter {
   grid-column: 5 / span 8;
@@ -14440,6 +14441,27 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   position: relative;
   z-index: 1;
 }
+
+/* Stepped font-size for the bandeau stat values, driven by the bandeau's own
+   inline-size (container query). Ensures the longest payload — Best TP Final
+   "3R · +0.26R" (11 chars in DM Mono ≈ 0.6em/char) — never triggers ellipsis
+   in the realistic widget-width range. ellipsis remains as a last-resort guard
+   for pathological cases (e.g. "+1234.50R"). line-height 1.1 kept at every
+   step to avoid vertical drift between siblings of different lengths. */
+@container po-bandeau (max-width: 1300px) {
+  .po-widget .po-block-bandeau .po-stat-val { font-size: 18px; line-height: 1.1; }
+  .po-widget .po-stat-card[data-po-stat="compromise"] .po-stat-val { font-size: 14px; line-height: 1.2; }
+}
+@container po-bandeau (max-width: 1050px) {
+  .po-widget .po-block-bandeau .po-stat-val { font-size: 15px; line-height: 1.1; }
+  .po-widget .po-block-bandeau .po-stat-name { font-size: 10px; }
+  .po-widget .po-stat-card[data-po-stat="compromise"] .po-stat-val { font-size: 13px; line-height: 1.2; }
+}
+@container po-bandeau (max-width: 850px) {
+  .po-widget .po-block-bandeau .po-stat-val { font-size: 13px; line-height: 1.1; }
+  .po-widget .po-block-bandeau .po-stat-name { font-size: 10px; }
+  .po-widget .po-stat-card[data-po-stat="compromise"] .po-stat-val { font-size: 12px; line-height: 1.2; }
+}
 .po-widget .po-block-bandeau .po-stat-name {
   font-family: 'DM Mono', ui-monospace, monospace;
   font-size: 11px;
@@ -14477,6 +14499,48 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .po-widget .po-block-bandeau .po-stat-card.is-active:hover {
   border-color: color-mix(in srgb, var(--gold) 55%, var(--border-subtle));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--gold) 22%, transparent);
+}
+
+/* Hover-zoom magnifier: defense-in-depth on top of the container queries.
+   When a stat card is hovered (pointer devices only — skipped on touch to
+   avoid sticky hover after tap), the card scales slightly and unclips its
+   text so any payload still cropped at the active font palier becomes
+   readable. Origin is adapted at the bandeau edges so the expansion stays
+   inside the widget bounds (the widget itself is overflow:hidden). */
+@media (hover: hover) {
+  .po-widget .po-block-bandeau .po-stat-card:hover,
+  .po-widget .po-block-bandeau .po-stat-card:focus-within {
+    transform: translateY(-1px) scale(1.06);
+    overflow: visible;
+    z-index: 50;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .po-widget .po-block-bandeau .po-stat-card:first-child:hover,
+  .po-widget .po-block-bandeau .po-stat-card:first-child:focus-within {
+    transform-origin: left center;
+  }
+  .po-widget .po-block-bandeau .po-stat-card:last-child:hover,
+  .po-widget .po-block-bandeau .po-stat-card:last-child:focus-within {
+    transform-origin: right center;
+  }
+  /* Reveal the cropped text. nowrap stays — we don't want wraps in mid-number. */
+  .po-widget .po-block-bandeau .po-stat-card:hover .po-stat-val,
+  .po-widget .po-block-bandeau .po-stat-card:focus-within .po-stat-val,
+  .po-widget .po-block-bandeau .po-stat-card:hover .po-stat-name,
+  .po-widget .po-block-bandeau .po-stat-card:focus-within .po-stat-name {
+    overflow: visible;
+    text-overflow: clip;
+  }
+  /* is-active + hover: keep the gold glow but stronger to match the lifted
+     elevation. The previous .is-active:hover rule (above) only handles the
+     non-magnified state; this one wins thanks to source order + same-or-higher
+     specificity within the @media block. */
+  .po-widget .po-block-bandeau .po-stat-card.is-active:hover,
+  .po-widget .po-block-bandeau .po-stat-card.is-active:focus-within {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent),
+      0 8px 24px color-mix(in srgb, var(--gold) 32%, transparent);
+  }
 }
 
 /* ── PR-5 : Internal layout editor (po-internal-*) ────────────────────
