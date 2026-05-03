@@ -20415,7 +20415,11 @@ function updateJournalPanel() {
   };
 
   // ── CSV mode: interactive mapping with remap pickers (existing behavior) ──
-  if (_lastCsvHeaders && _lastCsvHeaders.length && _csvFormat) {
+  // Gate on the active data source mode (DS_KEY) — _lastCsvHeaders / _csvFormat
+  // persist after a switch to API/Demo so the user can switch back without
+  // re-importing, but the panel must reflect the CURRENT mode, not the last
+  // CSV that was loaded.
+  if (localStorage.getItem(DS_KEY) === 'csv' && _lastCsvHeaders && _lastCsvHeaders.length && _csvFormat) {
     if (subEl) subEl.textContent = 'Which CSV column feeds each widget dimension.';
     if (resetBtn) resetBtn.style.display = '';
     fmtEl.innerHTML = `Format · <strong>${_escapeHtml(FORMAT_LABEL[_csvFormat] || _csvFormat)}</strong> · ${_lastCsvHeaders.length} columns`;
