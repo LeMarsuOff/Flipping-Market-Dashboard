@@ -4852,6 +4852,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .csv-status.ok  { color: var(--g); }
 .csv-status.err { color: var(--r); }
 .csv-status.info { color: var(--gold); }
+.csv-status.warn { color: #ea8a4a; }
 
 /* ── Data source chip — user-facing status indicator in topbar ── */
 .data-source-badge {
