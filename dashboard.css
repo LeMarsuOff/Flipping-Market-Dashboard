@@ -110,11 +110,12 @@
   --ease-slow:    .22s cubic-bezier(.4,0,.2,1);
 
   /* ── A7: Z-index scale ── */
-  --z-sticky:  180;
-  --z-topbar:  400;
-  --z-panel:   400;
-  --z-overlay: 600;
-  --z-tooltip: 9999;
+  --z-sticky:       180;
+  --z-topbar:       400;
+  --z-panel:        400;
+  --z-edit-handle:  350;  /* edit mode resize handles, must stay below --z-topbar (400) */
+  --z-overlay:      600;
+  --z-tooltip:      9999;
 
   /* ── A8: Layout dimensions ── */
   --chip-h:    28px;
@@ -6882,7 +6883,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .gs-editing .grid-stack-item > .ui-resizable-sw {
   opacity: 1 !important;
   display: block !important;
-  z-index: 999 !important;
+  z-index: var(--z-edit-handle) !important;
   pointer-events: all !important;
 }
 .gs-editing .grid-stack-item > .ui-resizable-se { width: 20px !important; height: 20px !important; right: 0 !important; bottom: 0 !important; cursor: se-resize !important; }
