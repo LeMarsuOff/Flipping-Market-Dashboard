@@ -2524,13 +2524,14 @@ function _normalizeAPITrade(t, _rawRowIndex) {
       const n = _parseNumeric(t.rrMax ?? t.rrMaxAtteint ?? t['RR Max'] ?? t['RR Max '] ?? t['RR max atteint']);
       return n !== null && Number.isFinite(n) ? n : null;
     })(),
-    // Multi TP (Phase 3): default to standard Notion property names, fall
-    // back to user override via the Mapping tab. null when neither resolves
-    // or the value is empty / non-numeric. Mirrors the CSV parser fallback
-    // chain so API and CSV modes auto-detect the same set of headers.
-    tp1_rr:      _parseNumeric(_pick('tp1_rr', t['RR TP 1'])),
-    tp2_rr:      _parseNumeric(_pick('tp2_rr', t['RR TP 2'] ?? t['RR TP -27'])),
-    tp3_rr:      _parseNumeric(_pick('tp3_rr', t['RR TP 3'] ?? t['RR Trailing'])),
+    // Multi TP (Phase 3): default to standard Notion property names. Notion
+    // API normalizes property keys to camelCase ('RR TP 1' → 'rrTp1',
+    // 'RR TP -27' → 'rrTpMinus27', 'RR TP H4 0' → 'rrTpH4_0'). _pick still
+    // consults the user override first when set. null when nothing resolves
+    // or the value is empty / non-numeric.
+    tp1_rr:      _parseNumeric(_pick('tp1_rr', t.rrTp1)),
+    tp2_rr:      _parseNumeric(_pick('tp2_rr', t.rrTpMinus27 ?? t.rrTp2)),
+    tp3_rr:      _parseNumeric(_pick('tp3_rr', t.rrTpH4_0 ?? t.rrTp3 ?? t.rrTrailing)),
     direction:   _firstText(t.order || t['Order']),
     tradeType:   positionTypes,
     badFeeling:  Boolean(t.badFeeling),
