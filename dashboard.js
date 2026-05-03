@@ -24578,6 +24578,15 @@ function _toggleContextStrip() {
 function _syncContextHeightVar() {
   const strip = document.getElementById('filter-context-strip');
   if (!strip) return;
+  // Avoid feedback loop: when collapsed, the strip's own height is
+  // driven by --context-h, so measuring it and writing it back would
+  // freeze whatever value was last set (including a previous expanded
+  // height). Temporarily clear the inline var, measure the natural
+  // collapsed height, then write it back.
+  const expanded = strip.classList.contains('is-expanded');
+  if (!expanded) {
+    document.documentElement.style.removeProperty('--context-h');
+  }
   const h = strip.getBoundingClientRect().height;
   document.documentElement.style.setProperty('--context-h', h + 'px');
 }
