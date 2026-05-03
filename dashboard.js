@@ -20459,10 +20459,12 @@ function updateJournalPanel() {
     list.innerHTML = JOURNAL_DIMS.map(dim => {
       const declaredDefault = dim.defaults[_csvFormat];
       const isOverrideOnly  = dim.overrideOnly === true;
-      // Skip dimensions the current format doesn't even declare (e.g. Beginner
-      // has no Session). overrideOnly rows bypass this filter — they are
-      // expected to have '—' defaults and are surfaced for manual mapping.
-      if (!isOverrideOnly && (!declaredDefault || declaredDefault === '—')) return '';
+      // Always render every JOURNAL_DIMS entry, regardless of whether the
+      // active format declares a meaningful default. Dims without a default
+      // (or with '—') still surface as MISSING with a pencil so the user can
+      // remap them to any header in the CSV. Previously these rows were
+      // silently skipped (e.g. Beginner format hid Session/H4) — that hid
+      // legitimate remap targets.
       const override   = _csvColumnOverrides[dim.key];
       const resolved   = _resolvedHeaderFor(dim.key);
       const ok         = !!resolved;
