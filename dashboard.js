@@ -17892,7 +17892,18 @@ function processCsvText(text, filename, opts = {}) {
     }
     const { trades, warnings } = result;
     const fmt = isFlippingMarket ? ' [Flipping Market M15]' : isProTemplate ? ' [Pro Template]' : ' [Beginner]';
-    if (warnings.length) {
+    if (result.partialOk) {
+      // Degraded import: surface the missing required cols + invite remap.
+      const missingList = result.missingRequired.join(', ');
+      const ingestedMsg = trades.length
+        ? `${trades.length} trade${trades.length > 1 ? 's' : ''} ingested with partial data${fmt}`
+        : `0 trades ingested${fmt}`;
+      const warningsTail = warnings.length ? '\n' + warnings.join('\n') : '';
+      csvStatus(
+        `⚠ ${result.missingRequired.length} required column${result.missingRequired.length > 1 ? 's' : ''} missing (${missingList}) — open Mapping to remap\n${ingestedMsg}${warningsTail}`,
+        'warn'
+      );
+    } else if (warnings.length) {
       csvStatus(`✓ ${trades.length} trades imported${fmt}\n` + warnings.join('\n'), 'ok');
     } else {
       csvStatus(`✓ ${trades.length} trades imported${fmt}`, 'ok');
@@ -17955,7 +17966,13 @@ function processCsvText(text, filename, opts = {}) {
       // Health/guide view was relevant during setup; once data is in, it's
       // noise. The user can re-open the hub manually if they need Mapping
       // or Health. Silent no-op if the hub wasn't open.
-      if (typeof dataHubOpen !== 'undefined' && dataHubOpen) {
+      // Phase 2 EXCEPTION: in degraded mode (partialOk), open the Data Hub
+      // on Mapping instead so the user can immediately fix the missing
+      // required columns. toggleJournalPanel handles both fresh-open and
+      // already-open-on-other-tab cases.
+      if (result.partialOk) {
+        try { toggleJournalPanel(); } catch (e) {}
+      } else if (typeof dataHubOpen !== 'undefined' && dataHubOpen) {
         try { toggleDataHub(); } catch (e) {}
       }
       // Also close the Guide panel (independent of Data Hub) and route the
@@ -18054,7 +18071,12 @@ function parseFlippingMarketCSV(text) {
     { label: 'RR TP 1',       index: iRR },
     { label: 'Date',           index: iDate },
   ]);
-  if (missing.length) return { ok: false, error: _missingColsError(missing, 'Flipping Market M15') };
+  // Phase 2: degraded import. When required cols are missing we still parse
+  // (skipping rows that can't be reconstructed without them), cache the
+  // headers, and let processCsvText steer the user to the Mapping panel
+  // instead of bailing hard. partialOk:true tells the caller to surface a
+  // warn-level status + auto-open Data Hub on Mapping.
+  const partialOk = missing.length > 0;
 
   const trades = [], warnings = [];
   let skippedOutcome = 0, skippedDate = 0;
@@ -18119,6 +18141,9 @@ function parseFlippingMarketCSV(text) {
 
   if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: unrecognized outcome value`);
   if (skippedDate > 0)    warnings.push(`${skippedDate} row${skippedDate > 1 ? 's' : ''} skipped: missing or invalid date`);
+  if (partialOk) {
+    return { ok: true, trades, warnings, partialOk: true, missingRequired: missing };
+  }
   if (!trades.length) return { ok: false, error: '⚠ No valid trades found in file' };
   return { ok: true, trades, warnings };
 }
@@ -18167,7 +18192,8 @@ function parseProTemplateCSV(text) {
     { label: 'RR TP 1',         index: iRR },
     { label: 'Date',             index: iDate },
   ]);
-  if (missing.length) return { ok: false, error: _missingColsError(missing, 'Pro Template') };
+  // Phase 2: degraded import — see parseFlippingMarketCSV for rationale.
+  const partialOk = missing.length > 0;
 
   const trades = [], warnings = [];
   let skippedOutcome = 0, skippedDate = 0;
@@ -18214,6 +18240,9 @@ function parseProTemplateCSV(text) {
   }
   if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: unrecognized outcome value`);
   if (skippedDate > 0)    warnings.push(`${skippedDate} row${skippedDate > 1 ? 's' : ''} skipped: missing or invalid date`);
+  if (partialOk) {
+    return { ok: true, trades, warnings, partialOk: true, missingRequired: missing };
+  }
   if (!trades.length) return { ok: false, error: '⚠ No valid trades found in file' };
   return { ok: true, trades, warnings };
 }
@@ -18258,7 +18287,8 @@ function parseBeginnerCSV(text) {
     { label: 'Pair',             index: iPair },
     { label: 'Date',             index: iDate },
   ]);
-  if (missing.length) return { ok: false, error: _missingColsError(missing, 'Beginner') };
+  // Phase 2: degraded import — see parseFlippingMarketCSV for rationale.
+  const partialOk = missing.length > 0;
 
   const trades = [], warnings = [];
   let skippedOutcome = 0, skippedDate = 0;
@@ -18307,6 +18337,9 @@ function parseBeginnerCSV(text) {
   }
   if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: unrecognized outcome value`);
   if (skippedDate > 0)    warnings.push(`${skippedDate} row${skippedDate > 1 ? 's' : ''} skipped: missing or invalid date`);
+  if (partialOk) {
+    return { ok: true, trades, warnings, partialOk: true, missingRequired: missing };
+  }
   if (!trades.length) return { ok: false, error: '⚠ No valid trades found in file' };
   return { ok: true, trades, warnings };
 }
