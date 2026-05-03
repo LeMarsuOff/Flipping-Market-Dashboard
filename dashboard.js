@@ -18014,7 +18014,7 @@ function parseFlippingMarketCSV(text) {
   const iRRMax      = _colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr      = _colForDim(headers,'tp1_rr','rr tp 1');
-  const iTp2Rr      = _colForDim(headers,'tp2_rr','rr tp 2','rr tp-27');
+  const iTp2Rr      = _colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
   const iTp3Rr      = _colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
   const iObsM15     = _colForDim(headers,'obstacles','obstacles m15','m15 obstacles');
   const iObsH4      = _colForDim(headers,'h4','obstacles h4','h4 obstacles');
@@ -18138,7 +18138,7 @@ function parseProTemplateCSV(text) {
   const iRRMax  =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr  =_colForDim(headers,'tp1_rr','rr tp 1');
-  const iTp2Rr  =_colForDim(headers,'tp2_rr','rr tp 2','rr tp-27');
+  const iTp2Rr  =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
   const iTp3Rr  =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
   const iSetup  =_colForDim(headers,'setup','m15 confirmation / continu');
   const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
@@ -18234,7 +18234,7 @@ function parseBeginnerCSV(text) {
   const iRRMax =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr =_colForDim(headers,'tp1_rr','rr tp 1');
-  const iTp2Rr =_colForDim(headers,'tp2_rr','rr tp 2','rr tp-27');
+  const iTp2Rr =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
   const iTp3Rr =_colForDim(headers,'tp3_rr','rr tp 3','rr trailing');
   const iSetup =_colForDim(headers,'setup','m15 confirmation / continu');
   const iSetupDetail=_colForDim(headers,'setupDetail','m15 type detailed');
@@ -19899,7 +19899,7 @@ const JOURNAL_DIMS = [
   // ── Multi TP mode fields (Phase 3) ──
   // Per-tier realized R. Nullable: null = tier not hit (value-presence = hit flag).
   // Defaults follow standard Notion conventions ('RR TP N'); the maps below
-  // include additional aliases (e.g. 'rr trailing', 'rr tp-27') so journals
+  // include additional aliases (e.g. 'rr trailing', 'rr tp -27') so journals
   // with custom tier naming auto-detect too. widgets:[] intentional:
   // Multi TP requirements are surfaced via FEATURE_REQS (Phase 3.A), not
   // MISSING_DATA_META.
@@ -19942,7 +19942,7 @@ function _dimResolvesInCsv(dimKey) {
       img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
       img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
       tp1_rr: ['rr tp 1'],
-      tp2_rr: ['rr tp 2', 'rr tp-27'],
+      tp2_rr: ['rr tp 2', 'rr tp -27'],
       tp3_rr: ['rr tp 3', 'rr trailing'],
     },
     pro: {
@@ -19959,7 +19959,7 @@ function _dimResolvesInCsv(dimKey) {
       img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
       img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
       tp1_rr: ['rr tp 1'],
-      tp2_rr: ['rr tp 2', 'rr tp-27'],
+      tp2_rr: ['rr tp 2', 'rr tp -27'],
       tp3_rr: ['rr tp 3', 'rr trailing'],
     },
     beginner: {
@@ -19976,7 +19976,7 @@ function _dimResolvesInCsv(dimKey) {
       img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
       img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
       tp1_rr: ['rr tp 1'],
-      tp2_rr: ['rr tp 2', 'rr tp-27'],
+      tp2_rr: ['rr tp 2', 'rr tp -27'],
       tp3_rr: ['rr tp 3', 'rr trailing'],
     },
   };
@@ -20008,7 +20008,7 @@ function _resolvedHeaderFor(dimKey) {
             img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
             img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
             tp1_rr: ['rr tp 1'],
-            tp2_rr: ['rr tp 2', 'rr tp-27'],
+            tp2_rr: ['rr tp 2', 'rr tp -27'],
             tp3_rr: ['rr tp 3', 'rr trailing'],
           },
           pro: {
@@ -20025,7 +20025,7 @@ function _resolvedHeaderFor(dimKey) {
             img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
             img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
             tp1_rr: ['rr tp 1'],
-            tp2_rr: ['rr tp 2', 'rr tp-27'],
+            tp2_rr: ['rr tp 2', 'rr tp -27'],
             tp3_rr: ['rr tp 3', 'rr trailing'],
           },
           beginner: {
@@ -20042,7 +20042,7 @@ function _resolvedHeaderFor(dimKey) {
             img_h4_before: ['tv h4 before', 'h4 before', 'url h4 before', 'h4before', 'screenshot h4', 'h4 screenshot', 'image h4', 'h4 image'],
             img_m15_after: ['tv m15 after', 'm15 after', 'url m15 after', 'm15after', 'm15 after screenshot', 'screenshot m15 after'],
             tp1_rr: ['rr tp 1'],
-            tp2_rr: ['rr tp 2', 'rr tp-27'],
+            tp2_rr: ['rr tp 2', 'rr tp -27'],
             tp3_rr: ['rr tp 3', 'rr trailing'],
           },
         };
