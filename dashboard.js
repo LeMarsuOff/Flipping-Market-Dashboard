@@ -9096,13 +9096,49 @@ function _getBeOutTradesAtTp(tp) {
   return out;
 }
 
-// Combined BE count at a given TP: (BE-out trades at tp) ∪ (BE Mgmt chips),
-// deduplicated. This is what the summary's "W / L / BE" cell shows and what
-// _computeBeTradesKpi reports for the active bubble.
+// Trades whose outcome is BE-TP or BE-SL but are filtered out by the active
+// outcome chip (excluded explicitly OR not in a non-empty included set).
+// They no longer count in `Trades` so they need to surface in `BE Trades`,
+// otherwise the KPI under-reports the BE volume the user just hid.
+function _getBeOutcomeExcludedTrades() {
+  const entry = appState.filters.chips.outcome;
+  if (!entry) return new Set();
+  const isExcluded = (outcome) => {
+    if (entry.included.size && !entry.included.has(outcome)) return true;
+    if (entry.excluded.has(outcome)) return true;
+    return false;
+  };
+  const beTpExcluded = isExcluded('BE-TP');
+  const beSlExcluded = isExcluded('BE-SL');
+  if (!beTpExcluded && !beSlExcluded) return new Set();
+
+  const savedIncluded = entry.included;
+  const savedExcluded = entry.excluded;
+  entry.included = new Set();
+  entry.excluded = new Set();
+  invalidateFilterCache();
+  const dataset = _getContextFiltered(true);
+  entry.included = savedIncluded;
+  entry.excluded = savedExcluded;
+  invalidateFilterCache();
+
+  const matched = new Set();
+  for (const t of dataset) {
+    if (beTpExcluded && t.outcome === 'BE-TP') matched.add(t);
+    else if (beSlExcluded && t.outcome === 'BE-SL') matched.add(t);
+  }
+  return matched;
+}
+
+// Combined BE count at a given TP: (BE-out trades at tp) ∪ (BE Mgmt chips) ∪
+// (outcome-chip-excluded BE-TP/BE-SL), deduplicated. This is what the
+// summary's "W / L / BE" cell shows and what _computeBeTradesKpi reports for
+// the active bubble.
 function _getBeColumnCountAtTp(tp) {
   const beOut = _getBeOutTradesAtTp(tp);
   const chips = _getBeMgmtChipMatchedTrades();
-  const union = new Set([...beOut, ...chips]);
+  const outcomeExcl = _getBeOutcomeExcludedTrades();
+  const union = new Set([...beOut, ...chips, ...outcomeExcl]);
   return union.size;
 }
 
@@ -9303,8 +9339,8 @@ function _attachKpiTooltipHandlers(container, stats, beStats) {
   _attachKpiTooltipHandlersTo('.wst-cell[data-kpi-key]', container, stats, beStats);
 }
 
-function buildStatsOverviewMarkup(stats, totalCount, idPrefix = 'stats', beStats = stats) {
-  const beCount = _computeBeTradesKpi();
+function buildStatsOverviewMarkup(stats, totalCount, idPrefix = 'stats', beStats = stats, beCountOverride = null) {
+  const beCount = beCountOverride !== null ? beCountOverride : _computeBeTradesKpi();
   const pct = totalCount > 0 ? (stats.n / totalCount * 100).toFixed(0) + '%' : '—';
   const evTone = _svProgressTone(stats.ev, 'ev');
   const pfTone = _svProgressTone(stats.pf, 'pf');
@@ -9321,9 +9357,10 @@ function buildStatsOverviewMarkup(stats, totalCount, idPrefix = 'stats', beStats
 
   const richLbl = (name, data) =>
     `<span class="wst-cell-label-name">${name}</span><span class="wst-cell-label-data">${data}</span>`;
-  // Share view shows simple labels (no rich sub-label) for cleaner export.
+  // Share view: indicate that BE Mgmt-excluded trades aren't counted in the
+  // Trades total (the share dataset is filtered through filterChips).
   const lblTrades   = idPrefix === 'share'
-    ? 'Trades'
+    ? richLbl('Trades', 'BE not included')
     : richLbl('Trades', `${pct} · ${stats.w}W ${stats.l}L`);
   const lblMaxL     = 'Max Loss Streak';
   const lblBE       = 'BE Trades';
@@ -28186,7 +28223,7 @@ function _svStreakMicro(value, tone, idPrefix = 'stats') {
 }
 
 // ── Stats Overview for share view ──
-function _svRenderStats(trades, beTrades = trades) {
+function _svRenderStats(trades, beTrades = trades, beCount = null) {
   const body = document.getElementById('sv-stats-body');
   const badge = document.getElementById('sv-stats-badge');
   if (!body) return;
@@ -28198,7 +28235,7 @@ function _svRenderStats(trades, beTrades = trades) {
     return;
   }
   const filtered = getFiltered();
-  body.innerHTML = buildStatsOverviewMarkup(stats, filtered.length, 'share', beStats);
+  body.innerHTML = buildStatsOverviewMarkup(stats, filtered.length, 'share', beStats, beCount);
   if (badge) badge.textContent = '';
   _attachKpiTooltipHandlers(body);
   // Synchronous fit — apply hide classes before the browser paints the new
@@ -28244,8 +28281,28 @@ function renderShareView() {
   // Period label
   _svRenderDateWidget(selectedPeriod.year, selectedPeriod.month);
 
+  // BE Trades KPI: union of (BE-out at active TP) and (BE Mgmt chip-matched).
+  // _computeBeTradesKpi (called by buildStatsOverviewMarkup) ignores the
+  // share-view period toggle, so compute it here against the active period.
+  const _svBeTp = appState.ui.rrMinFilter !== null ? appState.ui.rrMinFilter : _SYSTEM_TP_R;
+  const _svBeUnion = new Set([
+    ..._getBeOutTradesAtTp(_svBeTp),
+    ..._getBeMgmtChipMatchedTrades(),
+    ..._getBeOutcomeExcludedTrades(),
+  ]);
+  let _svBeCount;
+  if (_shareMode === 'month' && selectedPeriod.ym) {
+    const ym = selectedPeriod.ym;
+    _svBeCount = [..._svBeUnion].filter(t => t.date && t.date.startsWith(ym)).length;
+  } else if (_shareMode === 'year' && !selectedPeriod.isAll && selectedPeriod.year) {
+    const y = selectedPeriod.year;
+    _svBeCount = [..._svBeUnion].filter(t => t.date && t.date.slice(0, 4) === y).length;
+  } else {
+    _svBeCount = _svBeUnion.size;
+  }
+
   // Stats
-  _svRenderStats(trades, beTrades);
+  _svRenderStats(trades, beTrades, _svBeCount);
 
   // Equity chart: double rAF ensures layout is fully computed before drawing
   // Triple rAF: wait for CSS grid layout to fully settle before measuring
