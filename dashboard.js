@@ -12568,7 +12568,6 @@ function setCalMonthSort(sort) {
   _calMonthSort = 'hour';
 
   document.getElementById('cal-sort-hour')?.classList.add('active');
-  document.getElementById('cal-sort-session')?.classList.remove('active');
 
   renderCalendar(_calTrades);
 }
@@ -14128,45 +14127,6 @@ function _ppSimTrade(rrMax, partials) {
     if (rrMax >= lv) r += pct * lv;
   }
   return r;
-}
-function _ppBuildReachDataset(trades) {
-  const beChip = appState.filters.chips.beManagement;
-  const reintegrated = new Set();
-  if (!beChip || beChip.excluded.size === 0) {
-    return { trades, reintegrated };
-  }
-
-  const bypassValues = new Set();
-  for (const v of beChip.excluded) {
-    if (_hasNumericRValue(v)) bypassValues.add(v);
-  }
-  if (bypassValues.size === 0) return { trades, reintegrated };
-
-  const originalSet = new Set(trades);
-
-  const savedExcluded = beChip.excluded;
-  const savedMode     = beChip.mode;
-  const reducedExcluded = new Set([...savedExcluded].filter(v => !bypassValues.has(v)));
-
-  beChip.excluded = reducedExcluded;
-  if (reducedExcluded.size === 0 && beChip.included.size === 0) {
-    beChip.mode = 'neutral';
-  }
-
-  invalidateFilterCache();
-  const result = _getContextFiltered(true);
-
-  beChip.excluded = savedExcluded;
-  beChip.mode     = savedMode;
-  invalidateFilterCache();
-
-  // Tag trades that the bypass brought back (i.e. weren't in the original
-  // filtered set). The bounded-reach rule applies only to these.
-  for (const t of result) {
-    if (!originalSet.has(t)) reintegrated.add(t);
-  }
-
-  return { trades: result, reintegrated };
 }
 // SVG icons used in the button / option rows
 const _ORR_BEMGMT_FILTER_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 6v5l-3-1.5V9L2 3z"/></svg>';
@@ -15730,10 +15690,6 @@ function _poTypeColor(type) {
     default:     return tc('--body') || '#b6ceee';
   }
 }
-function _poTypeLabel(type) {
-  return type === 'full' ? 'Full TP' : type === 'one' ? '1 partial' : '2 partials';
-}
-
 // ══════════════════════════════════════════════════════
 // PARTIAL OPTIMIZER — Internal layout editor (PR-5, Phase A)
 // Custom drag/resize on a 12-col × 280-row CSS grid (#po-body).
@@ -15870,10 +15826,6 @@ function _poInternalApplyLayout(layoutOverride) {
     try { window._poState?.equityChart?.resize(); } catch {}
     try { window._poState?.scatterChart?.resize(); } catch {}
   });
-}
-function _poInternalResetLayout() {
-  try { localStorage.removeItem(_PO_INTERNAL_LAYOUT_KEY); } catch {}
-  _poInternalApplyLayout();
 }
 function _poInternalInitEdit() {
   if (_poInternalEditBound) return;
