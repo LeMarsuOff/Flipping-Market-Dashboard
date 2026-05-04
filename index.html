@@ -78,7 +78,7 @@
     </div>
 
     <!-- Setup Performance -->
-    <div class="mob-card" id="mob-card-setup">
+    <div class="mob-card">
       <div class="mob-card-title">Setup Performance</div>
       <div id="mob-setup-wrap" class="mob-card-block"></div>
     </div>
@@ -90,7 +90,7 @@
     </div>
 
     <!-- Trade Log -->
-    <div class="mob-card" id="mob-card-tradelog">
+    <div class="mob-card">
       <div class="mob-card-title">Trade Log</div>
       <div id="mob-tradelog-wrap" class="mob-tradelog-wrap"></div>
     </div>
@@ -995,8 +995,7 @@
             data-action="switch-dh-tab"
             data-tab="mapping"
             role="tab"
-            aria-selected="false"
-            id="dhp-tab-mapping">
+            aria-selected="false">
       <span class="dhp-tab-icon" aria-hidden="true">🔗</span>
       <span class="dhp-tab-label">Mapping</span>
     </button>
@@ -1021,7 +1020,7 @@
       <span class="dhp-intro-label">What's this?</span>
       <span class="dhp-intro-text">Check which required fields aren't connected yet. Widgets that need missing data are hidden. Click the pencil to fix.</span>
     </div>
-    <div class="dhp-health-body" id="dhp-health-body">
+    <div class="dhp-health-body">
       <ul class="lap-list" id="lap-list"></ul>
     </div>
     <!-- Feature Requirements block (Phase 3.A.final) — populated by renderFeatureRequirementsBlock() -->
@@ -1031,8 +1030,7 @@
   <!-- TAB 2: MAPPING -->
   <div class="dhp-tab-panel"
        id="dhp-panel-mapping"
-       role="tabpanel"
-       aria-labelledby="dhp-tab-mapping">
+       role="tabpanel">
     <div class="dhp-section-intro">
       <span class="dhp-intro-label">What's this?</span>
       <span class="dhp-intro-text">Full view of which CSV column feeds each widget dimension. Override any mapping here.</span>
@@ -1135,7 +1133,7 @@
     <!-- 6. Notion Options -->
     <div>
       <div class="tp-section">Notion</div>
-      <div class="tp-option-list" id="nlm-opt-app">
+      <div class="tp-option-list">
         <label class="tp-option-label">
           <input type="radio" name="notionOpenMode" value="app" class="tp-radio">
           <span class="tp-option-content">
@@ -1143,7 +1141,7 @@
             <span class="tp-option-desc">Opens via notion:// — stays in the dashboard</span>
           </span>
         </label>
-        <label class="tp-option-label" id="nlm-opt-tab">
+        <label class="tp-option-label">
           <input type="radio" name="notionOpenMode" value="tab" class="tp-radio">
           <span class="tp-option-content">
             <span class="tp-option-title">New tab</span>
@@ -1157,14 +1155,14 @@
     <div>
       <div class="tp-section">Bar Color Mode</div>
       <div class="tp-option-list">
-        <label class="tp-option-label" id="bcm-opt-quality">
+        <label class="tp-option-label">
           <input type="radio" name="barColorMode" value="quality" class="tp-radio">
           <span class="tp-option-content">
             <span class="tp-option-title">Quality (Avg R thresholds)</span>
             <span class="tp-option-desc">≥0.5R green · ≥0.2R gold · ≥0 teal · negative red</span>
           </span>
         </label>
-        <label class="tp-option-label" id="bcm-opt-binary">
+        <label class="tp-option-label">
           <input type="radio" name="barColorMode" value="binary" class="tp-radio">
           <span class="tp-option-content">
             <span class="tp-option-title">Binary (positive / negative)</span>
@@ -1284,17 +1282,17 @@
   <div class="view-tab active" id="tab-section-global" data-action="set-section" data-section="global">
     <span>⬡</span> Global Overview
   </div>
-  <div class="view-tab" id="tab-section-optimal-rr" data-action="set-section" data-section="optimal-rr">
+  <div class="view-tab" data-action="set-section" data-section="optimal-rr">
     Optimal RR Analysis
   </div>
-  <div class="view-tab" id="tab-section-partials" data-action="set-section" data-section="partials">
+  <div class="view-tab" data-action="set-section" data-section="partials">
     Partial Optimizer
   </div>
   <div class="view-tab" id="tab-share" data-action="switch-view" data-view="share">
     <span>◈</span> Share your data
   </div>
   <div class="view-tab" id="tab-api" data-action="switch-to-api" title="Reload from Notion">
-    <span id="tab-api-icon">↺</span> Notion Live
+    <span>↺</span> Notion Live
     <span id="tab-api-badge">LIVE</span>
     <span id="tab-api-loading" class="is-hidden">API LOADING</span>
   </div>
@@ -1391,7 +1389,7 @@
     <div class="sidebar-divider"></div>
 
     <!-- ══ PRESET COMPARISON ══ -->
-    <div class="filter-group" id="preset-compare-section">
+    <div class="filter-group">
       <div class="fg-label fg-label-row fg-label-spaced fg-label-toggle" data-action="toggle-preset-compare" role="button" tabindex="0" aria-expanded="false" id="preset-cmp-header">
         <span>Compare Presets</span>
         <span class="fg-chevron" id="preset-cmp-toggle" aria-hidden="true">▸</span>
@@ -1422,7 +1420,7 @@
     <div class="sidebar-divider"></div>
 
     <!-- ══ FILTERS ACCORDION ══ -->
-    <div class="filter-group" id="filters-accordion-section">
+    <div class="filter-group">
       <div class="fg-label fg-label-row fg-label-spaced fg-label-toggle" data-action="toggle-filters-panel" role="button" tabindex="0" aria-expanded="false" id="filters-accordion-header">
         <span>Filters</span>
         <div class="filters-header-btns">
@@ -1587,7 +1585,7 @@
 
         </div><!-- /filters-panel-dims -->
       </div><!-- /filters-panel-body -->
-    </div><!-- /filters-accordion-section -->
+    </div>
 
   </aside>
 
@@ -1727,7 +1725,7 @@
     </div>
 
     <!-- ══ WIDGET: Statistics Overview ══ -->
-    <div class="chart-card gs-widget" data-gs-id="w-stats" data-section="global" id="w-stats-card">
+    <div class="chart-card gs-widget" data-gs-id="w-stats" data-section="global">
       <div class="cc-head cc-head-fixed">
         <span class="cc-title">Statistics Overview</span>
       </div>
@@ -1737,7 +1735,7 @@
     </div>
 
     <!-- ══ WIDGET: Monthly P&L ══ -->
-    <div class="chart-card gs-widget" data-gs-id="w-monthly" data-section="global" id="monthly-card">
+    <div class="chart-card gs-widget" data-gs-id="w-monthly" data-section="global">
       <div class="cc-head">
         <span class="cc-title">Monthly P&amp;L</span>
         <div class="cc-head-controls cc-head-controls-xs">
@@ -1745,7 +1743,7 @@
           <button class="mc-toggle active" id="mt-net" data-action="set-monthly-mode" data-mode="net">Net</button>
           <button class="mc-toggle" id="mt-volume" data-action="set-monthly-mode" data-mode="volume">Volume</button>
         </div>
-          <div class="cc-tabs cc-tabs-offset" id="monthly-curve-btns">
+          <div class="cc-tabs cc-tabs-offset">
           <button class="cc-tab" id="mc-btn-3m" data-action="toggle-monthly-curve" data-mode="rolling">3M Avg</button>
           <button class="cc-tab" id="mc-btn-cumul" data-action="toggle-monthly-curve" data-mode="cumul">Cumul</button>
         </div>

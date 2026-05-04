@@ -29,7 +29,7 @@
   --r:  #e05a6e;  --r2: rgba(224,90,110,.08);    --r3: rgba(224,90,110,.16);
   --a:  #f5c642;  --a2: rgba(245,198,66,.09);    --a3: rgba(245,198,66,.18);
   --b:  #5a9cf5;  --b2: rgba(90,156,245,.10);
-  --t:  #3ec8d8;  --t2: rgba(62,200,216,.10);
+  --t:  #3ec8d8;
 
   --sel:        rgba(90,156,245,.13);
   --sel-border: rgba(90,156,245,.50);
@@ -95,13 +95,11 @@
   --shadow-sm:  0 2px 8px rgba(0,0,0,.20);
   --shadow-md:  0 4px 16px rgba(0,0,0,.32);
   --shadow-lg:  0 8px 28px rgba(0,0,0,.50);
-  --shadow-xl:  0 16px 48px rgba(0,0,0,.70);
   --shadow-inset-hi: inset 0 1px 0 rgba(255,255,255,.035);
 
   /* ── A5: Border widths ── */
   --border-thin:   1px;
   --border-medium: 2px;
-  --border-thick:  3px;
 
   /* ── A6: Transition easing ── */
   --ease-fast:    .10s ease;
@@ -136,19 +134,15 @@
   --surface-3:   var(--bg3);
   --surface-4:   var(--bg4);
   --widget-bg:   var(--bg1);
-  --panel-bg:    var(--bg2);
-  --hover-bg:    var(--bg4);
 
   /* ── B2: Text ── */
   --text-primary:   var(--white);
   --text-secondary: var(--body);
   --text-muted:     var(--dim);
-  --text-inverse:   #080d1b;
 
   /* ── B3: Borders ── */
   --border-subtle: var(--line);
   --border-normal: var(--line2);
-  --border-strong: rgba(255,255,255,.08);
 
   /* ── B4: Semantic colors ── */
   --color-success:  var(--g);
@@ -156,14 +150,10 @@
   --color-warning:  var(--a);
   --color-info:     var(--t);
   --accent-primary: var(--gold);
-  --accent-secondary: var(--b);
 
   /* ── B5: State colors ── */
   --state-selected: var(--sel);
   --state-selected-border: var(--sel-border);
-  --state-active-bg:   color-mix(in srgb, var(--gold) 10%, transparent);
-  --state-active-border: color-mix(in srgb, var(--gold) 38%, transparent);
-  --state-disabled-opacity: .35;
   --state-focus-ring: 0 0 0 2px color-mix(in srgb, var(--gold) 35%, transparent);
 
   /* ════════════════════════════════════
@@ -213,7 +203,6 @@
   --kpi-radius:         var(--rad-card);
   --kpi-padding:        16px 18px 14px;
   --kpi-shadow:         var(--shadow-sm), var(--shadow-inset-hi);
-  --kpi-accent-height:  3px;
 
   /* ── C8: Widget cards ── */
   --widget-padding:     16px 18px;
@@ -237,12 +226,7 @@
 
   /* ── C11: Buttons / Inputs / Controls ── */
   --btn-bg:             var(--surface-3);
-  --btn-border:         var(--border-normal);
-  --btn-color:          var(--text-muted);
-  --btn-radius:         6px;
   --input-bg:           var(--surface-3);
-  --input-border:       var(--border-normal);
-  --input-color:        var(--text-secondary);
 
   /* ── C12: Theme Editor ── */
   --te-bg:              var(--surface-1);
@@ -508,11 +492,6 @@ body {
 .cal-tooltip {
   font-size: var(--typo-micro-size);
   min-width: 180px;
-  overflow: hidden;
-}
-.mc-tooltip {
-  font-size: var(--typo-micro-size);
-  min-width: 160px;
   overflow: hidden;
 }
 .img-lightbox-overlay {
@@ -2823,35 +2802,6 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
 /* ══════════════════════════════════
    CHART CARDS
 ══════════════════════════════════ */
-.charts-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: var(--gap);
-  margin-bottom: var(--gap);
-}
-.charts-row2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap);
-  margin-bottom: var(--gap);
-}
-.charts-row3 {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: var(--gap);
-  margin-bottom: var(--gap);
-}
-/* New layout grids */
-.charts-1fr-2fr {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: var(--gap);
-  margin-bottom: var(--gap);
-}
-.charts-fullrow {
-  margin-bottom: var(--gap);
-}
-
 .chart-card {
   background: var(--widget-bg);
   border: 1px solid var(--widget-border);
@@ -4645,8 +4595,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
     --tabs-h: 36px;
     --topbar-padding-x: 16px;
     --context-padding-x: 16px;
-    --widget-pad-x: 14px;
-    --widget-pad-y: 12px;
     --widget-padding: 12px 14px;
     --layout-main-pad: 16px 18px 32px;
 
@@ -4676,8 +4624,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
     --tabs-h: 38px;
     --topbar-padding-x: 18px;
     --context-padding-x: 18px;
-    --widget-pad-x: 15px;
-    --widget-pad-y: 13px;
     --widget-padding: 13px 15px;
     --layout-main-pad: 18px 20px 36px;
 
@@ -4711,12 +4657,9 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
     --tabs-h: 44px;
     --topbar-padding-x: 28px;
     --context-padding-x: 28px;
-    --widget-pad-x: 22px;
-    --widget-pad-y: 20px;
     --widget-padding: 20px 22px;
     --layout-main-pad: 28px 30px 48px;
     --gap: 12px;
-    --widget-gap: 12px;
 
     /* Slightly larger type */
     --typo-kpi-val-size:      28px;
@@ -4729,12 +4672,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
     --fs-stat: var(--typo-topbar-val-size);
   }
   .main { padding: var(--layout-main-pad); }
-}
-
-/* ── Tablet / narrow: 1100px ── */
-@media (max-width:1100px) {
-  .charts-grid { grid-template-columns: 1fr 1fr }
-  .charts-row3 { grid-template-columns: 1fr }
 }
 
 /* ── Mobile: 768px ── */
@@ -9650,13 +9587,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   font-weight: 600; transition: opacity .15s;
 }
 .rr-btn-confirm:hover { opacity: .85; }
-
-/* ── Active bubble state ── */
-.pp-gchip--rr-active {
-  outline: 2px solid var(--b, #4a9eff);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
 
 /* ── Widget badge (clear RR filter inside Optimal RR) ── */
 .rr-widget-badge {
