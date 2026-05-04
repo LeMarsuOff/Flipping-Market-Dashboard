@@ -2918,6 +2918,67 @@ function _persistSidebarState() {
   } catch (e) {}
 }
 
+// Debounced wrapper used by `render()` so chip-rapid-clicks don't trigger
+// a full JSON.stringify + sync localStorage write on every paint. Other
+// callsites that need an immediate save still call _persistSidebarState
+// synchronously. The beforeunload flush below guarantees pending writes
+// are persisted before the page is closed.
+let _persistSidebarStateTimer = null;
+let _persistSidebarStateLastPayload = null;
+function _persistSidebarStateDebounced() {
+  if (_persistSidebarStateTimer) clearTimeout(_persistSidebarStateTimer);
+  _persistSidebarStateTimer = setTimeout(() => {
+    _persistSidebarStateTimer = null;
+    if (!_sidebarPersistReady) return;
+    try {
+      if (typeof _saveFilterState !== 'function') return;
+      const fs = _saveFilterState();
+      const payload = {
+        showRawAll:          fs.showRawAll,
+        activePreset:        fs.activePreset,
+        beManagementExclude: fs.beManagementExclude,
+        m15Exclude:          fs.m15Exclude,
+        h4Exclude:           fs.h4Exclude,
+        sessionExclude:      fs.sessionExclude,
+        dayExclude:          fs.dayExclude,
+        filters: Object.fromEntries(
+          Object.entries(fs.filters).map(([k, v]) => [k, {
+            mode:     v.mode,
+            included: Array.from(v.included || []),
+            excluded: Array.from(v.excluded || []),
+            includedFromPreset: Array.from(v.includedFromPreset || []),
+            excludedFromPreset: Array.from(v.excludedFromPreset || []),
+          }])
+        ),
+        customChips: _serializeCustomChips(fs.customChips || appState.filters.customChips || {}),
+        tf:       fs.tf,
+        dateFrom: fs.dateFrom,
+        dateTo:   fs.dateTo,
+        presetCmpOpen:    typeof _presetCmpOpen    !== 'undefined' ? !!_presetCmpOpen    : false,
+        filtersPanelOpen: typeof _filtersPanelOpen !== 'undefined' ? !!_filtersPanelOpen : false,
+        pcmpA: document.getElementById('pcmp-a')?.value ?? null,
+        pcmpB: document.getElementById('pcmp-b')?.value ?? null,
+      };
+      const serialized = JSON.stringify(payload);
+      if (serialized === _persistSidebarStateLastPayload) return;
+      _persistSidebarStateLastPayload = serialized;
+      localStorage.setItem(SIDEBAR_STATE_KEY, serialized);
+    } catch (e) {
+      console.warn('[sidebar persist]', e && e.message);
+    }
+  }, 250);
+}
+
+// Flush any pending debounced write before the page unloads so we don't
+// lose the user's last filter state on a rapid close.
+window.addEventListener('beforeunload', () => {
+  if (_persistSidebarStateTimer) {
+    clearTimeout(_persistSidebarStateTimer);
+    _persistSidebarStateTimer = null;
+    _persistSidebarState();
+  }
+});
+
 function _loadPersistedSidebarState() {
   try {
     const raw = localStorage.getItem(SIDEBAR_STATE_KEY);
@@ -6636,9 +6697,15 @@ function drawCharts(trades) {
     _chartTrades    = allTrades;
     const tpConfig = appState.ui.tpConfig;
     let _eq = 0, _peak = 0;
-    equitySeries = allTrades.map(t => { _eq += computeEffectiveRR(t, tpConfig); if (_eq > _peak) _peak = _eq; return _eq; });
-    _eq = 0; _peak = 0;
-    ddSeries = allTrades.map(t => { _eq += computeEffectiveRR(t, tpConfig); if (_eq > _peak) _peak = _eq; return _eq - _peak; });
+    equitySeries = [];
+    ddSeries = [];
+    for (const t of allTrades) {
+      const r = t.effectiveR ?? computeEffectiveRR(t, tpConfig);
+      _eq += r;
+      if (_eq > _peak) _peak = _eq;
+      equitySeries.push(_eq);
+      ddSeries.push(_eq - _peak);
+    }
   }
   _chartEquitySeries = equitySeries;
 
@@ -8563,7 +8630,7 @@ function renderHeatmap(trades) {
     if(!data[k]) data[k]={r:0,n:0,wins:0,tpR:0,slR:0,betpR:0,beslR:0};
     const r = computeEffectiveRR(t, tpConfig);
     data[k].r+=r; data[k].n++;
-    if(isWinner(t)) data[k].wins++;
+    if(isWinner(t, tpConfig)) data[k].wins++;
     if(t.outcome==='TP')    data[k].tpR+=r;
     else if(t.outcome==='SL')    data[k].slR+=r;
     else if(t.outcome==='BE-TP') data[k].betpR+=r;
@@ -8595,6 +8662,9 @@ function renderHeatmap(trades) {
   const lblFontSz= Math.max(8, Math.min(12, Math.floor(cellH * 0.32)));
 
   const toRgbStr = h => { const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r?`${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}`:'180,180,180'; };
+  const cG   = tc('--g');
+  const cR   = tc('--r');
+  const cBg1 = tc('--bg1');
 
   container.style.cssText = `
     display:grid;
@@ -8651,9 +8721,9 @@ function renderHeatmap(trades) {
           pos = metric === 'n' ? true : val >= 0;
           alpha = Math.min(Math.abs(val / range) * (pos ? 0.85 : 0.65) + 0.25, 0.95);
         }
-        const hexCol = pos ? tc('--g') : tc('--r');
+        const hexCol = pos ? cG : cR;
         cell.style.background = `rgba(${toRgbStr(hexCol)},${alpha})`;
-        cell.style.color = alpha > 0.55 ? tc('--bg1') : (pos ? tc('--g') : tc('--r'));
+        cell.style.color = alpha > 0.55 ? cBg1 : (pos ? cG : cR);
         cell.textContent = fmtFn(val);
         const avgR = v.r/v.n;
         const wrPct = (v.wins/v.n*100).toFixed(0);
@@ -8772,6 +8842,7 @@ function renderTable(trades) {
     return;
   }
 
+  const cfg = appState.ui.tpConfig;
   const _tlPairSz    = tc('--typo-tl-pair-size');
   const _tlSetupSz   = tc('--typo-tl-setup-size');
   const _tlSessionSz = tc('--typo-tl-session-size');
@@ -8780,6 +8851,10 @@ function renderTable(trades) {
 
   // Sort
   const { col, dir } = tableSort;
+  // Pre-decorate __isLoss once per trade so the date-tiebreaker comparator
+  // doesn't pay an isLoser hash recompute on every comparison (~2N log N
+  // calls). Cleaned up after the sort to avoid leaking the transient flag.
+  for (const t of trades) t.__isLoss = isLoser(t, cfg);
   const sorted = [...trades].sort((a, b) => {
     let va = a[col], vb = b[col];
     if (col === 'date') { va = va || ''; vb = vb || ''; }
@@ -8790,13 +8865,14 @@ function renderTable(trades) {
     if (col === 'date') {
       const h = (a.hour ?? 99) - (b.hour ?? 99);
       if (h !== 0) return h;
-      const aIsLoss = isLoser(a);
-      const bIsLoss = isLoser(b);
+      const aIsLoss = a.__isLoss;
+      const bIsLoss = b.__isLoss;
       if (aIsLoss && !bIsLoss) return dir === 'asc' ? -1 : 1;
       if (!aIsLoss && bIsLoss) return dir === 'asc' ?  1 : -1;
     }
     return 0;
   });
+  for (const t of trades) delete t.__isLoss;
 
   const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl' };
   const rowBg = { 'TP': getWinColorAlpha(.25), 'SL': getLossColorAlpha(.27), 'BE-TP': 'rgba(41,98,255,.22)', 'BE-SL': 'rgba(180,120,240,.22)' };
@@ -8835,7 +8911,7 @@ function renderTable(trades) {
     const notionBtn = notionUrl
       ? `<button class="trade-media-btn trade-link-btn" data-action="open-notion-overlay" data-notion-url="${notionUrl.replace(/"/g, '&quot;')}" title="Open in Notion">🔗</button>`
       : '';
-    const _rEff = t.effectiveR ?? computeEffectiveRR(t, appState.ui.tpConfig);
+    const _rEff = t.effectiveR ?? computeEffectiveRR(t, cfg);
     return `
     <tr class="tt-trade-row" style="background:${rowBg[t.outcome] || ''};cursor:pointer"
         data-action="open-tradelog-drawer"
@@ -9333,6 +9409,34 @@ function hideEmptyWidgets(trades) {
   // others show the empty message). Instead, make any previously-hidden
   // widgets visible again so the user sees a full dashboard of empty states,
   // and let the attention button still reflect CSV-level missing data.
+  // Single-pass flag accumulator. Replaces ~9 separate `.some()` walks per
+  // ruleset. Early-exits as soon as every flag is true.
+  const buildRules = arr => {
+    let hSetup = false, hSession = false, hDay = false,
+        hObs = false, hH4 = false, hHour = false, hNotion = false;
+    for (const t of arr) {
+      if (!hSetup   && t.setup    && t.setup.trim())               hSetup = true;
+      if (!hSession && t.session  && t.session.trim())             hSession = true;
+      if (!hDay     && t.day      && t.day.trim())                 hDay = true;
+      if (!hObs     && t.obstacles && t.obstacles.length > 0)      hObs = true;
+      if (!hH4      && t.h4       && t.h4.length > 0)              hH4 = true;
+      if (!hHour    && t.hour != null)                             hHour = true;
+      if (!hNotion  && t.notionUrl && String(t.notionUrl).trim())  hNotion = true;
+      if (hSetup && hSession && hDay && hObs && hH4 && hHour && hNotion) break;
+    }
+    return {
+      'w-setup':        hSetup,
+      'w-session':      hSession,
+      'w-day':          hDay,
+      'w-heatmap':      hSession && hDay,
+      'w-m15':          hObs,
+      'w-h4':           hH4,
+      'w-hour':         hHour,
+      'w-pair-session': hSession,
+      'w-notion':       hNotion,
+    };
+  };
+
   if (!trades.length) {
     _grid.getGridItems().forEach(item => {
       if (item.classList.contains('is-hidden')) setVisible(item, true);
@@ -9340,20 +9444,7 @@ function hideEmptyWidgets(trades) {
     // Attention button still evaluated against full dataset
     const fullItems0 = (appState && appState.trades && appState.trades.items) || [];
     const hidden0 = [];
-    const h0 = fn => fullItems0.some(fn);
-    const hS0 = h0(t => t.session && t.session.trim());
-    const hD0 = h0(t => t.day     && t.day.trim());
-    const fullRules0 = {
-      'w-setup':        h0(t => t.setup    && t.setup.trim()),
-      'w-session':      hS0,
-      'w-day':          hD0,
-      'w-heatmap':      hS0 && hD0,
-      'w-m15':          h0(t => t.obstacles && t.obstacles.length > 0),
-      'w-h4':           h0(t => t.h4       && t.h4.length > 0),
-      'w-hour':         h0(t => t.hour != null),
-      'w-pair-session': hS0,
-      'w-notion':       h0(t => t.notionUrl && String(t.notionUrl).trim()),
-    };
+    const fullRules0 = buildRules(fullItems0);
     Object.keys(fullRules0).forEach(id => {
       if (!fullRules0[id] && MISSING_DATA_META[id]) {
         hidden0.push({ id, ...MISSING_DATA_META[id] });
@@ -9367,22 +9458,6 @@ function hideEmptyWidgets(trades) {
   // but the attention button reflects CSV-level missing data — evaluated against
   // the full dataset — so filter-driven emptiness doesn't raise a false alarm.
   const fullItems = (appState && appState.trades && appState.trades.items) || trades;
-  const buildRules = arr => {
-    const h = fn => arr.some(fn);
-    const hS = h(t => t.session && t.session.trim());
-    const hD = h(t => t.day     && t.day.trim());
-    return {
-      'w-setup':        h(t => t.setup    && t.setup.trim()),
-      'w-session':      hS,
-      'w-day':          hD,
-      'w-heatmap':      hS && hD,
-      'w-m15':          h(t => t.obstacles && t.obstacles.length > 0),
-      'w-h4':           h(t => t.h4       && t.h4.length > 0),
-      'w-hour':         h(t => t.hour != null),
-      'w-pair-session': hS,
-      'w-notion':       h(t => t.notionUrl && String(t.notionUrl).trim()),
-    };
-  };
   const viewRules = buildRules(trades);
   const fullRules = buildRules(fullItems);
 
@@ -10829,21 +10904,25 @@ function renderRollingWR(trades) {
 
   const sorted = _sortTradesChronological(trades);
 
-  // Rolling WR: for each trade i, WR of last N trades
+  // Rolling WR: for each trade i, WR of last N trades. O(N) via rolling
+  // counter: pre-decorate isWinner once per trade, then increment/decrement
+  // as the window slides instead of re-scanning each window.
   const tpConfig = appState.ui.tpConfig;
+  const winFlags = sorted.map(t => isWinner(t, tpConfig) ? 1 : 0);
   const rollingWR = [], equitySeries = [];
-  let eq = 0;
-  sorted.forEach((t, i) => {
+  let eq = 0, wins = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const t = sorted[i];
     eq += computeEffectiveRR(t, tpConfig);
     equitySeries.push(+eq.toFixed(2));
+    wins += winFlags[i];
+    if (i >= N) wins -= winFlags[i - N];
     if (i >= N - 1) {
-      const window = sorted.slice(i - N + 1, i + 1);
-      const wins = window.filter(isWinner).length;
       rollingWR.push(+(wins / N * 100).toFixed(1));
     } else {
       rollingWR.push(null);
     }
-  });
+  }
 
   const labels = sorted.map((t, i) => i % Math.max(1, Math.floor(sorted.length/10)) === 0
     ? (t.date || '').slice(5)
@@ -11736,7 +11815,7 @@ function renderPairSession(trades) {
     const r = computeEffectiveRR(t, tpConfig);
     data[k].r += r;
     data[k].n++;
-    if (isWinner(t)) data[k].wins++;
+    if (isWinner(t, tpConfig)) data[k].wins++;
     if (t.outcome==='TP')    data[k].tpR+=r;
     else if (t.outcome==='SL')    data[k].slR+=r;
     else if (t.outcome==='BE-TP') data[k].betpR+=r;
@@ -11766,6 +11845,7 @@ function renderPairSession(trades) {
 
   const toRgb = h => { const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r ? `${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}` : '180,180,180'; };
   const cG = tc('--g'), cR = tc('--r');
+  const cBg1 = tc('--bg1');
 
   // ── Dynamic sizing ──────────────────────────────────────
   // Measure available space AFTER layout has settled
@@ -11882,7 +11962,7 @@ function renderPairSession(trades) {
           alpha = Math.min(Math.abs(val / range) * (pos ? 0.8 : 0.65) + 0.22, 0.95);
         }
         cell.style.background = `rgba(${toRgb(pos ? cG : cR)},${alpha})`;
-        cell.style.color = alpha > 0.55 ? tc('--bg1') : (pos ? cG : cR);
+        cell.style.color = alpha > 0.55 ? cBg1 : (pos ? cG : cR);
 
         const valueSpan = document.createElement('span');
         valueSpan.textContent = fmtFn(val);
@@ -12648,10 +12728,11 @@ function renderCalendar(trades) {
     const daysInMonth = new Date(parseInt(year, 10), mo + 1, 0).getDate();
     const firstDow = (new Date(parseInt(year, 10), mo, 1).getDay() + 6) % 7;
     const moPrefix = `${year}-${String(mo + 1).padStart(2, '0')}`;
-    const moTrades = (_calYearMap[year]?.months?.[moPrefix]?.trades) || [];
-    const moR = moTrades.reduce((s, t) => s + (Number(computeEffectiveRR(t, appState.ui.tpConfig)) || 0), 0);
-    const moW = moTrades.filter(isWinner).length;
-    const moL = moTrades.filter(isLoser).length;
+    const moEntry  = _calYearMap[year]?.months?.[moPrefix];
+    const moTrades = moEntry?.trades || [];
+    const moR = moEntry?._totalR  ?? 0;
+    const moW = moEntry?._wins    ?? 0;
+    const moL = moEntry?._losses  ?? 0;
     const moN = moTrades.length;
     const moCol = moR >= 0 ? cG : cR;
     const moRgb = _calHexToRgb(moR >= 0 ? cG : cR);
@@ -12727,10 +12808,12 @@ function _calRebuildCaches(trades) {
     }
 
     const d = _calDayMap[date];
+    const isW = isWinner(t, tpConfig);
+    const isL = isLoser(t, tpConfig);
     d.r += r;
     d.n += 1;
-    if (isWinner(t)) d.wins += 1;
-    if (isLoser(t)) d.losses += 1;
+    if (isW) d.wins += 1;
+    if (isL) d.losses += 1;
     d.trades.push(t);
 
     const hKey = (t.hour != null && !isNaN(t.hour)) ? Number(t.hour) : -1;
@@ -12748,8 +12831,16 @@ function _calRebuildCaches(trades) {
     d.sessions[sKey].ocs[t.outcome || 'SL'] = (d.sessions[sKey].ocs[t.outcome || 'SL'] || 0) + 1;
 
     if (!_calYearMap[year]) _calYearMap[year] = { maxAbs: 0, months: {} };
-    if (!_calYearMap[year].months[month]) _calYearMap[year].months[month] = { trades: [] };
-    _calYearMap[year].months[month].trades.push(t);
+    if (!_calYearMap[year].months[month]) {
+      _calYearMap[year].months[month] = { trades: [], _totalR: 0, _wins: 0, _losses: 0 };
+    }
+    const moEntry = _calYearMap[year].months[month];
+    moEntry.trades.push(t);
+    // Pre-aggregate month totals to avoid 3 traversals (reduce + 2 filters)
+    // per-month in renderCalendar's annual loop.
+    moEntry._totalR += r;
+    if (isW) moEntry._wins += 1;
+    if (isL) moEntry._losses += 1;
     _calYearMap[year].maxAbs = Math.max(_calYearMap[year].maxAbs, Math.abs(d.r));
   }
 }
@@ -17832,7 +17923,7 @@ function render() {
     renderPanels(empty);
     renderOptimalRRWidget(empty);
     _rrSyncActiveFilterBadge();
-    _persistSidebarState();
+    _persistSidebarStateDebounced();
     return;
   }
   _hideTpmInvalidBanner();
@@ -17847,7 +17938,7 @@ function render() {
   // ORR widget gets its own filtered view — rrMinFilter must not shrink its input
   renderOptimalRRWidget(getFilteredForORR());
   _rrSyncActiveFilterBadge();
-  _persistSidebarState();
+  _persistSidebarStateDebounced();
 }
 
 // ── Typography live-preview: redraw all canvas charts on slider change ──
