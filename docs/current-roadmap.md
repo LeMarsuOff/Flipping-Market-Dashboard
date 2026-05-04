@@ -4,11 +4,51 @@
 > Pour le détail des règles métier, voir `docs/business-rules.md`.
 > Pour la cartographie fichiers, voir `docs/file-map.md`.
 >
-> **Dernière mise à jour** : 3 mai 2026
+> **Dernière mise à jour** : 4 mai 2026
 
 ---
 
 ## PRs livrées
+
+### Chantier "Audit-driven cleanup" (4 mai 2026) — 3 PRs séquentielles sur main
+
+Audit complet en début de session : `docs/audit-2026-05-04-full-codebase.md` (66 findings, 9 sections, blacklist active sur le moteur de calcul). Les findings d'effort S et de risque Aucun/Faible ont été traités en 3 PRs successives, chacune validée en runtime par l'utilisateur sur dataset 600 trades. Aucune régression observée.
+
+- **PR1 — `cleanup/pr1-dead-code-css`** (commit `5368c36`, mergé via #16)
+  - Dead JS : `_ppBuildReachDataset`, `_poTypeLabel`, `_poInternalResetLayout`, ligne `cal-sort-session` orpheline
+  - Dead HTML : 16 attributs `id="…"` retirés (`bcm-opt-*`, `dhp-tab-mapping` + paire aria, `mob-card-*`, `monthly-card`, `nlm-opt-*`, `tab-section-*`, `w-stats-card`, etc.)
+  - Dead CSS : famille `.charts-grid` + `@media` ciblé orphelin, `.mc-tooltip`, `.pp-gchip--rr-active`
+  - CSS dedup : 6 doublons `:root` (`--text-inverse`, `--border-strong`, `--hover-bg`, `--state-active-*`, `--panel-bg`)
+  - CSS unused : 11 propriétés (`--shadow-xl`, `--border-thick`, `--state-disabled-opacity`, `--accent-secondary`, `--t2`, `--kpi-accent-height`, `--btn-border/color/radius`, `--input-border/color`) + `--widget-pad-x/y/--widget-gap` dans 3 `@media`
+  - Bilan : 139 suppressions / 19 modifs (-120 lignes net)
+  - Préservé pour info Max : DEAD-04 hammerjs CDN (test tactile requis), CSS-04/10/20/21 (à investiguer)
+
+- **PR2 — `perf/pr2-quick-wins`** (commits `12e8dca` + 3 follow-ups : `ca6434d` calendar typo, `80b3b2a` showBE bar-tooltip fix, `ab9611f` theme-panel drag, mergés via #17 + #18)
+  - **PERF-02** : hoist `cfg = appState.ui.tpConfig` + pass to `is*()` helpers dans 6 render functions (renderHeatmap, renderPairSession, renderTable, renderRollingWR, renderCalendar boucle annuelle, _calRebuildCaches). Élimine ~3600 hash recompute par render.
+  - **PERF-03** : `drawCharts` lit `t.effectiveR` caché + fusion equity/DD en 1 passe au lieu de 2 maps séparés.
+  - **PERF-05** : hoist `tc('--g/--r/--bg1')` hors des boucles cell de renderHeatmap + renderPairSession.
+  - **PERF-06** : `hideEmptyWidgets` single-pass flag accumulation avec early-exit (au lieu de ~18 `arr.some()`).
+  - **PERF-07** : `renderRollingWR` rolling counter O(N) au lieu de O(N×W=20). 12 000 isWinner calls → ~600.
+  - **PERF-08** : `renderTable` pré-décore `__isLoss` avant le sort, comparator lit la prop cachée.
+  - **PERF-09** : agrégats mois (`_totalR/_wins/_losses`) cachés dans `_calRebuildCaches`, `renderCalendar` boucle annuelle lit en O(1) au lieu de 3 traversées par mois.
+  - **PERF-10** : `_persistSidebarState` debounced 250ms + diff check + flush `beforeunload`. Original synchrone préservé pour le flush.
+  - **Follow-ups intégrés** : retrait des overrides JS sur `--fs-cal-*` (theme editor pilote la typo Calendar), drag horizontal du theme panel avec reset à la fermeture, fix `showBE` undefined depuis l'initial commit (cassait silencieusement le hover de TOUS les bar charts).
+  - Bilan : +91 lignes net (PR2 base) + 4 commits suivants pour les fixes UX/régressions découverts en runtime.
+
+- **PR3 — `robust/pr3-silent-failures`** (commit `85299cf`, mergé via #19)
+  - **ROBUST-01/02** : try/catch + `console.warn('[layout restore CSV/import]', e.message)` autour de 2 `JSON.parse(localStorage.getItem(...))` non protégés (post-CSV import et post-CSV file import).
+  - **ROBUST-03** : isolation par-trade dans 2 callsites `_normalizeAPITrade` (loadFromAPI + _fetchAPICacheSilently). Un trade malformé loggue son `index=N` et est filtré au lieu de faire crasher l'import entier.
+  - **ROBUST-12** : 2 `} catch {}` vides convertis en `console.warn('[zoom]', ...)` autour des reads/writes de zoomScale dans `_poRenderScatter`.
+  - **ROBUST-13** : 1 `} catch (e) {}` vide dans `_persistSidebarState` synchrone converti en log (le 2nd site identifié dans l'audit avait déjà été loggué par PR2 lors de l'introduction du wrapper debounced).
+  - **ROBUST-14** : 2 `} catch {}` vides convertis en `console.warn('[layout persist]', ...)` autour des `setItem(_MC2_SECTION_LAYOUT_KEY)` et `setItem(_PO_INTERNAL_LAYOUT_KEY)`. Le 3e site listé dans l'audit était un catch sur `chart.resize()` (cosmétique, hors scope persistence).
+  - Bilan : +52 / -12 (+40 lignes net) sur dashboard.js. Aucune modif du moteur de calcul ni des parsers CSV.
+  - Out-of-scope reportés : 3e callsite `_normalizeAPITrade` à `_reapplyAPIOverrides` (audit n'en listait que 2), retry-once wrapper sur layout persist (complexité non justifiée pour le moment).
+
+### Statut R1-R7 (audit 28 avril 2026, recroisé par l'audit 4 mai 2026)
+
+- **R6 — Code mort `simulateCustomPartialsPlan`** : ✅ **RÉSOLU** (fonction supprimée avant l'audit du 4 mai, `grep` confirme 0 occurrence).
+- **R4 — Couverture tests automatisée** : partiellement adressé (suite `audit/test_runner.js` toujours en place, 84 cellules testées post-retrait du mode `no-be`).
+- **R1, R2, R3, R5, R7** : toujours pertinents, non priorisés cette session.
 
 ### Chantier "PO UX/UI Overhaul" (3 mai 2026) — main direct, commit `c54c9aa`
 
