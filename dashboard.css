@@ -8066,6 +8066,19 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   border-color: var(--gold);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent);
 }
+.wd-day-sep {
+  padding: 5px 10px;
+  margin: 10px 0 6px;
+  background: var(--bg2);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  letter-spacing: .6px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+.wd-day-sep:first-child { margin-top: 0; }
 .wd-drawer-body-recovery { padding: 10px 12px 20px; }
 .wd-occ {
   border: 1px solid var(--line2);

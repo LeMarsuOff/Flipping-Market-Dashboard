@@ -1333,18 +1333,45 @@ function handleActionClick(event) {
     case 'lightbox-nav-trade': event.stopPropagation(); _lbNavigateTrade(parseInt(actionEl.dataset.delta, 10) || 0); break;
     case 'open-img-lightbox': {
       const lbScope = actionEl.dataset.scope || '';
-      if ((lbScope === '#sel-tbody' || lbScope === '#trade-tbody') &&
+      const dEl = document.getElementById('wd-drawer');
+      const drawerOpen = dEl && dEl.classList.contains('is-open');
+
+      // Selection widget: surface the active equity selection in the drawer
+      // so the lightbox has prev/next context across all selected trades.
+      if (lbScope === '#sel-tbody' && !drawerOpen &&
           _activeSelection && Array.isArray(_activeSelection.trades) && _activeSelection.trades.length) {
-        const dEl = document.getElementById('wd-drawer');
-        if (!dEl || !dEl.classList.contains('is-open')) {
-          const s = _activeSelection;
-          const isRange = s.type === 'range';
-          const sub = isRange
-            ? `Range  ${s.dateFrom} → ${s.dateTo}  ·  ${(s.days||[]).length} day${(s.days||[]).length > 1 ? 's' : ''}`
-            : `Day  ${s.dateFrom}`;
-          openWidgetDrawer('Selection', sub, s.trades);
+        const s = _activeSelection;
+        const isRange = s.type === 'range';
+        const sub = isRange
+          ? `Range  ${s.dateFrom} → ${s.dateTo}  ·  ${(s.days||[]).length} day${(s.days||[]).length > 1 ? 's' : ''}`
+          : `Day  ${s.dateFrom}`;
+        openWidgetDrawer('Selection', sub, s.trades);
+      }
+      // Trade Log: open the drawer with ALL filtered trades, grouped by day,
+      // and highlight the trade matching the clicked row. Mirrors the
+      // 'open-tradelog-drawer' row handler. Previously this branch was
+      // hijacked by an active equity selection (Selection drawer instead).
+      else if (lbScope === '#trade-tbody' && !drawerOpen) {
+        const row = actionEl.closest('tr.tt-trade-row');
+        if (row) {
+          const date = row.dataset.tradeDate || '';
+          const pair = row.dataset.tradePair || '';
+          const hourRaw = row.dataset.tradeHour;
+          const hour = hourRaw === '' || hourRaw == null ? null : parseInt(hourRaw, 10);
+          const rVal = parseFloat(row.dataset.tradeR);
+          const allTrades = getFiltered();
+          if (allTrades.length) {
+            const highlight = allTrades.find(t =>
+              t.date === date &&
+              t.pair === pair &&
+              ((t.hour ?? null) === hour) &&
+              Math.abs((Number(t.r) || 0) - rVal) < 1e-6
+            ) || null;
+            openWidgetDrawer('Trade Log', null, allTrades, highlight, { groupByDay: true });
+          }
         }
       }
+
       openImgLightbox(actionEl.dataset.imgUrl, lbScope, actionEl.dataset.imgStep || 'm15Before');
       break;
     }
@@ -1394,16 +1421,15 @@ function handleActionClick(event) {
       const hour = hourRaw === '' || hourRaw == null ? null : parseInt(hourRaw, 10);
       // KEEP raw trade.r — identity matching for click-to-locate. Must NOT use computeEffectiveRR (weighted value would break the lookup).
       const rVal = parseFloat(actionEl.dataset.tradeR);
-      const filtered = getFiltered();
-      const dayTrades = filtered.filter(t => t.date === date);
-      if (!dayTrades.length) break;
-      const highlight = dayTrades.find(t =>
+      const allTrades = getFiltered();
+      if (!allTrades.length) break;
+      const highlight = allTrades.find(t =>
+        t.date === date &&
         t.pair === pair &&
         ((t.hour ?? null) === hour) &&
         Math.abs((Number(t.r) || 0) - rVal) < 1e-6
       ) || null;
-      const dayLabel = highlight?.day ? `${date} · ${DAY_EN[highlight.day] || highlight.day}` : date;
-      openWidgetDrawer(dayLabel, null, dayTrades, highlight);
+      openWidgetDrawer('Trade Log', null, allTrades, highlight, { groupByDay: true });
       break;
     }
     case 'close-widget-drawer': closeWidgetDrawer(); break;
@@ -12348,7 +12374,7 @@ function _wdTradeCard(t) {
 
 /* Open the shared widget drawer with a filtered set of trades.
    Trades are always sorted by date asc → hour asc regardless of widget source. */
-function openWidgetDrawer(title, subtitle, trades, highlightTrade = null) {
+function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts = {}) {
   if (!trades || !trades.length) return;
 
   // Sort: date asc, then hour asc
@@ -12361,6 +12387,7 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null) {
   const n      = sorted.length;
   const sign   = totalR >= 0 ? '+' : '';
   const col    = totalR >= 0 ? 'var(--g)' : 'var(--r)';
+  const groupByDay = !!opts.groupByDay;
 
   // Create drawer & backdrop once; reuse afterwards
   let drawer = document.getElementById('wd-drawer');
@@ -12390,7 +12417,17 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null) {
         <button class="wd-drawer-close" data-action="close-widget-drawer">×</button>
       </div>
     </div>
-    <div class="wd-drawer-body">${sorted.map(_wdTradeCard).join('')}</div>`;
+    <div class="wd-drawer-body">${
+      groupByDay
+        ? sorted.map((t, i) => {
+            const prev = i > 0 ? sorted[i - 1].date : null;
+            const sep = t.date !== prev
+              ? `<div class="wd-day-sep">${t.date || '—'}${t.day ? ' · ' + (DAY_EN[t.day] || t.day) : ''}</div>`
+              : '';
+            return sep + _wdTradeCard(t);
+          }).join('')
+        : sorted.map(_wdTradeCard).join('')
+    }</div>`;
 
   if (highlightTrade) {
     const idx = sorted.findIndex(t => t === highlightTrade) !== -1
@@ -13102,9 +13139,14 @@ function _renderCalendarMonthly(trades, yearSel) {
   }
 
   html += `</div>`;
-  if (!mTrades.length) html = `<div class="no-data">No trades for ${prefix}</div>`;
 
-  grid.innerHTML = `<div style="padding:4px 2px;display:flex;flex-direction:column;height:100%;overflow:hidden">${summaryHtml}${html}</div>`;
+  // Empty month: keep the grid visible (faded day cells), overlay a "No trades"
+  // watermark so the period context stays readable.
+  const watermark = !mTrades.length
+    ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-family:'Anybody',sans-serif;font-size:clamp(28px,6vw,72px);font-weight:800;color:var(--body);opacity:0.08;text-transform:uppercase;letter-spacing:6px;z-index:1;user-select:none">No trades</div>`
+    : '';
+
+  grid.innerHTML = `<div style="position:relative;padding:4px 2px;display:flex;flex-direction:column;height:100%;overflow:hidden">${summaryHtml}${html}${watermark}</div>`;
 }
 
 function _calRenderMonthlyDayCell(dateStr, day, data, maxAbs, cG, cR) {
