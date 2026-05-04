@@ -6245,9 +6245,16 @@ function renderBarsSplit(containerId, items, small, chart) {
     const netStr = useWR ? wrPct.toFixed(0) + '%'
                  : useN  ? String(d.n)
                  : (netVal >= 0 ? '+' : '') + netVal.toFixed(useTotal ? decimals : 3) + 'R';
-    const netCol = useWR ? (wrPct >= 50 ? cG : cR)
+    const netCol = useWR
+                   ? (barColorMode === 'binary'
+                       ? (wrPct >= 40 ? cG : cR)
+                       : _kpiTooltipColor(wrPct, 'wr'))
                  : useN  ? (d.totalR > 0 ? cG : d.totalR < 0 ? cR : cA)
-                 : (netVal > 0 ? cG : netVal < 0 ? cR : tc('--body'));
+                 : useTotal
+                     ? (barColorMode === 'binary'
+                         ? (netVal > 0 ? cG : netVal < 0 ? cR : tc('--body'))
+                         : _kpiTooltipColor(d.ev, 'avgr'))
+                     : _kpiTooltipColor(d.ev, 'avgr');
 
     const losBar = losPct > 0.1 ? `<div class="split-bar" style="width:${losPct}%">
         <div class="split-seg" style="width:${beslPct}%;background:${cBESL}"></div>
@@ -6336,11 +6343,18 @@ function renderBars(containerId, data, maxAbsR, small, chart) {
   const absMax = useWR ? 100 : useN ? (Math.max(...sorted.map(d => d.n)) || 1) : (maxAbsR && !useTotal ? maxAbsR : Math.max(...sorted.map(d => Math.abs(valFn(d)))) || 1);
 
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getCol = d => useWR
-    ? (d.ev > 0 ? cG : d.ev < 0 ? cR : cA)
+  const getColBar = d => useWR
+    ? (barColorMode === 'binary'
+        ? (valFn(d) >= 40 ? cG : cR)
+        : _kpiTooltipColor(valFn(d), 'wr'))
     : barColorMode === 'binary'
       ? (d.ev > 0 ? cG : d.ev < 0 ? cR : cA)
-      : (d.ev >= 0.5 ? cG : d.ev >= 0.2 ? cA : d.ev >= 0 ? cT : cR);
+      : _kpiTooltipColor(d.ev, 'avgr');
+  const getColVal = d => useWR
+    ? _kpiTooltipColor(valFn(d), 'wr')
+    : useTotal && barColorMode === 'binary'
+      ? (d.ev > 0 ? cG : d.ev < 0 ? cR : cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
   const cls    = small ? 'bar-row sm' : (chart === 'setup' ? 'bar-row setup' : 'bar-row');
   const decimals = useTotal ? 1 : useWR ? 0 : useN ? 0 : 3;
   const fmtVal = v => useWR ? v.toFixed(0) + '%' : useN ? String(v) : (v >= 0 ? '+' : '') + v.toFixed(decimals) + 'R';
@@ -6350,15 +6364,16 @@ function renderBars(containerId, data, maxAbsR, small, chart) {
   container.innerHTML = sorted.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
-    const col = getCol(d);
+    const colBar = getColBar(d);
+    const colVal = getColVal(d);
     const valStr = fmtVal(val);
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
     return `<div class="${cls}" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_oc(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_netStr(d)}</span><span class="${nCls}">${nStr}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
+      <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_netStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
   _fitBarList(containerId, sorted.length);
@@ -6386,9 +6401,18 @@ function renderDayBars(trades) {
   const useN     = barMode === 'n';
   const valFn  = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0) : d.ev;
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getCol = v => barColorMode === 'binary' || useWR
-    ? (v > 0 ? cG : v < 0 ? cR : cA)
-    : (v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR);
+  const getColBar = (v, d) => useWR
+    ? (barColorMode === 'binary'
+        ? (v >= 40 ? cG : cR)
+        : _kpiTooltipColor(v, 'wr'))
+    : barColorMode === 'binary'
+      ? (v > 0 ? cG : v < 0 ? cR : cA)
+      : _kpiTooltipColor(d ? d.ev : v, 'avgr');
+  const getColVal = (v, d) => useWR
+    ? _kpiTooltipColor(v, 'wr')
+    : useTotal && barColorMode === 'binary'
+      ? (v > 0 ? cG : v < 0 ? cR : cA)
+      : _kpiTooltipColor(d ? d.ev : v, 'avgr');
 
   // Build items from actual data
   let items = DAY_ORDER
@@ -6426,15 +6450,16 @@ function renderDayBars(trades) {
   container.innerHTML = items.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / localMax * 100, 100);
-    const col = getCol(useN ? d.ev : val);
+    const colBar = getColBar(useN ? d.ev : val, d);
+    const colVal = getColVal(useN ? d.ev : val, d);
     const valStr = fmtDayVal(val);
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
     return `<div class="bar-row" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_ocD(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_dayNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
+      <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_dayNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
   _fitBarList('bars-day', items.length);
@@ -6482,10 +6507,18 @@ function renderObsBars(trades) {
   if (barView === 'split') { renderBarsSplit('bars-obs', items, false, null); return; }
   const absMax = useWR ? 100 : useN ? (Math.max(...items.map(d => d.n)) || 1) : (Math.max(...items.map(d => Math.abs(valFn(d)))) || 1);
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getC = (v, d) => useWR ? (d.ev > 0 ? cG : d.ev < 0 ? cR : cA)
+  const getCBar = (v, d) => useWR
+    ? (barColorMode === 'binary'
+        ? (v >= 40 ? cG : cR)
+        : _kpiTooltipColor(v, 'wr'))
     : barColorMode === 'binary'
       ? (v > 0 ? cG : v < 0 ? cR : cA)
-      : (v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR);
+      : _kpiTooltipColor(d.ev, 'avgr');
+  const getCVal = (v, d) => useWR
+    ? _kpiTooltipColor(v, 'wr')
+    : useTotal && barColorMode === 'binary'
+      ? (v > 0 ? cG : v < 0 ? cR : cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
   const decimals = useTotal ? 1 : useWR ? 0 : useN ? 0 : 3;
   const fmtObsVal = v => useWR ? v.toFixed(0) + '%' : useN ? String(v) : (v >= 0 ? '+' : '') + v.toFixed(decimals) + 'R';
 
@@ -6494,15 +6527,16 @@ function renderObsBars(trades) {
   container.innerHTML = items.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
-    const col = getC(useN ? d.ev : val, d);
+    const colBar = getCBar(useN ? d.ev : val, d);
+    const colVal = getCVal(useN ? d.ev : val, d);
     const valStr = fmtObsVal(val);
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
     return `<div class="bar-row obs tip-always" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${d.label.replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_ocO(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_obsNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
+      <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_obsNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
   _fitBarList('bars-obs', items.length);
@@ -6556,11 +6590,20 @@ function renderH4ObsBars(trades) {
   if (barView === 'split') { renderBarsSplit('bars-h4obs', items, false, null); return; }
   const absMax = useWR ? 100 : useN ? (Math.max(...items.map(d => d.n)) || 1) : (Math.max(...items.map(d => Math.abs(valFn(d)))) || 1);
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getC = (v, d) => useWR ? (d.ev > 0 ? cG : d.ev < 0 ? cR : cA)
+  const getCBar = (v, d) => useWR
+    ? (barColorMode === 'binary'
+        ? (v >= 40 ? cG : cR)
+        : _kpiTooltipColor(v, 'wr'))
     : useN ? cA
     : barColorMode === 'binary'
       ? (v > 0 ? cG : v < 0 ? cR : cA)
-      : (v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR);
+      : _kpiTooltipColor(d.ev, 'avgr');
+  const getCVal = (v, d) => useWR
+    ? _kpiTooltipColor(v, 'wr')
+    : useN ? cA
+    : useTotal && barColorMode === 'binary'
+      ? (v > 0 ? cG : v < 0 ? cR : cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
   const decimals = useTotal ? 1 : useWR ? 0 : useN ? 0 : 3;
   const fmtH4Val = v => useWR ? v.toFixed(0) + '%' : useN ? String(v) : (v >= 0 ? '+' : '') + v.toFixed(decimals) + 'R';
 
@@ -6569,15 +6612,16 @@ function renderH4ObsBars(trades) {
   container.innerHTML = items.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
-    const col = getC(val, d);
+    const colBar = getCBar(val, d);
+    const colVal = getCVal(val, d);
     const valStr = fmtH4Val(val);
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
     return `<div class="bar-row obs tip-always" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${d.label.replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_ocH4(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_h4NetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
+      <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_h4NetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
   _fitBarList('bars-h4obs', items.length);
@@ -8588,12 +8632,13 @@ function drawMonthly(trades) {
     canvas.style.cursor = 'pointer';
     const s = mStats[hit];
     const rColor  = s.r  >= 0 ? tc('--g') : tc('--r');
-    const evColor = s.ev >= 0 ? tc('--g') : tc('--r');
+    const evColor = _kpiTooltipColor(s.ev, 'avgr');
+    const wrColor = _kpiTooltipColor(s.wr, 'wr');
     const accCol  = tc('--gold') || tc('--a');
     tip.innerHTML = `
       <div class="mtt-month">${s.m}</div>
       <div class="mtt-row"><span class="mtt-k">Trades</span><span class="mtt-v mtt-v-white">${s.n}</span></div>
-      <div class="mtt-row"><span class="mtt-k">Win Rate</span><span class="mtt-v" style="color:${accCol}">${s.wr.toFixed(1)}%</span></div>
+      <div class="mtt-row"><span class="mtt-k">Win Rate</span><span class="mtt-v" style="color:${wrColor}">${s.wr.toFixed(1)}%</span></div>
       <div class="mtt-row"><span class="mtt-k">Expectancy</span><span class="mtt-v" style="color:${evColor}">${s.ev>=0?'+':''}${s.ev.toFixed(3)}R</span></div>
       <div class="mtt-row"><span class="mtt-k">Total R</span><span class="mtt-v" style="color:${rColor}">${s.r>=0?'+':''}${s.r.toFixed(2)}R</span></div>
       <div class="mtt-row"><span class="mtt-k">Prof. Factor</span><span class="mtt-v" style="color:${accCol}">${s.pf>=9.99?'∞':s.pf.toFixed(2)}</span></div>
@@ -8753,12 +8798,20 @@ function renderHeatmap(trades) {
         const netSL = v.slR + v.beslR;
         const netRows = `<span class="utip-label">Net TP</span><span></span><span class="utip-value utip-value-pos utip-align-right">${netTP>=0?'+':''}${netTP.toFixed(1)}R</span>
              <span class="utip-label">Net SL</span><span></span><span class="utip-value utip-value-neg utip-align-right">${netSL.toFixed(1)}R</span>`;
+        const valueColorAttr = metric === 'wr'
+          ? ` style="color:${_kpiTooltipColor(val, 'wr')}"`
+          : (metric === 'ev' && !useTotal)
+            ? ` style="color:${_kpiTooltipColor(val, 'avgr')}"`
+            : '';
+        const valueClass = (metric === 'wr' || (metric === 'ev' && !useTotal))
+          ? _utipNeutralClass()
+          : _utipValueClass(pos);
         const tipHtml = `<div class="utip-header">${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]}</div>
           <div class="utip-grid">
-            <span class="utip-label">Value</span><span></span><span class="${_utipValueClass(pos)}">${fmtFn(val)}</span>
+            <span class="utip-label">Value</span><span></span><span class="${valueClass}"${valueColorAttr}>${fmtFn(val)}</span>
             <span class="utip-label">Trades</span><span></span><span class="${_utipNeutralClass()}">×${v.n}</span>
-            <span class="utip-label">Win Rate</span><span></span><span class="${_utipValueClass(+wrPct>=50)}">${wrPct}%</span>
-            <span class="utip-label">Avg R</span><span></span><span class="${_utipNeutralClass()}">${(avgR>=0?'+':'')+avgR.toFixed(3)}R</span>
+            <span class="utip-label">Win Rate</span><span></span><span class="${_utipNeutralClass()}" style="color:${_kpiTooltipColor(+wrPct, 'wr')}">${wrPct}%</span>
+            <span class="utip-label">Avg R</span><span></span><span class="${_utipNeutralClass()}" style="color:${_kpiTooltipColor(avgR, 'avgr')}">${(avgR>=0?'+':'')+avgR.toFixed(3)}R</span>
             <span class="utip-label">Total R</span><span></span><span class="${_utipNeutralClass()}">${(v.r>=0?'+':'')+v.r.toFixed(1)}R</span>
             ${netRows}
           </div>`;
@@ -9862,11 +9915,20 @@ function renderHourBars(trades) {
   const useN     = barMode === 'n';
   const valFn = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0) : d.ev;
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
-  const getCol = (v, d) => useWR ? (d.ev > 0 ? cG : d.ev < 0 ? cR : cA)
+  const getColBar = (v, d) => useWR
+    ? (barColorMode === 'binary'
+        ? (v >= 40 ? cG : cR)
+        : _kpiTooltipColor(v, 'wr'))
     : useN ? cA
     : barColorMode === 'binary'
       ? (v > 0 ? cG : v < 0 ? cR : cA)
-      : (v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR);
+      : _kpiTooltipColor(d.ev, 'avgr');
+  const getColVal = (v, d) => useWR
+    ? _kpiTooltipColor(v, 'wr')
+    : useN ? cA
+    : useTotal && barColorMode === 'binary'
+      ? (v > 0 ? cG : v < 0 ? cR : cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
 
   let items = Object.entries(groups).map(([h, { rs, _oc }]) => {
     const hour = parseInt(h);
@@ -9908,15 +9970,16 @@ function renderHourBars(trades) {
   container.innerHTML = items.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val) / absMax * 100, 100);
-    const col = getCol(val, d);
+    const colBar = getColBar(val, d);
+    const colVal = getColVal(val, d);
     const valStr = fmtHrVal(val);
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
     return `<div class="bar-row" style="opacity:${op}" data-bar-label="${d.label}" data-bar-rawkey="${d.hour}" data-bar-n="${d.n}" data-bar-oc="${_ocHr(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label">${d.label}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-      <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_hrNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
+      <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_hrNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
   _fitBarList('bars-hour', items.length);
@@ -11483,11 +11546,11 @@ function renderOptimalRRWidget(trades) {
       </div>
       <div style="background:var(--bg2);border-radius:4px;padding:5px 4px;text-align:center">
         <div style="font-size:7px;color:var(--dim);margin-bottom:2px">📊 EV</div>
-        <div style="font-size:12px;font-weight:700;color:${d.ev >= 0 ? 'var(--g)' : 'var(--r)'}">${evStr}</div>
+        <div style="font-size:12px;font-weight:700;color:${_kpiTooltipColor(d.ev, 'avgr')}">${evStr}</div>
       </div>
       <div style="background:var(--bg2);border-radius:4px;padding:5px 4px;text-align:center">
         <div style="font-size:7px;color:var(--dim);margin-bottom:2px">📈 WR</div>
-        <div style="font-size:12px;font-weight:700;color:var(--body)">${wrStr}</div>
+        <div style="font-size:12px;font-weight:700;color:${_kpiTooltipColor(d.winrate * 100, 'wr')}">${wrStr}</div>
       </div>
       <div style="background:var(--bg2);border-radius:4px;padding:5px 4px;text-align:center">
         <div style="font-size:7px;color:var(--dim);margin-bottom:2px">${isBeFb ? 'W / L / BE' : 'W / L'}</div>
@@ -11549,11 +11612,11 @@ function renderOptimalRRWidget(trades) {
       </div>
       <div style="background:var(--bg2);border-radius:4px;padding:7px 6px;text-align:center">
         <div style="font-size:8px;color:var(--dim);margin-bottom:3px">📊 Max EV</div>
-        <div style="font-size:15px;font-weight:700;color:${maxEV >= 0 ? 'var(--g)' : 'var(--r)'}">${maxEV >= 0 ? '+' : ''}${maxEV.toFixed(3)}R</div>
+        <div style="font-size:15px;font-weight:700;color:${_kpiTooltipColor(maxEV, 'avgr')}">${maxEV >= 0 ? '+' : ''}${maxEV.toFixed(3)}R</div>
       </div>
       <div style="background:var(--bg2);border-radius:4px;padding:7px 6px;text-align:center">
         <div style="font-size:8px;color:var(--dim);margin-bottom:3px">📈 WR @ Optimal</div>
-        <div style="font-size:15px;font-weight:700;color:var(--body)">${wr}%</div>
+        <div style="font-size:15px;font-weight:700;color:${_kpiTooltipColor(parseFloat(wr), 'wr')}">${wr}%</div>
       </div>
       <div style="background:var(--bg2);border-radius:4px;padding:7px 6px;text-align:center">
         <div style="font-size:8px;color:var(--dim);margin-bottom:3px">${isBeFb ? 'W / L / BE' : 'W / L'}</div>
@@ -11816,6 +11879,27 @@ function _utipValueClass(isPositive) {
 function _utipNeutralClass(extra = '') {
   return `utip-value utip-align-right${extra ? ' ' + extra : ''}`;
 }
+// Tooltip KPI threshold colors — mirrors Statistics Overview thresholds
+// (_getWinRateTone for 'wr', _svProgressTone evr-branch for 'avgr').
+// Returns a CSS color string usable in inline `style="color:..."`.
+function _kpiTooltipColor(value, kind) {
+  if (kind === 'wr') {
+    const wr = Number.isFinite(value) ? value : 0;
+    if (wr > 55)  return '#9b6dff';
+    if (wr >= 48) return 'var(--b)';
+    if (wr >= 40) return 'var(--g)';
+    if (wr >= 35) return 'var(--a)';
+    if (wr >= 30) return '#f39a3d';
+    return 'var(--r)';
+  }
+  const v = Number.isFinite(value) ? value : 0;
+  if (v < 0)   return 'var(--r)';
+  if (v < 0.1) return '#f39a3d';
+  if (v < 0.3) return 'var(--a)';
+  if (v < 0.6) return 'var(--g)';
+  if (v < 1)   return 'var(--b)';
+  return '#9b6dff';
+}
 
 function renderPairSession(trades) {
   const container = document.getElementById('pair-session-container');
@@ -11996,12 +12080,20 @@ function renderPairSession(trades) {
         const netSL = v.slR + v.beslR;
         const netRows = `<span class="utip-label">Net TP</span><span></span><span class="utip-value utip-value-pos utip-align-right">${netTP>=0?'+':''}${netTP.toFixed(1)}R</span>
              <span class="utip-label">Net SL</span><span></span><span class="utip-value utip-value-neg utip-align-right">${netSL.toFixed(1)}R</span>`;
+        const valueColorAttr = metric === 'wr'
+          ? ` style="color:${_kpiTooltipColor(val, 'wr')}"`
+          : (metric === 'ev' && !useTotal)
+            ? ` style="color:${_kpiTooltipColor(val, 'avgr')}"`
+            : '';
+        const valueClass = (metric === 'wr' || (metric === 'ev' && !useTotal))
+          ? _utipNeutralClass()
+          : _utipValueClass(pos);
         const tipHtml = `<div class="utip-header">${p} × ${SESSION_SHORT[s]||s}</div>
           <div class="utip-grid">
-            <span class="utip-label">Value</span><span></span><span class="${_utipValueClass(pos)}">${fmtFn(val)}</span>
+            <span class="utip-label">Value</span><span></span><span class="${valueClass}"${valueColorAttr}>${fmtFn(val)}</span>
             <span class="utip-label">Trades</span><span></span><span class="${_utipNeutralClass()}">×${v.n}</span>
-            <span class="utip-label">Win Rate</span><span></span><span class="${_utipValueClass(+wrPct>=50)}">${wrPct}%</span>
-            <span class="utip-label">Avg R</span><span></span><span class="${_utipNeutralClass()}">${(avgR>=0?'+':'')+avgR.toFixed(3)}R</span>
+            <span class="utip-label">Win Rate</span><span></span><span class="${_utipNeutralClass()}" style="color:${_kpiTooltipColor(+wrPct, 'wr')}">${wrPct}%</span>
+            <span class="utip-label">Avg R</span><span></span><span class="${_utipNeutralClass()}" style="color:${_kpiTooltipColor(avgR, 'avgr')}">${(avgR>=0?'+':'')+avgR.toFixed(3)}R</span>
             <span class="utip-label">Total R</span><span></span><span class="${_utipNeutralClass()}">${(v.r>=0?'+':'')+v.r.toFixed(1)}R</span>
             ${netRows}
           </div>`;
@@ -18839,7 +18931,7 @@ function _buildBarTipHTML(label, n, oc) {
     <div class="utip-divider"></div>
     <div class="utip-row">
       <span class="utip-label">Win Rate</span>
-      <span style="color:${+wr >= 50 ? 'var(--g)' : 'var(--r)'};font-weight:700">${wr}%</span>
+      <span style="color:${_kpiTooltipColor(+wr, 'wr')};font-weight:700">${wr}%</span>
     </div>
     ${(() => {
       if (!showBE) {
@@ -26863,9 +26955,14 @@ function drawMobileMonthly2(trades) {
   const labels = keys.map(k => { const [y,m] = k.split('-'); return `${m}/${y.slice(2)}`; });
 
   const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold'), cT = tc('--t');
-  const getCol = v => useN ? cA : barColorMode === 'binary'
-    ? (v > 0 ? cG : v < 0 ? cR : cA)
-    : (v >= 0.5 ? cG : v >= 0.2 ? cA : v >= 0 ? cT : cR);
+  const getColBar = v => useN ? cA
+    : barColorMode === 'binary'
+      ? (v > 0 ? cG : v < 0 ? cR : cA)
+      : _kpiTooltipColor(v, 'avgr');
+  const getColVal = v => useN ? cA
+    : useTotal && barColorMode === 'binary'
+      ? (v > 0 ? cG : v < 0 ? cR : cA)
+      : _kpiTooltipColor(v, 'avgr');
 
   const posMax = useN ? Math.max(0, ...vals) : Math.max(0, ...vals);
   const negMax = useN ? 0 : Math.abs(Math.min(0, ...vals));
@@ -26874,14 +26971,15 @@ function drawMobileMonthly2(trades) {
   const negH = 100 - posH;
 
   const bars = vals.map((v, i) => {
-    const col = getCol(v);
+    const colBar = getColBar(v);
+    const colVal = getColVal(v);
     const sign = useN ? String(v) : (v >= 0 ? '+' : '') + v.toFixed(useTotal?1:2) + 'R';
     if (v >= 0) {
       const pct = posMax > 0 ? (v/posMax*posH).toFixed(1) : '0';
       return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0;gap:1px">
-        <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,7px);color:${col};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">${sign}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,7px);color:${colVal};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">${sign}</div>
         <div style="display:flex;flex-direction:column;justify-content:flex-end;height:${posH}px;width:100%">
-          <div style="background:${col};width:100%;border-radius:2px 2px 0 0;height:${pct}px;min-height:2px"></div>
+          <div style="background:${colBar};width:100%;border-radius:2px 2px 0 0;height:${pct}px;min-height:2px"></div>
         </div>
         <div style="height:1px;background:var(--line2);width:100%"></div>
         <div style="height:${negH}px"></div>
@@ -26893,9 +26991,9 @@ function drawMobileMonthly2(trades) {
         <div style="height:${posH}px"></div>
         <div style="height:1px;background:var(--line2);width:100%"></div>
         <div style="display:flex;flex-direction:column;justify-content:flex-start;height:${negH}px;width:100%">
-          <div style="background:${col};width:100%;border-radius:0 0 2px 2px;height:${pct}px;min-height:2px"></div>
+          <div style="background:${colBar};width:100%;border-radius:0 0 2px 2px;height:${pct}px;min-height:2px"></div>
         </div>
-        <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,7px);color:${col};text-align:center">${sign}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,7px);color:${colVal};text-align:center">${sign}</div>
         <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,7px);color:var(--dim);text-align:center;overflow:hidden;width:100%;white-space:nowrap;text-overflow:ellipsis">${labels[i]}</div>
       </div>`;
     }
@@ -26926,21 +27024,27 @@ function drawMobilePair(trades) {
   const sorted = all.sort((a,b) => valFn(b)-valFn(a));
   const absMax = useN ? (Math.max(...sorted.map(d => d.n)) || 1) : (Math.max(...sorted.map(d => Math.abs(valFn(d)))) || 1);
   const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold'), cT = tc('--t');
-  const getCol = d => useN ? cA : barColorMode === 'binary'
-    ? (d.ev>0?cG:d.ev<0?cR:cA)
-    : (d.ev>=0.5?cG:d.ev>=0.2?cA:d.ev>=0?cT:cR);
+  const getColBar = d => useN ? cA
+    : barColorMode === 'binary'
+      ? (d.ev>0?cG:d.ev<0?cR:cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
+  const getColVal = d => useN ? cA
+    : useTotal && barColorMode === 'binary'
+      ? (d.ev>0?cG:d.ev<0?cR:cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
 
   wrap.innerHTML = sorted.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val)/absMax*100,100).toFixed(1);
-    const col = getCol(d);
+    const colBar = getColBar(d);
+    const colVal = getColVal(d);
     const valStr = useN ? String(val) : (val>=0?'+':'')+val.toFixed(useTotal?1:3)+'R';
     return `<div style="display:flex;align-items:center;gap:6px;padding:3px 8px">
       <div style="font-family:'DM Mono',monospace;font-size:var(--typo-table-body-size,10px);color:var(--body);width:64px;flex-shrink:0;font-weight:600">${d.label}</div>
       <div style="flex:1;height:8px;background:var(--bg3);border-radius:2px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${col};border-radius:2px"></div>
+        <div style="height:100%;width:${pct}%;background:${colBar};border-radius:2px"></div>
       </div>
-      <div style="font-family:'DM Mono',monospace;font-size:var(--typo-table-body-size,10px);color:${col};width:56px;text-align:right;flex-shrink:0">${valStr}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:var(--typo-table-body-size,10px);color:${colVal};width:56px;text-align:right;flex-shrink:0">${valStr}</div>
     </div>`;
   }).join('');
 }
@@ -26974,21 +27078,27 @@ function drawMobileObs(trades) {
 
   const absMax = useN ? (Math.max(...sorted.map(d=>d.n)) || 1) : (Math.max(...sorted.map(d=>Math.abs(valFn(d)))) || 1);
   const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold'), cT = tc('--t');
-  const getCol = d => useN ? cA : barColorMode === 'binary'
-    ? (d.ev>0?cG:d.ev<0?cR:cA)
-    : (d.ev>=0.5?cG:d.ev>=0.2?cA:d.ev>=0?cT:cR);
+  const getColBar = d => useN ? cA
+    : barColorMode === 'binary'
+      ? (d.ev>0?cG:d.ev<0?cR:cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
+  const getColVal = d => useN ? cA
+    : useTotal && barColorMode === 'binary'
+      ? (d.ev>0?cG:d.ev<0?cR:cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
 
   wrap.innerHTML = sorted.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val)/absMax*100,100).toFixed(1);
-    const col = getCol(d);
+    const colBar = getColBar(d);
+    const colVal = getColVal(d);
     const valStr = useN ? String(val) : (val>=0?'+':'')+val.toFixed(useTotal?1:3)+'R';
     return `<div style="display:flex;align-items:center;gap:6px;padding:3px 8px">
       <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,9px);color:var(--body);width:100px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.label}</div>
       <div style="flex:1;height:7px;background:var(--bg3);border-radius:2px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${col};border-radius:2px"></div>
+        <div style="height:100%;width:${pct}%;background:${colBar};border-radius:2px"></div>
       </div>
-      <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,9px);color:${col};width:50px;text-align:right;flex-shrink:0">${valStr}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,9px);color:${colVal};width:50px;text-align:right;flex-shrink:0">${valStr}</div>
     </div>`;
   }).join('');
 }
@@ -27009,21 +27119,27 @@ function drawMobileSetup(trades) {
   const sorted = [...data].sort((a,b) => valFn(b)-valFn(a));
   const absMax = useN ? (Math.max(...sorted.map(d=>d.n)) || 1) : (Math.max(...sorted.map(d=>Math.abs(valFn(d)))) || 1);
   const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold'), cT = tc('--t');
-  const getCol = d => useN ? cA : barColorMode === 'binary'
-    ? (d.ev>0?cG:d.ev<0?cR:cA)
-    : (d.ev>=0.5?cG:d.ev>=0.2?cA:d.ev>=0?cT:cR);
+  const getColBar = d => useN ? cA
+    : barColorMode === 'binary'
+      ? (d.ev>0?cG:d.ev<0?cR:cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
+  const getColVal = d => useN ? cA
+    : useTotal && barColorMode === 'binary'
+      ? (d.ev>0?cG:d.ev<0?cR:cA)
+      : _kpiTooltipColor(d.ev, 'avgr');
 
   wrap.innerHTML = sorted.map(d => {
     const val = valFn(d);
     const pct = Math.min(Math.abs(val)/absMax*100,100).toFixed(1);
-    const col = getCol(d);
+    const colBar = getColBar(d);
+    const colVal = getColVal(d);
     const valStr = useN ? String(val) : (val>=0?'+':'')+val.toFixed(useTotal?1:3)+'R';
     return `<div style="display:flex;align-items:center;gap:6px;padding:3px 8px">
       <div style="font-family:'DM Mono',monospace;font-size:var(--typo-table-body-size,10px);color:var(--body);width:80px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${d.label}</div>
       <div style="flex:1;height:8px;background:var(--bg3);border-radius:2px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${col};border-radius:2px"></div>
+        <div style="height:100%;width:${pct}%;background:${colBar};border-radius:2px"></div>
       </div>
-      <div style="font-family:'DM Mono',monospace;font-size:var(--typo-table-body-size,10px);color:${col};width:56px;text-align:right;flex-shrink:0">${valStr}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:var(--typo-table-body-size,10px);color:${colVal};width:56px;text-align:right;flex-shrink:0">${valStr}</div>
     </div>`;
   }).join('');
 }
