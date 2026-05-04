@@ -668,7 +668,11 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
-.table-scroll-fill {
+.table-scroll-fill,
+.table-scroll.table-scroll-fill {
+  /* Dual-class selector beats the legacy `.table-scroll { max-height: 360px }`
+     rule (line ~4523) which would otherwise cap the trade-log scroll area at
+     360px and leave a dead band at the bottom of any widget taller than that. */
   overflow-y: auto;
   overflow-x: auto;
   max-height: none;
@@ -869,7 +873,16 @@ body {
 .donut-wrap-centered {
   flex: 1 1 0;
   min-height: 0;
+  /* Flex column lets the donut occupy the area ABOVE the legend instead of
+     forcing the donut's centre to the widget's centre — which previously
+     wasted the upper half of short widgets and shrunk the donut excessively. */
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  box-sizing: border-box;
 }
 .dd-toggle-segment {
   border: none;
@@ -1010,6 +1023,46 @@ body {
   top: 0; z-index: var(--z-topbar);
   gap: var(--topbar-gap);
   box-shadow: var(--topbar-shadow);
+}
+
+/* Layout edit mode: raise the WHOLE sticky header stack (.topbar +
+   #filter-context-strip + .view-tabs) above the resize handles (z-index 999)
+   so widgets stop visually overflowing into the header zone when scrolled.
+   `pointer-events: none` on each bar lets the user still grab handles that
+   are physically behind it — clicks fall through the transparent flex-gaps
+   between bar items to the underlying handle. Direct children get
+   `pointer-events: auto` so the bar's buttons / tabs remain clickable.
+   This unifies the two requirements documented in CLAUDE.md (Section
+   "Décisions UI documentées"): clean visual + clickable corner handles.
+   Note: the edit-mode class on <body> is `layout-edit-mode`; `gs-editing`
+   sits on #gs-container instead (see toggleEditMode in dashboard.js). */
+/* All three header bars sit above the resize handles (z-index 999). They
+   need a strict ordering between themselves so that the layout-toolbar
+   popover (a DOM-descendant of .topbar that dangles vertically below it
+   into the context-strip's zone) renders ABOVE the context strip — at
+   equal z-index the later DOM element wins, and context-strip is later
+   than topbar, so the toolbar would be masked. Stacking from highest to
+   lowest matches the visual top-to-bottom order of the bars. */
+body.layout-edit-mode .topbar              { z-index: 1002; pointer-events: none; }
+body.layout-edit-mode #filter-context-strip { z-index: 1001; pointer-events: none; }
+body.layout-edit-mode .view-tabs           { z-index: 1000; pointer-events: none; }
+
+body.layout-edit-mode .topbar > *,
+body.layout-edit-mode #filter-context-strip > *,
+body.layout-edit-mode .view-tabs > * {
+  pointer-events: auto;
+}
+
+/* Layout edit toolbar — popover anchored inside .topbar's DOM. Within
+   topbar's stacking context (now 1002), any positive z-index keeps the
+   toolbar above topbar's siblings; combined with topbar's 1002 it visually
+   sits above the context strip (1001) and view tabs (1000) when its
+   absolute-positioned box drifts down into their zones. Every descendant
+   stays pointer-active — this bar exists exclusively in edit mode and the
+   "transparent gaps" behaviour the other bars use doesn't apply. */
+body.layout-edit-mode #layout-toolbar,
+body.layout-edit-mode #layout-toolbar * {
+  pointer-events: auto;
 }
 
 .logo {
@@ -3627,6 +3680,10 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   grid-template-columns: 104px 1fr 66px;
   align-items: center;
   gap: 8px;
+  /* Row height comes from natural content: max(label line-height, track,
+     2 × val line-height). Slider-controlled fonts drive this directly. */
+  flex: 0 0 auto;
+  overflow: hidden;
 }
 .bar-row.sm { grid-template-columns: 88px 1fr 62px }
 /* Wider label column for setup bars with full names */
@@ -3863,6 +3920,9 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   letter-spacing: 0;
   font-weight: 400;
   text-align: right;
+  /* Tight line-height so .bar-net + .bar-n stack within rowH = 2 × fontVal.
+     Without this, the trade-count line gets clipped by the row's overflow. */
+  line-height: 1;
 }
 .bar-val {
   font-family: 'DM Mono', monospace;
@@ -4130,21 +4190,16 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   flex: 1 1 0;
   min-height: 0;
 }
-/* Canvas wrap: absolutely centered within the widget, sized by JS */
+/* Canvas wrap: sits in the natural flow of the flex column wrap, sized by JS */
 .donut-canvas-wrap {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  position: relative;
   width: 96px;
   height: 96px;
+  flex-shrink: 0;
 }
 #donutCanvas { display: block; width: 100%; height: 100%; cursor: pointer; }
 .donut-legend {
-  position: absolute;
-  left: 50%;
-  bottom: 4px;
-  transform: translateX(-50%);
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -4153,6 +4208,7 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   max-height: 48%;
   overflow-y: auto;
   pointer-events: none;
+  flex-shrink: 0;
 }
 .dl-row {
   display: flex;
@@ -7953,7 +8009,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 /* Inherit from .bar-val so the G19-G25 "Value" slider scales the net-$
    subscript alongside .bar-r. Previously pinned to var(--fs-small), which
    ignored the per-widget --typo-bar-*-val-size chain. */
-.bar-net { display: block; font-size: inherit; }
+.bar-net { display: block; font-size: inherit; line-height: 1; }
 .bar-list .bar-row           { grid-template-columns: 104px 1fr 66px; cursor: pointer; }
 .bar-row.lb-active,
 .pp-gchip.lb-active          { box-shadow: inset 0 0 0 2px var(--gold); border-radius: 6px; }
@@ -8108,6 +8164,13 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   flex-shrink: 0;
 }
 .wd-occ-meta { color: var(--dim); font-size: var(--typo-ctrl-size); }
+/* Inline gold callout inside the Active Drawdown meta line — surfaces the
+   remaining R to recover at a glance without expanding the section. */
+.wd-occ-remaining {
+  color: var(--gold);
+  font-weight: 700;
+  font-family: 'DM Mono', monospace;
+}
 .wd-occ-body { display: none; padding: 6px 10px 10px; }
 .wd-occ.is-expanded .wd-occ-body { display: block; }
 .wd-occ-section {
@@ -8153,6 +8216,18 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   letter-spacing: .4px;
   text-transform: none;
 }
+/* Stack multi-line count rows (e.g. Recovery section: "N trades · in progress"
+   on row 1, "+X.XR to recover" on row 2). Single-line counts (e.g. Drawdown
+   section) are unaffected — they don't use .wd-occ-count-line. */
+.wd-occ-section-count:has(.wd-occ-count-line) {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+  line-height: 1.25;
+}
+.wd-occ-count-line { display: block; }
 .wd-occ-section-body {
   display: none;
   padding: 8px 10px 10px;
@@ -11767,6 +11842,14 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   flex-shrink: 0;
   vertical-align: baseline;
 }
+/* Variant for the "removed from preset" counter (−N pill). Same shape as
+   the +N gold badge for visual parity, recolored with the chip-excluded
+   accent so the two states read at a glance: gold = added, red = removed. */
+.live-dim-badge.live-dim-badge-rm {
+  margin-left: 4px;
+  background: color-mix(in srgb, var(--chip-excluded) 70%, transparent);
+  color: #fff;
+}
 /* Desktop-only discret state. When the tune panel is closed, the sidebar
    shows a tiny gold pip anchored to the ⚙ button instead of the full +N
    count badge. Overrides the count sizing. Mobile pills never get this
@@ -11782,6 +11865,23 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   box-shadow: 0 0 0 1.5px var(--bg2);
   color: transparent;
   font-size: 0;
+}
+
+/* Preset-level "removed from preset" pastille (−N).
+   Same shape/size as the +N badge for parity, recolored red.
+   Positioning:
+     - Alone   → sits in the standard top-right corner like +N would.
+     - Paired  → shifts left to leave room for the +N at the corner.
+   `.is-paired` is toggled by refreshLiveFilterIndicator when both badges
+   are present on the same preset row / mobile pill. */
+.preset-live-badge.preset-live-badge-rm {
+  background: color-mix(in srgb, var(--chip-excluded) 70%, transparent);
+}
+.preset-live-badge.preset-live-badge-rm.is-paired.is-count {
+  right: 18px;
+}
+.preset-live-badge.preset-live-badge-rm.is-paired.is-dot {
+  right: 11px;
 }
 
 /* ── v2 Save button — contextual, either single or split ── */
@@ -14618,7 +14718,8 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   display: none;
   position: absolute;
   top: 4px;
-  left: 6px;
+  left: 50%;
+  transform: translateX(-50%);
   padding: 2px 8px;
   font-family: 'DM Mono', ui-monospace, monospace;
   font-size: 9px;
@@ -14681,33 +14782,3 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
               inset 0 0 0 1px color-mix(in srgb, var(--gold) 8%, transparent);
 }
 .po-widget [data-po-section].is-dragging { opacity: .55; }
-
-/* Reset layout button — top-right of the body, only visible in edit mode */
-.po-widget .po-internal-reset-btn {
-  display: none;
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 50;
-  padding: 6px 12px;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--surface-2);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: all .12s ease;
-  align-items: center;
-  gap: 6px;
-}
-.po-widget .po-internal-reset-btn:hover {
-  background: var(--surface-3);
-  border-color: var(--gold);
-  color: var(--gold);
-}
-.gs-editing .po-widget .po-internal-reset-btn {
-  display: inline-flex;
-}

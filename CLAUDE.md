@@ -135,13 +135,11 @@ Indispensable pour `calcStats(trades, presetTpConfig)` qui doit classifier sous 
 
 ## Décisions UI documentées (trade-offs intentionnels)
 
-### Edit-mode resize handles débordent visuellement sur la topbar — **intentionnel**
+### ~~Edit-mode resize handles débordent visuellement sur la topbar~~ — **résolu**
 
-`.gs-editing .grid-stack-item > .ui-resizable-*` est volontairement à `z-index: 999` (supérieur à `--z-topbar: 400`). Conséquence visuelle : en mode edit, les diamants de resize aux coins des widgets paraissent par-dessus la topbar lorsqu'un widget est scrollé sous le header.
+(Note historique conservée pour le contexte.) Anciennement, `.gs-editing .grid-stack-item > .ui-resizable-*` à `z-index: 999` débordait sur la topbar (`--z-topbar: 400`). Le trade-off documenté à l'époque : abaisser z-index sous topbar rendait les coins N/NW/NE non cliquables (topbar interceptrice).
 
-**Pourquoi on garde ce comportement** : abaisser le z-index sous celui de la topbar (tenté en PR #14, revertée commit `7fb01ea`) rend la topbar interceptrice des pointer events sur les top handles → les coins NW / NE / N edge deviennent **non cliquables** dès qu'un widget passe sous la topbar. Diagnostic confirmé runtime : `document.elementFromPoint(NW)` retourne `<header class="topbar">`. Le trade-off "moche mais fonctionnel" l'emporte sur "joli mais cassé".
-
-**Pour un vrai fix** : nécessite un changement structurel (clipper le grid container à `var(--topbar-h)`, ou déplacer le scroll dans `<main>` plutôt que sur `body` pour empêcher les widgets de passer sous la topbar). Hors-scope tant que personne ne se plaint du visuel.
+**Fix appliqué** (`dashboard.css:1028+`) : en mode `body.layout-edit-mode`, les 3 bars sticky du header (`.topbar` z=1002, `#filter-context-strip` z=1001, `.view-tabs` z=1000) sont **élevés au-dessus des handles** (z=999) et reçoivent `pointer-events: none` ; leurs enfants directs gardent `pointer-events: auto`. Résultat : les handles sont visuellement masqués par le header, mais leur clic reste accessible à travers les zones vides du header (les flex-gaps entre boutons). Le `#layout-toolbar` (popover Save/Reset/Export...) est exempté à `z-index: 1001` avec `pointer-events: auto` partout.
 
 ---
 

@@ -1296,6 +1296,7 @@ function handleActionClick(event) {
     case 'pcb-switch-period': _pcbSwitchPeriod(actionEl.dataset.period); break;
     case 'toggle-equity-mode': toggleEquityMode(); break;
     case 'toggle-drawdown': toggleDrawdown(); break;
+    case 'toggle-cumul-markers': toggleCumulMarkers(); break;
     case 'toggle-win-rate': toggleWinRate(); break;
     case 'clear-equity-selection': clearEquitySelection(); break;
     case 'set-monthly-mode': setMonthlyMode(actionEl.dataset.mode); break;
@@ -3999,81 +4000,23 @@ const BASE_SESSION_EXCLUDE = [];
 const PRESET_MAX = 10;
 // PRESET_LS_KEY declared at top of file for cross-module access (search "PRESET_LS_KEY = 'flipping_presets'").
 
-// Default factory presets (P0..P5). When the user clears localStorage or first
-// loads, these are seeded into the live PRESETS array. They can still be
-// renamed or deleted afterwards — the live array is the source of truth.
+// Default factory preset. New users (no presets in localStorage) start with
+// only the RAW Baseline — an unfiltered base they can build on. Other slots
+// (Standard / Strict / Research / Notion / Custom) are no longer seeded
+// automatically; users create their own presets via the UI when they want.
+// `_isBaselinePresetId` reads from this array to detect the protected
+// baseline — keeping a single entry preserves that protection for id 0.
 const DEFAULT_PRESETS = [
   {
     id: 0,
     order: 0,
-    label: 'Baseline — No Filters',
+    label: 'RAW Baseline',
     description: 'No obstacle/context filters — base exclusions only',
     be: false,
     clear: true,
     m15Exclude: [],
     h4Exclude: [],
     sessionExclude: [],
-  },
-  {
-    id: 1,
-    order: 1,
-    label: 'Standard Filter (COF + H4)',
-    description: 'COF excluded · No-Volume H4',
-    be: false,
-    m15Exclude: ['Contre Order Flow'],
-    h4Exclude: ['No-Volume'],
-    sessionExclude: ["No Man's Land"],
-  },
-  {
-    id: 2,
-    order: 2,
-    label: 'Strict Filter (COF + Vol + Days)',
-    description: 'COF · Vol-1st excluded · Mon–Thu only',
-    be: false,
-    m15Exclude: ['Contre Order Flow','Volume - 1st Candle'],
-    h4Exclude: ['No-Volume'],
-    sessionExclude: ["No Man's Land"],
-    dayInclude: ['Lundi','Mardi','Mercredi','Jeudi'],
-  },
-  {
-    id: 3,
-    order: 3,
-    label: 'Research Filter (Multi-Layer)',
-    description: 'NML · Sun · H4 no-sweep/vol · M15 vol/news/range',
-    be: false,
-    clear: true,
-    m15Exclude: [
-      'Volume - Faible','News Entry','News to entry',
-      'Big Impact News','News Candle','Volume - 1st Candle','Range',
-    ],
-    h4Exclude: ['No-Volume','No-Sweep'],
-    sessionExclude: ["No Man's Land"],
-    dayExclude: ['Dimanche'],
-    noBaseExclusions: true,
-  },
-  {
-    id: 4,
-    order: 4,
-    label: 'Notion Sync Filters',
-    description: 'Notion filters — NML · Sun · noisy obs · H4 no-vol',
-    be: false,
-    clear: true,
-    m15Exclude: ['News Candle','Big Impact News','News to entry','Volume - Far Away'],
-    h4Exclude: ['No-Volume','Structure Geante'],
-    sessionExclude: ["No Man's Land"],
-    dayExclude: ['Dimanche'],
-  },
-  {
-    id: 5,
-    order: 5,
-    label: 'Custom — Open Slate',
-    description: 'Full dataset — configure your own filters',
-    be: false,
-    clear: true,
-    m15Exclude: [],
-    h4Exclude: [],
-    sessionExclude: [],
-    noBaseExclusions: true,
   },
 ];
 
@@ -6261,6 +6204,34 @@ function renderBarsSplit(containerId, items, small, chart) {
   }).join('');
 }
 
+// Suppress internal scroll in a .bar-list. Leaves typography under the
+// Theme Editor sliders' control (--typo-bar-{id}-{label,val}-size are set
+// at :root so all 7 performance widgets stay uniform). Row height adapts
+// naturally to whatever fontLabel / fontVal the slider sets, plus the CSS
+// `line-height:1` on .bar-net / .bar-n keeps the trade-count visible without
+// clipping. If the slider is set so large that 24 rows can't fit a tiny
+// widget, items at the bottom are clipped (clean) rather than scrolled.
+function _fitBarList(containerId, nItems) {
+  const container = document.getElementById(containerId);
+  if (!container || !nItems) return;
+  const widget = container.closest('[data-gs-id]');
+  if (!widget) return;
+  // Clear any previous per-widget typo override (legacy from the auto-font
+  // calculation) so the slider-controlled :root vars take effect again.
+  const gsId = widget.getAttribute('data-gs-id');
+  const idMap = { 'w-setup':'setup','w-pair':'pair','w-session':'session','w-day':'day','w-m15':'m15','w-h4':'h4','w-hour':'hour' };
+  const suffix = idMap[gsId];
+  if (suffix) {
+    widget.style.removeProperty(`--typo-bar-${suffix}-label-size`);
+    widget.style.removeProperty(`--typo-bar-${suffix}-val-size`);
+  }
+  // Drop the row/track sizing vars — rows now size to their natural content.
+  container.style.removeProperty('--bar-row-h');
+  container.style.removeProperty('--bar-track-h');
+  // Override .bar-list's default overflow-y:auto.
+  container.style.overflow = 'hidden';
+}
+
 function renderBars(containerId, data, maxAbsR, small, chart) {
   if (barView === 'split') { renderBarsSplit(containerId, data, small, chart); return; }
   const container = document.getElementById(containerId);
@@ -6307,6 +6278,7 @@ function renderBars(containerId, data, maxAbsR, small, chart) {
       <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_netStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
+  _fitBarList(containerId, sorted.length);
 }
 
 function renderDayBars(trades) {
@@ -6382,6 +6354,7 @@ function renderDayBars(trades) {
       <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_dayNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
+  _fitBarList('bars-day', items.length);
 }
 
 function renderObsBars(trades) {
@@ -6449,6 +6422,7 @@ function renderObsBars(trades) {
       <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_obsNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
+  _fitBarList('bars-obs', items.length);
 }
 
 function renderH4ObsBars(trades) {
@@ -6523,6 +6497,7 @@ function renderH4ObsBars(trades) {
       <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_h4NetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
+  _fitBarList('bars-h4obs', items.length);
 }
 
 // ══════════════════════════════════════════════════════
@@ -6531,6 +6506,7 @@ function renderH4ObsBars(trades) {
 let _chartEqMin   = 0;
 let _chartEqRange = 1;
 let ddVisible     = false;  // DD overlay hidden by default
+let cumulMarkersVisible = true;  // Peak + current cumul labels — visible by default
 let wrVisible     = false;  // Rolling WR overlay hidden by default
 let _wrSeries     = [];     // Last computed WR series (for hover tooltip)
 let   WR_WINDOW   = 20;     // Rolling window size (trades) — user-configurable
@@ -6773,6 +6749,69 @@ function drawCharts(trades) {
       }
     });
     eqCtx.textBaseline = 'alphabetic';
+  }
+
+  // ── Peak / current cumul labels (matches the Share Your Data style) ──
+  // Two roundrect markers on the equity line: gold for the all-time peak
+  // (max of equitySeries) and the equity-tone marker for the current cumul
+  // (last point). Skipped when peak === last (single dot suffices).
+  // Gated by `cumulMarkersVisible` — toggled via the "Markers" button in
+  // the widget header.
+  if (cumulMarkersVisible) {
+    const cGold     = tc('--gold') || '#f5c451';
+    const cWin      = tc('--g') || '#5dd6a8';
+    const cLoss     = tc('--r') || '#e05a72';
+    const lastEq    = equitySeries[n - 1];
+    const peakVal   = Math.max(...equitySeries);
+    const peakIdx   = equitySeries.indexOf(peakVal);
+    const lastIdx   = n - 1;
+    const eqAccent  = lastEq >= 0 ? cWin : cLoss;
+    const markerFs  = tc('--typo-eq-marker-size') || '10px';
+
+    const drawCumulLabel = (idx, value, color) => {
+      const x = toXi(idx);
+      const y = toYeq(value);
+      const text = (value >= 0 ? '+' : '') + value.toFixed(1) + 'R';
+
+      // Dot at the data point
+      eqCtx.save();
+      eqCtx.beginPath();
+      eqCtx.arc(x, y, 3.5, 0, Math.PI * 2);
+      eqCtx.fillStyle = color;
+      eqCtx.fill();
+      eqCtx.strokeStyle = tc('--bg1') || '#0b1220';
+      eqCtx.lineWidth = 1.5;
+      eqCtx.stroke();
+
+      // Roundrect label
+      eqCtx.font = `${markerFs} DM Mono, monospace`;
+      const textW = Math.ceil(eqCtx.measureText(text).width);
+      const boxW  = textW + 12;
+      const boxH  = 18;
+      // Place label above when point is in upper half, below otherwise — keeps
+      // it from clipping the top edge for a peak near the chart roof.
+      const isUpperHalf = y < pad.t + ch / 2;
+      let boxY = isUpperHalf ? y + 8 : y - boxH - 8;
+      boxY = Math.max(pad.t, Math.min(boxY, H - pad.b - boxH));
+      const boxX = Math.max(pad.l, Math.min(x - boxW / 2, W - pad.r - boxW));
+
+      eqCtx.fillStyle = 'rgba(11,18,32,0.88)';
+      eqCtx.strokeStyle = color;
+      eqCtx.lineWidth = 1;
+      eqCtx.beginPath();
+      eqCtx.roundRect(boxX, boxY, boxW, boxH, 5);
+      eqCtx.fill();
+      eqCtx.stroke();
+
+      eqCtx.fillStyle = '#e8eefc';
+      eqCtx.textAlign = 'center';
+      eqCtx.textBaseline = 'middle';
+      eqCtx.fillText(text, boxX + boxW / 2, boxY + boxH / 2);
+      eqCtx.restore();
+    };
+
+    drawCumulLabel(peakIdx, peakVal, cGold);
+    if (lastIdx !== peakIdx) drawCumulLabel(lastIdx, lastEq, eqAccent);
   }
 
   // ── LAYER 2: ddCanvas ──
@@ -7735,6 +7774,18 @@ function toggleDrawdown() {
   drawCharts(filtered);
 }
 
+// ── Toggle peak + current cumul labels on the equity line ──
+function toggleCumulMarkers() {
+  cumulMarkersVisible = !cumulMarkersVisible;
+  const btn  = document.getElementById('cumul-toggle-btn');
+  const icon = document.getElementById('cumul-toggle-icon');
+  // active-gold matches the markers' gold accent (peak label color);
+  // visually distinct from DD's red `active` and WR's blue `active-blue`.
+  btn?.classList.toggle('active-gold', cumulMarkersVisible);
+  if (icon) icon.textContent = cumulMarkersVisible ? '▼' : '▶';
+  drawCharts(getFiltered());
+}
+
 function toggleWinRate() {
   wrVisible = !wrVisible;
   const btn        = document.getElementById('wr-toggle-btn');
@@ -7831,11 +7882,13 @@ function drawDonut(stats) {
   const gap     = 8;
 
   // ── Size the donut responsively ──
-  // Donut is centered in the widget; legend sits at the bottom. To keep the
-  // donut from overlapping the legend, the donut's diameter must fit above
-  // twice the legend height (since the center of the donut is the widget center).
-  const maxW   = availW - 16;
-  const maxH   = availH - 2 * legendH - 2 * gap;
+  // Donut + legend are stacked in a flex column inside .donut-wrap-centered,
+  // so the donut needs to fit ONCE above the legend (not twice — the previous
+  // formula assumed the donut was anchored to the widget centre and wasted
+  // the upper half on short widgets). Padding (16px) covers the wrap's
+  // 8px padding × 2 plus the inter-item gap.
+  const maxW    = availW - 16;
+  const maxH    = availH - legendH - 16;
   const maxSide = Math.min(maxW, maxH, 260);
   const S       = Math.max(60, maxSide);  // minimum 60px
 
@@ -9769,6 +9822,7 @@ function renderHourBars(trades) {
       <div class="bar-val" style="color:${col}"><span class="bar-r">${valStr}</span><span class="bar-net">${_hrNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
     </div>`;
   }).join('');
+  _fitBarList('bars-hour', items.length);
 }
 
 
@@ -10041,8 +10095,8 @@ function commitLiveFiltersToActivePreset() {
   // chip and wants to commit that deletion would be stuck with Update
   // disabled. The snapshot is rebuilt afterward from the current state.
   if (_getPresetDivergenceCount(id) === 0) return;
-  // Baseline presets (P0-P5, seeded from DEFAULT_PRESETS) are the stable
-  // strategies shipped with the app. Mutating them is allowed but we gate
+  // The RAW Baseline preset (P0, seeded from DEFAULT_PRESETS) is the stable
+  // factory entry shipped with the app. Mutating it is allowed but we gate
   // it behind an inline confirm so it can't happen by a stray Update click.
   if (_isBaselinePresetId(id) && !_pendingBaselineUpdate) {
     _pendingBaselineUpdate = true;
@@ -10522,6 +10576,10 @@ function runPresetCompare() {
 // ══════════════════════════════════════════════════════
 let _recoveryChart = null;
 let _recoveryActiveIdx = null;
+// Mirror state for the "Current DD (active)" cross dataset (datasetIndex 1).
+// Mutually exclusive with _recoveryActiveIdx — only one selection at a time
+// across both bubble and cross markers.
+let _recoveryActiveCrossIdx = null;
 
 function renderRecovery(trades) {
   const canvas = getByIdSafe('recoveryCanvas');
@@ -10618,8 +10676,14 @@ function renderRecovery(trades) {
   canvas.removeAttribute('width'); canvas.removeAttribute('height');
 
   const _recSelCol = tc('--white') || '#ffffff';
+  const _recCrossDefaultCol = tc('--gold');
   const _mkRecBorderColors = () => data.map((_, i) => i === _recoveryActiveIdx ? _recSelCol : 'transparent');
   const _mkRecBorderWidths = () => data.map((_, i) => i === _recoveryActiveIdx ? 3 : 0);
+  // Mirror builders for the cross dataset (active DD). Selected cross gets a
+  // white stroke at width 4 (matches the bubble's "selected" affordance —
+  // thicker than the default 2px gold stroke and visually distinct).
+  const _mkRecCrossColors = () => activeData.map((_, i) => i === _recoveryActiveCrossIdx ? _recSelCol : _recCrossDefaultCol);
+  const _mkRecCrossWidths = () => activeData.map((_, i) => i === _recoveryActiveCrossIdx ? 4 : 2);
 
   _recoveryChart = new Chart(canvas, {
     type: 'scatter',
@@ -10642,10 +10706,10 @@ function renderRecovery(trades) {
         pointStyle: 'crossRot',
         pointRadius: 12,
         pointHoverRadius: 18,
-        pointBorderWidth: 2,
-        pointHoverBorderWidth: 3,
-        pointBorderColor: tc('--gold'),
-        pointHoverBorderColor: tc('--gold'),
+        pointBorderWidth: _mkRecCrossWidths(),
+        pointHoverBorderWidth: _mkRecCrossWidths().map(w => w + 1),
+        pointBorderColor: _mkRecCrossColors(),
+        pointHoverBorderColor: _mkRecCrossColors(),
       },
     ]},
     options: {
@@ -10659,16 +10723,35 @@ function renderRecovery(trades) {
 
         openRecoveryDrawer(bucket, sorted, { isActive: !!bucket.isActive });
 
-        // Selection highlight: recovered dataset only (index 0)
+        // Selection highlight applied to whichever marker the user clicked.
+        // Selections are mutually exclusive — clicking a bubble clears any
+        // active cross, and vice versa, so the affordance is always
+        // unambiguous (one ring per click).
+        const bubbleDs = chart.data.datasets[0];
+        const crossDs  = chart.data.datasets[1];
+
         if (datasetIndex === 0) {
-          _recoveryActiveIdx = idx;
-          const ds = chart.data.datasets[0];
-          ds.pointBorderColor      = ds.data.map((_, i) => i === idx ? _recSelCol : 'transparent');
-          ds.pointBorderWidth      = ds.data.map((_, i) => i === idx ? 3 : 0);
-          ds.pointHoverBorderColor = ds.pointBorderColor.slice();
-          ds.pointHoverBorderWidth = ds.pointBorderWidth.slice();
-          chart.update();
+          _recoveryActiveIdx       = idx;
+          _recoveryActiveCrossIdx  = null;
+        } else if (datasetIndex === 1) {
+          _recoveryActiveCrossIdx  = idx;
+          _recoveryActiveIdx       = null;
         }
+
+        // Re-apply borders on BOTH datasets so the de-selected one resets.
+        if (bubbleDs) {
+          bubbleDs.pointBorderColor      = bubbleDs.data.map((_, i) => i === _recoveryActiveIdx ? _recSelCol : 'transparent');
+          bubbleDs.pointBorderWidth      = bubbleDs.data.map((_, i) => i === _recoveryActiveIdx ? 3 : 0);
+          bubbleDs.pointHoverBorderColor = bubbleDs.pointBorderColor.slice();
+          bubbleDs.pointHoverBorderWidth = bubbleDs.pointBorderWidth.slice();
+        }
+        if (crossDs) {
+          crossDs.pointBorderColor      = crossDs.data.map((_, i) => i === _recoveryActiveCrossIdx ? _recSelCol : _recCrossDefaultCol);
+          crossDs.pointBorderWidth      = crossDs.data.map((_, i) => i === _recoveryActiveCrossIdx ? 4 : 2);
+          crossDs.pointHoverBorderColor = crossDs.pointBorderColor.slice();
+          crossDs.pointHoverBorderWidth = crossDs.pointBorderWidth.slice();
+        }
+        chart.update();
       },
       onHover: (ev, elements) => {
         const target = ev?.native?.target;
@@ -12161,11 +12244,26 @@ function openRecoveryDrawer(bucket, sorted, opts = {}) {
     if (isActive) {
       const rangeLabel = `${sorted[occ.startIdx]?.date || '—'} → ${sorted[occ.endIdx]?.date || '—'} (ongoing)`;
 
+      // R still owed to climb back to the pre-DD peak. ddDepth is the max
+      // drawdown reached (positive abs); recoveredR is what's been clawed
+      // back since the trough. Floor at 0 in the rare edge case where
+      // floating-point makes recoveredR slightly exceed ddDepth (would mean
+      // we're at peak — about to flip out of inDD).
+      const tpConfigInner = appState.ui.tpConfig;
+      const recoveredR = recTrades.reduce(
+        (s, t) => s + (Number(computeEffectiveRR(t, tpConfigInner)) || 0), 0
+      );
+      const remainingR = Math.max(0, (occ.ddDepth || 0) - recoveredR);
+      const remainingLbl = `+${remainingR.toFixed(1)}R to recover`;
+
       const recBodyHtml = recTrades.length > 0
         ? recTrades.map(_wdTradeCard).join('')
         : `<div class="wd-occ-empty">Recovery has not started yet — drawdown is still deepening.</div>`;
 
-      const recCountLabel = recTrades.length > 0
+      // Line 1 mirrors Drawdown sequence's count format ("N trades · duration"
+      // / "in progress"). Line 2 is a dedicated row for the remaining R, so
+      // the section head structure stays parallel between DD and Recovery.
+      const recCountLine1 = recTrades.length > 0
         ? `${recTrades.length} trade${recTrades.length > 1 ? 's' : ''} · ${recDur} · in progress`
         : `— not yet started`;
 
@@ -12189,7 +12287,10 @@ function openRecoveryDrawer(bucket, sorted, opts = {}) {
               <button class="wd-occ-section-head" data-action="toggle-recovery-section" type="button">
                 <span class="wd-occ-chevron">▸</span>
                 <span class="wd-occ-section-label">Recovery sequence (in progress)</span>
-                <span class="wd-occ-section-count">${recCountLabel}</span>
+                <span class="wd-occ-section-count">
+                  <span class="wd-occ-count-line">${recCountLine1}</span>
+                  <span class="wd-occ-count-line wd-occ-remaining">${remainingLbl}</span>
+                </span>
               </button>
               <div class="wd-occ-section-body">${recBodyHtml}</div>
             </div>
@@ -12405,9 +12506,10 @@ function closeWidgetDrawer() {
     _streakHistActiveIdx     = null;
     if (_streakTab === 'histogram') renderStreakHistogram(getFiltered());
   }
-  // Clear recovery scatter selection
-  if (_recoveryActiveIdx !== null) {
-    _recoveryActiveIdx = null;
+  // Clear recovery scatter selection (both bubble + cross)
+  if (_recoveryActiveIdx !== null || _recoveryActiveCrossIdx !== null) {
+    _recoveryActiveIdx      = null;
+    _recoveryActiveCrossIdx = null;
     renderRecovery(getFiltered());
   }
   // Remove monthly canvas bar highlight
@@ -12504,7 +12606,44 @@ function renderCalendar(trades) {
   const cR = tc('--r');
   const maxAbs = _calGetYearMaxAbs(year);
 
-  let html = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px 12px;padding:4px 2px">`;
+  // Auto-sizing — same approach as heatmap. Compute cell + font sizes from
+  // the widget's actual dimensions so content fits without internal scroll.
+  // 4 month columns × 3 month rows; per month: header bar + day labels + 6 cell rows.
+  const _calW = grid.clientWidth || 800;
+  const _calH = grid.clientHeight || 600;
+  const _PAD_X = 2, _PAD_Y = 4, _GAP_X = 12, _GAP_Y = 16;
+  const _monthW = (_calW - _PAD_X * 2 - _GAP_X * 3) / 4;
+  const _monthH = (_calH - _PAD_Y * 2 - _GAP_Y * 2) / 3;
+  // Generous reserves: the header bar can grow to ~36px when fontHeader/fontValue
+  // hit their upper clamps (16/20px), and the day-label row can hit ~22px when
+  // fontDay is at its max (18px). Under-reserving causes per-month overflow.
+  const _HEADER_BAR_H = 36, _DAY_LABEL_H = 22, _HEADER_MARGIN = 5;
+  const _cellsAreaH = _monthH - _HEADER_BAR_H - _DAY_LABEL_H - _HEADER_MARGIN;
+  const _cellGap = 2;
+  const _cellFromW = (_monthW - _cellGap * 6) / 7;
+  const _cellFromH = (_cellsAreaH - _cellGap * 5) / 6;
+  // Cell-size floor (22px) enforces text fit for 5-char values like "+11.0"
+  // or "-10.0" (occurs on big trading days). DM Mono char width ≈ 0.6*fontSize,
+  // so 5 chars at fontDay=7 (readability floor) = ~21px → cellSize ≥ 22 needed.
+  // If the widget is too small to honor that, vertical overflow clips months
+  // at the bottom (clean) — preferable to text getting clipped inside cells.
+  const _cellSize = Math.max(22, Math.floor(Math.min(_cellFromW, _cellFromH)));
+  // Font clamps: multiplier 0.30 = 1/(5*0.6) guarantees 5-char text fits.
+  // fontDay is the constraint — used in cells. Other fonts (header/value/stats)
+  // live in wider parents (full-month-width header bar) so are less constrained.
+  const _fontDay    = Math.max(7,  Math.min(14, Math.floor(_cellSize * 0.30)));
+  const _fontHeader = Math.max(9,  Math.min(16, Math.floor(_cellSize * 0.55)));
+  const _fontStats  = Math.max(7,  Math.min(13, Math.floor(_cellSize * 0.40)));
+  const _fontValue  = Math.max(11, Math.min(20, Math.floor(_cellSize * 0.65)));
+  grid.style.setProperty('--cal-cell-size', _cellSize + 'px');
+  grid.style.setProperty('--fs-cal-day',    _fontDay + 'px');
+  grid.style.setProperty('--fs-cal-header', _fontHeader + 'px');
+  grid.style.setProperty('--fs-cal-stats',  _fontStats + 'px');
+  grid.style.setProperty('--fs-cal-value',  _fontValue + 'px');
+  // Override .scroll-panel-fill's `overflow: auto` — content is now sized to fit.
+  grid.style.overflow = 'hidden';
+
+  let html = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px 12px;padding:4px 2px;justify-content:center">`;
 
   for (let mo = 0; mo < 12; mo++) {
     const daysInMonth = new Date(parseInt(year, 10), mo + 1, 0).getDate();
@@ -12538,14 +12677,14 @@ function renderCalendar(trades) {
     ` : ''}
   </div>
 `;
-    html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">`;
+    html += `<div style="display:grid;grid-template-columns:repeat(7,var(--cal-cell-size,16px));gap:2px;justify-content:center">`;
 
     _CAL_DAY_LABELS.forEach(dl => {
       html += `<div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7.5px);color:var(--dim);text-align:center;padding-bottom:2px">${dl}</div>`;
     });
 
     for (let i = 0; i < firstDow; i++) {
-      html += `<div style="aspect-ratio:1"></div>`;
+      html += `<div style="width:var(--cal-cell-size,16px);height:var(--cal-cell-size,16px)"></div>`;
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -12622,7 +12761,7 @@ function _calGetYearMaxAbs(year) {
 
 function _calRenderAnnualDayCell(dateStr, data, maxAbs, cG, cR) {
   if (!data) {
-    return `<div style="aspect-ratio:1;background:var(--bg3);border-radius:2px"></div>`;
+    return `<div style="width:var(--cal-cell-size,16px);height:var(--cal-cell-size,16px);background:var(--bg3);border-radius:2px"></div>`;
   }
 
   const isWin = data.r > 0;
@@ -12638,7 +12777,7 @@ function _calRenderAnnualDayCell(dateStr, data, maxAbs, cG, cR) {
     class="cal-day-cell"
     data-date="${dateStr}"
     data-action="cal-open-day"
-    style="aspect-ratio:1;background:${bg};border-radius:2px;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7px);font-weight:700;color:${txtCol};cursor:pointer;transition:filter .12s;line-height:1;overflow:hidden"
+    style="width:var(--cal-cell-size,16px);height:var(--cal-cell-size,16px);background:${bg};border-radius:2px;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7px);font-weight:700;color:${txtCol};cursor:pointer;transition:filter .12s;line-height:1;overflow:hidden"
   >${valStr}</div>`;
 }
 
@@ -12674,6 +12813,28 @@ function _renderCalendarMonthly(trades, yearSel) {
   const cG = tc('--g');
   const cR = tc('--r');
 
+  // Auto-sizing for monthly mode — same approach as annual: scale fonts to
+  // widget dimensions so content fits without internal scroll.
+  const numWeeks = Math.ceil((firstDow + daysInMonth) / 7);
+  const _calW = grid.clientWidth || 800;
+  const _calH = grid.clientHeight || 600;
+  const _SUMMARY_H = 56, _DAY_LABEL_H = 16, _GAP = 3;
+  const _gridAreaH = _calH - _SUMMARY_H - _DAY_LABEL_H - _GAP * (numWeeks + 2);
+  const _cellH = _gridAreaH / numWeeks;
+  const _cellW = (_calW - _GAP * 7) / 8; // 7 days + 1 weekly summary col
+  const _cellSize = Math.max(20, Math.floor(Math.min(_cellW, _cellH)));
+  const _fontDay     = Math.max(8,  Math.min(16, Math.floor(_cellSize * 0.18)));
+  const _fontHeader  = Math.max(9,  Math.min(18, Math.floor(_cellSize * 0.20)));
+  const _fontStats   = Math.max(7,  Math.min(13, Math.floor(_cellSize * 0.16)));
+  const _fontValue   = Math.max(11, Math.min(24, Math.floor(_cellSize * 0.28)));
+  const _fontSummary = Math.max(14, Math.min(48, Math.floor(_cellSize * 0.40)));
+  grid.style.setProperty('--fs-cal-day',     _fontDay + 'px');
+  grid.style.setProperty('--fs-cal-header',  _fontHeader + 'px');
+  grid.style.setProperty('--fs-cal-stats',   _fontStats + 'px');
+  grid.style.setProperty('--fs-cal-value',   _fontValue + 'px');
+  grid.style.setProperty('--fs-cal-summary', _fontSummary + 'px');
+  grid.style.overflow = 'hidden';
+
   const summaryHtml = `<div style="background:var(--bg2);border-radius:5px;padding:8px 12px;margin-bottom:6px;flex-shrink:0;display:flex;justify-content:space-between;align-items:center">
     <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-header,9px);color:var(--dim)">${_CAL_MONTHS[mo]} ${year}</div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px">
@@ -12682,7 +12843,6 @@ function _renderCalendarMonthly(trades, yearSel) {
     </div>
   </div>`;
 
-  const numWeeks = Math.ceil((firstDow + daysInMonth) / 7);
   let html = `<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr) minmax(52px,auto);grid-template-rows:auto repeat(${numWeeks},1fr);gap:3px">`;
 
   _CAL_DAY_LABELS.forEach(dl => {
@@ -13117,11 +13277,73 @@ function _mc2BindMultiTpUI() {
   _mc2ApplyModeUI(savedMode);
 }
 
+// Sync the Monte Carlo TP/SL ratio with the dashboard's currently active R.
+// Priority chain (mirrors how the Partial Optimizer does it via
+// _poSyncTPFinalFromORR):
+//   1. Optimal RR Analysis active bubble — `appState.ui.rrMinFilter` is set
+//      when the user clicks an ORR data point. This is the explicit "I want
+//      to study trades capped at this R" signal — highest priority.
+//   2. TP Management = Personalised — explicit R targets exist in
+//      `tpConfig.personalised.targets`; use the final-TP target as the ratio
+//      (it represents the strategy's terminal payoff).
+//   3. Fallback to the Monte Carlo default (2.4R).
+// Fixed and Multi TP modes don't expose an explicit R value (Fixed has no
+// per-config R; Multi derives R from each trade's rrMax field), so the
+// default is appropriate for those.
+function _mc2GetSyncedRR() {
+  const orr = appState?.ui?.rrMinFilter;
+  if (typeof orr === 'number' && orr > 0) return orr;
+  const cfg = appState?.ui?.tpConfig;
+  if (cfg?.mode === 'personalised' && cfg.personalised) {
+    const p = cfg.personalised;
+    const finalKey = `tp${p.tpCount || 2}`;
+    const finalR = p.targets?.[finalKey];
+    if (typeof finalR === 'number' && finalR > 0) return finalR;
+  }
+  return _MC2_DEFAULTS.rr;
+}
+
+// Sync the Monte Carlo Multi-TP slots from TP Management = Personalised.
+// Personalised exposes: { tpCount, targets:{tp1,tp2,tp3}, partials:{tp1,tp2,tp3} }
+//   - R values come from `targets.tpN`
+//   - Sizes come from `partials.tpN`
+//   - Reach % is computed from the dataset: % of trades with rrMax ≥ targetR
+// Inactive TPs (when tpCount=2) get size=0 / R=0 / reach=0 so they're zero-EV.
+// Returns null if Personalised isn't active or trades data is unusable, in
+// which case the caller keeps the existing Multi-TP defaults / saved prefs.
+function _mc2GetSyncedMultiTPs(trades) {
+  const cfg = appState?.ui?.tpConfig;
+  if (cfg?.mode !== 'personalised' || !cfg.personalised) return null;
+  const p = cfg.personalised;
+  const tpCount = p.tpCount || 2;
+  const targets  = p.targets  || {};
+  const partials = p.partials || {};
+
+  const validForReach = Array.isArray(trades)
+    ? trades.filter(t => Number.isFinite(t?.rrMax))
+    : [];
+  const denom = validForReach.length;
+  const reachPct = (R) => {
+    if (!Number.isFinite(R) || R <= 0 || denom < 1) return 0;
+    const reached = validForReach.filter(t => t.rrMax >= R).length;
+    return +(reached / denom * 100).toFixed(1);
+  };
+
+  return [1, 2, 3].map(n => {
+    const isActive = n <= tpCount;
+    if (!isActive) return { R: 0, reach: 0, size: 0 };
+    const R = +targets[`tp${n}`] || 0;
+    const size = +partials[`tp${n}`] || 0;
+    return { R, reach: reachPct(R), size };
+  });
+}
+
 // ── Populate input fields ──
-// Only Win Rate is derived from the dataset. Balance, risk, tpm, months,
-// and rr use the fixed defaults (20 trades/month, 12 months, 2.4 RR) so
-// the simulation reflects a standard planning horizon rather than the
-// specific sample size of the current filter.
+// Only Win Rate is derived from the dataset. Balance, risk, tpm, months
+// use fixed defaults (20 trades/month, 12 months) so the simulation reflects
+// a standard planning horizon rather than the specific filter sample size.
+// rr now follows _mc2GetSyncedRR() so the TP/SL ratio mirrors the
+// dashboard's active R (ORR bubble or Personalised TP target).
 function _mc2PopulateInputsFromDataset(trades) {
   const stats = calcStats(trades);
   const wr = stats && Number.isFinite(stats.wr) ? stats.wr : _MC2_DEFAULTS.wr;
@@ -13138,11 +13360,26 @@ function _mc2PopulateInputsFromDataset(trades) {
   setVal('mc2-in-wr',      +wr.toFixed(1));
   setVal('mc2-in-tpm',     _MC2_DEFAULTS.tpm);
   setVal('mc2-in-months',  _MC2_DEFAULTS.months);
-  setVal('mc2-in-rr',      _MC2_DEFAULTS.rr);
+  setVal('mc2-in-rr',      _mc2GetSyncedRR());
   // Compounding defaults OFF — fixed-dollar risk is safer and more common.
   // Only set the first time (don't stomp a user choice on dataset switch).
   const cmp = document.getElementById('mc2-in-compound');
   if (cmp && cmp.dataset.mc2Touched !== '1') cmp.checked = false;
+
+  // When TP Management = Personalised, force Monte Carlo into Multi-TP mode
+  // and adopt the Personalised R targets + sizes. Reach % is derived from
+  // the current dataset (proportion of trades with rrMax ≥ each target).
+  const syncedTPs = _mc2GetSyncedMultiTPs(trades);
+  if (syncedTPs) {
+    syncedTPs.forEach((tp, i) => {
+      const n = i + 1;
+      setVal(`mc2-in-tp${n}-r`,     tp.R);
+      setVal(`mc2-in-tp${n}-reach`, tp.reach);
+      setVal(`mc2-in-tp${n}-size`,  tp.size);
+    });
+    if (typeof _mc2ApplyModeUI === 'function') _mc2ApplyModeUI('multi');
+    if (typeof _mc2RefreshMultiValidation === 'function') _mc2RefreshMultiValidation();
+  }
 
   _mc2SetStatus('Ready');
 }
@@ -15542,9 +15779,10 @@ function _poInternalClampSectionRect(key, rect) {
   const y = Math.max(1, Math.round(rect.y || 1));
   return { x, y, w, h };
 }
-function _poInternalCompactLayout(layout) {
+function _poInternalCompactLayout(layout, lockedKey) {
   const keys = Object.keys(layout).sort((a, b) => layout[a].y - layout[b].y || layout[a].x - layout[b].x);
   keys.forEach(key => {
+    if (key === lockedKey) return; // user is actively dragging this one
     const rect = layout[key];
     let nextY = rect.y;
     while (nextY > 1) {
@@ -15572,14 +15810,25 @@ function _poInternalNormalizeLayout(raw) {
       }
     }
   }
-  return _poInternalCompactLayout(layout);
+  // Intentionally NOT calling _poInternalCompactLayout(layout) here:
+  // compaction without a lockedKey would flatten valid user-resized state
+  // (e.g. rrdist resized from y:1 to y:11 via the n-handle would snap back
+  // to y:1 on every read). Clamping + de-overlap above are sufficient for
+  // safety. Drag-time compaction is handled in _poInternalSetSectionRect
+  // with a lockedKey. Reset path goes through default layout directly.
+  return layout;
 }
 function _poInternalGetLayout() {
   try { return _poInternalNormalizeLayout(JSON.parse(localStorage.getItem(_PO_INTERNAL_LAYOUT_KEY))); }
   catch { return _poInternalCloneLayout(_PO_DEFAULT_INTERNAL_LAYOUT); }
 }
 function _poInternalSaveLayout(layout) {
-  try { localStorage.setItem(_PO_INTERNAL_LAYOUT_KEY, JSON.stringify(_poInternalNormalizeLayout(layout))); } catch {}
+  // Drag-time saves trust the rect produced by _poInternalSetSectionRect
+  // (already clamped + selectively compacted with lockedKey). Re-normalizing
+  // here would re-compact the locked block back to its original y, undoing
+  // the resize from `n`/`ne`/`nw` handles. _poInternalGetLayout still
+  // normalizes on read, so any corrupt persisted state is healed on load.
+  try { localStorage.setItem(_PO_INTERNAL_LAYOUT_KEY, JSON.stringify(layout)); } catch {}
 }
 function _poInternalSetSectionRect(layout, key, nextRect) {
   const next = _poInternalCloneLayout(layout);
@@ -15595,12 +15844,16 @@ function _poInternalSetSectionRect(layout, key, nextRect) {
       }
     });
   }
-  return _poInternalCompactLayout(next);
+  return _poInternalCompactLayout(next, key);
 }
-function _poInternalApplyLayout() {
+function _poInternalApplyLayout(layoutOverride) {
   const grid = document.getElementById('po-body');
   if (!grid) return;
-  const layout = _poInternalGetLayout();
+  // Drag-time path passes the in-memory layout from setSectionRect (already
+  // clamped + lockedKey-aware compacted). Other call sites (scaffold mount,
+  // edit-mode toggle, reset) pass nothing → fall through to getLayout which
+  // re-normalizes for safety against corrupt persisted state.
+  const layout = layoutOverride || _poInternalGetLayout();
   let maxRow = 0;
   Object.keys(layout).forEach(key => {
     const block = grid.querySelector(`[data-po-section="${key}"]`);
@@ -15688,7 +15941,7 @@ function _poInternalInitEdit() {
       }
       const nextLayout = _poInternalSetSectionRect(layout, key, next);
       _poInternalSaveLayout(nextLayout);
-      _poInternalApplyLayout();
+      _poInternalApplyLayout(nextLayout);
     };
     const onUp = () => {
       block?.classList.remove('is-dragging');
@@ -15706,14 +15959,6 @@ function _poInternalInitEdit() {
     btn.onpointerdown = e => begin(btn.dataset.resizeKey, 'resize', e, btn.dataset.resizeDir || 'se');
   });
 
-  const resetBtn = grid.querySelector('.po-internal-reset-btn');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      _poInternalResetLayout();
-    });
-  }
 }
 
 function _poBuildScaffold() {
@@ -15732,7 +15977,6 @@ function _poBuildScaffold() {
       <div class="ui-resizable-handle ui-resizable-se" data-resize-key="${key}" data-resize-dir="se"></div>
       <div class="ui-resizable-handle ui-resizable-sw" data-resize-key="${key}" data-resize-dir="sw"></div>`;
   body.innerHTML = `
-    <button type="button" class="po-internal-reset-btn" title="Reset internal layout to default">⟲ Reset layout</button>
     <div class="po-block po-block-rr-dist" data-po-section="rrdist">
       ${_hh('rrdist', 'RR dist')}
       <div class="po-block-header">
@@ -16013,24 +16257,30 @@ function _poWireScaffold() {
   }
   sweepEl?.addEventListener('change', () => {
     cfg.sweepMode = sweepEl.checked;
-    // Auto-switch the colorMode to keep the legend meaningful, but only if
-    // the user is on the default 'type' / coming back to it. Don't override
-    // if they actively chose 'sig' or 'tpfinal'.
-    if (cfg.sweepMode && cfg.colorMode === 'type') {
-      cfg.colorMode = 'tpfinal';
-      if (cmEl) cmEl.value = 'tpfinal';
-    } else if (!cfg.sweepMode && cfg.colorMode === 'tpfinal') {
-      cfg.colorMode = 'type';
-      if (cmEl) cmEl.value = 'type';
-    }
+    // No auto-switch on colorMode: the user's explicit choice persists across
+    // toggles of Sweep. (Previous behavior swapped 'type' ↔ 'tpfinal' to keep
+    // the legend "meaningful", but users found it disruptive — they expected
+    // their selected color mode to remain stable.)
     // Sweep toggle invalidates per-tpf legend hides.
     if (window._poState.hiddenTpFinals) window._poState.hiddenTpFinals.clear();
     debouncedRecompute();
   });
-  $('po-recalc')?.addEventListener('click', () => {
-    _poRecompute();
-    _poRender({ rerunSim: false });
-  });
+  // The `#po-recalc` button lives inside the bilan card, which is rebuilt
+  // via `wrap.innerHTML = ...` on every _poRenderDetail call — a direct
+  // listener on the button gets blown away before the user ever clicks it
+  // (and at this point in scaffold-time, the button doesn't even exist yet).
+  // Delegate from the permanent parent #po-detail instead. Guard with a
+  // bound-flag so re-wires don't stack listeners.
+  const detailWrap = $('po-detail');
+  if (detailWrap && !detailWrap._poRecalcBound) {
+    detailWrap.addEventListener('click', (e) => {
+      if (e.target.closest('#po-recalc')) {
+        _poRecompute();
+        _poRender({ rerunSim: false });
+      }
+    });
+    detailWrap._poRecalcBound = true;
+  }
 
   // Stat-card click → select that model. The 'tpfinal' card is a summary,
   // not a per-model selector — clicking it picks the best EV model among
@@ -16194,7 +16444,34 @@ function _poRenderScatter() {
     datasets.push(buildDS('2 partials', r => r.model.type === 'two'));
   }
 
-  if (st.scatterChart) { st.scatterChart.destroy(); st.scatterChart = null; }
+  // Capture the user's current zoom (if any) before destroying the chart,
+  // so we can restore it after the new instance is created. Without this,
+  // every re-render — e.g. clicking a bubble to select it — collapses the
+  // zoom back to the natural data-bounds range, which the user found jarring.
+  //
+  // Detection: chartjs-plugin-zoom v2 mutates `options.scales.x.min/max` to
+  // track the live zoom — so comparing scale.min to options.min would always
+  // be equal. Use the plugin's `isZoomedOrPanned()` API instead, which is
+  // the canonical way to ask "has the user zoomed or panned?".
+  let preservedZoom = null;
+  if (st.scatterChart) {
+    try {
+      const chart = st.scatterChart;
+      const isZoomed = typeof chart.isZoomedOrPanned === 'function' && chart.isZoomedOrPanned();
+      if (isZoomed) {
+        const xScale = chart.scales?.x;
+        const yScale = chart.scales?.y;
+        if (xScale && yScale) {
+          preservedZoom = {
+            x: { min: xScale.min, max: xScale.max },
+            y: { min: yScale.min, max: yScale.max },
+          };
+        }
+      }
+    } catch {}
+    st.scatterChart.destroy();
+    st.scatterChart = null;
+  }
   canvas.removeAttribute('width'); canvas.removeAttribute('height');
   const tipFs = (typeof _chartTipFs === 'function') ? _chartTipFs() : 11;
 
@@ -16298,6 +16575,16 @@ function _poRenderScatter() {
       }
     }
   });
+
+  // Restore the captured zoom on the freshly-built chart. Done via the
+  // zoom plugin's API so the chart's "original" bounds (used by Reset zoom)
+  // remain the natural xMin/xMax/yMin/yMax — only the displayed range moves.
+  if (preservedZoom && st.scatterChart) {
+    try {
+      st.scatterChart.zoomScale('x', { min: preservedZoom.x.min, max: preservedZoom.x.max }, 'none');
+      st.scatterChart.zoomScale('y', { min: preservedZoom.y.min, max: preservedZoom.y.max }, 'none');
+    } catch {}
+  }
 
   // Legend. In tpfinal mode each item carries a data-action so the user can
   // toggle visibility (Chart.js native legend behaviour, replicated here).
@@ -19712,12 +19999,18 @@ function updateSaveButtonLabel() {
   }
 }
 
-function updatePresetHighlight(theme) {
+function updatePresetHighlight(/* theme */) {
+  // Mirror updateUserThemeHighlight's pattern: trust the explicit tracker
+  // (`_activeBuiltinThemeIndex`) instead of comparing every color of the
+  // merged theme against each preset. The previous match-by-value approach
+  // failed silently when the user had ANY saved override for the active
+  // preset — the merged `currentTheme` no longer equalled `p.theme` exactly,
+  // so the swatch dropped its `active` class and the user perceived the
+  // click as "didn't work" (e.g. "I can't apply Equity Desk anymore").
   THEME_PRESETS.forEach((p, i) => {
     const el = document.getElementById('tppreset-'+i);
     if (!el) return;
-    const match = Object.entries(p.theme).every(([k,v]) => theme[k] === v);
-    el.classList.toggle('active', match);
+    el.classList.toggle('active', i === _activeBuiltinThemeIndex);
   });
 }
 
@@ -19800,14 +20093,43 @@ function onHexInput(varName, safe) {
 function applyPresetTheme(i) {
   const preset = THEME_PRESETS[i];
   if (!preset) return;
-  // Base on THEME_DEFAULT, override with preset colors, then apply saved user override if any
-  const override = _loadBuiltinOverride(i) || {};
+  // Base on THEME_DEFAULT, override with preset colors, then apply saved user override if any.
+  // Defensive filter: drop override keys whose value is invalid (non-hex, null, undefined)
+  // — protects against contaminated overrides accumulated from past schema-mismatched saves
+  // (the "click Equity Desk → reverts to TradingView" bug came from such a contaminated slot,
+  // where a prior Save while currentTheme was out-of-sync with _activeBuiltinThemeIndex
+  // wrote a wrong preset's colors into this slot).
+  const rawOverride = _loadBuiltinOverride(i) || {};
+  let override = {};
+  Object.entries(rawOverride).forEach(([k, v]) => {
+    if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim())) override[k] = v;
+    else if (typeof v === 'string' && v.trim()) override[k] = v;  // non-hex CSS values (e.g. font-size px) pass through
+  });
+  // Contamination detection: if the override would force --bg (the most
+  // distinctive theme color) to match a DIFFERENT built-in preset's --bg, we
+  // have an override that was accidentally saved with another preset's colors.
+  // Drop the override and re-apply the pristine preset — otherwise the user's
+  // click visibly snaps back to whichever preset shares that --bg.
+  if (override['--bg'] && override['--bg'] !== preset.theme['--bg']) {
+    const otherPreset = THEME_PRESETS.find((p, j) => j !== i && p.theme['--bg'] === override['--bg']);
+    if (otherPreset) {
+      _clearBuiltinOverride(i);
+      override = {};
+    }
+  }
   currentTheme = { ...THEME_DEFAULT, ...preset.theme, ...override };
   // Update active-theme trackers BEFORE rebuilding rows so _baselineColor() uses the new preset
   _activeUserThemeId = null;
   _activeBuiltinThemeIndex = i;
   _persistActiveThemeMeta();
   applyThemeToCss(currentTheme);
+  // Persist currentTheme so THEME_STORAGE_KEY stays in sync with the active preset.
+  // applyUserTheme already does this for user themes; preset themes were missing the
+  // mirror — without it, a subsequent Save would snapshot the freshly-applied colors
+  // back into THE NEW preset's override slot only IF currentTheme was correct, but
+  // any boot path that loads THEME_STORAGE_KEY (e.g. on next reload) would then revert
+  // to the stale TradingView snapshot.
+  try { localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(currentTheme)); } catch(e) {}
   // Rebuild color rows to reflect new values
   buildColorSection('tp-bg-colors',        Object.entries(THEME_META).filter(([,m])=>m.group==='backgrounds'));
   buildColorSection('tp-border-colors',    Object.entries(THEME_META).filter(([,m])=>m.group==='borders'));
@@ -22658,8 +22980,20 @@ function saveTheme() {
     return;
   }
   if (_activeBuiltinThemeIndex !== null && _activeBuiltinThemeIndex !== undefined) {
-    // Persist customizations on top of the built-in preset.
-    _saveBuiltinOverride(_activeBuiltinThemeIndex, { ...currentTheme });
+    // Persist ONLY the differences from the pristine preset. Storing the full
+    // currentTheme has historically caused contamination: if currentTheme was
+    // ever out-of-sync with _activeBuiltinThemeIndex (e.g. boot loaded one
+    // theme from THEME_STORAGE_KEY while meta said a different preset was
+    // active), the snapshot would write a foreign preset's colors into THIS
+    // slot — and the next click on this preset would visibly snap to that
+    // foreign preset. Diff-only saves prevent that.
+    const _activePreset = THEME_PRESETS[_activeBuiltinThemeIndex];
+    const _diff = {};
+    Object.entries(currentTheme).forEach(([k, v]) => {
+      const baseline = (_activePreset?.theme?.[k] !== undefined) ? _activePreset.theme[k] : THEME_DEFAULT[k];
+      if (v !== baseline) _diff[k] = v;
+    });
+    _saveBuiltinOverride(_activeBuiltinThemeIndex, _diff);
     try { localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(currentTheme)); } catch(e) {}
     // Rebuild rows so reset-button baselines reflect the newly-saved state.
     buildColorSection('tp-bg-colors',        Object.entries(THEME_META).filter(([,m])=>m.group==='backgrounds'));
@@ -23946,13 +24280,17 @@ function buildTunePanel(id) {
     }).join('');
 
     const bodyOpen = openDimKeys.has(dim.key) ? ' open' : '';
-    // Per-dim live count pill: shows on .po-dim-label when this preset has
-    // unsaved live values in this dim. Inactive presets have no "live" by
-    // definition, so this stays zero for them → no badge rendered.
-    const liveN = _getLiveCountForDim(id, dim.key, false);
-    const liveBadgeHTML = liveN > 0
-      ? `<span class="live-dim-badge" title="${liveN} unsaved live filter${liveN > 1 ? 's' : ''}">+${liveN}</span>`
-      : '';
+    // Two per-dim pills on .po-dim-label:
+    //   +N (gold) — chips added but not saved (live additions)
+    //   −N (rm)  — chips in the snapshot but disabled (tombstones)
+    // The +N is meaningful only on the active preset; the −N tracks the
+    // global tombstone state which only the active preset can produce.
+    const addedN = _getLiveCountForDim(id, dim.key, false);
+    const isActivePreset = appState.presets?.activeId === id;
+    const removedN = isActivePreset ? _getTombstoneCountForDim(dim.key, false) : 0;
+    const liveBadgeHTML =
+        (addedN   > 0 ? `<span class="live-dim-badge" title="${addedN} unsaved live filter${addedN > 1 ? 's' : ''}">+${addedN}</span>` : '')
+      + (removedN > 0 ? `<span class="live-dim-badge live-dim-badge-rm" title="${removedN} preset filter${removedN > 1 ? 's' : ''} disabled">−${removedN}</span>` : '');
     html += `<div class="po-dim" id="podim-${id}-${dim.key}">
       <div class="po-dim-head" data-action="po-toggle-dim" data-poid="${id}" data-pokey="${dim.key}">
         <span class="po-dim-label">${dim.label}${liveBadgeHTML}</span>
@@ -24292,8 +24630,9 @@ function refreshLiveFilterIndicator() {
     const id = btn ? parseInt(btn.dataset.preset, 10) : NaN;
     if (!Number.isFinite(id)) return;
 
-    const n = _getLiveFilterCountForPreset(id);
-    const shouldShow = n > 0;
+    const addedN   = _getLiveFilterCountForPreset(id);
+    const removedN = _getTombstoneCountForPreset(id);
+    const shouldShow = addedN > 0 || removedN > 0;
     row.classList.toggle('has-live-filters', shouldShow);
 
     // Legacy placement: older DOM may still carry a badge directly under the
@@ -24301,42 +24640,65 @@ function refreshLiveFilterIndicator() {
     const stray = row.querySelector(':scope > .preset-live-badge, :scope > .preset-btn-wrap > .preset-live-badge');
     if (stray && (!tuneBtn || !tuneBtn.contains(stray))) stray.remove();
 
-    let badge = tuneBtn ? tuneBtn.querySelector('.preset-live-badge') : null;
-    if (shouldShow && tuneBtn) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'preset-live-badge';
-        tuneBtn.appendChild(badge);
+    if (!tuneBtn) return;
+    const isOpen = tuneBtn.classList.contains('open');
+    const isActivePreset = appState.presets.activeId === id;
+
+    // ── Added badge (+N) — gold, existing ──
+    let addedBadge = tuneBtn.querySelector('.preset-live-badge:not(.preset-live-badge-rm)');
+    if (addedN > 0) {
+      if (!addedBadge) {
+        addedBadge = document.createElement('span');
+        addedBadge.className = 'preset-live-badge';
+        tuneBtn.appendChild(addedBadge);
       }
-      const isOpen = tuneBtn.classList.contains('open');
-      badge.classList.toggle('is-count', isOpen);
-      badge.classList.toggle('is-dot', !isOpen);
-      badge.textContent = isOpen ? '+' + n : '';
-      badge.title = '';
-      // Rich hover tooltip: enumerates actual changes vs the snapshot.
-      // Only the ACTIVE preset's live state is meaningful; non-active presets
-      // show a simple text tooltip like before.
-      const isActivePreset = appState.presets.activeId === id;
-      badge.dataset.presetId = String(id);
-      badge.onmouseenter = (ev) => {
+      addedBadge.classList.toggle('is-count', isOpen);
+      addedBadge.classList.toggle('is-dot', !isOpen);
+      addedBadge.textContent = isOpen ? '+' + addedN : '';
+      addedBadge.title = '';
+      addedBadge.dataset.presetId = String(id);
+      addedBadge.onmouseenter = (ev) => {
         if (isActivePreset) {
           const html = _buildDivergenceTooltipHtml(id);
           if (html) showUtip(ev, html);
-          else showUtipText(ev, `${n} unsaved live filter${n > 1 ? 's' : ''}`);
+          else showUtipText(ev, `${addedN} unsaved live filter${addedN > 1 ? 's' : ''}`);
         } else {
-          showUtipText(ev, `${n} unsaved live filter${n > 1 ? 's' : ''}`);
+          showUtipText(ev, `${addedN} unsaved live filter${addedN > 1 ? 's' : ''}`);
         }
       };
-      badge.onmousemove = (ev) => {
+      addedBadge.onmousemove = (ev) => {
         if (isActivePreset) {
           const html = _buildDivergenceTooltipHtml(id);
           if (html) showUtip(ev, html);
         }
       };
-      badge.onmouseleave = () => hideUtip();
-    } else if (badge) {
-      badge.onmouseenter = badge.onmouseleave = badge.onmousemove = null;
-      badge.remove();
+      addedBadge.onmouseleave = () => hideUtip();
+    } else if (addedBadge) {
+      addedBadge.onmouseenter = addedBadge.onmouseleave = addedBadge.onmousemove = null;
+      addedBadge.remove();
+    }
+
+    // ── Removed badge (−N) — red, new. Anchored just left of the +N when
+    //    both are present (is-paired), or in the +N's slot when alone. ──
+    let removedBadge = tuneBtn.querySelector('.preset-live-badge.preset-live-badge-rm');
+    if (removedN > 0) {
+      if (!removedBadge) {
+        removedBadge = document.createElement('span');
+        removedBadge.className = 'preset-live-badge preset-live-badge-rm';
+        tuneBtn.appendChild(removedBadge);
+      }
+      removedBadge.classList.toggle('is-count', isOpen);
+      removedBadge.classList.toggle('is-dot', !isOpen);
+      removedBadge.classList.toggle('is-paired', addedN > 0);
+      removedBadge.textContent = isOpen ? '−' + removedN : '';
+      removedBadge.title = '';
+      removedBadge.onmouseenter = (ev) => {
+        showUtipText(ev, `${removedN} preset filter${removedN > 1 ? 's' : ''} disabled`);
+      };
+      removedBadge.onmouseleave = () => hideUtip();
+    } else if (removedBadge) {
+      removedBadge.onmouseenter = removedBadge.onmouseleave = null;
+      removedBadge.remove();
     }
   });
 
@@ -24354,40 +24716,78 @@ function refreshLiveFilterIndicator() {
     const rawKey = modeBtn.dataset.key;
     const isCustom = rawKey.startsWith('custom:');
     const dimKey = isCustom ? rawKey.slice(7) : rawKey;
-    const n = _getLiveCountForDim(activeId, dimKey, isCustom);
-    let badge = label.querySelector('.live-dim-badge');
-    if (n > 0) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'live-dim-badge';
-        label.appendChild(badge);
+
+    // Two badges per dim: ADDED (chips not in snapshot) and REMOVED (chips
+    // in snapshot but disabled — tombstones). Symmetric pills mirror the
+    // shaded chip + the "+N" pattern the user already had.
+    const addedN   = _getLiveCountForDim(activeId, dimKey, isCustom);
+    const removedN = (activeId !== null) ? _getTombstoneCountForDim(dimKey, isCustom) : 0;
+
+    let addedBadge   = label.querySelector('.live-dim-badge:not(.live-dim-badge-rm)');
+    let removedBadge = label.querySelector('.live-dim-badge.live-dim-badge-rm');
+
+    if (addedN > 0) {
+      if (!addedBadge) {
+        addedBadge = document.createElement('span');
+        addedBadge.className = 'live-dim-badge';
+        label.appendChild(addedBadge);
       }
-      badge.textContent = '+' + n;
-      badge.title = `${n} unsaved live filter${n > 1 ? 's' : ''} on this property`;
-    } else if (badge) {
-      badge.remove();
+      addedBadge.textContent = '+' + addedN;
+      addedBadge.title = `${addedN} unsaved live filter${addedN > 1 ? 's' : ''} on this property`;
+    } else if (addedBadge) {
+      addedBadge.remove();
+    }
+
+    if (removedN > 0) {
+      if (!removedBadge) {
+        removedBadge = document.createElement('span');
+        removedBadge.className = 'live-dim-badge live-dim-badge-rm';
+        label.appendChild(removedBadge);
+      }
+      removedBadge.textContent = '−' + removedN;
+      removedBadge.title = `${removedN} preset filter${removedN > 1 ? 's' : ''} disabled on this property`;
+    } else if (removedBadge) {
+      removedBadge.remove();
     }
   });
 
-  // Mobile pills — même logique.
+  // Mobile pills — même logique avec deux badges (added + removed).
   document.querySelectorAll('.mob-preset-pill').forEach(pill => {
     const raw = pill.dataset.preset;
     const id = raw === '' ? null : parseInt(raw, 10);
-    const n = _getLiveFilterCountForPreset(id);
-    const shouldShow = n > 0;
+    const addedN   = _getLiveFilterCountForPreset(id);
+    const removedN = (typeof id === 'number') ? _getTombstoneCountForPreset(id) : 0;
+    const shouldShow = addedN > 0 || removedN > 0;
     pill.classList.toggle('has-live-filters', shouldShow);
 
-    let badge = pill.querySelector('.preset-live-badge');
-    if (shouldShow) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'preset-live-badge';
-        badge.title = 'Unsaved live filters on this preset';
-        pill.appendChild(badge);
+    let addedBadge = pill.querySelector('.preset-live-badge:not(.preset-live-badge-rm)');
+    if (addedN > 0) {
+      if (!addedBadge) {
+        addedBadge = document.createElement('span');
+        addedBadge.className = 'preset-live-badge';
+        addedBadge.title = 'Unsaved live filters on this preset';
+        pill.appendChild(addedBadge);
       }
-      badge.textContent = '+' + n;
-    } else if (badge) {
-      badge.remove();
+      addedBadge.textContent = '+' + addedN;
+    } else if (addedBadge) {
+      addedBadge.remove();
+    }
+
+    let removedBadge = pill.querySelector('.preset-live-badge.preset-live-badge-rm');
+    if (removedN > 0) {
+      if (!removedBadge) {
+        removedBadge = document.createElement('span');
+        removedBadge.className = 'preset-live-badge preset-live-badge-rm';
+        removedBadge.title = 'Preset filters disabled';
+        pill.appendChild(removedBadge);
+      }
+      // Mobile pills always render in count mode (no "is-dot" miniature),
+      // so is-paired marker is enough for the CSS shift.
+      removedBadge.classList.add('is-count');
+      removedBadge.classList.toggle('is-paired', addedN > 0);
+      removedBadge.textContent = '−' + removedN;
+    } else if (removedBadge) {
+      removedBadge.remove();
     }
   });
 }
@@ -24405,6 +24805,31 @@ function _getLiveCountForDim(presetId, dimKey, isCustom) {
   return (v.included?.length || 0) + (v.excluded?.length || 0);
 }
 
+/** Count tombstones on a dim — values that belong to the active preset's
+ *  snapshot but have been stripped from the applied state. Symmetric counter
+ *  to `_getLiveCountForDim`: that one counts ADDED filters, this counts
+ *  REMOVED preset filters. Used by the sidebar's `.fg-label` and the tune
+ *  panel's `.po-dim-label` to show a `−N` pill alongside the `+N` one when
+ *  the user has disabled saved chips. */
+function _getTombstoneCountForDim(dimKey, isCustom) {
+  const bucket = isCustom ? appState.filters?.customChips : appState.filters?.chips;
+  const entry = bucket?.[dimKey];
+  if (!entry) return 0;
+  if (typeof _ensureFromPresetSets === 'function') _ensureFromPresetSets(entry);
+  let n = 0;
+  if (entry.includedFromPreset) {
+    for (const v of entry.includedFromPreset) {
+      if (!entry.included?.has(v) && !entry.excluded?.has(v)) n++;
+    }
+  }
+  if (entry.excludedFromPreset) {
+    for (const v of entry.excludedFromPreset) {
+      if (!entry.included?.has(v) && !entry.excluded?.has(v)) n++;
+    }
+  }
+  return n;
+}
+
 /** Count live entries stored in the slot for a given preset id (or null).
  *  Includes chips (9 dims), customChips, and comboFilters. */
 function _getLiveFilterCountForPreset(id) {
@@ -24419,6 +24844,22 @@ function _getLiveFilterCountForPreset(id) {
   }
   for (const v of Object.values(slot.comboFilters || {})) {
     n += (v.included?.length || 0) + (v.excluded?.length || 0);
+  }
+  return n;
+}
+
+/** Sum of tombstones across all dims for a preset. Only the ACTIVE preset
+ *  can carry tombstones (they live in appState.filters.chips, not in the
+ *  per-preset slot). Inactive presets always return 0. */
+function _getTombstoneCountForPreset(id) {
+  if (typeof id !== 'number') return 0;
+  if (appState.presets?.activeId !== id) return 0;
+  let n = 0;
+  for (const dimKey of Object.keys(appState.filters?.chips || {})) {
+    n += _getTombstoneCountForDim(dimKey, false);
+  }
+  for (const dimKey of Object.keys(appState.filters?.customChips || {})) {
+    n += _getTombstoneCountForDim(dimKey, true);
   }
   return n;
 }
@@ -25908,6 +26349,25 @@ function _redrawAll() {
     drawMonthly(filtered);
     drawDonut(stats);
     renderPairSession(filtered);
+    // renderHeatmap reads container.clientHeight to size cells/fonts. On first
+    // load the initial render() runs before GridStack writes final widget
+    // heights, so clientHeight is 0 → fontSize falls back to 7 (tiny). Without
+    // this re-render the heatmap stays tiny until a manual button click. The
+    // ResizeObserver fires _redrawAll once layout settles, so reading
+    // clientHeight here returns the real value and the heatmap renders normally.
+    renderHeatmap(filtered);
+    // Same auto-sizing concern as renderHeatmap: renderCalendar reads
+    // grid.clientWidth/Height to compute cell + font sizes. Without this
+    // re-render, the calendar stays at its initial (possibly tiny) sizing
+    // until the user clicks a calendar control.
+    renderCalendar(filtered);
+    // Refit performance bar widgets to the new widget heights. We don't
+    // re-render their HTML (children counts haven't changed) — just recompute
+    // the row-height + font-size CSS vars from the current container size.
+    ['bars-setup','bars-session','bars-pair','bars-day','bars-obs','bars-h4obs','bars-hour'].forEach(id => {
+      const c = document.getElementById(id);
+      if (c && c.children.length) _fitBarList(id, c.children.length);
+    });
     _fitAllStatsOverviewMicros();
   } catch(e) { /* safety net */ }
 }
