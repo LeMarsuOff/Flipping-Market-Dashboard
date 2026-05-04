@@ -2752,10 +2752,16 @@ function _injectTrades(parsed, totalLabel, savedState) {
       _csvFormat = null;
       requestAnimationFrame(() => {
         if (typeof _applySerializedLayout !== 'function') return;
-        const savedKey    = localStorage.getItem(LS_KEY_ACTIVE);
-        const savedLayout = savedKey
-          ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null')
-          : null;
+        const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
+        let savedLayout = null;
+        try {
+          savedLayout = savedKey
+            ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null')
+            : null;
+        } catch (e) {
+          console.warn('[layout restore CSV]', e.message);
+          savedLayout = null;
+        }
         _applySerializedLayout(savedLayout || DEFAULT_LAYOUT);
       });
     }
@@ -2819,7 +2825,14 @@ async function loadFromAPI(options = {}) {
     if (!json.trades || !json.trades.length) throw new Error('No trades');
 
     _setRawAPICache(json.trades);       // persist raw for on-the-fly re-normalization
-    const parsed = json.trades.map((t, i) => _normalizeAPITrade(t, i)).filter(Boolean);
+    const parsed = json.trades.map((t, i) => {
+      try {
+        return _normalizeAPITrade(t, i);
+      } catch (e) {
+        console.warn('[normalize API trade]', `index=${i}`, e.message);
+        return null;
+      }
+    }).filter(Boolean);
     setCachedAPIData(parsed);           // persist normalized cache
     _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
     appState.settings.dataSource.pendingRestoreState = null;
@@ -2915,7 +2928,9 @@ function _persistSidebarState() {
       pcmpB: document.getElementById('pcmp-b')?.value ?? null,
     };
     localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify(payload));
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[sidebar persist]', e.message);
+  }
 }
 
 // Debounced wrapper used by `render()` so chip-rapid-clicks don't trigger
@@ -3397,7 +3412,14 @@ async function _fetchAPICacheSilently(options = {}) {
     if (!json.trades || !json.trades.length) throw new Error('No trades');
 
     _setRawAPICache(json.trades);
-    const parsed = json.trades.map((t, i) => _normalizeAPITrade(t, i)).filter(Boolean);
+    const parsed = json.trades.map((t, i) => {
+      try {
+        return _normalizeAPITrade(t, i);
+      } catch (e) {
+        console.warn('[normalize API trade]', `index=${i}`, e.message);
+        return null;
+      }
+    }).filter(Boolean);
     setCachedAPIData(parsed);
     if (localStorage.getItem(DS_KEY) === 'api') {
       // Preserve filter state across the silent refresh: when
@@ -13922,7 +13944,11 @@ function _mc2GetSectionLayout() {
   catch { return _mc2CloneLayout(_MC2_DEFAULT_SECTION_LAYOUT); }
 }
 function _mc2SaveSectionLayout(layout) {
-  try { localStorage.setItem(_MC2_SECTION_LAYOUT_KEY, JSON.stringify(_mc2NormalizeLayout(layout))); } catch {}
+  try {
+    localStorage.setItem(_MC2_SECTION_LAYOUT_KEY, JSON.stringify(_mc2NormalizeLayout(layout)));
+  } catch (e) {
+    console.warn('[layout persist]', e.message);
+  }
 }
 function _mc2SetSectionRect(layout, key, nextRect) {
   const next = _mc2CloneLayout(layout);
@@ -15842,7 +15868,11 @@ function _poInternalSaveLayout(layout) {
   // here would re-compact the locked block back to its original y, undoing
   // the resize from `n`/`ne`/`nw` handles. _poInternalGetLayout still
   // normalizes on read, so any corrupt persisted state is healed on load.
-  try { localStorage.setItem(_PO_INTERNAL_LAYOUT_KEY, JSON.stringify(layout)); } catch {}
+  try {
+    localStorage.setItem(_PO_INTERNAL_LAYOUT_KEY, JSON.stringify(layout));
+  } catch (e) {
+    console.warn('[layout persist]', e.message);
+  }
 }
 function _poInternalSetSectionRect(layout, key, nextRect) {
   const next = _poInternalCloneLayout(layout);
@@ -16478,7 +16508,9 @@ function _poRenderScatter() {
           };
         }
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[zoom]', e.message);
+    }
     st.scatterChart.destroy();
     st.scatterChart = null;
   }
@@ -16593,7 +16625,9 @@ function _poRenderScatter() {
     try {
       st.scatterChart.zoomScale('x', { min: preservedZoom.x.min, max: preservedZoom.x.max }, 'none');
       st.scatterChart.zoomScale('y', { min: preservedZoom.y.min, max: preservedZoom.y.max }, 'none');
-    } catch {}
+    } catch (e) {
+      console.warn('[zoom]', e.message);
+    }
   }
 
   // Legend. In tpfinal mode each item carries a data-action so the user can
@@ -18721,7 +18755,13 @@ function injectParsedTrades(parsed, filename, csvFormat) {
   requestAnimationFrame(() => {
     if (typeof _applySerializedLayout !== 'function') return;
     const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
-    const savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
+    let savedLayout = null;
+    try {
+      savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
+    } catch (e) {
+      console.warn('[layout restore import]', e.message);
+      savedLayout = null;
+    }
     _applySerializedLayout(savedLayout || DEFAULT_LAYOUT);
   });
   setTimeout(closeCsvOverlay, 1200);
