@@ -18777,6 +18777,12 @@ let barColorMode = localStorage.getItem(BAR_COLOR_MODE_KEY) || 'quality';
 
 // ── Bar hover tooltip (uses unified utip system) ──
 function _buildBarTipHTML(label, n, oc) {
+  // showBE=true → footer breaks Net into TP/SL/Total (matches the BE-TP/BE-SL
+  // grid rows shown above). showBE=false collapses to a single "Net Result"
+  // line. Declared here so the existing if/else branch stays intact; the
+  // reference was undefined since the initial commit, which crashed every
+  // bar hover (`ReferenceError: showBE is not defined`).
+  const showBE = true;
   const [tpN, tpR, slN, slR, betpN, betpR, beslN, beslR] = oc.split(',').map(Number);
   const wr = n > 0 ? ((tpN + betpN) / n * 100).toFixed(0) : 0;
   const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
