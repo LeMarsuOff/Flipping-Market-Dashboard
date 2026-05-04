@@ -21063,8 +21063,66 @@ function _escapeHtml(s) {
 let themePanelOpen = false;
 function toggleThemePanel() {
   themePanelOpen = !themePanelOpen;
-  document.getElementById('theme-panel').classList.toggle('open', themePanelOpen);
+  const panel = document.getElementById('theme-panel');
+  // Resetting any drag offset BEFORE removing `.open` lets the CSS slide-out
+  // (translateX(100%)) animate from the panel's current position; the next
+  // open then snaps back to the default top-right anchor.
+  if (!themePanelOpen) {
+    panel.style.transform = '';
+    panel.style.transition = '';
+    panel.classList.remove('is-dragging');
+  }
+  panel.classList.toggle('open', themePanelOpen);
   document.getElementById('theme-toggle-btn').classList.toggle('open', themePanelOpen);
+  if (themePanelOpen) _initThemePanelDragOnce();
+}
+
+// Drag-to-move the theme panel by its header. Bound once on first open;
+// pointerdown on the header (not on the close button) starts the drag.
+// The offset is held only while the panel is open — toggleThemePanel(close)
+// clears the inline transform so reopens land at the default position.
+let _themePanelDragBound = false;
+function _initThemePanelDragOnce() {
+  if (_themePanelDragBound) return;
+  const panel  = document.getElementById('theme-panel');
+  const header = panel?.querySelector('.tp-header');
+  if (!panel || !header) return;
+  _themePanelDragBound = true;
+  // Horizontal-only drag: panel slides on the X axis (escape-from-the-right
+  // behavior); vertical drift is intentionally suppressed to keep the panel
+  // top-anchored.
+  let startX = 0, baseDX = 0, pointerId = null;
+  const parseTranslateX = (str) => {
+    const m = /translate(?:X)?\(\s*(-?\d+(?:\.\d+)?)px/.exec(str || '');
+    return m ? parseFloat(m[1]) : 0;
+  };
+  header.addEventListener('pointerdown', (e) => {
+    // Skip drags initiated on the close button or any interactive child.
+    if (e.target.closest('.tp-close, button, input, select, textarea')) return;
+    if (e.button !== 0) return;
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    baseDX = parseTranslateX(panel.style.transform);
+    panel.classList.add('is-dragging');
+    panel.style.transition = 'none';
+    try { header.setPointerCapture(pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  header.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== pointerId) return;
+    const dx = baseDX + (e.clientX - startX);
+    panel.style.transform = `translateX(${dx}px)`;
+  });
+  const endDrag = (e) => {
+    if (e.pointerId !== pointerId) return;
+    pointerId = null;
+    panel.classList.remove('is-dragging');
+    // Restore the CSS-defined transition so the next close animates correctly.
+    panel.style.transition = '';
+    try { header.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  header.addEventListener('pointerup', endDrag);
+  header.addEventListener('pointercancel', endDrag);
 }
 
 // ══════════════════════════════════════════════════════════════
