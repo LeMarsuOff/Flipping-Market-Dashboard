@@ -12685,40 +12685,22 @@ function renderCalendar(trades) {
   const cR = tc('--r');
   const maxAbs = _calGetYearMaxAbs(year);
 
-  // Auto-sizing — same approach as heatmap. Compute cell + font sizes from
-  // the widget's actual dimensions so content fits without internal scroll.
-  // 4 month columns × 3 month rows; per month: header bar + day labels + 6 cell rows.
+  // Auto-sizing — cell BOX size still derived from widget dimensions so the
+  // 12-month grid fits without internal scroll. Typography is owned by the
+  // theme editor (`--fs-cal-day/header/stats/value` set on `:root`); the
+  // calendar reads them directly via `var(--fs-cal-*)` and never overrides.
   const _calW = grid.clientWidth || 800;
   const _calH = grid.clientHeight || 600;
   const _PAD_X = 2, _PAD_Y = 4, _GAP_X = 12, _GAP_Y = 16;
   const _monthW = (_calW - _PAD_X * 2 - _GAP_X * 3) / 4;
   const _monthH = (_calH - _PAD_Y * 2 - _GAP_Y * 2) / 3;
-  // Generous reserves: the header bar can grow to ~36px when fontHeader/fontValue
-  // hit their upper clamps (16/20px), and the day-label row can hit ~22px when
-  // fontDay is at its max (18px). Under-reserving causes per-month overflow.
   const _HEADER_BAR_H = 36, _DAY_LABEL_H = 22, _HEADER_MARGIN = 5;
   const _cellsAreaH = _monthH - _HEADER_BAR_H - _DAY_LABEL_H - _HEADER_MARGIN;
   const _cellGap = 2;
   const _cellFromW = (_monthW - _cellGap * 6) / 7;
   const _cellFromH = (_cellsAreaH - _cellGap * 5) / 6;
-  // Cell-size floor (22px) enforces text fit for 5-char values like "+11.0"
-  // or "-10.0" (occurs on big trading days). DM Mono char width ≈ 0.6*fontSize,
-  // so 5 chars at fontDay=7 (readability floor) = ~21px → cellSize ≥ 22 needed.
-  // If the widget is too small to honor that, vertical overflow clips months
-  // at the bottom (clean) — preferable to text getting clipped inside cells.
   const _cellSize = Math.max(22, Math.floor(Math.min(_cellFromW, _cellFromH)));
-  // Font clamps: multiplier 0.30 = 1/(5*0.6) guarantees 5-char text fits.
-  // fontDay is the constraint — used in cells. Other fonts (header/value/stats)
-  // live in wider parents (full-month-width header bar) so are less constrained.
-  const _fontDay    = Math.max(7,  Math.min(14, Math.floor(_cellSize * 0.30)));
-  const _fontHeader = Math.max(9,  Math.min(16, Math.floor(_cellSize * 0.55)));
-  const _fontStats  = Math.max(7,  Math.min(13, Math.floor(_cellSize * 0.40)));
-  const _fontValue  = Math.max(11, Math.min(20, Math.floor(_cellSize * 0.65)));
   grid.style.setProperty('--cal-cell-size', _cellSize + 'px');
-  grid.style.setProperty('--fs-cal-day',    _fontDay + 'px');
-  grid.style.setProperty('--fs-cal-header', _fontHeader + 'px');
-  grid.style.setProperty('--fs-cal-stats',  _fontStats + 'px');
-  grid.style.setProperty('--fs-cal-value',  _fontValue + 'px');
   // Override .scroll-panel-fill's `overflow: auto` — content is now sized to fit.
   grid.style.overflow = 'hidden';
 
@@ -12903,26 +12885,11 @@ function _renderCalendarMonthly(trades, yearSel) {
   const cG = tc('--g');
   const cR = tc('--r');
 
-  // Auto-sizing for monthly mode — same approach as annual: scale fonts to
-  // widget dimensions so content fits without internal scroll.
+  // Typography is owned by the theme editor (`--fs-cal-day/header/stats/value/summary`
+  // set on `:root`); the calendar reads them directly via `var(--fs-cal-*)` and
+  // never overrides. Cell layout uses `1fr` so it adapts to widget width without
+  // a JS-computed cell size.
   const numWeeks = Math.ceil((firstDow + daysInMonth) / 7);
-  const _calW = grid.clientWidth || 800;
-  const _calH = grid.clientHeight || 600;
-  const _SUMMARY_H = 56, _DAY_LABEL_H = 16, _GAP = 3;
-  const _gridAreaH = _calH - _SUMMARY_H - _DAY_LABEL_H - _GAP * (numWeeks + 2);
-  const _cellH = _gridAreaH / numWeeks;
-  const _cellW = (_calW - _GAP * 7) / 8; // 7 days + 1 weekly summary col
-  const _cellSize = Math.max(20, Math.floor(Math.min(_cellW, _cellH)));
-  const _fontDay     = Math.max(8,  Math.min(16, Math.floor(_cellSize * 0.18)));
-  const _fontHeader  = Math.max(9,  Math.min(18, Math.floor(_cellSize * 0.20)));
-  const _fontStats   = Math.max(7,  Math.min(13, Math.floor(_cellSize * 0.16)));
-  const _fontValue   = Math.max(11, Math.min(24, Math.floor(_cellSize * 0.28)));
-  const _fontSummary = Math.max(14, Math.min(48, Math.floor(_cellSize * 0.40)));
-  grid.style.setProperty('--fs-cal-day',     _fontDay + 'px');
-  grid.style.setProperty('--fs-cal-header',  _fontHeader + 'px');
-  grid.style.setProperty('--fs-cal-stats',   _fontStats + 'px');
-  grid.style.setProperty('--fs-cal-value',   _fontValue + 'px');
-  grid.style.setProperty('--fs-cal-summary', _fontSummary + 'px');
   grid.style.overflow = 'hidden';
 
   const summaryHtml = `<div style="background:var(--bg2);border-radius:5px;padding:8px 12px;margin-bottom:6px;flex-shrink:0;display:flex;justify-content:space-between;align-items:center">
@@ -18810,6 +18777,12 @@ let barColorMode = localStorage.getItem(BAR_COLOR_MODE_KEY) || 'quality';
 
 // ── Bar hover tooltip (uses unified utip system) ──
 function _buildBarTipHTML(label, n, oc) {
+  // showBE=true → footer breaks Net into TP/SL/Total (matches the BE-TP/BE-SL
+  // grid rows shown above). showBE=false collapses to a single "Net Result"
+  // line. Declared here so the existing if/else branch stays intact; the
+  // reference was undefined since the initial commit, which crashed every
+  // bar hover (`ReferenceError: showBE is not defined`).
+  const showBE = true;
   const [tpN, tpR, slN, slR, betpN, betpR, beslN, beslR] = oc.split(',').map(Number);
   const wr = n > 0 ? ((tpN + betpN) / n * 100).toFixed(0) : 0;
   const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
@@ -21090,8 +21063,66 @@ function _escapeHtml(s) {
 let themePanelOpen = false;
 function toggleThemePanel() {
   themePanelOpen = !themePanelOpen;
-  document.getElementById('theme-panel').classList.toggle('open', themePanelOpen);
+  const panel = document.getElementById('theme-panel');
+  // Resetting any drag offset BEFORE removing `.open` lets the CSS slide-out
+  // (translateX(100%)) animate from the panel's current position; the next
+  // open then snaps back to the default top-right anchor.
+  if (!themePanelOpen) {
+    panel.style.transform = '';
+    panel.style.transition = '';
+    panel.classList.remove('is-dragging');
+  }
+  panel.classList.toggle('open', themePanelOpen);
   document.getElementById('theme-toggle-btn').classList.toggle('open', themePanelOpen);
+  if (themePanelOpen) _initThemePanelDragOnce();
+}
+
+// Drag-to-move the theme panel by its header. Bound once on first open;
+// pointerdown on the header (not on the close button) starts the drag.
+// The offset is held only while the panel is open — toggleThemePanel(close)
+// clears the inline transform so reopens land at the default position.
+let _themePanelDragBound = false;
+function _initThemePanelDragOnce() {
+  if (_themePanelDragBound) return;
+  const panel  = document.getElementById('theme-panel');
+  const header = panel?.querySelector('.tp-header');
+  if (!panel || !header) return;
+  _themePanelDragBound = true;
+  // Horizontal-only drag: panel slides on the X axis (escape-from-the-right
+  // behavior); vertical drift is intentionally suppressed to keep the panel
+  // top-anchored.
+  let startX = 0, baseDX = 0, pointerId = null;
+  const parseTranslateX = (str) => {
+    const m = /translate(?:X)?\(\s*(-?\d+(?:\.\d+)?)px/.exec(str || '');
+    return m ? parseFloat(m[1]) : 0;
+  };
+  header.addEventListener('pointerdown', (e) => {
+    // Skip drags initiated on the close button or any interactive child.
+    if (e.target.closest('.tp-close, button, input, select, textarea')) return;
+    if (e.button !== 0) return;
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    baseDX = parseTranslateX(panel.style.transform);
+    panel.classList.add('is-dragging');
+    panel.style.transition = 'none';
+    try { header.setPointerCapture(pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  header.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== pointerId) return;
+    const dx = baseDX + (e.clientX - startX);
+    panel.style.transform = `translateX(${dx}px)`;
+  });
+  const endDrag = (e) => {
+    if (e.pointerId !== pointerId) return;
+    pointerId = null;
+    panel.classList.remove('is-dragging');
+    // Restore the CSS-defined transition so the next close animates correctly.
+    panel.style.transition = '';
+    try { header.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  header.addEventListener('pointerup', endDrag);
+  header.addEventListener('pointercancel', endDrag);
 }
 
 // ══════════════════════════════════════════════════════════════

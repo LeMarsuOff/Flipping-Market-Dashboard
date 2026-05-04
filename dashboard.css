@@ -5511,6 +5511,13 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.theme-panel.is-dragging,
+.theme-panel.is-dragging .tp-header {
+  cursor: grabbing;
+  user-select: none;
 }
 .tp-title {
   font-family: 'DM Mono', monospace;
