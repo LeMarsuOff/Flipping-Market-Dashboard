@@ -28822,6 +28822,44 @@ function exportShareView() {
   })();
   _svDrawEquity(trades);
 
+  // ── Pin the panel to (at least) a canonical export width ────────────
+  // Without this the PNG inherits the live viewport width: a user copying
+  // from a 1366px laptop gets a much narrower image than one copying from
+  // a 1920px screen. We bump the panel up to at least 2400px so small
+  // screens produce a properly wide share image — but never DOWN, so big
+  // screens (>2400px) keep their natural larger rendering. The width is
+  // restored in the .finally() block so the live view is unaffected.
+  const EXPORT_MIN_WIDTH = 2400;
+  const EXPORT_WIDTH = Math.max(container.offsetWidth || 0, EXPORT_MIN_WIDTH);
+  const widthSnap = {
+    width:    container.style.width,
+    minWidth: container.style.minWidth,
+    maxWidth: container.style.maxWidth,
+  };
+  // Force the cross-axis (width) only. Touching `flex` would set the flex
+  // basis on the main axis — and #share-view is `flex-direction: column`,
+  // so a flex-basis of 2400px would lock the panel HEIGHT to 2400 and
+  // produce a square PNG. We leave flex alone so height stays driven by
+  // the parent's available space + content, and the panel keeps its
+  // natural wide-rectangle aspect.
+  container.style.width    = EXPORT_WIDTH + 'px';
+  container.style.minWidth = EXPORT_WIDTH + 'px';
+  container.style.maxWidth = EXPORT_WIDTH + 'px';
+  // Force layout reflow before recomputing canvas + calendar dimensions.
+  void container.offsetWidth;
+  // Redraw the equity canvas at the new wrap dimensions (post-widening).
+  _svDrawEquity(trades);
+  // Recompute the uniform-row min-height for the wider cells, so the
+  // calendar's monthly grid distributes correctly at export size.
+  const _expMonthGrid = container.querySelector('.sv-cal-month-grid');
+  if (_expMonthGrid) {
+    let _expMaxH = 0;
+    _expMonthGrid.querySelectorAll('.sv-cal-month-day-value').forEach(c => {
+      if (c.scrollHeight > _expMaxH) _expMaxH = c.scrollHeight;
+    });
+    if (_expMaxH > 0) _expMonthGrid.style.setProperty('--sv-cal-row-min-h', _expMaxH + 'px');
+  }
+
   const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#070c18';
   const scale   = 2;
 
@@ -29200,6 +29238,22 @@ function exportShareView() {
       container.style.maxHeight        = prevInline.maxHeight;
       container.style.gridTemplateRows = prevInline.gridTemplateRows;
       container.scrollTop              = prevInline.scrollTop;
+      // Restore the canonical-export-width override so the live panel goes
+      // back to its viewport-driven size. Done first so the equity redraw
+      // and calendar row recompute below see the live dimensions.
+      container.style.width    = widthSnap.width;
+      container.style.minWidth = widthSnap.minWidth;
+      container.style.maxWidth = widthSnap.maxWidth;
+      void container.offsetWidth;
+      try { _svDrawEquity(trades); } catch (e) { /* swallow restore draws */ }
+      if (_expMonthGrid) {
+        let _liveMaxH = 0;
+        _expMonthGrid.querySelectorAll('.sv-cal-month-day-value').forEach(c => {
+          if (c.scrollHeight > _liveMaxH) _liveMaxH = c.scrollHeight;
+        });
+        if (_liveMaxH > 0) _expMonthGrid.style.setProperty('--sv-cal-row-min-h', _liveMaxH + 'px');
+        else _expMonthGrid.style.removeProperty('--sv-cal-row-min-h');
+      }
       // Restore calendar-alignment snapshots (guarded — they are only
       // populated when the aligning if-branch ran).
       if (calSnap) {

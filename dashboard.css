@@ -9294,14 +9294,38 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
    ~370px → content-box ~332px. We want normal mode at the user's typical
    width, so the threshold sits below 332 to leave a real bar track. */
 @container svbars (max-width: 290px) {
+  /* Stacked layout: full-width label on top, track + value below — so the
+     bar chart stays visible AND long setup names ("External Confirmation -
+     Type X") render in full when the widget is too narrow for a single-row
+     layout. Each row takes ~2× height; row 5 of the share-view grid grows
+     accordingly. */
   #sv-bars-setup .bar-row {
-    grid-template-columns: 1fr auto;
-    justify-items: center;
-    column-gap: 10px;
+    grid-template-columns: 1fr 70px;
+    grid-template-rows: auto auto;
+    row-gap: 2px;
+    column-gap: 6px;
+    align-items: center;
+    justify-items: stretch;
   }
-  #sv-bars-setup .bar-row .bar-track { display: none; }
-  #sv-bars-setup .bar-label { text-align: center; }
-  #sv-bars-setup .bar-val   { justify-self: center; text-align: center; }
+  #sv-bars-setup .bar-label {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    text-align: left;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.2;
+  }
+  #sv-bars-setup .bar-track {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  #sv-bars-setup .bar-val {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    text-align: right;
+  }
 }
 
 /* ═══════════════════════════════════════
