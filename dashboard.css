@@ -8519,8 +8519,9 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   --sv-fs-small:    10px;  /* trade rows, controls (mode toggle, share btn) */
   --sv-fs-body:     11px;  /* secondary body, weekly trade-count, head-meta */
   --sv-fs-header:   12px;  /* widget headers, day numbers, bar labels/values */
-  --sv-fs-week:     15px;  /* weekly P&L value in the calendar's right column */
-  --sv-fs-kpi-val:  22px;  /* day total in calendar cells, month summary total */
+  --sv-fs-week:     15px;  /* day total inside calendar cells */
+  --sv-fs-week-val: 18px;  /* weekly P&L value in the calendar's right column */
+  --sv-fs-kpi-val:  22px;  /* month summary total at the top of the calendar */
   --sv-fs-display:  26px;  /* page title (e.g. "MARCH 2026") */
   --sv-fs-kpi-big:  26px;  /* primary KPI values in the stats strip */
 }
@@ -8859,7 +8860,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .sv-cal-month-daynum-empty { color: rgba(255,255,255,0.16); }
 .sv-cal-month-total {
   font-family: 'Anybody', sans-serif;
-  font-size: var(--sv-fs-kpi-val);
+  font-size: var(--sv-fs-week);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
@@ -8923,7 +8924,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .sv-cal-weekcell-empty { opacity: 0.22; }
 .sv-cal-weekvalue {
   font-family: 'Anybody', sans-serif;
-  font-size: var(--sv-fs-week);
+  font-size: var(--sv-fs-week-val);
   font-weight: 800;
   color: var(--sv-cal-week-fg, var(--body));
   line-height: 1;
