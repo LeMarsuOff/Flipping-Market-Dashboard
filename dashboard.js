@@ -28831,20 +28831,30 @@ function exportShareView() {
   // restored in the .finally() block so the live view is unaffected.
   const EXPORT_MIN_WIDTH = 2400;
   const EXPORT_WIDTH = Math.max(container.offsetWidth || 0, EXPORT_MIN_WIDTH);
+  // Also enforce a minimum HEIGHT proportional to the width. Without this,
+  // a small viewport's parent height is short → equity widget is short →
+  // the calendar (force-aligned to equity + pair/setup) is short → mini-
+  // calendar cells get visually squished even though the PNG is wide. The
+  // 10:3 aspect ratio matches the user's preferred big-screen rendering.
+  const EXPORT_TARGET_ASPECT = 10 / 3;
+  const EXPORT_MIN_HEIGHT = Math.round(EXPORT_WIDTH / EXPORT_TARGET_ASPECT);
+  const EXPORT_HEIGHT = Math.max(container.offsetHeight || 0, EXPORT_MIN_HEIGHT);
   const widthSnap = {
-    width:    container.style.width,
-    minWidth: container.style.minWidth,
-    maxWidth: container.style.maxWidth,
+    width:     container.style.width,
+    minWidth:  container.style.minWidth,
+    maxWidth:  container.style.maxWidth,
+    height:    container.style.height,
+    minHeight: container.style.minHeight,
   };
-  // Force the cross-axis (width) only. Touching `flex` would set the flex
-  // basis on the main axis — and #share-view is `flex-direction: column`,
-  // so a flex-basis of 2400px would lock the panel HEIGHT to 2400 and
-  // produce a square PNG. We leave flex alone so height stays driven by
-  // the parent's available space + content, and the panel keeps its
-  // natural wide-rectangle aspect.
-  container.style.width    = EXPORT_WIDTH + 'px';
-  container.style.minWidth = EXPORT_WIDTH + 'px';
-  container.style.maxWidth = EXPORT_WIDTH + 'px';
+  // Force the cross-axis (width) only — never `flex`, since #share-view is
+  // flex-direction: column and a flex-basis would lock the height instead.
+  // Height is set via the standalone `height` / `min-height` properties
+  // which work in flex children without that side effect.
+  container.style.width     = EXPORT_WIDTH + 'px';
+  container.style.minWidth  = EXPORT_WIDTH + 'px';
+  container.style.maxWidth  = EXPORT_WIDTH + 'px';
+  container.style.height    = EXPORT_HEIGHT + 'px';
+  container.style.minHeight = EXPORT_HEIGHT + 'px';
   // Force layout reflow before recomputing canvas + calendar dimensions.
   void container.offsetWidth;
   // Redraw the equity canvas at the new wrap dimensions (post-widening).
@@ -29241,9 +29251,11 @@ function exportShareView() {
       // Restore the canonical-export-width override so the live panel goes
       // back to its viewport-driven size. Done first so the equity redraw
       // and calendar row recompute below see the live dimensions.
-      container.style.width    = widthSnap.width;
-      container.style.minWidth = widthSnap.minWidth;
-      container.style.maxWidth = widthSnap.maxWidth;
+      container.style.width     = widthSnap.width;
+      container.style.minWidth  = widthSnap.minWidth;
+      container.style.maxWidth  = widthSnap.maxWidth;
+      container.style.height    = widthSnap.height;
+      container.style.minHeight = widthSnap.minHeight;
       void container.offsetWidth;
       try { _svDrawEquity(trades); } catch (e) { /* swallow restore draws */ }
       if (_expMonthGrid) {
