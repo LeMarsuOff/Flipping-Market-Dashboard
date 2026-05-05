@@ -8046,7 +8046,9 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .wd-drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 14px 20px;
+  /* Horizontal + bottom padding only. The top is reserved by the sticky
+     section header (.wd-day-sep) so trade cards never peek above it. */
+  padding: 0 14px 20px;
 }
 .wd-trade-card {
   border-radius: 4px;
@@ -8057,6 +8059,9 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   margin-bottom: 6px;
   border: 1.5px solid transparent;
   transition: border-color .15s;
+  /* Sit below the sticky section header so cards never bleed over it. */
+  position: relative;
+  z-index: 1;
 }
 .wd-trade-card-tp { background: rgba(110,224,180,.12); }
 .wd-trade-card-sl { background: rgba(224,90,114,.12); }
@@ -8067,18 +8072,27 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent);
 }
 .wd-day-sep {
-  padding: 5px 10px;
-  margin: 10px 0 6px;
-  background: var(--bg2);
-  border-top: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 9px 14px;
+  /* No top margin — the sep sits flush against the drawer head so cards
+     scrolling underneath cannot show in the gap. */
+  margin: 0 -14px 6px;
+  /* Solid bg layer (--bg1) + overlay layer (--bg2) guarantees full opacity
+     even if a theme assigns alpha to --bg2. */
+  background-color: var(--bg1);
+  background-image: linear-gradient(var(--bg2), var(--bg2));
   border-bottom: 1px solid var(--line);
+  /* Drop shadow gives a subtle visual cue that content scrolls underneath. */
+  box-shadow: 0 4px 6px -4px rgba(0, 0, 0, 0.45);
   font-family: 'DM Mono', monospace;
   font-size: var(--typo-micro-size);
   letter-spacing: .6px;
   color: var(--dim);
   text-transform: uppercase;
 }
-.wd-day-sep:first-child { margin-top: 0; }
+.wd-day-sep + .wd-trade-card { margin-top: 8px; }
 .wd-drawer-body-recovery { padding: 10px 12px 20px; }
 .wd-occ {
   border: 1px solid var(--line2);

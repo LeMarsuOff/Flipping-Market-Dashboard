@@ -1367,7 +1367,11 @@ function handleActionClick(event) {
               ((t.hour ?? null) === hour) &&
               Math.abs((Number(t.r) || 0) - rVal) < 1e-6
             ) || null;
-            openWidgetDrawer('Trade Log', null, allTrades, highlight, { groupByDay: true });
+            const _tlSorted = _sortTradesForTradeLog(allTrades);
+            openWidgetDrawer('Trade Log', null, _tlSorted, highlight, {
+              preserveOrder: true,
+              groupByCol: tableSort.col,
+            });
           }
         }
       }
@@ -1429,7 +1433,11 @@ function handleActionClick(event) {
         ((t.hour ?? null) === hour) &&
         Math.abs((Number(t.r) || 0) - rVal) < 1e-6
       ) || null;
-      openWidgetDrawer('Trade Log', null, allTrades, highlight, { groupByDay: true });
+      const _tlSorted = _sortTradesForTradeLog(allTrades);
+      openWidgetDrawer('Trade Log', null, _tlSorted, highlight, {
+        preserveOrder: true,
+        groupByCol: tableSort.col,
+      });
       break;
     }
     case 'close-widget-drawer': closeWidgetDrawer(); break;
@@ -5938,7 +5946,24 @@ function _lbShow(tradeIdx, step) {
     const activeBtn = document.querySelector(`#wd-drawer [data-img-url="${CSS.escape(url)}"]`);
     if (activeBtn) {
       const card = activeBtn.closest('.wd-trade-card');
-      if (card) { card.style.borderColor = 'var(--gold)'; card.scrollIntoView({ block: 'nearest' }); }
+      if (card) {
+        card.style.borderColor = 'var(--gold)';
+        // Only scroll when the card is fully outside the drawer body. The
+        // built-in `scrollIntoView({ block: 'nearest' })` was nudging the
+        // card to the edge on every keystroke (felt like the drawer
+        // "snapped back" each time the lightbox crossed a day separator).
+        const body = card.closest('.wd-drawer-body');
+        if (body) {
+          const cRect = body.getBoundingClientRect();
+          const eRect = card.getBoundingClientRect();
+          if (eRect.bottom <= cRect.top) {
+            body.scrollTop += (eRect.top - cRect.top);
+          } else if (eRect.top >= cRect.bottom) {
+            body.scrollTop += (eRect.bottom - cRect.bottom);
+          }
+          // Otherwise (partially or fully visible) leave scroll position alone.
+        }
+      }
       activeBtn.style.outline = '2px solid var(--a)';
       activeBtn.style.borderRadius = '3px';
     }
@@ -8910,7 +8935,7 @@ function updateSortButtons() {
   const el = document.getElementById(id);
   if (el) el.classList.add('active');
   // Update column header arrows
-  const cols = ['date','pair','outcome','r'];
+  const cols = ['date','pair','outcome','r','direction','setup','session','day','obstacles'];
   cols.forEach(c => {
     const arrow = document.getElementById('tharr-' + c);
     const th = arrow?.parentElement;
@@ -8928,6 +8953,63 @@ function updateSortButtons() {
 // ══════════════════════════════════════════════════════
 // TRADE TABLE RENDERER
 // ══════════════════════════════════════════════════════
+
+// Shared comparator: applies the active `tableSort` (col + dir) to a trade
+// list. Used both by renderTable and by the drawer openers so the right-side
+// drawer respects whatever column the user sorted by (date, pair, outcome,
+// R, etc.) — without this, arrow-key nav in the lightbox would jump around
+// in chronological order while the visible Trade Log shows another order.
+function _sortTradesForTradeLog(trades) {
+  const cfg = appState.ui.tpConfig;
+  const { col, dir } = tableSort;
+  // Pre-decorate __isLoss once per trade so the date-tiebreaker comparator
+  // doesn't pay an isLoser hash recompute on every comparison (~2N log N
+  // calls). Cleaned up after the sort to avoid leaking the transient flag.
+  for (const t of trades) t.__isLoss = isLoser(t, cfg);
+  // Helpers to coerce field values onto a comparable scalar key so direction,
+  // setup, session, day and obstacles can use the generic asc/desc compare.
+  const _firstObstacle = t => {
+    const arr = Array.isArray(t.obstacles) ? t.obstacles : [];
+    return (arr[0] || '').toLowerCase();
+  };
+  const _dayOrder = t => {
+    const idx = DAY_ORDER.indexOf(t.day);
+    return idx === -1 ? 99 : idx;
+  };
+  const _getKey = t => {
+    switch (col) {
+      case 'date':      return t.date || '';
+      case 'pair':      return (t.pair || '').toLowerCase();
+      case 'outcome':   return (t.outcome || '').toLowerCase();
+      case 'r':         return Number(t.r) || 0;
+      case 'direction': return (t.direction || '').toLowerCase();
+      case 'setup':     return (t.setup || '').toLowerCase();
+      case 'session':   return (t.session || '').toLowerCase();
+      case 'day':       return _dayOrder(t);
+      case 'obstacles': return _firstObstacle(t);
+      default:          return '';
+    }
+  };
+  const sorted = [...trades].sort((a, b) => {
+    const va = _getKey(a);
+    const vb = _getKey(b);
+    if (va < vb) return dir === 'asc' ? -1 : 1;
+    if (va > vb) return dir === 'asc' ? 1 : -1;
+    // Date tie-breaker: hour asc, then losses-first within same date.
+    if (col === 'date') {
+      const h = (a.hour ?? 99) - (b.hour ?? 99);
+      if (h !== 0) return h;
+      const aIsLoss = a.__isLoss;
+      const bIsLoss = b.__isLoss;
+      if (aIsLoss && !bIsLoss) return dir === 'asc' ? -1 : 1;
+      if (!aIsLoss && bIsLoss) return dir === 'asc' ?  1 : -1;
+    }
+    return 0;
+  });
+  for (const t of trades) delete t.__isLoss;
+  return sorted;
+}
+
 function renderTable(trades) {
   const tbody = document.getElementById('trade-tbody');
   if (!tbody) return;
@@ -8950,30 +9032,9 @@ function renderTable(trades) {
   const _tlDaySz     = tc('--typo-tl-day-size');
   const _tlObsSz     = tc('--typo-tl-obs-size');
 
-  // Sort
-  const { col, dir } = tableSort;
-  // Pre-decorate __isLoss once per trade so the date-tiebreaker comparator
-  // doesn't pay an isLoser hash recompute on every comparison (~2N log N
-  // calls). Cleaned up after the sort to avoid leaking the transient flag.
-  for (const t of trades) t.__isLoss = isLoser(t, cfg);
-  const sorted = [...trades].sort((a, b) => {
-    let va = a[col], vb = b[col];
-    if (col === 'date') { va = va || ''; vb = vb || ''; }
-    if (col === 'pair' || col === 'outcome') { va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase(); }
-    if (col === 'r') { va = Number(va) || 0; vb = Number(vb) || 0; }
-    if (va < vb) return dir === 'asc' ? -1 : 1;
-    if (va > vb) return dir === 'asc' ? 1 : -1;
-    if (col === 'date') {
-      const h = (a.hour ?? 99) - (b.hour ?? 99);
-      if (h !== 0) return h;
-      const aIsLoss = a.__isLoss;
-      const bIsLoss = b.__isLoss;
-      if (aIsLoss && !bIsLoss) return dir === 'asc' ? -1 : 1;
-      if (!aIsLoss && bIsLoss) return dir === 'asc' ?  1 : -1;
-    }
-    return 0;
-  });
-  for (const t of trades) delete t.__isLoss;
+  // Sort using the shared Trade Log comparator so the drawer (also a caller)
+  // can mirror the exact same order.
+  const sorted = _sortTradesForTradeLog(trades);
 
   const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl' };
   const rowBg = { 'TP': getWinColorAlpha(.25), 'SL': getLossColorAlpha(.27), 'BE-TP': 'rgba(41,98,255,.22)', 'BE-SL': 'rgba(180,120,240,.22)' };
@@ -12377,8 +12438,20 @@ function _wdTradeCard(t) {
 function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts = {}) {
   if (!trades || !trades.length) return;
 
-  // Sort: date asc, then hour asc
-  const sorted = _sortTradesChronological(trades);
+  // Sort:
+  //  - opts.preserveOrder=true → caller already pre-sorted (e.g. Trade Log
+  //    passes its current sort by date / pair / outcome / R / etc.). The
+  //    drawer order must mirror the source widget so arrow-key navigation
+  //    in the lightbox feels consistent — _lbData is built from DOM order
+  //    so it inherits this automatically.
+  //  - otherwise → default chronological asc, with optional reverse for desc.
+  let sorted;
+  if (opts.preserveOrder) {
+    sorted = [...trades];
+  } else {
+    sorted = _sortTradesChronological(trades);
+    if (opts.sortDir === 'desc') sorted = sorted.reverse();
+  }
 
   // Aggregate stats from the trade list
   const tpConfig = appState.ui.tpConfig;
@@ -12387,7 +12460,42 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
   const n      = sorted.length;
   const sign   = totalR >= 0 ? '+' : '';
   const col    = totalR >= 0 ? 'var(--g)' : 'var(--r)';
-  const groupByDay = !!opts.groupByDay;
+  // groupByCol: string column name to insert section separators on
+  // (e.g. 'date', 'pair', 'session', 'setup'). Leave null/empty to render a
+  // flat list. Excludes 'r' (numeric grouping makes no sense).
+  const groupCol = (opts.groupByCol && opts.groupByCol !== 'r') ? opts.groupByCol : null;
+  const _sectionKey = (t) => {
+    switch (groupCol) {
+      case 'date':      return t.date || '';
+      case 'pair':      return t.pair || '';
+      case 'outcome':   return t.outcome || '';
+      case 'direction': return t.direction || '';
+      case 'setup':     return t.setup || '';
+      case 'session':   return t.session || '';
+      case 'day':       return t.day || '';
+      case 'obstacles': {
+        const arr = Array.isArray(t.obstacles) ? t.obstacles : [];
+        return arr[0] || '';
+      }
+      default: return '';
+    }
+  };
+  const _sectionLabel = (t) => {
+    switch (groupCol) {
+      case 'date':      return `${t.date || '—'}${t.day ? ' · ' + (DAY_EN[t.day] || t.day) : ''}`;
+      case 'pair':      return t.pair || '—';
+      case 'outcome':   return t.outcome || '—';
+      case 'direction': return t.direction || '—';
+      case 'setup':     return t.setup || '—';
+      case 'session':   return t.session || '—';
+      case 'day':       return DAY_EN[t.day] || t.day || '—';
+      case 'obstacles': {
+        const arr = Array.isArray(t.obstacles) ? t.obstacles : [];
+        return arr[0] || '—';
+      }
+      default: return '';
+    }
+  };
 
   // Create drawer & backdrop once; reuse afterwards
   let drawer = document.getElementById('wd-drawer');
@@ -12418,11 +12526,12 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
       </div>
     </div>
     <div class="wd-drawer-body">${
-      groupByDay
+      groupCol
         ? sorted.map((t, i) => {
-            const prev = i > 0 ? sorted[i - 1].date : null;
-            const sep = t.date !== prev
-              ? `<div class="wd-day-sep">${t.date || '—'}${t.day ? ' · ' + (DAY_EN[t.day] || t.day) : ''}</div>`
+            const prevKey = i > 0 ? _sectionKey(sorted[i - 1]) : null;
+            const curKey  = _sectionKey(t);
+            const sep = curKey !== prevKey
+              ? `<div class="wd-day-sep">${_sectionLabel(t)}</div>`
               : '';
             return sep + _wdTradeCard(t);
           }).join('')
