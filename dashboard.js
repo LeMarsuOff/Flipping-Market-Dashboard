@@ -771,9 +771,15 @@ function _syncLiveSlotFromActiveChips() {
     const src = appState.filters.chips[dimKey];
     if (!src) { slot.chips[dimKey] = { included: [], excluded: [] }; continue; }
     _ensureFromPresetSets(src);
+    // removedFromIncluded/Excluded — preset values stripped from their original
+    // bucket (classic tombstone OR flipped to the other bucket). Persisted so a
+    // refresh doesn't un-tombstone them when _hydrateChipsFromSnapshot re-adds
+    // every preset value back to main.
     slot.chips[dimKey] = {
       included: [...src.included].filter(v => !src.includedFromPreset.has(v)),
       excluded: [...src.excluded].filter(v => !src.excludedFromPreset.has(v)),
+      removedFromIncluded: [...src.includedFromPreset].filter(v => !src.included.has(v)),
+      removedFromExcluded: [...src.excludedFromPreset].filter(v => !src.excluded.has(v)),
     };
   }
 
@@ -3153,9 +3159,11 @@ function _restoreFilterState(saved) {
     } else {
       savedEntry.included?.forEach(v => entry.included.add(v));
       savedEntry.excluded?.forEach(v => entry.excluded.add(v));
-      // v2: restore fromPreset flags. Enforce subset invariant at read time.
-      savedEntry.includedFromPreset?.forEach(v => { if (entry.included.has(v)) entry.includedFromPreset.add(v); });
-      savedEntry.excludedFromPreset?.forEach(v => { if (entry.excluded.has(v)) entry.excludedFromPreset.add(v); });
+      // Restore fromPreset flags verbatim — fromPreset and main decouple to
+      // support tombstoned chips (a value in fromPreset but not in main is a
+      // tombstone; the previous "subset invariant" filter wiped them on refresh).
+      savedEntry.includedFromPreset?.forEach(v => entry.includedFromPreset.add(v));
+      savedEntry.excludedFromPreset?.forEach(v => entry.excludedFromPreset.add(v));
     }
     // Normalize mode based on contents (drop any stale click-mode feedback)
     if (entry.included.size === 0 && entry.excluded.size === 0)      entry.mode = 'neutral';
@@ -4727,6 +4735,15 @@ function _hydrateChipsFromLiveSlot(slot) {
       (dim.excluded || []).forEach(v => {
         if (entry.excludedFromPreset.has(v)) return;
         _setChipValue(entry, 'excluded', v, 'add', false);
+      });
+      // Re-apply tombstones (and flipped chips) that the user persisted in
+      // the live slot. Keeps fromPreset flag intact so _hydrateChipsFromSnapshot
+      // populated lineage is preserved for tombstone rendering.
+      (dim.removedFromIncluded || []).forEach(v => {
+        if (entry.includedFromPreset.has(v)) entry.included.delete(v);
+      });
+      (dim.removedFromExcluded || []).forEach(v => {
+        if (entry.excludedFromPreset.has(v)) entry.excluded.delete(v);
       });
       if (entry.included.size && !entry.excluded.size) entry.mode = 'include';
       else if (!entry.included.size && entry.excluded.size) entry.mode = 'exclude';
@@ -8491,14 +8508,14 @@ function drawMonthly(trades) {
         const barH = Math.abs(toYz(posTotal) - y0);
         if (barH > 10) {
           ctx.fillStyle = tcRgba('--g', 0.85);
-          ctx.fillText('+' + posTotal.toFixed(1), x, toYz(posTotal) - 3);
+          ctx.fillText('+' + posTotal.toFixed(1) + 'R', x, toYz(posTotal) - 3);
         }
       }
       if (N <= 24 && negTotal < 0) {
         const barH = Math.abs(toYz(negTotal) - y0);
         if (barH > 10) {
           ctx.fillStyle = tcRgba('--r', 0.85);
-          ctx.fillText('−' + Math.abs(negTotal).toFixed(1), x, toYz(negTotal) + 10);
+          ctx.fillText('−' + Math.abs(negTotal).toFixed(1) + 'R', x, toYz(negTotal) + 10);
         }
       }
     } else {
@@ -8507,7 +8524,7 @@ function drawMonthly(trades) {
         ctx.fillStyle = monthly[m].r >= 0 ? tcRgba('--g', 0.85) : tcRgba('--r', 0.85);
         ctx.font = `bold ${_fsBar} DM Mono`; ctx.textAlign = 'center';
         const labelY = monthly[m].r >= 0 ? toYz(monthly[m].r) - 3 : toYz(monthly[m].r) + 10;
-        ctx.fillText((monthly[m].r>=0?'+':'−')+Math.abs(monthly[m].r).toFixed(1), x, labelY);
+        ctx.fillText((monthly[m].r>=0?'+':'−')+Math.abs(monthly[m].r).toFixed(1) + 'R', x, labelY);
       }
     }
   });
@@ -19242,6 +19259,13 @@ function _buildBarTipHTML(label, n, oc) {
       <span style="color:${_kpiTooltipColor(+wr, 'wr')};font-weight:700">${wr}%</span>
     </div>
     ${(() => {
+      const avgR = n > 0 ? (tpR + slR + betpR + beslR) / n : 0;
+      return `<div class="utip-row">
+      <span class="utip-label">Avg R</span>
+      <span style="color:${_kpiTooltipColor(avgR, 'avgr')};font-weight:700">${fmt(avgR)}</span>
+    </div>`;
+    })()}
+    ${(() => {
       if (!showBreakdown) {
         const net = tpR + slR + betpR + beslR;
         return `<div class="utip-row">
@@ -24098,6 +24122,8 @@ function loadPresetLiveFilters() {
           const src = slot.chips[dk] || {};
           dst.chips[dk].included = Array.isArray(src.included) ? src.included.slice() : [];
           dst.chips[dk].excluded = Array.isArray(src.excluded) ? src.excluded.slice() : [];
+          dst.chips[dk].removedFromIncluded = Array.isArray(src.removedFromIncluded) ? src.removedFromIncluded.slice() : [];
+          dst.chips[dk].removedFromExcluded = Array.isArray(src.removedFromExcluded) ? src.removedFromExcluded.slice() : [];
         }
       }
       if (slot && slot.customChips && typeof slot.customChips === 'object') {
@@ -24161,8 +24187,12 @@ function savePresetLiveFilters() {
       const chipsOut = {};
       let hasAny = false;
       for (const [dk, dim] of Object.entries(slot.chips || {})) {
-        if ((dim.included?.length || 0) + (dim.excluded?.length || 0) === 0) continue;
+        const rmInc = dim.removedFromIncluded || [];
+        const rmExc = dim.removedFromExcluded || [];
+        if ((dim.included?.length || 0) + (dim.excluded?.length || 0) + rmInc.length + rmExc.length === 0) continue;
         chipsOut[dk] = { included: dim.included.slice(), excluded: dim.excluded.slice() };
+        if (rmInc.length) chipsOut[dk].removedFromIncluded = rmInc.slice();
+        if (rmExc.length) chipsOut[dk].removedFromExcluded = rmExc.slice();
         hasAny = true;
       }
       const customOut = {};
