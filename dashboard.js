@@ -28822,23 +28822,21 @@ function exportShareView() {
   })();
   _svDrawEquity(trades);
 
-  // ── Pin the panel to (at least) a canonical export width ────────────
-  // Without this the PNG inherits the live viewport width: a user copying
-  // from a 1366px laptop gets a much narrower image than one copying from
-  // a 1920px screen. We bump the panel up to at least 2400px so small
-  // screens produce a properly wide share image — but never DOWN, so big
-  // screens (>2400px) keep their natural larger rendering. The width is
-  // restored in the .finally() block so the live view is unaffected.
-  const EXPORT_MIN_WIDTH = 2400;
-  const EXPORT_WIDTH = Math.max(container.offsetWidth || 0, EXPORT_MIN_WIDTH);
-  // Also enforce a minimum HEIGHT proportional to the width. Without this,
-  // a small viewport's parent height is short → equity widget is short →
-  // the calendar (force-aligned to equity + pair/setup) is short → mini-
-  // calendar cells get visually squished even though the PNG is wide. The
-  // 10:3 aspect ratio matches the user's preferred big-screen rendering.
-  const EXPORT_TARGET_ASPECT = 10 / 3;
-  const EXPORT_MIN_HEIGHT = Math.round(EXPORT_WIDTH / EXPORT_TARGET_ASPECT);
-  const EXPORT_HEIGHT = Math.max(container.offsetHeight || 0, EXPORT_MIN_HEIGHT);
+  // ── Pin the panel to canonical export dimensions ────────────────────
+  // Both width AND height are FIXED regardless of viewport so every
+  // screen — laptop, ultrawide, anything in between — produces a byte-
+  // identical PNG. Earlier iterations only enforced a minimum on each
+  // axis, which let big screens use their native (taller) layout while
+  // small screens fell back to a short, calendar-squashed render.
+  //
+  // Aspect 3760:1617 ≈ 2.326:1 matches the natural layout proportion
+  // observed on the user's big-screen exports — the share view's grid
+  // (`grid-template-rows: auto auto 1fr 1fr 2fr`) needs that vertical
+  // budget for the monthly calendar cells to breathe.
+  // Width 2400 live → 4800 PNG @ scale=2; height ~1032 live → ~2064 PNG.
+  // Restored in the .finally() block so the live view is unaffected.
+  const EXPORT_WIDTH  = 2400;
+  const EXPORT_HEIGHT = Math.round(EXPORT_WIDTH * 1617 / 3760);
   const widthSnap = {
     width:     container.style.width,
     minWidth:  container.style.minWidth,
@@ -28881,6 +28879,7 @@ function exportShareView() {
     maxHeight:         container.style.maxHeight,
     scrollTop:         container.scrollTop,
     gridTemplateRows:  container.style.gridTemplateRows,
+    alignContent:      container.style.alignContent,
   };
 
   // Every widget / scroll-well whose height we'll stretch to its content
@@ -28924,6 +28923,13 @@ function exportShareView() {
   container.style.maxHeight         = 'none';
   container.style.height            = 'auto';
   container.style.gridTemplateRows  = 'auto auto auto auto auto';
+  // Disable the default `align-content: stretch` distribution. Without this,
+  // the canonical-export min-height forces leftover space to be spread across
+  // every auto row, which drifts pair / setup / cal bottoms relative to each
+  // other (each widget has an explicit height that doesn't grow with the
+  // stretched track). Excess space is instead absorbed by growing equity at
+  // the end of the setTimeout block below.
+  container.style.alignContent      = 'start';
   container.classList.add('sv-export-capture');
 
   // Neutralise flex constraints on every scroll-well so they can grow
@@ -29001,9 +29007,16 @@ function exportShareView() {
       const hEquity   = elEquity.offsetHeight;
       const hPair     = elPair.offsetHeight;
       const hSetup    = elSetup.offsetHeight;
-      // Pair and Setup sit in the same grid row (side-by-side), so we take
-      // the taller of the two, not the sum.
-      const totalLeft = hEquity + Math.max(hPair, hSetup) + gap;
+      // Pair and Setup sit in the same grid row (side-by-side). The grid row
+      // sizes to max(pair, setup), but the SHORTER widget — pinned to its
+      // own scrollHeight in the second pass — would render above the row's
+      // bottom edge and leave its bottom Y above the taller widget's bottom
+      // (and above the calendar bottom). Force both to the same height so
+      // pair / setup / cal all bottom-align to the same Y in the export.
+      const row5Height = Math.max(hPair, hSetup);
+      elPair.style.height  = row5Height + 'px';
+      elSetup.style.height = row5Height + 'px';
+      const totalLeft = hEquity + row5Height + gap;
 
       // Calendar's intrinsic content height (the widget was pinned to its
       // scrollHeight in the second pass, so offsetHeight reflects the height
@@ -29012,7 +29025,20 @@ function exportShareView() {
       // so both columns stay aligned at the bottom and nothing in the
       // calendar gets clipped in the exported PNG.
       const calNatural = elCal.offsetHeight;
-      const targetHeight = Math.max(totalLeft, calNatural);
+      // Compute the height the lower 3 rows MUST fill to occupy the canonical
+      // export container exactly. Without this, totalLeft + calNatural can be
+      // smaller than the container's enforced min-height — leaving leftover
+      // space that align-content would normally distribute across rows
+      // (which we disabled with `align-content: start`). Forcing the cal/equity
+      // pair to absorb that leftover keeps pair/setup/cal bottoms strictly
+      // aligned with each other AND with the bottom edge of the PNG.
+      const elDate  = container.querySelector('#sv-w-date');
+      const elStats = container.querySelector('#sv-w-stats');
+      const dateH   = elDate  ? elDate.offsetHeight  : 0;
+      const statsH  = elStats ? elStats.offsetHeight : 0;
+      const padding = 32; // 16 top + 16 bottom on #sv-export
+      const lower3Available = container.clientHeight - padding - dateH - statsH - 2 * gap;
+      const targetHeight = Math.max(totalLeft, calNatural, lower3Available);
       const equityDelta = targetHeight - totalLeft;
       if (equityDelta > 0) {
         equitySnap = {
@@ -29247,6 +29273,7 @@ function exportShareView() {
       container.style.height           = prevInline.height;
       container.style.maxHeight        = prevInline.maxHeight;
       container.style.gridTemplateRows = prevInline.gridTemplateRows;
+      container.style.alignContent     = prevInline.alignContent;
       container.scrollTop              = prevInline.scrollTop;
       // Restore the canonical-export-width override so the live panel goes
       // back to its viewport-driven size. Done first so the equity redraw
