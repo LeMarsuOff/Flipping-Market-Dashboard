@@ -4489,7 +4489,14 @@ function syncDashboardChrome() {
 function renderTopbarStats() {
   const container = document.getElementById('topbar-stats');
   if (!container) return;
-  container.innerHTML = TOPBAR_STAT_ITEMS.map(createTopbarStatCard).join('');
+  // Boot snapshot may have already injected last-session HTML inline (before
+  // dashboard.js loaded). Skip the placeholder rebuild in that case so the
+  // user keeps seeing real values instead of "—" cells until live _setText
+  // calls overwrite them.
+  const hasSnapshot = container.children.length > 0 && container.querySelector('.ts');
+  if (!hasSnapshot) {
+    container.innerHTML = TOPBAR_STAT_ITEMS.map(createTopbarStatCard).join('');
+  }
   _attachTopbarKpiTooltipsLive();
 }
 
@@ -9298,6 +9305,26 @@ function updateStats(stats) {
   _setText('k-be2-s', (beTot/stats.n*100).toFixed(0)+'% of total');
 
   updateStatsWidget(stats);
+  _saveBootSnapshot();
+}
+
+// Cache the rendered topbar KPI HTML so the next page load can inject it
+// inline (before dashboard.js runs) and show real values from first paint.
+// Debounced — render() fires often during interactions; we only need the
+// most recent state on disk.
+let _bootSnapTimer = null;
+function _saveBootSnapshot() {
+  if (_bootSnapTimer) clearTimeout(_bootSnapTimer);
+  _bootSnapTimer = setTimeout(() => {
+    try {
+      const ts = document.getElementById('topbar-stats');
+      if (!ts || !ts.children.length) return;
+      localStorage.setItem('dashboard_boot_snapshot_v1', JSON.stringify({
+        topbarStatsHtml: ts.innerHTML,
+        savedAt: Date.now(),
+      }));
+    } catch (e) { /* quota or serialize failure — silently skip */ }
+  }, 250);
 }
 
 // ── Stats Overview Widget ──
@@ -26134,8 +26161,20 @@ function initGridstack() {
   // becomes visible, which is fine.
   requestAnimationFrame(() => requestAnimationFrame(() => {
     render();
+    // Boot fade-in: now that the saved layout is applied and the first full
+    // render has run, reveal #main-panel. The CSS transition handles the fade.
+    document.body.classList.remove('is-booting');
   }));
 }
+
+// Safety net: if anything in the boot path throws and initGridstack never
+// reaches its final render, drop the booting class anyway so the user isn't
+// stuck staring at a hidden main panel. 2s is well past the normal init time.
+setTimeout(() => {
+  if (document.body.classList.contains('is-booting')) {
+    document.body.classList.remove('is-booting');
+  }
+}, 2000);
 
 function initShareGridstack() {
   if (_svGsReady) return;

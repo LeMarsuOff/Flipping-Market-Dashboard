@@ -1,4 +1,20 @@
 /* ══════════════════════════════════════════════════════════════════
+   BOOT FADE-IN — kills the "wrong layout flash" on refresh.
+   #main-panel is hidden until initGridstack finishes its final render
+   (which is when JS removes body.is-booting). Topbar KPIs come from a
+   localStorage snapshot injected before dashboard.js runs, so they're
+   visible from first paint with last-session values. Transition is
+   short — feels like a normal render, not a "loading screen".
+   ══════════════════════════════════════════════════════════════════ */
+body.is-booting #main-panel {
+  opacity: 0;
+  pointer-events: none;
+}
+#main-panel {
+  transition: opacity 0.18s ease-out;
+}
+
+/* ══════════════════════════════════════════════════════════════════
    DESIGN SYSTEM — 3-LAYER TOKEN ARCHITECTURE
    Layer A: Foundation  |  Layer B: Semantic  |  Layer C: Component
    ══════════════════════════════════════════════════════════════════ */

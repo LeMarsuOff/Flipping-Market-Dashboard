@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
 <link rel="stylesheet" href="dashboard.css?v=102">
 </head>
-<body>
+<body class="is-booting">
 
 <!-- ══ MOBILE SHELL ══ -->
 <div id="mobile-shell">
@@ -2402,6 +2402,24 @@
 <!-- ════════════════════════════════════════════════════════
      GRIDSTACK JS
 ════════════════════════════════════════════════════════ -->
+
+<!-- Boot snapshot: rehydrate topbar KPI HTML from the previous session so the
+     user sees real values from first paint instead of the empty "—" cells.
+     dashboard.js's renderTopbarStats checks for existing children and skips
+     the placeholder rebuild if our snapshot is in place. Live _setText calls
+     after data loads will overwrite the values in-place. -->
+<script>
+  try {
+    var _bootRaw = localStorage.getItem('dashboard_boot_snapshot_v1');
+    if (_bootRaw) {
+      var _bootSnap = JSON.parse(_bootRaw);
+      if (_bootSnap && _bootSnap.topbarStatsHtml) {
+        var _bootEl = document.getElementById('topbar-stats');
+        if (_bootEl && !_bootEl.children.length) _bootEl.innerHTML = _bootSnap.topbarStatsHtml;
+      }
+    }
+  } catch (e) {}
+</script>
 
 <!-- External libraries -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-all.js"></script>
