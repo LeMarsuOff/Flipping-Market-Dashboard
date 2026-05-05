@@ -13721,7 +13721,12 @@ function _mc2GetSyncedRR() {
 // Personalised exposes: { tpCount, targets:{tp1,tp2,tp3}, partials:{tp1,tp2,tp3} }
 //   - R values come from `targets.tpN`
 //   - Sizes come from `partials.tpN`
-//   - Reach % is computed from the dataset: % of trades with rrMax ≥ targetR
+//   - Reach % mirrors the Partial Optimizer's RR distribution
+//     (_poAcquireRRMaxArr + _poRenderRRDist): per-trade reach R via
+//     `_getTradeReachR` (max(rrMax, realizedR), with realizedR fallback when
+//     rrMax is missing), denom = trades.length. Trades with no rrMax stay in
+//     the denom and contribute 0R, matching PO semantics so the MC reach for
+//     a target R agrees with the PO's "≥ NR" chip for the same R.
 // Inactive TPs (when tpCount=2) get size=0 / R=0 / reach=0 so they're zero-EV.
 // Returns null if Personalised isn't active or trades data is unusable, in
 // which case the caller keeps the existing Multi-TP defaults / saved prefs.
@@ -13733,13 +13738,15 @@ function _mc2GetSyncedMultiTPs(trades) {
   const targets  = p.targets  || {};
   const partials = p.partials || {};
 
-  const validForReach = Array.isArray(trades)
-    ? trades.filter(t => Number.isFinite(t?.rrMax))
-    : [];
-  const denom = validForReach.length;
+  const arr = Array.isArray(trades) ? trades : [];
+  const rrReach = (typeof _getTradeReachR === 'function')
+    ? arr.map(t => _getTradeReachR(t))
+    : arr.map(t => (Number.isFinite(t?.rrMax) ? t.rrMax : 0));
+  const denom = rrReach.length;
   const reachPct = (R) => {
     if (!Number.isFinite(R) || R <= 0 || denom < 1) return 0;
-    const reached = validForReach.filter(t => t.rrMax >= R).length;
+    let reached = 0;
+    for (let i = 0; i < denom; i++) if (rrReach[i] >= R) reached++;
     return +(reached / denom * 100).toFixed(1);
   };
 
