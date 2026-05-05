@@ -14896,10 +14896,23 @@ function _rrSyncActiveFilterBadge() {
       // no topbar TPM badge in Fixed). Other modes keep ✕ as the clear cue.
       const isFixed = appState.ui.tpConfig?.mode === 'fixed';
       const lead = isFixed ? '⚓' : '✕';
-      topBtn.textContent = `${lead} RR ≥ ${appState.ui.rrMinFilter}R`;
+      const labelText = `RR ≥ ${appState.ui.rrMinFilter}R`;
+      // Icon + label in separate spans so the CSS can collapse the label at
+      // narrow widths. The full text remains accessible via the hover title.
+      topBtn.innerHTML = '';
+      const iconEl = document.createElement('span');
+      iconEl.className = 'rr-clear-icon';
+      iconEl.textContent = lead;
+      const labelEl = document.createElement('span');
+      labelEl.className = 'rr-clear-label';
+      labelEl.textContent = labelText;
+      topBtn.appendChild(iconEl);
+      topBtn.appendChild(labelEl);
+      topBtn.title = `${labelText} — click to clear RR filter`;
     } else {
       topBtn.style.display = 'none';
       topBtn.textContent = '';
+      topBtn.removeAttribute('title');
     }
   }
 
@@ -15015,8 +15028,21 @@ function _ppSyncActivePresetBadge() {
     return;
   }
 
-  btn.textContent = `${icon} ${label}`;
-  btn.title = tooltip;
+  // Icon + label in separate spans so the CSS can collapse the label at
+  // narrow widths (the icon stays as a compact badge; the full label is
+  // surfaced via the hover tooltip below).
+  btn.innerHTML = '';
+  const iconEl = document.createElement('span');
+  iconEl.className = 'tpm-badge-icon';
+  iconEl.textContent = icon;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'tpm-badge-label';
+  labelEl.textContent = label;
+  btn.appendChild(iconEl);
+  btn.appendChild(labelEl);
+  // Native `title` carries both the label content and the click hint, so the
+  // hover tooltip stays useful even when CSS hides the inline label.
+  btn.title = `${label} — ${tooltip}`;
   btn.style.display = '';
   if (variantClass) btn.classList.add(variantClass);
 
@@ -21555,6 +21581,13 @@ function _updateTpmBadge() {
   if (mobileText)  mobileText.textContent  = label;
   if (desktop) desktop.setAttribute('data-mode', mode);
   if (mobile)  mobile.setAttribute('data-mode', mode);
+  // Title carries the full label so hover surfaces "TP: Fixed/Multi/Custom"
+  // when the inline text is hidden at narrow widths (CSS rule on
+  // .dhb-badge-text under <=1280px). The "Switch TP Management mode" hint
+  // is appended so the click affordance stays discoverable.
+  const fullTitle = `${label} — Switch TP Management mode`;
+  if (desktop) desktop.title = fullTitle;
+  if (mobile)  mobile.title  = fullTitle;
   // Keep the mode-switcher dropdown in sync: options are the two INACTIVE
   // modes. Re-rendered on every mode change so switching via any entry
   // point (badge dropdown, modal, programmatic) leaves the menu coherent.

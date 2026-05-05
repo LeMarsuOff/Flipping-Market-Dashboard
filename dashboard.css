@@ -1741,18 +1741,24 @@ body.layout-edit-mode #layout-toolbar * {
   color: color-mix(in srgb, var(--r) 80%, var(--dim));
 }
 
-/* Topbar stats — compact strip */
+/* Topbar stats — compact strip.
+   `min-width: 0` + `flex: 1 1 0` lets the strip shrink to whatever space the
+   logo and topbar-right leave. Combined with the progressive padding/font
+   compaction at narrower viewports (see end of file), all 9 KPIs remain
+   visible from desktop down to the 768px mobile cut-off. */
 .topbar-stats {
   display: flex;
   align-items: stretch;
   gap: 0;
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   justify-content: center;
   overflow: hidden;
   height: 100%;
 }
 .ts {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -1768,6 +1774,7 @@ body.layout-edit-mode #layout-toolbar * {
   text-transform: var(--typo-topbar-lbl-tt);
   color: var(--text-muted);
   line-height: var(--typo-topbar-lbl-lh);
+  white-space: nowrap;
 }
 .ts-v {
   font-family: 'Anybody', sans-serif;
@@ -1775,6 +1782,7 @@ body.layout-edit-mode #layout-toolbar * {
   font-weight: var(--typo-topbar-val-weight);
   line-height: var(--typo-topbar-val-lh);
   letter-spacing: var(--typo-topbar-val-ls);
+  white-space: nowrap;
 }
 .ts-v.g { color: var(--g) }
 .ts-v.r { color: #c06070 }
@@ -9660,7 +9668,12 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   border: 1px solid color-mix(in srgb, var(--b) 40%, transparent);
   color: var(--b); cursor: pointer; white-space: nowrap;
   transition: all .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
+.rr-clear-topbar-btn .rr-clear-icon  { flex: 0 0 auto; }
+.rr-clear-topbar-btn .rr-clear-label { flex: 0 1 auto; }
 .rr-clear-topbar-btn:hover {
   background: color-mix(in srgb, var(--b) 28%, transparent);
   border-color: var(--b);
@@ -9686,6 +9699,8 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   transition: background .12s, border-color .12s, color .12s;
   white-space: nowrap;
 }
+.tpm-active-preset-topbar-btn .tpm-badge-icon  { flex: 0 0 auto; }
+.tpm-active-preset-topbar-btn .tpm-badge-label { flex: 0 1 auto; }
 .tpm-active-preset-topbar-btn:hover {
   background: color-mix(in srgb, var(--gold) 18%, var(--bg3));
   border-color: color-mix(in srgb, var(--gold) 55%, var(--border-normal));
@@ -11123,6 +11138,25 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   font-weight: 600;
 }
 
+/* Mode-specific icon prepended to the TPM badge. Stays visible at narrow
+   widths (where the .dhb-badge-text label is hidden — see end-of-file
+   responsive block) so the badge collapses to icon + chevron. The full
+   "TP: Fixed/Multi/Custom" label is preserved in the badge's title=
+   attribute (set by _updateTpmBadge) for hover detail. */
+.dhb-badge#tpm-badge::before,
+.dhb-badge#tpm-badge-mob::before {
+  display: inline-block;
+  margin-right: 3px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.dhb-badge#tpm-badge[data-mode="fixed"]::before,
+.dhb-badge#tpm-badge-mob[data-mode="fixed"]::before { content: '⚓'; }
+.dhb-badge#tpm-badge[data-mode="multi"]::before,
+.dhb-badge#tpm-badge-mob[data-mode="multi"]::before { content: '🪜'; }
+.dhb-badge#tpm-badge[data-mode="personalised"]::before,
+.dhb-badge#tpm-badge-mob[data-mode="personalised"]::before { content: '⚡'; }
+
 /* ── TPM badge dropdown: bubble popup with tail, adaptive alignment ──
    The badge is the trigger. Bubble anchors below with an 8px gap, a
    7px upward-pointing tail, and centered-by-default placement (JS flips
@@ -12031,22 +12065,25 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   opacity: 0.85;
 }
 
-/* ── KPI padding: tighten center cells at <=1536px. First tier of defense
-      against bilateral clipping of #topbar-stats. ── */
-@media (max-width: 1536px) {
-  .topbar-stats .ts { padding: 0 11px; }
-}
+/* ── Topbar compaction strategy ──
+      Goal: preserve the KPI strip's natural spacing as long as possible
+      by aggressively compacting the right-side elements first. Progression:
 
-/* ── Unified laptop compaction at <=1440px.
-      Consolidates three previously-separate breakpoints (1200/1280/1280) into
-      a single tier. In the 1281–1440px band, the first ("Trades") and last
-      ("BE Trades") cells of #topbar-stats were being bilaterally clipped
-      (justify-content:center + overflow:hidden) because the header-right
-      elements consumed too much space.
+        <=1680  : data-source labels, dhb labels/badge, status bar hidden
+                  (right-side text-only labels go first)
+        <=1500  : TPM mode badge text, rr-clear label, active-preset
+                  badge → icon-only (badge text content folds into hover
+                  titles)
+        <=1380  : KPI cell padding tightened (20→11px, mild)
+        <=1280  : KPI label font 10→9px, padding 5px
+        <=1100  : padding 3px, font 8/12, logo text hidden
+        <=900   : padding 2px, font 7/11, hide active-preset badge
 
       All hidden info stays accessible via title tooltips, kept in sync by
-      _syncDsButtonTitles() and _syncDataHubBtnTitle() in dashboard.js. ── */
-@media (max-width: 1440px) {
+      _syncDsButtonTitles(), _syncDataHubBtnTitle(), _ppSyncActivePresetBadge,
+      _updateTpmBadge, and _rrSyncActiveFilterBadge in dashboard.js. ── */
+
+@media (max-width: 1680px) {
   /* Data source buttons → icon only, no age badge, compact padding */
   .ds-btn-label  { display: none; }
   #ds-btn-age    { display: none; }
@@ -12060,6 +12097,80 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   .data-hub-btn .dhb-label { display: none; }
   .data-hub-btn .dhb-badge { display: none; }
   .data-hub-btn            { padding: 0 var(--space-2); gap: 0; }
+}
+
+@media (max-width: 1500px) {
+  /* Active TPM preset badge → icon-only. The verbose Custom/Multi summary
+     ("⚡ Custom 2R/3R/5R · 30/30/40", ~250px) collapses to the icon (~22px);
+     the full label is surfaced via the hover tooltip set in
+     _ppSyncActivePresetBadge. */
+  .tpm-active-preset-topbar-btn .tpm-badge-label { display: none; }
+  .tpm-active-preset-topbar-btn { padding: 5px 8px; gap: 0; }
+  /* TPM mode badge → icon + chevron only (text "TP: Fixed/Multi/Custom"
+     hidden). The mode-specific ::before emoji takes its place; the full
+     label is preserved in the badge's title= attribute for hover. */
+  #tpm-badge .dhb-badge-text,
+  #tpm-badge-mob .dhb-badge-text { display: none; }
+  /* Clear-RR-filter topbar button → icon-only ("⚓" or "✕"). The full
+     "RR ≥ Xr" label collapses to the hover title set in
+     _rrSyncActiveFilterBadge. */
+  .rr-clear-topbar-btn .rr-clear-label { display: none; }
+  .rr-clear-topbar-btn { padding: 5px 8px; gap: 0; }
+}
+
+@media (max-width: 1380px) {
+  /* Mild KPI padding compaction — first time the cells themselves
+     start tightening, after the right side has been fully compacted. */
+  .topbar-stats .ts { padding: 0 11px; }
+}
+
+@media (max-width: 1280px) {
+  /* Drop label font 10→9px directly on .ts-l. We don't go through the
+     `--typo-topbar-lbl-size` var here because the desktop-tier :root
+     overrides at <=1440 / <=1280 (lines ~4619 / ~4589) already pin it to
+     10px and the cascade order makes those win over a later :root
+     override at the same selector specificity when an outer-scope @media
+     also matches. Direct .ts-l/.ts-v rules bypass that cleanly. */
+  .topbar-stats .ts { padding: 0 5px; }
+  .topbar-stats .ts-l { font-size: 9px; }
+}
+
+@media (max-width: 1100px) {
+  .topbar-stats .ts { padding: 0 3px; gap: 2px; }
+  .topbar-stats .ts-l { font-size: 8px; }
+  .topbar-stats .ts-v { font-size: 12px; }
+  /* Active TPM preset badge — even tighter padding at this tier. */
+  .tpm-active-preset-topbar-btn { padding: 4px 6px; }
+  /* Logo text hidden — keep just the dot and the Data button. Frees
+     ~110px on the left side so the 9 KPI cells stop visually overlapping. */
+  .topbar > .logo { font-size: 0; gap: 6px; }
+  .topbar > .logo > .data-hub-btn,
+  .topbar > .logo > .logo-dot,
+  .topbar > .logo > .logo-guide-panel { font-size: var(--fs-body); }
+}
+
+@media (max-width: 900px) {
+  .topbar-stats .ts {
+    padding: 0 2px;
+    gap: 1px;
+    border-left-color: transparent;
+  }
+  .topbar-stats .ts:last-child { border-right-color: transparent; }
+  .topbar-stats .ts-l { font-size: 7px; }
+  .topbar-stats .ts-v { font-size: 11px; }
+  .topbar { padding: 0 10px; gap: 8px; }
+  /* Free more right-side space — refresh button and TPM mode badge get
+     their padding tightened. */
+  .ds-refresh-btn { padding: 4px 6px; font-size: 10px; }
+  .ds-toggle-btn  { padding: 4px 5px; }
+  .topbar-more-btn { padding: 0 6px; }
+  .logo-dot { width: 5px; height: 5px; }
+  /* Active TPM preset badge — completely hidden below 900px. The mode is
+     still conveyed by the (already icon-only) #tpm-badge to its right;
+     full details remain accessible via the TPM dropdown. */
+  .tpm-active-preset-topbar-btn { display: none !important; }
+  /* Layout edit toggle hidden — niche feature, recoverable via more menu. */
+  #layout-edit-wrap { display: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════════
