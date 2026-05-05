@@ -3056,6 +3056,17 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   border-radius: var(--rad-pill);
   backdrop-filter: blur(4px);
 }
+.mc2-toggle-cash-overlay {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 4;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--rad-pill);
+  backdrop-filter: blur(4px);
+}
 .mc2-toggle-spectrum input { position: absolute; opacity: 0; pointer-events: none; }
 .mc2-toggle-track {
   position: relative;
@@ -13187,6 +13198,36 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .po-widget .po-preset-tile-filled.is-active:hover {
   border-color: color-mix(in srgb, var(--gold) 55%, var(--border-subtle));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent), 0 4px 14px color-mix(in srgb, var(--gold) 22%, transparent);
+}
+
+/* "Applied" badge — shown on the tile whose stored config matches the dashboard's
+   currently-applied tpConfig (independent of the optimizer's selection). Sits in
+   the head, pushed right by margin-left:auto so the trash button stays after it. */
+.po-preset-applied-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--g);
+  background: color-mix(in srgb, var(--g) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--g) 35%, transparent);
+  border-radius: var(--rad-pill);
+  white-space: nowrap;
+}
+.po-preset-applied-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--g);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--g) 70%, transparent);
+  flex-shrink: 0;
 }
 
 .po-preset-tile-head {

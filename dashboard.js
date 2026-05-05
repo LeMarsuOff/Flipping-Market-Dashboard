@@ -13400,6 +13400,7 @@ let _mc2ActiveTab = 'median';    // 'worst' | 'median' | 'best'
 let _mc2SimToken = 0;            // cancels in-flight async sims on re-run
 let _mc2InputsBound = false;
 let _mc2ShowSpectrum = false;    // toggled via the header checkbox
+let _mc2ShowCash = false;        // false → R-only in parens; true → trio ($ · R)
 
 const _MC2_DEFAULTS = {
   balance: 100000,
@@ -13469,6 +13470,16 @@ function _mc2BindOnce() {
     tog.addEventListener('change', () => {
       _mc2ShowSpectrum = tog.checked;
       if (_mc2LastRun) _mc2RenderChart(_mc2LastRun);
+    });
+  }
+
+  // Cash trio toggle (Avg Return / Max DD)
+  const togCash = document.getElementById('mc2-show-cash');
+  if (togCash) {
+    _mc2ShowCash = togCash.checked;
+    togCash.addEventListener('change', () => {
+      _mc2ShowCash = togCash.checked;
+      if (_mc2LastRun) _mc2RenderCards(_mc2LastRun, _mc2ReadInputs());
     });
   }
 
@@ -13837,6 +13848,7 @@ function _mc2SimulateAsync(inp, N, ITER, token, done) {
   // Iteration records
   const finals      = new Float64Array(ITER);
   const maxDDs      = new Float64Array(ITER);
+  const maxDDsCash  = new Float64Array(ITER);
   const maxLoseR    = new Int32Array(ITER);
   const maxWinR     = new Int32Array(ITER);
   const winPcts     = new Float32Array(ITER);
@@ -13857,7 +13869,7 @@ function _mc2SimulateAsync(inp, N, ITER, token, done) {
     if (token !== _mc2SimToken) { done(null); return; }
     const end = Math.min(ITER, i + CHUNK);
     for (; i < end; i++) {
-      let bal = B0, peak = B0, maxDD = 0;
+      let bal = B0, peak = B0, maxDD = 0, maxDDcash = 0;
       let curW = 0, curL = 0, mxW = 0, mxL = 0, wins = 0;
       const curve = new Float32Array(N + 1);
       curve[0] = B0;
@@ -13893,12 +13905,13 @@ function _mc2SimulateAsync(inp, N, ITER, token, done) {
         }
         if (bal > peak) peak = bal;
         const dd = peak > 0 ? (peak - bal) / peak : 0;
-        if (dd > maxDD) maxDD = dd;
+        if (dd > maxDD) { maxDD = dd; maxDDcash = peak - bal; }
         curve[k + 1] = bal;
       }
-      finals[i]   = bal;
-      maxDDs[i]   = maxDD;
-      maxLoseR[i] = mxL;
+      finals[i]     = bal;
+      maxDDs[i]     = maxDD;
+      maxDDsCash[i] = maxDDcash;
+      maxLoseR[i]   = mxL;
       maxWinR[i]  = mxW;
       winPcts[i]  = N > 0 ? (wins / N) * 100 : 0;
       curves[i]   = curve;
@@ -13907,7 +13920,7 @@ function _mc2SimulateAsync(inp, N, ITER, token, done) {
       _scheduleNext();   // yield without throttling
     } else {
       _chan.port1.onmessage = null;
-      done(_mc2Reduce({ finals, maxDDs, maxLoseR, maxWinR, winPcts, curves, B0, N }));
+      done(_mc2Reduce({ finals, maxDDs, maxDDsCash, maxLoseR, maxWinR, winPcts, curves, B0, N }));
     }
   }
   _chan.port1.onmessage = step;
@@ -13918,7 +13931,7 @@ function _mc2SimulateAsync(inp, N, ITER, token, done) {
 // Also samples ~100 equity curves across the full rank distribution so the
 // chart can render a faint "spectrum" of possible outcomes behind the 3
 // named scenarios.
-function _mc2Reduce({ finals, maxDDs, maxLoseR, maxWinR, winPcts, curves, B0, N }) {
+function _mc2Reduce({ finals, maxDDs, maxDDsCash, maxLoseR, maxWinR, winPcts, curves, B0, N }) {
   const ITER = finals.length;
   const idxSorted = Array.from({ length: ITER }, (_, i) => i)
     .sort((a, b) => finals[a] - finals[b]);
@@ -13931,6 +13944,7 @@ function _mc2Reduce({ finals, maxDDs, maxLoseR, maxWinR, winPcts, curves, B0, N 
   const pack = (idx) => ({
     finalBalance:  finals[idx],
     maxDD:         maxDDs[idx],
+    maxDDcash:     maxDDsCash[idx],
     maxLoseStreak: maxLoseR[idx],
     maxWinStreak:  maxWinR[idx],
     winPct:        winPcts[idx],
@@ -13960,7 +13974,6 @@ function _mc2Reduce({ finals, maxDDs, maxLoseR, maxWinR, winPcts, curves, B0, N 
 function _mc2RenderCards(run, inputs) {
   const fmtMoney = v => '$' + Math.round(v).toLocaleString('en-US');
   const fmtPct   = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
-  const fmtDD    = v => '−' + (v * 100).toFixed(1) + '%';
 
   const setSlot = (cardEl, slot, text, tone) => {
     const el = cardEl.querySelector(`[data-mc2-slot="${slot}"]`);
@@ -13971,6 +13984,11 @@ function _mc2RenderCards(run, inputs) {
 
   const fmtDeltaCash = v => (v >= 0 ? '+$' : '−$') + Math.round(Math.abs(v)).toLocaleString('en-US');
   const fmtPctInline = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const fmtRSigned   = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1) + 'R';
+  // 1R = the dollar risk per trade at sim setup. Compounding scales the
+  // actual per-trade risk, but we report against this fixed reference so the
+  // R figure stays comparable across scenarios.
+  const Runit = (inputs.balance * inputs.risk) / 100;
 
   const fill = (tabKey, s) => {
     const card = document.querySelector(`.mc2-card[data-mc2-tab="${tabKey}"]`);
@@ -13983,13 +14001,24 @@ function _mc2RenderCards(run, inputs) {
     const avgMoPct = ratio > 0 ? (Math.pow(ratio, 1 / months) - 1) * 100 : -100;
     const avgMoCash = delta / months;
     const avgMoTone = avgMoCash >= 0 ? 'pos' : 'neg';
+    const avgMoR = Runit > 0 ? avgMoCash / Runit : 0;
+    const ddRabs = Runit > 0 ? Math.abs(s.maxDDcash) / Runit : 0;
+    const avgmoTxt = _mc2ShowCash
+      ? `${fmtPctInline(avgMoPct)} (${fmtDeltaCash(avgMoCash)} · ${fmtRSigned(avgMoR)})`
+      : fmtRSigned(avgMoR);
+    const ddPctTxt = '−' + (s.maxDD * 100).toFixed(1) + '%';
+    const ddCashTxt = '−$' + Math.round(Math.abs(s.maxDDcash)).toLocaleString('en-US');
+    const ddRTxt = '−' + ddRabs.toFixed(1) + 'R';
+    const ddTxt = _mc2ShowCash
+      ? `${ddPctTxt} (${ddCashTxt} · ${ddRTxt})`
+      : ddRTxt;
 
     setSlot(card, 'result',  fmtMoney(s.finalBalance), retTone);
     setSlot(card, 'return',  `${fmtPct(ret)} (${fmtDeltaCash(delta)})`, retTone);
     setSlot(card, 'initial', fmtMoney(run.initial));
     setSlot(card, 'months',  String(inputs.months));
-    setSlot(card, 'avgmo',   `${fmtDeltaCash(avgMoCash)} (${fmtPctInline(avgMoPct)})`, avgMoTone);
-    setSlot(card, 'maxdd',   fmtDD(s.maxDD),           'neg');
+    setSlot(card, 'avgmo',   avgmoTxt, avgMoTone);
+    setSlot(card, 'maxdd',   ddTxt, 'neg');
     setSlot(card, 'maxll',   String(s.maxLoseStreak),  'neg');
     setSlot(card, 'maxww',   String(s.maxWinStreak),   'pos');
     setSlot(card, 'wr',      s.winPct.toFixed(1) + '%');
@@ -17218,6 +17247,56 @@ function _poTileMatchesAppliedConfig(stored) {
   return true;
 }
 
+/** Returns true if the stored preset config matches what is CURRENTLY APPLIED
+ *  to the dashboard (appState.ui.tpConfig + rrMinFilter), independent of the
+ *  optimizer's selectedIdx. Drives the green "Applied" badge on the tile.
+ *
+ *  Full TP applied via ORR bubble: mode='fixed' + rrMinFilter=tpFinal.
+ *  Full TP applied via Personalised fallback: mode='personalised' with the
+ *  specific 2-leg shape pushed by _poApplyToDashboard.
+ *  Partials (one/two): mode='personalised' with matching tpCount/targets/partials. */
+function _poTileMatchesDashboardConfig(stored) {
+  if (!stored || !Array.isArray(stored.legs)) return false;
+  const cfg = appState?.ui?.tpConfig;
+  if (!cfg) return false;
+
+  if (stored.type === 'full') {
+    const tpFinal = stored.tpFinal;
+    if (!Number.isFinite(tpFinal)) return false;
+    // Branch A — ORR bubble path
+    if (cfg.mode === 'fixed' &&
+        Math.abs((appState.ui.rrMinFilter ?? -Infinity) - tpFinal) < 1e-6) {
+      return true;
+    }
+    // Branch B — Personalised fallback shape (tpCount=2, tp1=tpFinal, 100/0)
+    if (cfg.mode === 'personalised' && cfg.personalised) {
+      const p = cfg.personalised;
+      if (p.tpCount === 2 &&
+          Math.abs((p.targets?.tp1 ?? NaN) - tpFinal) < 1e-6 &&
+          Math.abs((p.partials?.tp1 ?? 0) - 100) < 0.5 &&
+          Math.abs((p.partials?.tp2 ?? 0) - 0) < 0.5) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Partials (one/two) → only valid when dashboard is in Personalised mode
+  if (cfg.mode !== 'personalised' || !cfg.personalised) return false;
+  const p = cfg.personalised;
+  if (p.tpCount !== stored.legs.length) return false;
+  for (let i = 0; i < stored.legs.length; i++) {
+    const tpKey = `tp${i + 1}`;
+    const lvB  = stored.legs[i].lv;
+    const pctB = Math.round((stored.legs[i].pct ?? 0) * 100);
+    const lvA  = p.targets?.[tpKey];
+    const pctA = p.partials?.[tpKey];
+    if (typeof lvA !== 'number' || Math.abs(lvA - lvB) > 1e-6) return false;
+    if (typeof pctA !== 'number' || Math.abs(pctA - pctB) > 0.5) return false;
+  }
+  return true;
+}
+
 /** PR-8-fix: Returns the index in st.results of the model that matches the
  *  given stored preset config (legs + tpFinal exact match). Returns -1 if
  *  no model in the current grid matches.
@@ -17410,13 +17489,21 @@ function _poRenderPresetsBlock() {
 
     const trashSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
     const typeLabel = stored.type === 'two' ? '2 Partials' : stored.type === 'one' ? '1 Partial' : 'Full TP';
-    // PR-8: glow class when stored config matches currently-applied tpConfig
+    // is-active = matches the optimizer's currently selected/inspected model (gold glow).
+    // is-applied = matches the dashboard's currently-applied tpConfig (Applied badge).
+    // The two are independent and can co-occur on the same tile.
     const isActiveClass = _poTileMatchesAppliedConfig(stored) ? ' is-active' : '';
+    const isAppliedToDashboard = _poTileMatchesDashboardConfig(stored);
+    const isAppliedClass = isAppliedToDashboard ? ' is-applied' : '';
+    const appliedBadgeHTML = isAppliedToDashboard
+      ? `<span class="po-preset-applied-badge" title="Currently applied on the dashboard">Applied</span>`
+      : '';
 
     return `
-      <div class="po-preset-tile po-preset-tile-filled${isActiveClass}" data-po-slot="${key}">
+      <div class="po-preset-tile po-preset-tile-filled${isActiveClass}${isAppliedClass}" data-po-slot="${key}">
         <div class="po-preset-tile-head">
           <span class="po-preset-tile-badge" data-slot="${key}">${key}</span>
+          ${appliedBadgeHTML}
           <div class="po-preset-tile-head-actions">
             <button type="button" class="po-preset-btn-trash" data-po-slot-delete="${key}" aria-label="Delete ${key}" title="Delete ${key}">
               ${trashSVG}
@@ -19123,24 +19210,31 @@ let barColorMode = localStorage.getItem(BAR_COLOR_MODE_KEY) || 'quality';
 
 // ── Bar hover tooltip (uses unified utip system) ──
 function _buildBarTipHTML(label, n, oc) {
-  // showBE=true → footer breaks Net into TP/SL/Total (matches the BE-TP/BE-SL
-  // grid rows shown above). showBE=false collapses to a single "Net Result"
-  // line. Declared here so the existing if/else branch stays intact; the
-  // reference was undefined since the initial commit, which crashed every
-  // bar hover (`ReferenceError: showBE is not defined`).
-  const showBE = true;
   const [tpN, tpR, slN, slR, betpN, betpR, beslN, beslR] = oc.split(',').map(Number);
   const wr = n > 0 ? ((tpN + betpN) / n * 100).toFixed(0) : 0;
   const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
-  const beRows = `
-      <span style="color:#2962ff">BE-TP</span><span style="color:#2962ff;text-align:right">×${betpN}</span><span style="color:#2962ff;text-align:right">${fmt(betpR)}</span>
-      <span style="color:#b478f0">BE-SL</span><span style="color:#b478f0;text-align:right">×${beslN}</span><span style="color:#b478f0;text-align:right">${fmt(beslR)}</span>`;
+  // Each row hides itself when its count is 0. Net TP / Net SL / Total Net
+  // breakdown is shown only when BOTH sides have data AND at least one side
+  // has multiple components to aggregate (TP+BE-TP or SL+BE-SL); otherwise
+  // the breakdown would just duplicate the visible grid rows, so collapse to
+  // a single "Net Result" line summing whatever rows are visible.
+  const showTP   = tpN > 0;
+  const showSL   = slN > 0;
+  const showBETP = betpN > 0;
+  const showBESL = beslN > 0;
+  const hasWinSide   = showTP   || showBETP;
+  const hasLoseSide  = showSL   || showBESL;
+  const winSideMulti  = showTP && showBETP;
+  const loseSideMulti = showSL && showBESL;
+  const showBreakdown = hasWinSide && hasLoseSide && (winSideMulti || loseSideMulti);
+  const gridRows = `${showTP ? `
+      <span style="color:var(--g)">TP</span><span style="color:var(--g);text-align:right">×${tpN}</span><span style="color:var(--g);text-align:right">${fmt(tpR)}</span>` : ''}${showSL ? `
+      <span style="color:var(--r)">SL</span><span style="color:var(--r);text-align:right">×${slN}</span><span style="color:var(--r);text-align:right">${fmt(slR)}</span>` : ''}${showBETP ? `
+      <span style="color:#2962ff">BE-TP</span><span style="color:#2962ff;text-align:right">×${betpN}</span><span style="color:#2962ff;text-align:right">${fmt(betpR)}</span>` : ''}${showBESL ? `
+      <span style="color:#b478f0">BE-SL</span><span style="color:#b478f0;text-align:right">×${beslN}</span><span style="color:#b478f0;text-align:right">${fmt(beslR)}</span>` : ''}`;
   return `
     <div class="utip-header">${label} <span class="utip-header-sub">×${n}</span></div>
-    <div class="utip-grid">
-      <span style="color:var(--g)">TP</span><span style="color:var(--g);text-align:right">×${tpN}</span><span style="color:var(--g);text-align:right">${fmt(tpR)}</span>
-      <span style="color:var(--r)">SL</span><span style="color:var(--r);text-align:right">×${slN}</span><span style="color:var(--r);text-align:right">${fmt(slR)}</span>
-      ${beRows}
+    <div class="utip-grid">${gridRows}
     </div>
     <div class="utip-divider"></div>
     <div class="utip-row">
@@ -19148,8 +19242,8 @@ function _buildBarTipHTML(label, n, oc) {
       <span style="color:${_kpiTooltipColor(+wr, 'wr')};font-weight:700">${wr}%</span>
     </div>
     ${(() => {
-      if (!showBE) {
-        const net = tpR + slR;
+      if (!showBreakdown) {
+        const net = tpR + slR + betpR + beslR;
         return `<div class="utip-row">
       <span class="utip-label">Net Result</span>
       <span style="color:${net >= 0 ? 'var(--g)' : 'var(--r)'};font-weight:700">${fmt(net)}</span>
@@ -19196,9 +19290,13 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('mouseout', e => {
   if (!_utip || !_utip.classList.contains('visible')) return;
   const fromAlways = e.target.closest?.('.tip-always');
-  const fromHover  = e.target.closest?.('.bar-list');
+  const fromBarRow = e.target.closest?.('.bar-row');
   if (fromAlways && !e.relatedTarget?.closest?.('.tip-always')) { hideUtip(); return; }
-  if (fromHover  && !e.relatedTarget?.closest?.('.bar-list')) hideUtip();
+  // Hide when leaving a specific bar (unless moving to another bar — then the
+  // mouseover updates the tooltip). Previous logic checked `.bar-list` which
+  // only triggered when leaving the whole container, leaving the tooltip
+  // stuck while hovering gaps between bars.
+  if (fromBarRow && !e.relatedTarget?.closest?.('.bar-row')) hideUtip();
 });
 
 // ── Delegated click handler: opens shared drawer on bar-row click ──
