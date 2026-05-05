@@ -988,7 +988,7 @@ body {
   line-height: 1;
   letter-spacing: .02em;
 }
-.sv-share-btn-icon { font-size: var(--typo-ctrl-size); }
+.sv-share-btn-icon { font-size: var(--sv-fs-body); }
 .eq-tt-hint {
   font-size: var(--fs-monthly-grid);
   color: var(--dim);
@@ -8443,7 +8443,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   background: transparent;
   color: var(--dim);
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
+  font-size: var(--sv-fs-small);
   letter-spacing: 1.2px;
   text-transform: uppercase;
   cursor: pointer;
@@ -8476,7 +8476,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   border: 1px solid var(--line2);
   color: var(--body);
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
+  font-size: var(--sv-fs-small);
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
@@ -8491,7 +8491,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
   color: var(--gold);
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
+  font-size: var(--sv-fs-small);
   letter-spacing: 1.2px;
   text-transform: uppercase;
   border-radius: 5px;
@@ -8503,6 +8503,26 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 .sv-share-btn:active {
   transform: scale(0.97);
+}
+
+/* ════════════════════════════════════════════════════════
+   SHARE VIEW TYPOGRAPHY — fixed scale, INDEPENDENT of the
+   theme editor. The theme editor controls --typo-* / --fs-*
+   for the live dashboard; the Share Your Data view (and the
+   "Copy Image" PNG output) must stay stable regardless, so
+   different users always produce visually consistent shares.
+   Every share-view font-size below uses these tokens, never
+   the global typo vars.
+════════════════════════════════════════════════════════ */
+#share-view {
+  --sv-fs-micro:    9px;   /* sub-labels, day-of-week headers */
+  --sv-fs-small:    10px;  /* trade rows, controls (mode toggle, share btn) */
+  --sv-fs-body:     11px;  /* secondary body, weekly trade-count, head-meta */
+  --sv-fs-header:   12px;  /* widget headers, day numbers, bar labels/values */
+  --sv-fs-week:     15px;  /* weekly P&L value in the calendar's right column */
+  --sv-fs-kpi-val:  22px;  /* day total in calendar cells, month summary total */
+  --sv-fs-display:  26px;  /* page title (e.g. "MARCH 2026") */
+  --sv-fs-kpi-big:  26px;  /* primary KPI values in the stats strip */
 }
 
 /* ── Export container — static CSS grid layout ── */
@@ -8576,10 +8596,10 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 
 .sv-widget-head {
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-widget-title-size);
-  font-weight: var(--typo-widget-title-weight);
-  letter-spacing: var(--typo-widget-title-ls);
-  text-transform: var(--typo-widget-title-tt);
+  font-size: var(--sv-fs-header);
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
   color: color-mix(in srgb, var(--body) 65%, transparent);
   margin-bottom: 10px;
   flex-shrink: 0;
@@ -8622,7 +8642,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 .sv-date-value {
   font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: clamp(22px, 2.3vw, 34px);
+  font-size: var(--sv-fs-display);
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -8642,14 +8662,14 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   background: var(--bg2);
   border-bottom: 1px solid var(--line);
   font-family: 'DM Mono', monospace;
-  font-size: var(--fs-title);
+  font-size: var(--sv-fs-header);
   letter-spacing: 1.4px;
   text-transform: uppercase;
   color: var(--dim);
   flex-shrink: 0;
 }
 .sv-head-meta {
-  font-size: var(--typo-ctrl-size);
+  font-size: var(--sv-fs-body);
   font-weight: 700;
   line-height: 1.1;
   color: var(--body);
@@ -8659,7 +8679,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   margin-left: 8px;
 }
 .sv-badge {
-  font-size: var(--typo-ui-panel-size);
+  font-size: var(--sv-fs-small);
   padding: 1px 6px;
   border-radius: 2px;
   background: color-mix(in srgb, var(--gold) 12%, transparent);
@@ -8716,7 +8736,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 .sv-cal-mini-title {
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-panel-size);
+  font-size: var(--sv-fs-header);
   font-weight: 700;
   letter-spacing: 1.1px;
   color: var(--dim);
@@ -8727,7 +8747,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 .sv-cal-mini-total {
   font-family: 'Anybody', sans-serif;
-  font-size: var(--typo-base-size);
+  font-size: var(--sv-fs-header);
   font-weight: 800;
   color: var(--sv-cal-total, var(--body));
 }
@@ -8742,7 +8762,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .sv-cal-dayhead {
   text-align: center;
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-table-body-size);
+  font-size: var(--sv-fs-micro);
   font-weight: 700;
   color: var(--dim);
   padding-bottom: 4px;
@@ -8752,7 +8772,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   min-width: 0;
   overflow: hidden;
   border-radius: 1.5px;
-  font-size: var(--typo-micro-size);
+  font-size: var(--sv-fs-micro);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8765,7 +8785,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   align-items: center;
   justify-content: center;
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
+  font-size: var(--sv-fs-micro);
   font-weight: 800;
   color: var(--sv-cal-fg, var(--body));
   overflow: hidden;
@@ -8786,7 +8806,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 .sv-cal-month-summary-meta {
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-ctrl-size);
+  font-size: var(--sv-fs-body);
   font-weight: 700;
   color: var(--dim);
 }
@@ -8794,14 +8814,18 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .sv-cal-month-summary-loss { color: var(--r); }
 .sv-cal-month-summary-total {
   font-family: 'Anybody', sans-serif;
-  font-size: var(--fs-cal-summary, 20px);
+  font-size: var(--sv-fs-kpi-val);
   font-weight: 800;
   color: var(--sv-cal-total, var(--body));
 }
 .sv-cal-month-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr) 58px;
-  grid-template-rows: auto repeat(var(--sv-cal-weeks, 5), 1fr);
+  /* All week rows share the SAME minimum height — driven by the tallest cell
+     of the whole month (computed in JS and exposed via --sv-cal-row-min-h).
+     1fr distributes any leftover space equally so every cell in the calendar
+     ends up the same size, regardless of which week is busy. */
+  grid-template-rows: auto repeat(var(--sv-cal-weeks, 5), minmax(var(--sv-cal-row-min-h, 0px), 1fr));
   gap: 3px;
   flex: 1 1 0;
   min-height: 0;
@@ -8809,34 +8833,83 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   height: 100%;
 }
 .sv-cal-month-day {
+  position: relative;
   border-radius: 2px;
-  padding: 5px 6px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+  overflow: hidden;
 }
 .sv-cal-month-day-empty { background: rgba(36,40,53,0.96); }
 .sv-cal-month-day-value { background: var(--sv-cal-bg, var(--bg3)); }
+/* Header row: day number on the left, day total R on the right, baseline-aligned. */
+.sv-cal-month-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
 .sv-cal-month-daynum {
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-table-body-size);
+  font-size: var(--sv-fs-header);
   font-weight: 700;
   color: var(--sv-cal-daynum, rgba(235,242,255,0.74));
 }
 .sv-cal-month-daynum-empty { color: rgba(255,255,255,0.16); }
-.sv-cal-month-value {
+.sv-cal-month-total {
   font-family: 'Anybody', sans-serif;
-  font-size: var(--typo-table-body-size);
+  font-size: var(--sv-fs-kpi-val);
   font-weight: 800;
-  color: var(--sv-cal-fg, var(--body));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
   line-height: 1;
 }
-.sv-cal-month-trades {
-  font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
-  font-weight: 700;
-  color: rgba(235,242,255,0.60);
+.sv-cal-month-total.is-pos { color: var(--g, #34d399); }
+.sv-cal-month-total.is-neg { color: var(--r, #f43f5e); }
+/* One row per trade: dot, pair, entry time, R. */
+.sv-cal-month-trade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 1px;
 }
+.sv-cal-month-trade-row {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-family: 'DM Mono', monospace;
+  font-size: var(--sv-fs-small);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.sv-cal-month-trade-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.sv-cal-month-trade-dot.is-win  { background: var(--g, #34d399); }
+.sv-cal-month-trade-dot.is-loss { background: var(--r, #f43f5e); }
+.sv-cal-month-trade-dot.is-be   { background: rgba(255,255,255,0.42); }
+.sv-cal-month-trade-pair {
+  color: rgba(235,242,255,0.86);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+.sv-cal-month-trade-time {
+  color: rgba(235,242,255,0.50);
+  font-variant-numeric: tabular-nums;
+}
+.sv-cal-month-trade-r {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.sv-cal-month-trade-r.is-pos { color: var(--g, #34d399); }
+.sv-cal-month-trade-r.is-neg { color: var(--r, #f43f5e); }
 .sv-cal-weekcell {
   background: var(--sv-cal-week-bg, var(--bg2));
   border-radius: 2px;
@@ -8850,14 +8923,14 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .sv-cal-weekcell-empty { opacity: 0.22; }
 .sv-cal-weekvalue {
   font-family: 'Anybody', sans-serif;
-  font-size: var(--typo-sidebar-chip-size);
+  font-size: var(--sv-fs-week);
   font-weight: 800;
   color: var(--sv-cal-week-fg, var(--body));
   line-height: 1;
 }
 .sv-cal-weektrades {
   font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
+  font-size: var(--sv-fs-body);
   font-weight: 700;
   color: var(--dim);
 }
@@ -9122,10 +9195,10 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 #sv-export.sv-export-capture #sv-eq-info,
 #sv-export.sv-export-capture #sv-cal-label {
-  font-size: var(--typo-panel-size);
+  font-size: var(--sv-fs-body);
 }
 #sv-export.sv-export-capture .sv-cal-month-summary-meta {
-  font-size: var(--typo-panel-size);
+  font-size: var(--sv-fs-body);
   letter-spacing: 0.1px;
 }
 #sv-stats-body .wst-cell-micro .micro-fill-soft {
@@ -9147,6 +9220,29 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   opacity: 0.65;
 }
 
+/* ── Share-view KPI typography (independent of theme editor) ──
+   The base .wst-cell-* rules use --typo-* / --fs-* (theme editor),
+   so we override them here with the local --sv-fs-* tokens. */
+#sv-stats-body .wst-cell-label,
+#sv-stats-body .wst-cell-sub {
+  font-size: var(--sv-fs-micro);
+}
+#sv-stats-body .wst-cell-value {
+  font-size: var(--sv-fs-kpi-big);
+}
+
+/* ── Share-view bar typography (independent of theme editor) ── */
+#sv-bars-pair .bar-label,
+#sv-bars-setup .bar-label,
+#sv-bars-pair .bar-val,
+#sv-bars-setup .bar-val,
+#sv-bars-pair .bar-r,
+#sv-bars-setup .bar-r,
+#sv-bars-pair .bar-n,
+#sv-bars-setup .bar-n {
+  font-size: var(--sv-fs-header);
+}
+
 /* ── Bar lists in share view ── */
 #sv-bars-pair,
 #sv-bars-setup {
@@ -9157,9 +9253,17 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   flex-direction: column;
   gap: 4px;
 }
-#sv-bars-pair .bar-row,
+/* Pair labels are short (currency codes) — narrow label column so the bar
+   row hugs the left edge of the (now-narrower) pair widget. */
+#sv-bars-pair .bar-row {
+  grid-template-columns: 60px 1fr 70px;
+}
+/* Setup labels can be long ("External Confirmation - Type X"). 180px is a
+   compromise: the longest names truncate by a few characters at the user's
+   typography size, but the bar track keeps a usable width when pair / setup
+   share the same widget width. */
 #sv-bars-setup .bar-row {
-  grid-template-columns: 80px 1fr 70px;
+  grid-template-columns: 180px 1fr 70px;
 }
 
 /* ── Compact mode: hide mini-chart bar when the tile is too narrow ──
@@ -9171,26 +9275,32 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   container-type: inline-size;
   container-name: svbars;
 }
+/* Compact thresholds differ per widget because their normal-mode label
+   columns differ (pair: 60px, setup: 150px). Each widget collapses to
+   centered label+value when it can't fit a usable bar track. */
 @container svbars (max-width: 220px) {
-  #sv-bars-pair .bar-row,
+  #sv-bars-pair .bar-row {
+    grid-template-columns: 1fr auto;
+    justify-items: center;
+    column-gap: 10px;
+  }
+  #sv-bars-pair .bar-row .bar-track { display: none; }
+  #sv-bars-pair .bar-label { text-align: center; }
+  #sv-bars-pair .bar-val   { justify-self: center; text-align: center; }
+}
+/* Threshold tuned against the widget content-box (container queries measure
+   content-box, not border-box). Setup widget at 1920px viewport → border-box
+   ~370px → content-box ~332px. We want normal mode at the user's typical
+   width, so the threshold sits below 332 to leave a real bar track. */
+@container svbars (max-width: 290px) {
   #sv-bars-setup .bar-row {
     grid-template-columns: 1fr auto;
     justify-items: center;
     column-gap: 10px;
   }
-  #sv-bars-pair .bar-row .bar-track,
-  #sv-bars-setup .bar-row .bar-track {
-    display: none;
-  }
-  #sv-bars-pair .bar-label,
-  #sv-bars-setup .bar-label {
-    text-align: center;
-  }
-  #sv-bars-pair .bar-val,
-  #sv-bars-setup .bar-val {
-    justify-self: center;
-    text-align: center;
-  }
+  #sv-bars-setup .bar-row .bar-track { display: none; }
+  #sv-bars-setup .bar-label { text-align: center; }
+  #sv-bars-setup .bar-val   { justify-self: center; text-align: center; }
 }
 
 /* ═══════════════════════════════════════

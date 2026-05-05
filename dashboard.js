@@ -28209,18 +28209,47 @@ function _svMonthlyCalDayCell(day, data, maxAbs, colors) {
   if (!data) {
     return `<div class="sv-cal-month-day sv-cal-month-day-empty"><span class="sv-cal-month-daynum sv-cal-month-daynum-empty">${day}</span></div>`;
   }
-  const isWin = data.r >= 0;
+  // Heatmap on top of the KPI-tile palette: same green/red base as the
+  // c-green / c-red topbar tiles, but the tint percentage scales with how
+  // big the day's R is relative to the month's biggest move. Quiet days
+  // stay near the 5% baseline (matches the resting tile colour); the
+  // strongest day of the month maxes out at 30%.
   const intensity = Math.min(Math.abs(data.r) / maxAbs, 1);
-  const from = isWin ? colors.posBase : colors.negBase;
-  const to = isWin ? colors.posHi : colors.negHi;
-  const mix = from.map((v, i) => Math.round(v + (to[i] - v) * intensity));
-  const bg = isWin ? `rgb(${mix.join(',')})` : `rgba(${mix.join(',')},0.84)`;
-  const txtCol = intensity >= 0.62 ? 'rgba(8,14,22,0.92)' : (isWin ? '#8ef0e3' : '#ffb2ab');
+  const pct = 5 + 25 * intensity;
+  const bg = data.r > 0
+    ? `color-mix(in srgb, var(--g) ${pct}%, var(--bg2))`
+    : data.r < 0
+    ? `color-mix(in srgb, var(--r) ${pct}%, var(--bg2))`
+    : 'var(--bg2)';
   const sign = data.r >= 0 ? '+' : '';
-  return `<div class="sv-cal-month-day sv-cal-month-day-value" style="--sv-cal-bg:${bg};--sv-cal-fg:${txtCol};--sv-cal-daynum:${colors.dayTxt}">
-    <span class="sv-cal-month-daynum">${day}</span>
-    <span class="sv-cal-month-value">${sign}${data.r.toFixed(1)}</span>
-    <span class="sv-cal-month-trades">${data.n}T</span>
+  const totalClass = data.r >= 0 ? ' is-pos' : ' is-neg';
+
+  // Per-trade rows, ordered by entry hour ascending. Each row prefixes a
+  // win/loss dot (green = winner, red = loser, neutral = BE), then pair,
+  // entry time (zero-padded hour), and the trade's effective R coloured by
+  // sign. Direction info lives in the dot colour scheme below; the explicit
+  // arrow was dropped at the user's request to match the cleaner layout.
+  const trades = (data.trades || []).slice().sort((a, b) => {
+    const ha = (a.hour != null && !isNaN(a.hour)) ? Number(a.hour) : 999;
+    const hb = (b.hour != null && !isNaN(b.hour)) ? Number(b.hour) : 999;
+    return ha - hb;
+  });
+  const tpConfig = appState.ui.tpConfig;
+  const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+  const tradesMarkup = trades.map(t => {
+    const dotClass = isWinner(t, tpConfig) ? 'is-win' : isLoser(t, tpConfig) ? 'is-loss' : 'is-be';
+    return `<div class="sv-cal-month-trade-row">
+      <span class="sv-cal-month-trade-dot ${dotClass}"></span>
+      <span class="sv-cal-month-trade-pair">${escapeHtml(t.pair || '')}</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="sv-cal-month-day sv-cal-month-day-value" style="--sv-cal-bg:${bg};--sv-cal-daynum:${colors.dayTxt}">
+    <div class="sv-cal-month-head">
+      <span class="sv-cal-month-daynum">${day}</span>
+      <span class="sv-cal-month-total${totalClass}">${sign}${data.r.toFixed(1)}R</span>
+    </div>
+    <div class="sv-cal-month-trade-list">${tradesMarkup}</div>
   </div>`;
 }
 
@@ -28371,6 +28400,26 @@ function _svRenderCalMonth(yearMonth) {
 
   html += '</div>';
   grid.innerHTML = html + '</div>';
+
+  // Uniform row heights: every week-row in the grid must be tall enough for
+  // the busiest cell of the entire month, otherwise calm weeks would render
+  // shorter than busy ones (the user wants every cell the same size). We
+  // measure each cell's intrinsic content height (scrollHeight, ignores the
+  // current row constraint and the cell's overflow:hidden) and pick the max.
+  // The CSS rule then expands every row to at least that height via
+  // minmax(var(--sv-cal-row-min-h), 1fr).
+  const monthGrid = grid.querySelector('.sv-cal-month-grid');
+  if (monthGrid) {
+    let maxContentH = 0;
+    monthGrid.querySelectorAll('.sv-cal-month-day-value').forEach(c => {
+      if (c.scrollHeight > maxContentH) maxContentH = c.scrollHeight;
+    });
+    if (maxContentH > 0) {
+      monthGrid.style.setProperty('--sv-cal-row-min-h', maxContentH + 'px');
+    } else {
+      monthGrid.style.removeProperty('--sv-cal-row-min-h');
+    }
+  }
 }
 
 const _SV_PF_THRESHOLDS = [0, 1, 1.3, 1.7, 2.2, 3, 4];
@@ -28845,12 +28894,25 @@ function exportShareView() {
     el.style.flexBasis  = 'auto';
     el.style.height     = 'auto';
   });
-  // Second pass: pin each element to max(preH, scrollHeight). This grows
-  // overflowing bar-lists to their full content while preserving widgets
-  // with canvas-based content (equity chart) at their original size.
+  // Second pass: pin each element to its natural content height. Widgets that
+  // contain an absolutely-positioned canvas (equity chart) have a misleading
+  // scrollHeight of ~0 — for those, fall back to preH so the canvas stays
+  // visible. For canvas-free widgets (bar lists, calendar grid), use
+  // scrollHeight to grow them past their original visible area when needed.
+  // sv-w-stats and sv-w-date are pinned to preH (live offsetHeight): with the
+  // grid template flipped to all-auto rows, their inline `min-height: 0` +
+  // `flex: 0 0 auto` (set in the first pass) lets the row collapse below its
+  // rendered height while neighbour rows hold pinned widgets. The leftover
+  // distribution pulls Equity & Drawdown and P&L Calendar upward in the
+  // exported PNG. preH-pinning keeps the KPI strip exactly as the user sees it.
   snapshots.forEach(({ el, preH }) => {
+    if (el.id === 'sv-w-stats' || el.id === 'sv-w-date') {
+      if (preH > 0) el.style.height = preH + 'px';
+      return;
+    }
     const sh = el.scrollHeight;
-    const target = Math.max(preH || 0, sh || 0);
+    const hasCanvas = !!el.querySelector('canvas');
+    const target = hasCanvas ? Math.max(preH || 0, sh || 0) : (sh || preH || 0);
     if (target > 0) el.style.height = target + 'px';
   });
 
@@ -28858,6 +28920,7 @@ function exportShareView() {
   // the .finally() restore can see them even if the if-branch doesn't run).
   let calSnap = null;
   let calGridSnap = null;
+  let equitySnap = null;
   let annualSnap = null;
   let miniMonthSnaps = [];
   let miniDaysSnaps = [];
@@ -28894,12 +28957,34 @@ function exportShareView() {
       // the taller of the two, not the sum.
       const totalLeft = hEquity + Math.max(hPair, hSetup) + gap;
 
+      // Calendar's intrinsic content height (the widget was pinned to its
+      // scrollHeight in the second pass, so offsetHeight reflects the height
+      // it WANTS to occupy with the uniform-row monthly grid). If that's
+      // taller than the left column, we grow the equity widget by the delta
+      // so both columns stay aligned at the bottom and nothing in the
+      // calendar gets clipped in the exported PNG.
+      const calNatural = elCal.offsetHeight;
+      const targetHeight = Math.max(totalLeft, calNatural);
+      const equityDelta = targetHeight - totalLeft;
+      if (equityDelta > 0) {
+        equitySnap = {
+          el:     elEquity,
+          height: elEquity.style.height,
+        };
+        elEquity.style.height = (hEquity + equityDelta) + 'px';
+        // Force layout reflow so the equity wrap reflects the new height,
+        // then redraw the canvas at the new size — otherwise the chart stays
+        // at its original pixel dimensions and leaves whitespace below.
+        void elEquity.offsetHeight;
+        _svDrawEquity(trades);
+      }
+
       // Inner content area of the calendar widget: widget height minus its
       // own padding (widget-padding defaults to ~13px top + ~13px bottom
       // → roughly 32px total vertical padding) minus the widget header.
       const calHeader  = elCal.querySelector('.sv-widget-head, .cc-head');
       const calHeaderH = calHeader ? calHeader.offsetHeight + 10 : 32;
-      const calInnerH  = Math.max(0, totalLeft - 32 - calHeaderH);
+      const calInnerH  = Math.max(0, targetHeight - 32 - calHeaderH);
 
       // Snapshot + pin the widget itself
       calSnap = {
@@ -28909,8 +28994,8 @@ function exportShareView() {
         overflow:  elCal.style.overflow,
       };
       _capCal = elCal;
-      elCal.style.height    = totalLeft + 'px';
-      elCal.style.minHeight = totalLeft + 'px';
+      elCal.style.height    = targetHeight + 'px';
+      elCal.style.minHeight = targetHeight + 'px';
       elCal.style.overflow  = 'hidden';
 
       // ── Main calendar scroll-well ──
@@ -29126,6 +29211,13 @@ function exportShareView() {
         calGridSnap.el.style.height    = calGridSnap.height;
         calGridSnap.el.style.maxHeight = calGridSnap.maxHeight;
         calGridSnap.el.style.overflow  = calGridSnap.overflow;
+      }
+      // Restore equity widget height (only set when calendar grew the left
+      // column to match a busy month). Redraw the canvas back to live size.
+      if (equitySnap) {
+        equitySnap.el.style.height = equitySnap.height;
+        void equitySnap.el.offsetHeight;
+        try { _svDrawEquity(trades); } catch (e) { /* swallow restore-time draw errors */ }
       }
       if (annualSnap) {
         annualSnap.el.style.height           = annualSnap.height;
