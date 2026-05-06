@@ -5706,7 +5706,17 @@ function renderActiveFilters(_filteredCount) {
 // THEME COLOR READER — reads live CSS vars at draw time
 // ══════════════════════════════════════════════════════
 function tc(varName) {
-  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  // When called inside a chart render that's wrapped by _withWidgetScale, scale
+  // widget-scoped typography vars by the active stack value so chart-internal
+  // text (Chart.js fonts, raw canvas drawText) follows widget size in auto mode.
+  if (_widgetScaleStack.length === 0) return raw;
+  if (!WIDGET_SCOPED_TYPO_VARS.includes(varName)) return raw;
+  const num = parseFloat(raw);
+  if (isNaN(num)) return raw;
+  const scale = _widgetScaleStack[_widgetScaleStack.length - 1];
+  const floor = Math.min(num, TYPO_AUTO_FLOOR_PX);
+  return Math.max(floor, num * scale).toFixed(2) + 'px';
 }
 
 function hexToRgba(hex, a) {
@@ -8313,11 +8323,12 @@ function drawMonthly(trades) {
   const cAccent = tc('--gold') || tc('--a');
   const cDim    = tc('--dim');
 
-  // Monthly typography CSS vars
+  // Monthly typography CSS vars — read via tc() so the auto typo-mode stack
+  // scale applies to bar/label/grid sizes inside this widget render.
   const _cs = getComputedStyle(document.documentElement);
-  const _fsBar     = _cs.getPropertyValue('--fs-monthly-bar').trim()     || '9px';
-  const _fsLabel   = _cs.getPropertyValue('--fs-monthly-label').trim()   || '8.5px';
-  const _fsGrid    = _cs.getPropertyValue('--fs-monthly-grid').trim()    || '8px';
+  const _fsBar     = tc('--fs-monthly-bar')     || '9px';
+  const _fsLabel   = tc('--fs-monthly-label')   || '8.5px';
+  const _fsGrid    = tc('--fs-monthly-grid')    || '8px';
   const _fsTip     = _cs.getPropertyValue('--fs-monthly-tooltip').trim() || '9px';
 
   const cBETP = '#2962ff';
@@ -14355,6 +14366,11 @@ function _mc2ApplySectionLayout() {
     maxRow = Math.max(maxRow, rect.y + rect.h - 1);
   });
   grid.style.setProperty('--mc2-grid-rows', String(maxRow));
+  // Recompute per-block typo scale (Monte Carlo internal blocks each follow
+  // their own rect, not the outer w-montecarlo size).
+  if (typeof _applyAutoTypoScaleForInternalBlocks === 'function') {
+    _applyAutoTypoScaleForInternalBlocks();
+  }
   // Chart.js doesn't auto-resize when grid cell changes — ping it
   if (_mcChart) requestAnimationFrame(() => { try { _mcChart.resize(); } catch {} });
 }
@@ -16320,6 +16336,11 @@ function _poInternalApplyLayout(layoutOverride) {
   });
   // Drive total rows dynamically — lets the user grow blocks beyond default.
   grid.style.setProperty('--po-grid-rows', String(Math.max(280, maxRow)));
+  // Recompute per-block typo scale: each PO section block scales based on its
+  // OWN rect vs default, independent of the outer w-partial-optimizer size.
+  if (typeof _applyAutoTypoScaleForInternalBlocks === 'function') {
+    _applyAutoTypoScaleForInternalBlocks();
+  }
   // Ping Chart.js charts so they redraw at the new pixel size.
   requestAnimationFrame(() => {
     try { window._poState?.equityChart?.resize(); } catch {}
@@ -18342,9 +18363,9 @@ function clearCanvasEmptyState(wrapperSelector) {
 function renderCharts(filtered, stats) {
   syncMonthlyModeUi();
 
-  drawCharts(filtered);
-  drawDonut(stats);
-  drawMonthly(filtered);
+  _withWidgetScale('w-equity',  () => drawCharts(filtered));
+  _withWidgetScale('w-outcome', () => drawDonut(stats));
+  _withWidgetScale('w-monthly', () => drawMonthly(filtered));
   _syncHardModeBtn();
   renderHeatmap(filtered);
 
@@ -18362,13 +18383,13 @@ function renderTables(filtered) {
 }
 
 function renderPanels(filtered) {
-  renderStreakAnalytics(filtered);
+  _withWidgetScale('w-streak-analytics', () => renderStreakAnalytics(filtered));
   renderHourBars(filtered);
-  renderRecovery(filtered);
-  if (typeof _poRender === 'function') _poRender();
+  _withWidgetScale('w-recovery', () => renderRecovery(filtered));
+  if (typeof _poRender === 'function') _withWidgetScale('w-partial-optimizer', () => _poRender());
   renderPairSession(filtered);
   renderCalendar(filtered);
-  runMonteCarlo(filtered);
+  _withWidgetScale('w-montecarlo', () => runMonteCarlo(filtered));
 
   if (typeof updateContextStrip === 'function') updateContextStrip();
   if (appState.filters.temporal.tf.compare) tfUpdateCompareUI();
@@ -18391,7 +18412,7 @@ function render() {
     renderCharts(empty, null);
     renderTables(empty);
     renderPanels(empty);
-    renderOptimalRRWidget(empty);
+    _withWidgetScale('w-optimal-rr', () => renderOptimalRRWidget(empty));
     _rrSyncActiveFilterBadge();
     _persistSidebarStateDebounced();
     return;
@@ -18406,7 +18427,7 @@ function render() {
   renderTables(filtered);
   renderPanels(filtered);
   // ORR widget gets its own filtered view — rrMinFilter must not shrink its input
-  renderOptimalRRWidget(getFilteredForORR());
+  _withWidgetScale('w-optimal-rr', () => renderOptimalRRWidget(getFilteredForORR()));
   _rrSyncActiveFilterBadge();
   _persistSidebarStateDebounced();
 }
@@ -18417,6 +18438,8 @@ function render() {
   document.addEventListener('themeTypoChanged', () => {
     if (_typoRedrawTimer) clearTimeout(_typoRedrawTimer);
     _typoRedrawTimer = setTimeout(() => {
+      // In auto mode, sliders update the BASE; per-widget overrides must re-multiply.
+      if (typoMode === 'auto') _applyAutoTypoScale();
       if (typeof render === 'function') render();
     }, 120);
   });
@@ -19280,9 +19303,205 @@ function rebuildDimensions() {
 
 const THEME_STORAGE_KEY  = 'flipping_dashboard_theme';
 const BAR_COLOR_MODE_KEY  = 'flipping_bar_color_mode';
+const TYPO_MODE_KEY       = 'flipping_typo_mode';
 
 // 'quality' = threshold-based on avg R | 'binary' = positive/negative
 let barColorMode = localStorage.getItem(BAR_COLOR_MODE_KEY) || 'binary';
+
+// 'manual' = sliders set per-typo sizes globally | 'auto' = scale per widget
+let typoMode = localStorage.getItem(TYPO_MODE_KEY) || 'manual';
+
+// Minimum effective font size in auto mode. We never shrink a typo var below
+// max( min(base, FLOOR), base * scale ). When base is already ≤ FLOOR (e.g.
+// --typo-nano-size 7px) the per-var floor stays at the base — we never grow
+// above what the slider was asking for; we just refuse to shrink past it.
+const TYPO_AUTO_FLOOR_PX = 9;
+
+// Compute the per-widget scale from its current grid size vs DEFAULT_LAYOUT
+// reference. Both axes ≥ ref → grow follows HEIGHT only (height is what the
+// content needs to "breathe"; widening alone just gives the bar tracks more
+// room). Any axis < ref → shrink uses min() so content still fits.
+function _computeWidgetScale(curW, curH, refW, refH) {
+  const w = curW / refW;
+  const h = curH / refH;
+  return (w >= 1 && h >= 1) ? h : Math.min(w, h);
+}
+
+// All --typo-/--fs-/--pp- vars that affect WIDGET CONTENT (not topbar/sidebar/ui chrome).
+// In auto mode, these are overridden per-widget on the .grid-stack-item element so
+// children inherit a scaled value via CSS cascade. Chart-internal text (read via
+// tc(...)) scales via the _withWidgetScale stack instead — see tc() and the stack.
+const WIDGET_SCOPED_TYPO_VARS = [
+  // Global widget text
+  '--typo-base-size', '--typo-widget-title-size', '--typo-widget-sub-size',
+  '--typo-kpi-val-size', '--typo-kpi-lbl-size', '--typo-kpi-value-size',
+  // Tables
+  '--typo-table-hd-size', '--typo-table-body-size',
+  // Generic chart axis/value (used by some bar widgets)
+  '--typo-chart-axis-size', '--typo-chart-val-size',
+  // Panels / controls / micro / nano (only widget-internal — chrome panels live outside .grid-stack-item)
+  '--typo-panel-size', '--typo-ctrl-size', '--typo-micro-size', '--typo-nano-size',
+  // Calendar
+  '--fs-cal-header', '--fs-cal-value', '--fs-cal-stats', '--fs-cal-day', '--fs-cal-summary',
+  // Partials Planner
+  '--pp-hero-r-size', '--pp-hero-delta-size', '--pp-editor-title-size', '--pp-placeholder-title-size',
+  // Equity / Drawdown
+  '--typo-eq-axis-size', '--typo-eq-xaxis-size', '--typo-dd-axis-size',
+  '--typo-dd-label-size', '--typo-eq-marker-size',
+  // Performance bars
+  '--typo-bar-setup-label-size',   '--typo-bar-setup-val-size',
+  '--typo-bar-pair-label-size',    '--typo-bar-pair-val-size',
+  '--typo-bar-session-label-size', '--typo-bar-session-val-size',
+  '--typo-bar-day-label-size',     '--typo-bar-day-val-size',
+  '--typo-bar-m15-label-size',     '--typo-bar-m15-val-size',
+  '--typo-bar-h4-label-size',      '--typo-bar-h4-val-size',
+  '--typo-bar-hour-label-size',    '--typo-bar-hour-val-size',
+  // Streak / Recovery / MC / ORR
+  '--typo-streak-tick-size', '--typo-streak-legend-size',
+  '--typo-recovery-tick-size', '--typo-recovery-title-size', '--typo-recovery-annot-size',
+  '--typo-mc-tick-size',
+  '--typo-orr-tick-size', '--typo-orr-annot-size',
+  // Trade Log
+  '--typo-tl-pair-size', '--typo-tl-setup-size', '--typo-tl-session-size',
+  '--typo-tl-day-size', '--typo-tl-obs-size',
+  // Monthly P&L
+  '--fs-monthly-bar', '--fs-monthly-label', '--fs-monthly-grid',
+  // Legacy --fs-* aliases (kept in sync by sliders)
+  '--fs-kpi', '--fs-stat', '--fs-body', '--fs-title', '--fs-large',
+  '--fs-medium', '--fs-small', '--fs-ui', '--fs-micro',
+];
+
+// Stack used to scope tc(...) reads to a widget context. When non-empty, tc()
+// scales widget-typo vars by the top-of-stack scale. Updated by _withWidgetScale.
+const _widgetScaleStack = [];
+
+// Run `fn` with tc(...) calls scaled to the widget identified by `widgetId`.
+// In manual mode, no scaling — just runs fn. In auto mode, computes scale =
+// min(curW/refW, curH/refH) using DEFAULT_LAYOUT as reference.
+function _withWidgetScale(widgetId, fn) {
+  const handle = _pushWidgetScale(widgetId);
+  try { return fn(); } finally { _popWidgetScale(handle); }
+}
+
+// Push/pop variants kept for API compatibility but now no-ops: with the CSS
+// `zoom` strategy, chart-internal text sizes flow through zoom uniformly.
+// Pushing a scale here would double-scale tc() reads, so we skip it. The
+// wrapper functions in renderCharts/renderPanels still call _pushWidgetScale
+// — they just don't do anything useful anymore. Left in place so a future
+// per-element scaling strategy can re-enable easily.
+function _pushWidgetScale(_widgetId) { return null; }
+function _popWidgetScale(handle) {
+  if (handle != null) _widgetScaleStack.pop();
+}
+
+// Apply per-widget zoom factor to .grid-stack-item elements based on each
+// widget's current size vs its DEFAULT_LAYOUT reference. Setting --widget-scale
+// drives a CSS `zoom: var(--widget-scale)` rule on .grid-stack-item-content
+// (see dashboard.css), which scales EVERYTHING inside — typography, charts,
+// padding, gaps — uniformly. This works for widgets whose CSS uses both
+// var(--typo-*) and hardcoded px font-sizes (e.g. Partial Optimizer).
+// Cleared in manual mode. Called on resize, drag, layout switch.
+//
+// Two grids are scaled independently:
+//  - #gs-container          → main dashboard widgets (scale = own grid size)
+//  - #ms-grid-container     → mini grid sidebar tiles (scale = own tile size)
+// Each tile in the mini grid scales based on ITS OWN size in the sidebar, NOT
+// the matching main widget's size — they're separate editing contexts.
+const TYPO_AUTO_MIN_SCALE = 0.6;  // floor below which content gets unreadable
+function _applyAutoTypoScaleForGrid(rootSelector) {
+  const items = document.querySelectorAll(`${rootSelector} .grid-stack-item`);
+  if (typoMode !== 'auto') {
+    items.forEach(el => el.style.removeProperty('--widget-scale'));
+    return;
+  }
+  items.forEach(el => {
+    const id  = el.getAttribute('gs-id');
+    const ref = id ? DEFAULT_LAYOUT[id] : null;
+    const n   = el.gridstackNode;
+    if (!ref || !n) {
+      el.style.removeProperty('--widget-scale');
+      return;
+    }
+    const raw    = _computeWidgetScale(n.w, n.h, ref.w, ref.h);
+    const scale  = Math.max(TYPO_AUTO_MIN_SCALE, raw);
+    el.style.setProperty('--widget-scale', scale.toFixed(4));
+  });
+}
+function _applyAutoTypoScale() {
+  _applyAutoTypoScaleForGrid('#gs-container');
+  _applyAutoTypoScaleForGrid('#ms-grid-container');
+  _applyAutoTypoScaleForInternalBlocks();
+}
+
+// Partial Optimizer + Monte Carlo each lay out their own draggable/resizable
+// blocks via an internal CSS grid. For these widgets the user expects the
+// typography of each block to follow the BLOCK's size — not the main widget's.
+// We apply per-block --widget-scale here; the corresponding CSS rules below
+// (`.po-block`, `.mc2-section-block`) zoom on that variable, while the main
+// widget's own .grid-stack-item-content zoom is overridden to 1.
+function _applyAutoTypoScaleForInternalBlocks() {
+  // Helper: clear or set per-block --widget-scale
+  const apply = (selector, getRect, getDefault) => {
+    document.querySelectorAll(selector).forEach(block => {
+      const key = block.dataset.poSection || block.dataset.mc2Section;
+      const cur = getRect(key);
+      const def = getDefault(key);
+      if (typoMode !== 'auto' || !cur || !def) {
+        block.style.removeProperty('--widget-scale');
+        return;
+      }
+      const raw   = _computeWidgetScale(cur.w, cur.h, def.w, def.h);
+      const scale = Math.max(TYPO_AUTO_MIN_SCALE, raw);
+      block.style.setProperty('--widget-scale', scale.toFixed(4));
+    });
+  };
+
+  // Partial Optimizer
+  if (typeof _poInternalGetLayout === 'function' && typeof _PO_DEFAULT_INTERNAL_LAYOUT !== 'undefined') {
+    let layout = null;
+    try { layout = _poInternalGetLayout(); } catch {}
+    apply(
+      '.po-block[data-po-section]',
+      key => (layout && key) ? layout[key] : null,
+      key => key ? _PO_DEFAULT_INTERNAL_LAYOUT[key] : null,
+    );
+  }
+
+  // Monte Carlo
+  if (typeof _mc2GetSectionLayout === 'function' && typeof _MC2_DEFAULT_SECTION_LAYOUT !== 'undefined') {
+    let layout = null;
+    try { layout = _mc2GetSectionLayout(); } catch {}
+    apply(
+      '.mc2-section-block[data-mc2-section]',
+      key => (layout && key) ? layout[key] : null,
+      key => key ? _MC2_DEFAULT_SECTION_LAYOUT[key] : null,
+    );
+  }
+}
+
+function _setTypoMode(mode) {
+  if (mode !== 'manual' && mode !== 'auto') return;
+  typoMode = mode;
+  try { localStorage.setItem(TYPO_MODE_KEY, mode); } catch {}
+  document.querySelectorAll('input[name="typoMode"]').forEach(r => { r.checked = (r.value === mode); });
+  // Grey out the sliders below while Auto is on
+  const typoBox = document.getElementById('tp-typography');
+  if (typoBox) typoBox.classList.toggle('is-auto-locked', mode === 'auto');
+  _applyAutoTypoScale();
+  // Trigger chart redraw so canvases pick up the new effective sizes
+  if (typeof _redrawAll === 'function') _redrawAll();
+}
+
+function _initTypoModeUI() {
+  document.querySelectorAll('input[name="typoMode"]').forEach(r => {
+    r.checked = (r.value === typoMode);
+    r.addEventListener('change', e => {
+      if (e.target.checked) _setTypoMode(e.target.value);
+    });
+  });
+  const typoBox = document.getElementById('tp-typography');
+  if (typoBox) typoBox.classList.toggle('is-auto-locked', typoMode === 'auto');
+}
 
 // ── Bar hover tooltip (uses unified utip system) ──
 function _buildBarTipHTML(label, n, oc) {
@@ -20285,6 +20504,7 @@ function buildThemePanel() {
   _initBarModeUI();
   _initBarViewUI();
   _initNotionModeUI();
+  _initTypoModeUI();
   buildColorSection('tp-bg-colors',        Object.entries(THEME_META).filter(([,m])=>m.group==='backgrounds'));
   buildColorSection('tp-border-colors',    Object.entries(THEME_META).filter(([,m])=>m.group==='borders'));
   buildColorSection('tp-text-colors',      Object.entries(THEME_META).filter(([,m])=>m.group==='text'));
@@ -25558,7 +25778,7 @@ function setSection(section) {
   // is also called from renderPanels() on every full render — this just
   // ensures the widget paints immediately on section entry.
   if (section === 'partials' && typeof _poRender === 'function') {
-    requestAnimationFrame(() => _poRender());
+    requestAnimationFrame(() => _withWidgetScale('w-partial-optimizer', () => _poRender()));
   }
 }
 
@@ -25636,6 +25856,7 @@ function _applySectionFilter(section, { skipSync = false } = {}) {
   _grid.float(false);
 
   requestAnimationFrame(() => requestAnimationFrame(() => {
+    _applyAutoTypoScale();
     if (typeof _redrawAll === 'function') _redrawAll();
   }));
 }
@@ -26677,6 +26898,9 @@ function _msInitGrid() {
   // Float OFF so user drags compact normally (still no swap-on-load though).
   _msState.grid.float(false);
 
+  // Mini grid is now populated — apply per-tile zoom (auto typo mode only).
+  _applyAutoTypoScale();
+
   // 'added' fires for two situations:
   //   1) Initial load (load() inside this same _msInitGrid call) — every tile
   //      we feed in fires 'added'. The tile already has the right HTML and
@@ -26750,6 +26974,10 @@ function _msInitGrid() {
   _msState.grid.on('resizestop dragstop', (_e, el) => {
     _applyMagnetSnap(_msState.grid, el);
     _msSyncPendingFromGrid();
+    // Recompute mini-tile zoom: each tile scales based on ITS OWN size in
+    // the sidebar grid (not the matching main widget). Resizing a tile in
+    // the sidebar updates only that tile's --widget-scale.
+    _applyAutoTypoScale();
   });
 
   // 'removed' fires when a tile is dropped onto the Hidden zone (via the
@@ -27162,6 +27390,7 @@ function initGridstack() {
     if (_el) _applyMagnetSnap(_grid, _el);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        _applyAutoTypoScale();
         _redrawAll();
         _syncGridToLive();
         _saveActiveSlotLive();
@@ -27172,7 +27401,13 @@ function initGridstack() {
   // ResizeObserver on every grid-stack-item-content for continuous resize redraws
   // Only observe widgets that contain canvases — avoids firing on every bar-list resize
   const _canvasWidgetIds = ['w-equity','w-monthly','w-outcome','w-streak-analytics','w-r-dist','w-montecarlo'];
-  const ro = new ResizeObserver(_debounce(_redrawAll, 100));
+  const _debouncedRedrawAll = _debounce(_redrawAll, 100);
+  const ro = new ResizeObserver(() => {
+    // Per-widget --typo-* override updates synchronously for live drag feedback;
+    // chart redraws are debounced because they're expensive.
+    _applyAutoTypoScale();
+    _debouncedRedrawAll();
+  });
   document.querySelectorAll('.grid-stack-item-content').forEach(el => {
     const widget = el.querySelector('[data-gs-id]') || el.closest('[data-gs-id]');
     const gsId   = widget?.getAttribute('data-gs-id') || '';
@@ -27207,6 +27442,7 @@ function initGridstack() {
   // to have flushed; if RAF is throttled, render() will run when the tab
   // becomes visible, which is fine.
   requestAnimationFrame(() => requestAnimationFrame(() => {
+    _applyAutoTypoScale();
     render();
     // Boot fade-in: now that the saved layout is applied and the first full
     // render has run, reveal #main-panel. The CSS transition handles the fade.
@@ -27571,6 +27807,7 @@ function _applyLayout(layout) {
     if (d) _grid.update(item, { x: d.x, y: d.y, w: d.w, h: d.h });
   });
   _grid.commit();
+  _applyAutoTypoScale();
   // Full render — let GridStack finalize pixel positions, then repopulate everything
   requestAnimationFrame(() => requestAnimationFrame(render));
 }

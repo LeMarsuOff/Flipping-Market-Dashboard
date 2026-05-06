@@ -124,9 +124,12 @@ body.is-booting #main-panel {
   --ease-slow:    .22s cubic-bezier(.4,0,.2,1);
 
   /* ── A7: Z-index scale ── */
+  /* Panels (theme editor, TPM, more-options menu, data hub, sub-popovers) sit
+     ABOVE everything else — including the edit-mode topbar bumped to 1002 and
+     resize handles at 999. 2000 leaves headroom for tooltips at 9999. */
   --z-sticky:  180;
   --z-topbar:  400;
-  --z-panel:   400;
+  --z-panel:   2000;
   --z-overlay: 600;
   --z-tooltip: 9999;
 
@@ -3659,7 +3662,22 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
 
 
 /* ══ BAR CHARTS ══ */
-.bar-list { display:flex; flex-direction:column; gap:6px; overflow-y:auto; flex:1 1 0; min-height:0; }
+/* .bar-list is a CSS Grid container so its child .bar-row items can use
+   `grid-template-columns: subgrid` and share a single label column track —
+   that's what guarantees every bar track in the same widget starts at the
+   same x (the column width = max-content of every label across all rows).
+   Default: max-content label · 1fr track · 66px value. Per-id overrides
+   below tune the value column width for sm/setup/split modes. */
+.bar-list {
+  display: grid;
+  grid-template-columns: max-content 1fr 66px;
+  align-content: start;
+  row-gap: 6px;
+  column-gap: 8px;
+  overflow-y: auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
 .bar-row {
   display: grid;
   grid-template-columns: 104px 1fr 66px;
@@ -3684,7 +3702,7 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-align: right;
+  text-align: left;
   letter-spacing: var(--typo-chart-axis-ls);
 }
 .bar-row.obs .bar-label {
@@ -7444,6 +7462,27 @@ body.ms-sidebar-open .view-tabs {
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
+  /* Auto typography mode: --widget-scale is set per-widget by JS based on the
+     widget's current size vs its DEFAULT_LAYOUT reference. `zoom` scales all
+     descendant content (typography, charts, padding, gaps) uniformly — works
+     for widgets that mix var(--typo-*) with hardcoded px sizes. Default 1
+     when --widget-scale is unset (manual mode). */
+  zoom: var(--widget-scale, 1);
+}
+
+/* Partial Optimizer + Monte Carlo each lay out internal draggable/resizable
+   blocks. The user expects each BLOCK's typography to follow its own size,
+   not the outer widget size. So we cancel widget-level zoom for these two
+   widgets and apply zoom on each internal block instead — JS sets
+   --widget-scale on each .po-block / .mc2-section-block based on its own
+   internal rect vs default. */
+.grid-stack-item[gs-id="w-partial-optimizer"] > .grid-stack-item-content,
+.grid-stack-item[gs-id="w-montecarlo"]        > .grid-stack-item-content {
+  zoom: 1;
+}
+.po-block[data-po-section],
+.mc2-section-block[data-mc2-section] {
+  zoom: var(--widget-scale, 1);
 }
 
 /* Each direct .gs-widget child must also fill the content box */
@@ -8596,17 +8635,25 @@ body.ms-sidebar-open .view-tabs {
    subscript alongside .bar-r. Previously pinned to var(--fs-small), which
    ignored the per-widget --typo-bar-*-val-size chain. */
 .bar-net { display: block; font-size: inherit; line-height: 1; }
-.bar-list .bar-row           { grid-template-columns: 104px 1fr 66px; cursor: pointer; }
+.bar-list .bar-row           { grid-template-columns: subgrid; grid-column: 1 / -1; gap: 0 8px; cursor: pointer; }
+/* Split mode shrinks the value column from 66px to 44px (TP/SL stacked).
+   :has() picks up the bar-list whose rows are in split mode and adjusts the
+   parent column tracks — subgrid children inherit automatically. */
+.bar-list:has(.bar-row.split) { grid-template-columns: max-content 1fr 44px; }
+/* Empty/no-data placeholders span all three columns (otherwise they'd land in
+   column 1 and look misaligned). */
+.bar-list > .no-data,
+.bar-list > .widget-empty-state { grid-column: 1 / -1; }
 .bar-row.lb-active,
 .pp-gchip.lb-active          { box-shadow: inset 0 0 0 2px var(--gold); border-radius: 6px; }
 .wd-cell-active              { box-shadow: inset 0 0 0 2px var(--gold) !important; border-radius: 6px; }
-.bar-list .bar-row.sm        { grid-template-columns: 88px  1fr 62px; }
-.bar-list .bar-row.setup     { grid-template-columns: 170px 1fr 66px; }
+.bar-list .bar-row.sm        { grid-template-columns: subgrid; }
+.bar-list .bar-row.setup     { grid-template-columns: subgrid; }
 .bar-list .bar-row.obs       { grid-template-columns: 150px 1fr 62px; }
 /* Split view: hide SL/TP side cells, keep net */
 .bar-list .split-val-cell:not(.split-val-net) { display: none; }
-.bar-list .bar-row.split     { grid-template-columns: 104px 1fr 44px; }
-.bar-list .bar-row.split.sm  { grid-template-columns: 88px  1fr 44px; }
+.bar-list .bar-row.split     { grid-template-columns: subgrid; }
+.bar-list .bar-row.split.sm  { grid-template-columns: subgrid; }
 .bar-list .bar-row.split.obs { grid-template-columns: 150px 1fr 44px; }
 .wd-drawer {
   position: fixed;
@@ -9955,6 +10002,14 @@ body.ms-sidebar-open .view-tabs {
   gap: 10px;
 }
 .tp-row .tp-color-reset { margin-left: 0; }
+
+/* When Auto typography mode is on, the manual slider list is hidden entirely
+   — the sizes are computed per-widget, not user-controlled, so showing the
+   sliders just clutters the panel. The next sections (Notion, Bar color mode,
+   Accessibility) collapse upward to stay within reach. */
+#tp-typography.is-auto-locked {
+  display: none;
+}
 
 /* Typography group section header */
 .tp-typo-group {

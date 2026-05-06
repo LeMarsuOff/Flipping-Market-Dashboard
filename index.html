@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=104">
+<link rel="stylesheet" href="dashboard.css?v=117">
 </head>
 <body class="is-booting">
 
@@ -1127,6 +1127,22 @@
     <!-- 4. Typography — 15 groups -->
     <div>
       <div class="tp-section">Typography</div>
+      <div class="tp-option-list" id="tp-typo-mode-list">
+        <label class="tp-option-label">
+          <input type="radio" name="typoMode" value="manual" class="tp-radio">
+          <span class="tp-option-content">
+            <span class="tp-option-title">Manual</span>
+            <span class="tp-option-desc">Set every typography size by hand with the sliders below</span>
+          </span>
+        </label>
+        <label class="tp-option-label">
+          <input type="radio" name="typoMode" value="auto" class="tp-radio">
+          <span class="tp-option-content">
+            <span class="tp-option-title">Auto (scale with widget size)</span>
+            <span class="tp-option-desc">Typography &amp; chart text scale proportionally to each widget's size — content always fits the widget frame</span>
+          </span>
+        </label>
+      </div>
       <div id="tp-typography"></div>
     </div>
 
@@ -2428,6 +2444,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=120"></script>
+<script src="dashboard.js?v=131"></script>
 </body>
 </html>
