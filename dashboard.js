@@ -6135,7 +6135,7 @@ function setNotionOpenMode(mode) {
   document.querySelectorAll('input[name="notionOpenMode"]').forEach(r => { r.checked = r.value === mode; });
 }
 function _getNotionMode() {
-  return localStorage.getItem(NOTION_MODE_KEY) || 'app';
+  return localStorage.getItem(NOTION_MODE_KEY) || 'tab';
 }
 function _initNotionModeUI() {
   const mode = _getNotionMode();
@@ -19282,7 +19282,7 @@ const THEME_STORAGE_KEY  = 'flipping_dashboard_theme';
 const BAR_COLOR_MODE_KEY  = 'flipping_bar_color_mode';
 
 // 'quality' = threshold-based on avg R | 'binary' = positive/negative
-let barColorMode = localStorage.getItem(BAR_COLOR_MODE_KEY) || 'quality';
+let barColorMode = localStorage.getItem(BAR_COLOR_MODE_KEY) || 'binary';
 
 // ── Bar hover tooltip (uses unified utip system) ──
 function _buildBarTipHTML(label, n, oc) {
