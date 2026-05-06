@@ -14946,6 +14946,15 @@ function _rrFilterBubbleClick(lv, _label) {
   const wasActive = appState.ui.rrMinFilter === lv;
   const activating = !wasActive;
   appState.ui.rrMinFilter = wasActive ? null : lv;
+  // Mutex with TP Management: an active ORR bubble represents "fixed TP @ X R",
+  // which conflicts visually with a Multi-TP / Personalised TPM badge. Switch
+  // to Fixed mode so the two badges express the same thing instead of fighting.
+  // Only on activation — toggling OFF leaves the mode untouched.
+  if (activating
+      && appState.ui.tpConfig?.mode !== 'fixed'
+      && typeof _setTpMode === 'function') {
+    _setTpMode('fixed');
+  }
   invalidateFilterCache();
   // Persist into the active preset's live slot so the bubble restores on
   // reload AND travels with the preset (switching presets picks up the
@@ -21737,6 +21746,21 @@ function _setTpMode(mode) {
   if (!_isValidMultiConfig(cfg.multi)) cfg.multi = _defaultMultiConfig();
   if (!_isValidPersonalisedConfig(cfg.personalised)) cfg.personalised = _defaultPersonalisedConfig();
   appState.ui.tpConfig = cfg;
+  // Mutex with ORR bubble: Multi-TP and Personalised express their own TP
+  // scheme; an active rrMinFilter bubble would render as a separate "RR ≥ X R"
+  // badge alongside the TPM badge, which the user finds confusing. Clear it
+  // here so the two never coexist. Fixed mode is the natural pair to the bubble
+  // (the bubble IS the fixed TP) and is left alone.
+  if ((mode === 'multi' || mode === 'personalised') && appState.ui.rrMinFilter !== null) {
+    appState.ui.rrMinFilter = null;
+    try {
+      const slot = getPresetLiveSlot(appState.presets?.activeId);
+      if (slot) slot.rrMinFilter = null;
+      if (typeof savePresetLiveFilters === 'function') savePresetLiveFilters();
+    } catch (_e) {}
+    if (typeof invalidateFilterCache === 'function') invalidateFilterCache();
+    if (typeof _rrSyncActiveFilterBadge === 'function') _rrSyncActiveFilterBadge();
+  }
   _saveTpConfig(cfg);
   _updateTpmBadge();
   _renderTpmModeBody();
