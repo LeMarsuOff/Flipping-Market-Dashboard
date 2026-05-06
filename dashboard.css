@@ -6665,6 +6665,613 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 }
 .lt-preset-slot.active::before { background: var(--gold); opacity: 1; }
 
+/* ── Layout toolbar Hide button (manage widget visibility) ── */
+.lt-btn.lt-hide {
+  border-color: color-mix(in srgb, var(--gold) 30%, transparent);
+  color: color-mix(in srgb, var(--gold) 80%, var(--body));
+}
+.lt-btn.lt-hide:hover {
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  color: var(--gold);
+}
+
+/* ── Hide popover (anchored below the Hide button) ── */
+.layout-hide-popover {
+  position: fixed;
+  z-index: 1100;
+  min-width: 280px; max-width: 360px;
+  max-height: min(70vh, 560px);
+  display: flex; flex-direction: column;
+  background: var(--bg1);
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: var(--rad);
+  box-shadow: 0 12px 32px rgba(0,0,0,.55), 0 0 0 1px color-mix(in srgb, var(--gold) 8%, transparent);
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  color: var(--body);
+  overflow: hidden;
+  animation: layoutHidePopFade .14s ease-out;
+}
+@keyframes layoutHidePopFade {
+  from { transform: translateY(-4px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.lhp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--gold) 18%, transparent);
+  background: color-mix(in srgb, var(--gold) 5%, var(--bg1));
+}
+.lhp-title {
+  text-transform: uppercase; letter-spacing: .8px;
+  color: var(--gold);
+  font-weight: 600;
+}
+.lhp-count {
+  color: var(--dim);
+  letter-spacing: .4px;
+}
+.lhp-body {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.lhp-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: var(--dim);
+}
+.lhp-section-header {
+  padding: 8px 12px 4px;
+  font-size: var(--typo-nano-size);
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--dim);
+  font-weight: 600;
+  position: sticky; top: 0;
+  background: var(--bg1);
+  border-top: 1px solid color-mix(in srgb, var(--gold) 12%, transparent);
+}
+.lhp-section-header:first-child { border-top: 0; }
+.lhp-section-header.lhp-section-hidden {
+  color: var(--r);
+  background: color-mix(in srgb, var(--r) 7%, var(--bg1));
+  border-top: 0;
+}
+/* Row container — flex with two click targets:
+     • .lhp-row-toggle (label wrapping the checkbox) — toggles visibility
+     • .lhp-row-locate (button) — scrolls the dashboard to the widget
+   Hovering each target uses its own background tint so the user sees which
+   action they're about to trigger. The row itself is not interactive. */
+.lhp-row {
+  display: flex; align-items: stretch; gap: 0;
+  transition: background .1s;
+  user-select: none;
+}
+/* NOTE: don't use the bare `.is-hidden` modifier — collides with the
+   global `.is-hidden { display:none !important }` rule at line 477. */
+.lhp-row.lhp-row-is-hidden {
+  background: color-mix(in srgb, var(--r) 4%, transparent);
+}
+/* Label text on hidden rows keeps the normal --body color (no red tint).
+   The row background tint + the unchecked checkbox + the "Hidden · N"
+   section header are enough to signal hidden state. */
+
+/* Checkbox-only click target (the only way to hide/show a widget) */
+.lhp-row-toggle {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 10px 6px 12px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.lhp-row-toggle:hover { background: color-mix(in srgb, var(--gold) 10%, transparent); }
+.lhp-row.lhp-row-is-hidden .lhp-row-toggle:hover { background: color-mix(in srgb, var(--r) 12%, transparent); }
+.lhp-row-toggle > input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0; height: 0;
+}
+.lhp-row-check {
+  flex: 0 0 auto;
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line2));
+  background: var(--bg2);
+  display: inline-flex; align-items: center; justify-content: center;
+  position: relative;
+  transition: all .1s;
+}
+.lhp-row-toggle > input[type="checkbox"]:checked + .lhp-row-check {
+  background: color-mix(in srgb, var(--gold) 80%, transparent);
+  border-color: var(--gold);
+}
+.lhp-row-toggle > input[type="checkbox"]:checked + .lhp-row-check::after {
+  content: '';
+  width: 8px; height: 4px;
+  border-left: 1.5px solid var(--bg);
+  border-bottom: 1.5px solid var(--bg);
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+/* Label area — clickable button that scrolls the dashboard to the widget */
+.lhp-row-locate {
+  flex: 1 1 auto;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  transition: background .1s;
+}
+.lhp-row-locate:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+}
+.lhp-row-locate:disabled {
+  cursor: not-allowed;
+}
+.lhp-row-locate:disabled .lhp-row-label {
+  opacity: .75;
+}
+.lhp-row-label {
+  flex: 1 1 auto;
+  color: var(--body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lhp-row-section {
+  flex: 0 0 auto;
+  font-size: var(--typo-nano-size);
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bg3) 80%, transparent);
+  border: 1px solid var(--line2);
+}
+
+/* Brief gold flash on a widget after the user clicks "locate" in the popover.
+   Helps the eye land on the correct widget once the scroll completes. */
+.gs-locate-flash {
+  animation: gs-locate-flash-anim 1.4s ease-out;
+}
+@keyframes gs-locate-flash-anim {
+  0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--gold) 0%,  transparent); }
+  20%  { box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 65%, transparent); }
+  100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--gold) 0%,  transparent); }
+}
+.lhp-foot {
+  display: flex; justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--gold) 18%, transparent);
+  background: color-mix(in srgb, var(--bg2) 60%, transparent);
+}
+.lhp-foot-btn {
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  background: var(--bg3);
+  color: color-mix(in srgb, var(--gold) 80%, var(--body));
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  letter-spacing: .4px;
+  cursor: pointer;
+  transition: all .1s;
+}
+.lhp-foot-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  color: var(--gold);
+}
+.lhp-foot-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MINI GRID SIDEBAR — scaled-down editable copy of the active section
+   ════════════════════════════════════════════════════════════════════════ */
+/* Toolbar trigger */
+.lt-btn.lt-mini {
+  border-color: color-mix(in srgb, var(--b) 38%, transparent);
+  color: color-mix(in srgb, var(--b) 90%, var(--body));
+}
+.lt-btn.lt-mini:hover {
+  background: color-mix(in srgb, var(--b) 12%, transparent);
+  color: var(--b);
+}
+
+/* Sidebar shell — fixed right, ~40% of viewport */
+.ms-sidebar {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 40vw;
+  min-width: 380px;
+  max-width: 720px;
+  z-index: 1500;
+  display: flex; flex-direction: column;
+  background: var(--bg1);
+  border-left: 1px solid color-mix(in srgb, var(--gold) 28%, transparent);
+  box-shadow: -16px 0 40px rgba(0,0,0,.55);
+  font-family: 'DM Mono', monospace;
+  color: var(--body);
+  animation: ms-slide-in .18s ease-out;
+}
+@keyframes ms-slide-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+/* Push the dashboard content left so it doesn't sit underneath */
+body.ms-sidebar-open #main-panel,
+body.ms-sidebar-open .topbar,
+body.ms-sidebar-open #filter-context-strip,
+body.ms-sidebar-open .view-tabs {
+  margin-right: 40vw;
+  transition: margin-right .18s ease-out;
+}
+@media (max-width: 1100px) {
+  body.ms-sidebar-open #main-panel,
+  body.ms-sidebar-open .topbar,
+  body.ms-sidebar-open #filter-context-strip,
+  body.ms-sidebar-open .view-tabs {
+    margin-right: 380px;
+  }
+}
+
+/* Header */
+.ms-sidebar-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--gold) 22%, transparent);
+  background: color-mix(in srgb, var(--gold) 5%, var(--bg1));
+}
+.ms-sidebar-title {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ms-sidebar-eyebrow {
+  font-size: var(--typo-nano-size);
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--dim);
+}
+.ms-sidebar-section {
+  font-size: var(--typo-panel-size, 13px);
+  color: var(--gold);
+  font-weight: 600;
+  letter-spacing: .4px;
+}
+.ms-sidebar-actions {
+  display: flex; gap: 8px;
+}
+.ms-btn {
+  padding: 5px 12px;
+  border-radius: 3px;
+  border: 1px solid var(--line2);
+  background: var(--bg3);
+  color: var(--body);
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  letter-spacing: .4px;
+  cursor: pointer;
+  transition: all .1s;
+}
+.ms-btn-cancel:hover {
+  border-color: color-mix(in srgb, var(--r) 40%, transparent);
+  color: var(--r);
+}
+.ms-btn-apply {
+  border-color: color-mix(in srgb, var(--g) 50%, transparent);
+  color: var(--g);
+}
+.ms-btn-apply:hover {
+  background: color-mix(in srgb, var(--g) 14%, transparent);
+}
+.ms-btn-preview {
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  color: var(--gold);
+}
+.ms-btn-preview:hover {
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  color: color-mix(in srgb, var(--gold) 90%, var(--white));
+}
+
+/* Mini grid wrap (top, scrollable) */
+.ms-grid-wrap {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg) 60%, var(--bg1));
+}
+.ms-grid {
+  background: linear-gradient(0deg,
+    color-mix(in srgb, var(--gold) 4%, transparent) 1px,
+    transparent 1px) 0 0 / 100% calc(var(--ms-cell-h, 2px) * 5),
+  linear-gradient(90deg,
+    color-mix(in srgb, var(--gold) 4%, transparent) 1px,
+    transparent 1px) 0 0 / calc(100% / 12) 100%;
+  border: 1px solid color-mix(in srgb, var(--gold) 12%, transparent);
+  border-radius: var(--rad-sm, 4px);
+  min-height: 200px;
+}
+
+/* Tiles inside the mini grid — each .grid-stack-item-content holds .ms-tile */
+.ms-tile {
+  position: relative;
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bg3) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 18%, var(--line2));
+  color: var(--body);
+  cursor: grab;
+  overflow: hidden;
+  transition: border-color .12s, background .12s;
+}
+.ms-tile:hover {
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  background: color-mix(in srgb, var(--gold) 6%, var(--bg3));
+}
+.ms-tile-icon {
+  flex: 0 0 auto;
+  width: 28px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: color-mix(in srgb, var(--gold) 70%, var(--dim));
+}
+.ms-tile-icon svg {
+  width: 100%; height: 100%;
+  fill: currentColor; stroke: currentColor;
+}
+.ms-tile-icon.ms-icon-line svg,
+.ms-tile-icon.ms-icon-donut svg {
+  fill: none;
+}
+.ms-tile-icon.ms-icon-donut svg circle:last-child { fill: currentColor; stroke: none; }
+.ms-tile-label {
+  flex: 0 0 auto;
+  font-size: var(--typo-nano-size);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-align: center;
+}
+.ms-tile-remove {
+  position: absolute;
+  top: 2px; right: 2px;
+  width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .1s, color .1s, background .1s;
+}
+.ms-tile:hover .ms-tile-remove { opacity: 1; }
+.ms-tile-remove:hover {
+  color: var(--r);
+  background: color-mix(in srgb, var(--r) 12%, transparent);
+}
+
+/* Unmapped tile — hatched + dim */
+.ms-tile-unmapped,
+.ms-parked-unmapped {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 5px,
+    color-mix(in srgb, var(--dim) 18%, transparent) 5px,
+    color-mix(in srgb, var(--dim) 18%, transparent) 7px
+  );
+  opacity: .65;
+}
+.ms-tile-unmapped .ms-tile-label,
+.ms-parked-unmapped .ms-parked-label {
+  color: color-mix(in srgb, var(--r) 35%, var(--dim));
+}
+
+/* GridStack handles inside the mini — make them visible (always in edit) */
+.ms-grid .grid-stack-item > .ui-resizable-handle {
+  background: color-mix(in srgb, var(--gold) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 2px;
+  z-index: 50;
+  opacity: .75;
+}
+.ms-grid .grid-stack-item.ui-draggable-dragging { opacity: .8; }
+
+/* Parking zone (bottom of sidebar) */
+.ms-parking-wrap {
+  flex: 0 0 auto;
+  border-top: 1px solid color-mix(in srgb, var(--gold) 22%, transparent);
+  background: var(--bg1);
+  padding: 10px 12px 12px;
+}
+.ms-parking-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.ms-parking-title {
+  font-size: var(--typo-micro-size);
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--r);
+  font-weight: 600;
+}
+.ms-parking-title::before {
+  content: '👁';
+  display: inline-block;
+  margin-right: 6px;
+  text-decoration: line-through;
+  text-decoration-color: var(--r);
+  filter: grayscale(1) opacity(.7);
+}
+.ms-parking-hint {
+  font-size: var(--typo-nano-size);
+  color: var(--dim);
+  letter-spacing: .3px;
+}
+.ms-parking {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  min-height: 56px;
+  max-height: 130px;
+  overflow-y: auto;
+  padding: 4px 2px;
+  border: 1px dashed transparent;
+  border-radius: 3px;
+  transition: border-color .12s, background .12s;
+}
+/* GridStack adds .grid-stack-drop-target on the configured `removable`
+   element while a widget is being dragged over it. We use it to give
+   visual feedback so the user knows the drop will hide the widget. */
+.ms-parking.grid-stack-drop-target,
+.ms-parking.gs-removable-drop-target {
+  border-color: var(--r);
+  background: color-mix(in srgb, var(--r) 6%, transparent);
+}
+.ms-parking-empty {
+  flex: 1 1 auto;
+  text-align: center;
+  padding: 12px;
+  color: var(--dim);
+  font-size: var(--typo-micro-size);
+  font-style: italic;
+}
+/* Parked tiles = widgets currently hidden from the dashboard. The visual
+   treatment (red-tinted border + dimmed colors + dashed border) makes the
+   "hidden" state legible at a glance even when the section header is out
+   of view (small popover, scrolled). */
+.ms-parked {
+  flex: 0 0 auto;
+  width: 110px;
+  min-height: 44px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  padding: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--r) 4%, var(--bg2));
+  border: 1px dashed color-mix(in srgb, var(--r) 40%, var(--line2));
+  color: var(--body);
+  cursor: grab;
+  transition: border-color .1s, background .1s, transform .1s;
+  user-select: none;
+}
+.ms-parked:hover {
+  border-color: var(--r);
+  background: color-mix(in srgb, var(--r) 10%, var(--bg2));
+  transform: translateY(-1px);
+}
+.ms-parked:active { cursor: grabbing; }
+.ms-parked .ms-tile-icon {
+  width: 22px; height: 14px;
+  color: color-mix(in srgb, var(--r) 60%, var(--dim));
+}
+.ms-parked-label {
+  font-size: var(--typo-nano-size);
+  letter-spacing: .3px;
+  color: color-mix(in srgb, var(--r) 25%, var(--dim));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-align: center;
+}
+
+/* ── Per-widget eye-off button (visible in edit mode only) ── */
+/* Positioned top-right with a 36px right offset so the NE resize handle
+   stays clickable. The grid-stack-item NE handle inherits GridStack's
+   default ~28px width (no override in the .gs-editing rules), so we leave
+   28px for the handle + 8px clearance. */
+.gs-hide-btn {
+  position: absolute;
+  top: 5px;
+  right: 36px;
+  z-index: 100;
+  display: none;
+  width: 22px; height: 22px;
+  align-items: center; justify-content: center;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--gold) 25%, transparent);
+  background: color-mix(in srgb, var(--bg1) 85%, transparent);
+  color: color-mix(in srgb, var(--gold) 60%, var(--body));
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: color .1s, border-color .1s, background .1s, transform .1s;
+}
+.gs-editing .gs-hide-btn { display: inline-flex; }
+.gs-hide-btn:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  background: color-mix(in srgb, var(--gold) 10%, var(--bg1));
+  transform: scale(1.05);
+}
+.gs-hide-btn svg { display: block; }
+
+/* ── Confirmation mini-popup (after clicking the eye-off button) ── */
+/* position: absolute with document coordinates so the popup scrolls
+   naturally with the widget. z-index is BELOW the sticky header chain
+   (.view-tabs=1000, #filter-context-strip=1001, .topbar=1002 in edit mode,
+   see lines 1041-1043) so when the widget scrolls upward the popup slides
+   UNDER the header instead of overlapping it. */
+.gs-hide-confirm-popup {
+  position: absolute;
+  z-index: 500;
+  min-width: 160px;
+  padding: 10px 12px;
+  background: var(--bg1);
+  border: 1px solid color-mix(in srgb, var(--r) 40%, var(--line2));
+  border-radius: var(--rad);
+  box-shadow: 0 10px 24px rgba(0,0,0,.55), 0 0 0 1px color-mix(in srgb, var(--r) 10%, transparent);
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  color: var(--body);
+  animation: layoutHidePopFade .12s ease-out;
+}
+.gs-hide-confirm-msg {
+  margin-bottom: 8px;
+  letter-spacing: .3px;
+}
+.gs-hide-confirm-actions {
+  display: flex; gap: 6px; justify-content: flex-end;
+}
+.gs-hide-confirm-btn {
+  padding: 3px 9px;
+  border-radius: 3px;
+  border: 1px solid var(--line2);
+  background: var(--bg3);
+  color: var(--body);
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  letter-spacing: .4px;
+  cursor: pointer;
+  transition: all .1s;
+}
+.gs-hide-confirm-btn.gs-hide-confirm-cancel:hover {
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  color: var(--white);
+}
+.gs-hide-confirm-btn.gs-hide-confirm-ok {
+  border-color: color-mix(in srgb, var(--r) 50%, transparent);
+  color: var(--r);
+}
+.gs-hide-confirm-btn.gs-hide-confirm-ok:hover {
+  background: color-mix(in srgb, var(--r) 14%, transparent);
+}
+
 /* ── Themed confirm modal for layout slot deletion ── */
 .layout-confirm-backdrop {
   position: fixed; inset: 0; z-index: 10000;

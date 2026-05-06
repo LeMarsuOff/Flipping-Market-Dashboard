@@ -1489,6 +1489,17 @@ function handleActionClick(event) {
     case 'layout-export-json': layoutExportJSON(); break;
     case 'layout-import-trigger': document.getElementById('lt-import-file')?.click(); break;
     case 'layout-reset': layoutReset(); break;
+    case 'layout-hide-toggle': event.stopPropagation(); _toggleHidePopover(); break;
+    case 'layout-hide-show-all': event.stopPropagation(); _unhideAllWidgets(); break;
+    case 'layout-hide-widget-confirm': event.stopPropagation(); _openHideConfirm(actionEl.dataset.gsId, actionEl); break;
+    case 'layout-hide-confirm': event.stopPropagation(); _hideWidget(actionEl.dataset.gsId); _closeHideConfirm(); break;
+    case 'layout-hide-cancel': event.stopPropagation(); _closeHideConfirm(); break;
+    case 'layout-locate-widget': event.stopPropagation(); _locateWidget(actionEl.dataset.gsId); break;
+    case 'ms-toggle':       event.stopPropagation(); _msState?.open ? _msCloseSidebar(false) : _msOpenSidebar(); break;
+    case 'ms-apply':        event.stopPropagation(); _msCloseSidebar(true); break;
+    case 'ms-cancel':       event.stopPropagation(); _msCloseSidebar(false); break;
+    case 'ms-preview':      event.stopPropagation(); _msPreview(); break;
+    case 'ms-tile-remove':  event.stopPropagation(); _msTileRemove(actionEl.dataset.gsId); break;
     case 'toggle-layout-edit': toggleEditMode(); break;
     case 'mob-tradelog-more':
       _mobTradeLogPage++;
@@ -1515,6 +1526,11 @@ function handleActionKeydown(event) {
   }
 }
 function handleActionChange(event) {
+  if (event.target.matches && event.target.matches('input[data-action="layout-hide-toggle-row"]')) {
+    const id = event.target.dataset.gsId;
+    if (id) _toggleHideWidget(id);
+    return;
+  }
   if (event.target.id === 'stl-be-toggle-input') {
     _streakBeColorMode = !!event.target.checked;
     _updateStreakLegend();
@@ -25548,6 +25564,10 @@ function _applySectionFilter(section, { skipSync = false } = {}) {
   allItems.forEach(item => {
     const sec = itemSection(item);
     if (!sec) return;
+    const id = item.getAttribute('gs-id');
+    // User-hidden widgets are detached from the grid in *every* section so
+    // they never reserve a grid slot. Treat them like cross-section items.
+    if (id && _isWidgetHidden(id)) { hidden.push(item); return; }
     (sec === section ? visible : hidden).push(item);
   });
 
@@ -25861,6 +25881,929 @@ let _csvFormat = null; // tracks last imported CSV format
 const LS_KEY_SLOTS       = 'gs_custom_slots';
 const LAYOUT_SLOTS_MAX   = 4;
 
+// ──────────────────────────────────────────────────────────────
+// HIDDEN WIDGETS — global list (NOT per-preset). When a widget is
+// hidden, it's detached from GridStack via removeWidget(item, false)
+// (DOM preserved, no grid hole) and tagged with display:none. Last-
+// known {w,h} is stored so unhide can re-add it at its previous size
+// at the bottom row of the active section's grid. Persisted in
+// localStorage so the hide state survives reload + preset switches.
+// Reset (↺) does NOT clear this list — that's intentional per spec.
+// ──────────────────────────────────────────────────────────────
+const LS_KEY_HIDDEN = 'gs_hidden_widgets';
+let _hiddenWidgets = {};
+
+function _loadHiddenWidgets() {
+  try {
+    const raw = localStorage.getItem(LS_KEY_HIDDEN);
+    const obj = raw ? JSON.parse(raw) : {};
+    _hiddenWidgets = (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch { _hiddenWidgets = {}; }
+}
+
+function _saveHiddenWidgets() {
+  try { localStorage.setItem(LS_KEY_HIDDEN, JSON.stringify(_hiddenWidgets)); } catch {}
+}
+
+function _isWidgetHidden(id) {
+  return !!(id && _hiddenWidgets && _hiddenWidgets[id]);
+}
+
+// Detach a widget from the GridStack while preserving its DOM node + gs-id.
+// We snapshot its current size into _hiddenWidgets[id] so unhide knows what
+// dimensions to restore. Works whether the widget is in the active section
+// (live gridstackNode) or in a parked section (display:none + no node).
+function _hideWidget(id) {
+  if (!_grid || !id || _isWidgetHidden(id)) return;
+  const item = document.querySelector(`#gs-container .grid-stack-item[gs-id="${id}"]`);
+  if (!item) return;
+
+  const n = item.gridstackNode;
+  let w, h;
+  if (n) {
+    w = n.w; h = n.h;
+  } else {
+    const sec = item.querySelector('.gs-widget[data-section]')?.dataset.section;
+    const layoutEntry = sec && _liveSectionLayouts[sec] ? _liveSectionLayouts[sec][id] : null;
+    w = layoutEntry?.w || 6;
+    h = layoutEntry?.h || 20;
+  }
+  _hiddenWidgets[id] = { w, h };
+  _saveHiddenWidgets();
+
+  if (n) _grid.removeWidget(item, false);
+  item.style.display = 'none';
+
+  if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
+  requestAnimationFrame(() => { if (typeof _redrawAll === 'function') _redrawAll(); });
+}
+
+// Re-attach a previously hidden widget at the bottom of its section's grid.
+// If the widget belongs to the active section, we make + update it live.
+// Otherwise we update _liveSectionLayouts[sec] with a bottom position so
+// the widget reappears at the bottom the next time the user navigates back.
+function _unhideWidget(id) {
+  if (!_grid || !id || !_isWidgetHidden(id)) return;
+  const item = document.querySelector(`#gs-container .grid-stack-item[gs-id="${id}"]`);
+  const stored = _hiddenWidgets[id] || { w: 6, h: 20 };
+  delete _hiddenWidgets[id];
+  _saveHiddenWidgets();
+  if (!item) {
+    if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
+    return;
+  }
+
+  const sec = item.querySelector('.gs-widget[data-section]')?.dataset.section;
+  const activeSec = appState?.ui?.activeSection || 'global';
+
+  // Compute the bottom row of the *target* section. For the active section
+  // we read live gridstack nodes (which reflect any drag/resize since load).
+  // For non-active sections we read _liveSectionLayouts[sec] (the persisted
+  // positions, since those widgets aren't in the live grid right now).
+  let maxBottom = 0;
+  if (sec === activeSec && _grid) {
+    _grid.getGridItems().forEach(it => {
+      const node = it.gridstackNode;
+      if (!node) return;
+      const bottom = (node.y || 0) + (node.h || 0);
+      if (bottom > maxBottom) maxBottom = bottom;
+    });
+  } else if (sec && _liveSectionLayouts[sec]) {
+    Object.entries(_liveSectionLayouts[sec]).forEach(([wid, d]) => {
+      if (wid === id || _isWidgetHidden(wid)) return;
+      const bottom = (d.y || 0) + (d.h || 0);
+      if (bottom > maxBottom) maxBottom = bottom;
+    });
+  }
+
+  if (sec === activeSec) {
+    // Live re-attach. Float ON during the operation so GridStack respects the
+    // exact bottom-row coordinates (otherwise float:false would compact upward).
+    item.style.display = '';
+    item.setAttribute('gs-x', 0);
+    item.setAttribute('gs-y', maxBottom);
+    item.setAttribute('gs-w', stored.w);
+    item.setAttribute('gs-h', stored.h);
+    _grid.float(true);
+    _grid.batchUpdate();
+    try {
+      if (!item.gridstackNode) _grid.makeWidget(item);
+      _grid.update(item, { x: 0, y: maxBottom, w: stored.w, h: stored.h });
+    } finally {
+      _grid.commit();
+    }
+    _grid.float(false);
+  }
+
+  // Mirror the new position into _liveSectionLayouts so it persists across
+  // section switches + autosaves (active slot + named preset).
+  if (sec && _liveSectionLayouts[sec]) {
+    const cur = _liveSectionLayouts[sec][id] || {};
+    _liveSectionLayouts[sec][id] = {
+      ...cur,
+      x: 0, y: maxBottom, w: stored.w, h: stored.h,
+      minW: cur.minW || 3, minH: cur.minH || 10,
+    };
+  }
+  if (typeof _saveActiveSlotLive === 'function') _saveActiveSlotLive();
+
+  if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
+  requestAnimationFrame(() => { if (typeof _redrawAll === 'function') _redrawAll(); });
+}
+
+function _toggleHideWidget(id) {
+  if (_isWidgetHidden(id)) _unhideWidget(id);
+  else _hideWidget(id);
+}
+
+// Scroll the dashboard to a widget. If the widget belongs to a non-active
+// section, switch to that section first then scroll. The popover and the
+// layout-edit mode are intentionally left open — the user can keep managing
+// visibility / editing the layout right after locating a widget. No-op when
+// the widget is currently hidden (locate button is disabled in that case).
+function _locateWidget(id) {
+  if (!id || _isWidgetHidden(id)) return;
+  const item = document.querySelector(`#gs-container .grid-stack-item[gs-id="${id}"]`);
+  if (!item) return;
+  const sec = item.querySelector('.gs-widget[data-section]')?.dataset.section;
+  const activeSec = appState?.ui?.activeSection || 'global';
+
+  const doScroll = () => {
+    const target = document.querySelector(`#gs-container .grid-stack-item[gs-id="${id}"]`);
+    if (!target) return;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // Brief flash so the user can spot it after the scroll lands.
+    target.classList.add('gs-locate-flash');
+    setTimeout(() => target.classList.remove('gs-locate-flash'), 1400);
+  };
+
+  if (sec && sec !== activeSec && typeof setSection === 'function') {
+    setSection(sec);
+    // Wait two frames for the section filter + grid update to settle.
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
+  } else {
+    doScroll();
+  }
+}
+
+function _unhideAllWidgets() {
+  const ids = Object.keys(_hiddenWidgets || {});
+  if (!ids.length) return;
+  ids.forEach(id => _unhideWidget(id));
+}
+
+// ── Hide popover (anchored below the toolbar Hide button) ──
+function _toggleHidePopover() {
+  const existing = document.getElementById('layout-hide-popover');
+  if (existing) {
+    existing.remove();
+    document.removeEventListener('click', _onHidePopoverOutsideClick, true);
+    return;
+  }
+  const anchor = document.querySelector('[data-action="layout-hide-toggle"]');
+  if (!anchor) return;
+  const pop = document.createElement('div');
+  pop.id = 'layout-hide-popover';
+  pop.className = 'layout-hide-popover';
+  document.body.appendChild(pop);
+  _renderHidePopoverList();
+  _positionHidePopover(pop, anchor);
+  setTimeout(() => document.addEventListener('click', _onHidePopoverOutsideClick, true), 0);
+}
+
+function _positionHidePopover(pop, anchor) {
+  const r = anchor.getBoundingClientRect();
+  pop.style.position = 'fixed';
+  pop.style.top   = `${Math.round(r.bottom + 6)}px`;
+  pop.style.right = `${Math.round(window.innerWidth - r.right)}px`;
+}
+
+function _onHidePopoverOutsideClick(e) {
+  const pop = document.getElementById('layout-hide-popover');
+  if (!pop) {
+    document.removeEventListener('click', _onHidePopoverOutsideClick, true);
+    return;
+  }
+  if (pop.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('[data-action="layout-hide-toggle"]')) return;
+  pop.remove();
+  document.removeEventListener('click', _onHidePopoverOutsideClick, true);
+}
+
+// Collect every managed widget across all 3 sections — id, label (from the
+// .cc-title text), the section it belongs to, and its (x, y) layout coords
+// (used to sort the popover in dashboard reading order). Used by the popover.
+function _collectAllManagedWidgets() {
+  const out = [];
+  document.querySelectorAll('#gs-container .grid-stack-item').forEach(item => {
+    const id = item.getAttribute('gs-id');
+    if (!id) return;
+    const widgetEl = item.querySelector('.gs-widget[data-section]');
+    const section  = widgetEl?.dataset.section || '—';
+    const titleEl  = item.querySelector('.cc-title');
+    const label    = (titleEl ? titleEl.textContent : id).trim() || id;
+
+    // Layout coords: prefer the live gridstackNode (active section, reflects
+    // the latest drag/resize). Fall back to _liveSectionLayouts for widgets
+    // in non-active sections OR hidden widgets — both have a node = null but
+    // their last-known position is preserved in the section layout map.
+    // Unknown coords sink to the bottom of the sort.
+    let x, y;
+    const node = item.gridstackNode;
+    if (node) {
+      x = node.x; y = node.y;
+    } else {
+      const stored = _liveSectionLayouts?.[section]?.[id];
+      if (stored && Number.isFinite(stored.x) && Number.isFinite(stored.y)) {
+        x = stored.x; y = stored.y;
+      } else {
+        x = Number.POSITIVE_INFINITY; y = Number.POSITIVE_INFINITY;
+      }
+    }
+
+    out.push({ id, label, section, x, y });
+  });
+  return out;
+}
+
+const _SECTION_LABEL_MAP = {
+  'global':     'Global',
+  'optimal-rr': 'Optimal RR',
+  'partials':   'Partials',
+};
+
+// Section ordering matches the on-screen tab order: Global → Optimal RR →
+// Partials. Used to group the popover so widgets show up in the same vertical
+// order as the dashboard reads them.
+const _SECTION_ORDER = { 'global': 0, 'optimal-rr': 1, 'partials': 2 };
+
+// Comparator: dashboard reading order — section first, then top-to-bottom,
+// then left-to-right within the same row.
+function _layoutOrderCmp(a, b) {
+  const sa = _SECTION_ORDER[a.section] ?? 99;
+  const sb = _SECTION_ORDER[b.section] ?? 99;
+  if (sa !== sb) return sa - sb;
+  if (a.y !== b.y) return a.y - b.y;
+  return a.x - b.x;
+}
+
+function _renderHidePopoverList() {
+  const pop = document.getElementById('layout-hide-popover');
+  if (!pop) return;
+  const items = _collectAllManagedWidgets();
+  // Split into hidden + visible groups. Hidden FIRST so the popover surfaces
+  // what's currently in the abnormal state. Within each group, sort by
+  // dashboard reading order (section → top-to-bottom → left-to-right) so the
+  // popover mirrors how the user scans the live dashboard.
+  const hiddenItems  = items.filter(x =>  _isWidgetHidden(x.id)).sort(_layoutOrderCmp);
+  const visibleItems = items.filter(x => !_isWidgetHidden(x.id)).sort(_layoutOrderCmp);
+  const total  = items.length;
+  const nHidden = hiddenItems.length;
+
+  const rowHTML = it => {
+    const isHidden = _isWidgetHidden(it.id);
+    const sectLabel = _SECTION_LABEL_MAP[it.section] || it.section;
+    const id = _escapeAttr(it.id);
+    // Two-part row:
+    //   • Checkbox (in its own <label>) toggles visibility — the only way to hide/show
+    //   • Locate button scrolls the dashboard to the widget (no toggle on text)
+    // For hidden widgets the locate button is disabled — the widget isn't
+    // visible in the grid so there's nothing to scroll to.
+    const locateTitle = isHidden ? 'Show this widget first to locate it' : 'Scroll to this widget on the dashboard';
+    const toggleTitle = isHidden ? 'Click to show this widget' : 'Click to hide this widget';
+    return `
+      <div class="lhp-row${isHidden ? ' lhp-row-is-hidden' : ''}">
+        <label class="lhp-row-toggle" title="${toggleTitle}">
+          <input type="checkbox" data-action="layout-hide-toggle-row" data-gs-id="${id}" ${isHidden ? '' : 'checked'} />
+          <span class="lhp-row-check" aria-hidden="true"></span>
+        </label>
+        <button type="button" class="lhp-row-locate" data-action="layout-locate-widget" data-gs-id="${id}" ${isHidden ? 'disabled' : ''} title="${locateTitle}">
+          <span class="lhp-row-label">${_escapeHtml(it.label)}</span>
+          <span class="lhp-row-section">${_escapeHtml(sectLabel)}</span>
+        </button>
+      </div>
+    `;
+  };
+
+  let body = '';
+  if (nHidden) {
+    body += `<div class="lhp-section-header lhp-section-hidden">Hidden · ${nHidden}</div>`;
+    body += hiddenItems.map(rowHTML).join('');
+  }
+  if (visibleItems.length) {
+    body += `<div class="lhp-section-header lhp-section-visible">Visible · ${visibleItems.length}</div>`;
+    body += visibleItems.map(rowHTML).join('');
+  }
+  if (!body) body = '<div class="lhp-empty">No widgets</div>';
+
+  pop.innerHTML = `
+    <div class="lhp-head">
+      <span class="lhp-title">Manage widget visibility</span>
+      <span class="lhp-count">${total - nHidden}/${total} shown</span>
+    </div>
+    <div class="lhp-body">${body}</div>
+    <div class="lhp-foot">
+      <button class="lhp-foot-btn" data-action="layout-hide-show-all" ${nHidden ? '' : 'disabled'}>Show all</button>
+    </div>
+  `;
+}
+
+// ── Per-widget hide confirmation popup (anchored to the eye-off button) ──
+// Positioning model: position: absolute with document coordinates so the
+// popup scrolls naturally with the widget (no listener needed). The popup's
+// stacking-context z-index is intentionally LOWER than the sticky header
+// (.view-tabs at 1000, #filter-context-strip at 1001, .topbar at 1002 in
+// edit mode — see dashboard.css:1041-1043), so when the widget scrolls
+// upward the popup slides UNDER the header instead of overlapping it.
+function _openHideConfirm(id, anchorEl) {
+  if (!id) return;
+  _closeHideConfirm();
+  if (!anchorEl) return;
+  const pop = document.createElement('div');
+  pop.id = 'gs-hide-confirm-popup';
+  pop.className = 'gs-hide-confirm-popup';
+  pop.innerHTML = `
+    <div class="gs-hide-confirm-msg">Hide this widget?</div>
+    <div class="gs-hide-confirm-actions">
+      <button class="gs-hide-confirm-btn gs-hide-confirm-cancel" data-action="layout-hide-cancel">Cancel</button>
+      <button class="gs-hide-confirm-btn gs-hide-confirm-ok" data-action="layout-hide-confirm" data-gs-id="${_escapeAttr(id)}">Hide</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  // Anchor 6px below the eye-off button in DOCUMENT coordinates (clientRect
+  // viewport coords + scrollY). Once placed, position:absolute makes the
+  // popup scroll with the page as a normal block — staying glued to the
+  // widget without a scroll listener.
+  const r = anchorEl.getBoundingClientRect();
+  const sx = window.scrollX || window.pageXOffset || 0;
+  const sy = window.scrollY || window.pageYOffset || 0;
+  const topPx  = Math.round(r.bottom + 6 + sy);
+  const leftPx = Math.round(Math.min(Math.max(8, r.right - 160), window.innerWidth - 168) + sx);
+  pop.style.position = 'absolute';
+  pop.style.top  = `${topPx}px`;
+  pop.style.left = `${leftPx}px`;
+
+  setTimeout(() => document.addEventListener('click', _onHideConfirmOutsideClick, true), 0);
+}
+
+function _closeHideConfirm() {
+  const pop = document.getElementById('gs-hide-confirm-popup');
+  if (pop) pop.remove();
+  document.removeEventListener('click', _onHideConfirmOutsideClick, true);
+}
+
+function _onHideConfirmOutsideClick(e) {
+  const pop = document.getElementById('gs-hide-confirm-popup');
+  if (!pop) { document.removeEventListener('click', _onHideConfirmOutsideClick, true); return; }
+  if (pop.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('[data-action="layout-hide-widget-confirm"]')) return;
+  _closeHideConfirm();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// MAGNETIC SNAP — works on any GridStack instance (main grid + mini grid).
+// After a drag/resize ends, scan side-by-side neighbours (touching x edges
+// with y-overlap) and if either of their top/bottom edges is within the
+// threshold, jump to align exactly. Keeps adjacent widgets visually crisp
+// without forcing the user to land them pixel-perfect.
+// Threshold = 2 grid units; on the live dashboard (cellHeight 10px) that's
+// 20px, on the mini (cellHeight 2px) it's 4px. Tight enough that a user who
+// genuinely wants a slight height offset can keep it (≥ 3 units), loose
+// enough that a near-miss aligns automatically.
+// ──────────────────────────────────────────────────────────────────────────
+const _MAGNET_SNAP_THRESHOLD = 2;
+
+function _applyMagnetSnap(grid, item) {
+  if (!grid || !item || !item.gridstackNode) return;
+  const me = item.gridstackNode;
+  const others = grid.getGridItems().filter(it => it !== item && it.gridstackNode);
+
+  let bestTop = null;     // { delta, target }
+  let bestBottom = null;
+
+  for (const other of others) {
+    const o = other.gridstackNode;
+    // Side-by-side: x edges touch
+    const touchesRight = (me.x + me.w) === o.x;
+    const touchesLeft  = (o.x + o.w) === me.x;
+    if (!touchesRight && !touchesLeft) continue;
+    // Need actual y overlap (not just touching)
+    const yOverlap = Math.min(me.y + me.h, o.y + o.h) - Math.max(me.y, o.y);
+    if (yOverlap <= 0) continue;
+
+    // Top edge candidate
+    const dyTop = o.y - me.y;
+    if (dyTop !== 0 && Math.abs(dyTop) <= _MAGNET_SNAP_THRESHOLD) {
+      if (!bestTop || Math.abs(dyTop) < Math.abs(bestTop.delta)) {
+        bestTop = { delta: dyTop, target: o.y };
+      }
+    }
+    // Bottom edge candidate
+    const meBottom = me.y + me.h;
+    const oBottom  = o.y + o.h;
+    const dyBottom = oBottom - meBottom;
+    if (dyBottom !== 0 && Math.abs(dyBottom) <= _MAGNET_SNAP_THRESHOLD) {
+      if (!bestBottom || Math.abs(dyBottom) < Math.abs(bestBottom.delta)) {
+        bestBottom = { delta: dyBottom, target: oBottom };
+      }
+    }
+  }
+
+  if (!bestTop && !bestBottom) return;
+
+  let newY = me.y, newH = me.h;
+  if (bestTop) {
+    const meBottom = newY + newH;
+    newY = bestTop.target;
+    newH = meBottom - newY;
+  }
+  if (bestBottom) newH = bestBottom.target - newY;
+  if (newH <= 0 || (newY === me.y && newH === me.h)) return;
+
+  // Respect minH if the snap would shrink below it.
+  const minH = me.minH || 1;
+  if (newH < minH) return;
+
+  grid.update(item, { y: newY, h: newH });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MINI GRID — sidebar with a scaled-down editable copy of the active section
+// ══════════════════════════════════════════════════════════════════════════
+// User opens this from the layout-edit toolbar (Mini-grid button). They can
+// drag/resize tiles, drop tiles into a parking zone (hide), or drag from
+// parking back into the grid (unhide / add). Apply commits the layout to
+// _liveSectionLayouts + the active preset autosave. Cancel discards.
+//
+// The mini uses its own GridStack instance (_msState.grid) on a separate
+// container so it never collides with the live dashboard grid (_grid).
+// Aspect ratio is preserved by using the same 12-column grid + a small
+// cellHeight (2px) so 1 mini-row maps to 5 real rows visually.
+
+let _msState = null;       // null when sidebar is closed
+const _MS_CELL_HEIGHT = 2; // mini cell height (real grid is 10) — 5x scale-down
+const _MS_COLUMN_COUNT = 12;
+
+// Widget archetype → SVG sigil. Minimalist: 6 patterns cover all widgets.
+function _msGetWidgetIcon(id) {
+  const KIND_BY_ID = {
+    'w-setup':'bars', 'w-pair':'bars', 'w-session':'bars', 'w-day':'bars',
+    'w-hour':'bars',  'w-m15':'bars',  'w-h4':'bars',      'w-pair-session':'bars',
+    'w-heatmap':'heatmap', 'w-calendar':'heatmap',
+    'w-equity':'line', 'w-recovery':'line', 'w-streak-analytics':'line',
+    'w-optimal-rr':'line', 'w-montecarlo':'line',
+    'w-outcome':'donut',
+    'w-stats':'cells', 'w-tradelog':'cells',
+    'w-selection':'mixed', 'w-monthly':'mixed', 'w-partial-optimizer':'mixed',
+  };
+  const kind = KIND_BY_ID[id] || 'mixed';
+  const ICONS = {
+    bars:    '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><rect x="2" y="9" width="3" height="6"/><rect x="7" y="5" width="3" height="10"/><rect x="12" y="2" width="3" height="13"/><rect x="17" y="7" width="3" height="8"/></svg>',
+    heatmap: '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><rect x="1" y="1" width="6" height="4"/><rect x="9" y="1" width="6" height="4" opacity=".5"/><rect x="17" y="1" width="6" height="4" opacity=".7"/><rect x="1" y="6" width="6" height="4" opacity=".4"/><rect x="9" y="6" width="6" height="4"/><rect x="17" y="6" width="6" height="4" opacity=".6"/><rect x="1" y="11" width="6" height="4" opacity=".6"/><rect x="9" y="11" width="6" height="4" opacity=".4"/><rect x="17" y="11" width="6" height="4" opacity=".8"/></svg>',
+    line:    '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><polyline points="1,13 5,10 9,11 13,7 17,8 23,3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+    donut:   '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><circle cx="12" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="12" cy="8" r="2"/></svg>',
+    cells:   '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><rect x="1" y="2" width="22" height="3"/><rect x="1" y="6" width="22" height="3" opacity=".6"/><rect x="1" y="10" width="22" height="3" opacity=".4"/></svg>',
+    mixed:   '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><rect x="2" y="9" width="3" height="6"/><polyline points="7,12 11,9 15,10 21,5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+  };
+  return `<span class="ms-tile-icon ms-icon-${kind}">${ICONS[kind]}</span>`;
+}
+
+// "Unmapped" = the widget's required field is absent in every trade of the
+// full dataset. Mirrors the buildRules logic in hideEmptyWidgets() — we just
+// reuse it instead of duplicating, by sampling once at sidebar open time.
+function _msComputeUnmappedSet() {
+  const out = new Set();
+  const items = appState?.trades?.items || [];
+  if (!items.length) return out;
+  let hSetup=false,hSession=false,hDay=false,hObs=false,hH4=false,hHour=false,hNotion=false;
+  for (const t of items) {
+    if (!hSetup   && t.setup    && t.setup.trim())              hSetup=true;
+    if (!hSession && t.session  && t.session.trim())            hSession=true;
+    if (!hDay     && t.day      && t.day.trim())                hDay=true;
+    if (!hObs     && t.obstacles && t.obstacles.length > 0)     hObs=true;
+    if (!hH4      && t.h4       && t.h4.length > 0)             hH4=true;
+    if (!hHour    && t.hour != null)                            hHour=true;
+    if (!hNotion  && t.notionUrl && String(t.notionUrl).trim()) hNotion=true;
+    if (hSetup&&hSession&&hDay&&hObs&&hH4&&hHour&&hNotion) break;
+  }
+  const flags = {
+    'w-setup': hSetup, 'w-session': hSession, 'w-day': hDay,
+    'w-heatmap': hSession && hDay, 'w-m15': hObs, 'w-h4': hH4,
+    'w-hour': hHour, 'w-pair-session': hSession, 'w-notion': hNotion,
+  };
+  Object.keys(flags).forEach(id => { if (!flags[id]) out.add(id); });
+  return out;
+}
+
+// Section's full widget catalog: every widget that BELONGS to this section
+// (per data-section in HTML), regardless of whether it's currently in the
+// layout. Drives the parking zone.
+function _msGetSectionWidgetIds(section) {
+  const out = [];
+  document.querySelectorAll('#gs-container .grid-stack-item').forEach(item => {
+    const sec = item.querySelector('.gs-widget[data-section]')?.dataset.section;
+    const id  = item.getAttribute('gs-id');
+    if (sec === section && id) out.push(id);
+  });
+  return out;
+}
+
+function _msGetWidgetLabel(id) {
+  const item = document.querySelector(`#gs-container .grid-stack-item[gs-id="${CSS.escape(id)}"]`);
+  const titleEl = item?.querySelector('.cc-title');
+  return (titleEl ? titleEl.textContent : id).trim() || id;
+}
+
+function _msTileHTML(id) {
+  const label = _msGetWidgetLabel(id);
+  const unmapped = _msState?.unmapped?.has(id);
+  return `
+    <div class="ms-tile${unmapped ? ' ms-tile-unmapped' : ''}" data-gs-id="${_escapeAttr(id)}" title="${_escapeAttr(label)}${unmapped ? ' — required data not mapped' : ''}">
+      ${_msGetWidgetIcon(id)}
+      <span class="ms-tile-label">${_escapeHtml(label)}</span>
+      <button type="button" class="ms-tile-remove" data-action="ms-tile-remove" data-gs-id="${_escapeAttr(id)}" title="Send to parking">×</button>
+    </div>
+  `;
+}
+
+// Open the sidebar with a snapshot of the active section's current layout.
+// We read directly from `_grid.getGridItems()` to capture the *live* positions
+// — `_liveSectionLayouts[sec]` can drift stale after programmatic mutations
+// (hide/unhide, makeWidget, update) that don't trigger _syncGridToLive.
+// Falling back to _liveSectionLayouts only for entries the live grid doesn't
+// have (i.e. widgets currently hidden by the user).
+function _msOpenSidebar() {
+  if (_msState?.open) return;
+  const section = appState?.ui?.activeSection || 'global';
+  // Build the live layout: prefer current grid nodes for items in the active
+  // section; fall back to the persisted layout for hidden / off-section items.
+  const liveLayout = JSON.parse(JSON.stringify(_liveSectionLayouts?.[section] || {}));
+  if (_grid && typeof _grid.getGridItems === 'function') {
+    _grid.getGridItems().forEach(item => {
+      const n = item.gridstackNode;
+      const id = item.getAttribute('gs-id');
+      if (!n || !id) return;
+      const sec = item.querySelector('.gs-widget[data-section]')?.dataset.section;
+      if (sec !== section) return;
+      const prev = liveLayout[id] || {};
+      liveLayout[id] = {
+        ...prev,
+        x: n.x, y: n.y, w: n.w, h: n.h,
+        minW: prev.minW || n.minW || 3,
+        minH: prev.minH || n.minH || 10,
+      };
+    });
+  }
+  const pristineLayout = JSON.parse(JSON.stringify(liveLayout));
+  const pristineHidden = JSON.parse(JSON.stringify(_hiddenWidgets || {}));
+
+  _msState = {
+    open: true,
+    section,
+    pristineLayout,
+    pristineHidden,
+    grid: null,
+    unmapped: _msComputeUnmappedSet(),
+    // Working state — what we'll commit on Apply
+    pendingLayout: JSON.parse(JSON.stringify(pristineLayout)),
+    pendingHidden: JSON.parse(JSON.stringify(pristineHidden)),
+  };
+
+  _msBuildSidebarDOM();
+  _msInitGrid();
+  _msRebuildParking();
+
+  // Push the dashboard left so the sidebar doesn't cover content. We use a
+  // body class so layout-edit-mode awareness is preserved.
+  document.body.classList.add('ms-sidebar-open');
+}
+
+function _msCloseSidebar(apply) {
+  if (!_msState?.open) return;
+  if (apply) {
+    _msApplyChanges();
+  } else if (_msState.previewApplied) {
+    // Preview was triggered earlier and mutated the live dashboard in-memory
+    // without persisting. On Cancel we must restore pristine state so the
+    // dashboard returns to exactly how it looked before the sidebar opened.
+    _liveSectionLayouts[_msState.section] = JSON.parse(JSON.stringify(_msState.pristineLayout));
+    _hiddenWidgets = JSON.parse(JSON.stringify(_msState.pristineHidden));
+    if (typeof _saveHiddenWidgets === 'function') _saveHiddenWidgets();
+    if (typeof _applySectionFilter === 'function') {
+      _applySectionFilter(_msState.section, { skipSync: true });
+    }
+    if (typeof _saveActiveSlotLive === 'function') _saveActiveSlotLive();
+  }
+  // Always destroy the mini grid + sidebar DOM
+  try { _msState.grid?.destroy(false); } catch {}
+  document.getElementById('ms-sidebar')?.remove();
+  document.body.classList.remove('ms-sidebar-open');
+  _msState = null;
+}
+
+// Preview — apply the pending layout to the live dashboard without writing
+// to localStorage. The user sees the result on the actual widgets, can keep
+// iterating in the mini, and either Apply (commits + persists) or Cancel
+// (reverts to pristine snapshot taken when the sidebar opened).
+function _msPreview() {
+  if (!_msState?.open) return;
+  const sec = _msState.section;
+
+  // Mutate _liveSectionLayouts[sec] from pendingLayout (positions/sizes)
+  const merged = { ...(_liveSectionLayouts[sec] || {}) };
+  Object.entries(_msState.pendingLayout).forEach(([id, d]) => {
+    merged[id] = { ...(merged[id] || {}), x: d.x, y: d.y, w: d.w, h: d.h, minW: d.minW, minH: d.minH };
+  });
+  _liveSectionLayouts[sec] = merged;
+
+  // Mutate _hiddenWidgets from pendingHidden — IN-MEMORY only.
+  // Skip _saveHiddenWidgets() so localStorage stays at pristine state.
+  _hiddenWidgets = { ..._msState.pendingHidden };
+
+  // Re-render the live grid to reflect the preview layout.
+  if (typeof _applySectionFilter === 'function') {
+    _applySectionFilter(sec, { skipSync: true });
+  }
+
+  _msState.previewApplied = true;
+  if (typeof _showToast === 'function') {
+    _showToast('Preview applied — Apply to save · Cancel to revert', 'info');
+  }
+}
+
+function _msBuildSidebarDOM() {
+  const sectLabel = _SECTION_LABEL_MAP[_msState.section] || _msState.section;
+  const wrap = document.createElement('aside');
+  wrap.id = 'ms-sidebar';
+  wrap.className = 'ms-sidebar';
+  wrap.innerHTML = `
+    <header class="ms-sidebar-head">
+      <div class="ms-sidebar-title">
+        <span class="ms-sidebar-eyebrow">Mini grid</span>
+        <span class="ms-sidebar-section">${_escapeHtml(sectLabel)}</span>
+      </div>
+      <div class="ms-sidebar-actions">
+        <button class="ms-btn ms-btn-preview" data-action="ms-preview" title="Apply to the dashboard live without saving — Cancel reverts">Preview</button>
+        <button class="ms-btn ms-btn-cancel" data-action="ms-cancel">Cancel</button>
+        <button class="ms-btn ms-btn-apply" data-action="ms-apply">Apply</button>
+      </div>
+    </header>
+    <div class="ms-grid-wrap">
+      <div id="ms-grid-container" class="grid-stack ms-grid"></div>
+    </div>
+    <div class="ms-parking-wrap">
+      <div class="ms-parking-head">
+        <span class="ms-parking-title">Hidden</span>
+        <span class="ms-parking-hint">Drag onto the grid to show · drag a tile here to hide</span>
+      </div>
+      <div id="ms-parking" class="ms-parking"></div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+}
+
+// Initialize the mini GridStack with the section's currently-visible widgets.
+// We init on an EMPTY container (no gs-x/y attrs in markup) and add widgets
+// programmatically with explicit positions inside a float(true) + batchUpdate.
+// This avoids GridStack's startup collision-resolution swapping vertically-
+// stacked widgets that share an x — a real bug we saw on the first attempt
+// where w-equity and w-tradelog ended up in opposite order in the mini.
+function _msInitGrid() {
+  const container = document.getElementById('ms-grid-container');
+  if (!container) return;
+
+  _msState.grid = GridStack.init({
+    column:        _MS_COLUMN_COUNT,
+    cellHeight:    _MS_CELL_HEIGHT,
+    margin:        2,
+    float:         true,                  // floating during load to keep exact y
+    animate:       true,
+    disableDrag:   false,
+    disableResize: false,
+    oneColumnModePossible: false,
+    acceptWidgets: '.ms-parked',
+    // Drag-OUT to the Hidden zone: dropping a tile onto #ms-parking removes
+    // it from the mini grid (the 'removed' event handler below records it
+    // into pendingHidden so the dashboard ends up hiding it on Apply).
+    removable:     '#ms-parking',
+    removableOptions: { accept: '.grid-stack-item', decline: '.no-remove' },
+    resizable:     { handles: 'se,sw,ne,nw,e,w,n,s' },
+  }, '#ms-grid-container');
+
+  // Use grid.load() — the canonical API for restoring a serialized layout.
+  // It places widgets at their EXACT positions (no collision-resolution swaps
+  // that addWidget triggers when widgets share an x and stack vertically).
+  // We pre-sort by (y, x) so GridStack's load processes widgets top-to-bottom,
+  // left-to-right — preventing earlier-iterated widgets from claiming positions
+  // intended for later-iterated ones (the cause of the equity/monthly/tradelog
+  // swap we observed when iterating in object-insertion order).
+  const layout = _msState.pendingLayout;
+  const serialized = Object.entries(layout)
+    .filter(([id]) => !_msState.pendingHidden[id])
+    .map(([id, d]) => ({
+      id,
+      x: d.x ?? 0, y: d.y ?? 0, w: d.w ?? 4, h: d.h ?? 20,
+      minW: d.minW || 3, minH: d.minH || 10,
+      content: _msTileHTML(id),
+    }))
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+  _msState.grid.load(serialized);
+  // Some GridStack builds don't propagate `id` to the gs-id attr, so write it
+  // explicitly so getAttribute('gs-id') works downstream (Apply, drag-out, etc.)
+  _msState.grid.getGridItems().forEach(item => {
+    const node = item.gridstackNode;
+    const nid = node?.id;
+    if (nid && !item.getAttribute('gs-id')) item.setAttribute('gs-id', nid);
+    item.classList.add('ms-tile-host');
+  });
+  // Float OFF so user drags compact normally (still no swap-on-load though).
+  _msState.grid.float(false);
+
+  // 'added' fires for two situations:
+  //   1) Initial load (load() inside this same _msInitGrid call) — every tile
+  //      we feed in fires 'added'. The tile already has the right HTML and
+  //      pendingHidden already excludes it, so the handler is essentially
+  //      idempotent.
+  //   2) Drag-drop from the Hidden zone — the parked .ms-parked div lands on
+  //      the grid and GridStack converts it into a grid-stack-item. We must
+  //      remove its hidden flag and refresh the Hidden list.
+  // Robust id extraction: GridStack may store the id as node.id (after load),
+  // or only on the element's gs-id / data-gs-id attribute (after drag-drop).
+  _msState.grid.on('added', (_e, items) => {
+    if (!Array.isArray(items)) return;
+    let didUnhide = false;
+    items.forEach(node => {
+      const item = node.el;
+      if (!item) return;
+      const id = node.id
+        || item.getAttribute('gs-id')
+        || item.getAttribute('data-gs-id')
+        || item.dataset?.gsId;
+      if (!id) return;
+      // Make sure both attributes are set so subsequent code paths find it.
+      if (!item.getAttribute('gs-id')) item.setAttribute('gs-id', id);
+      if (!item.getAttribute('data-gs-id')) item.setAttribute('data-gs-id', id);
+      // Ensure proper grid-stack-item-content wrapper holds our tile HTML.
+      let content = item.querySelector('.grid-stack-item-content');
+      if (!content) {
+        content = document.createElement('div');
+        content.className = 'grid-stack-item-content';
+        // Move any direct children inside the wrapper (drag-drop case).
+        while (item.firstChild && item.firstChild !== content) {
+          item.removeChild(item.firstChild);
+        }
+        item.appendChild(content);
+      }
+      // Always replace with the canonical tile HTML — drag-drop brings the
+      // .ms-parked markup (icon + label, no remove button), we want the full
+      // .ms-tile structure with the × button.
+      content.innerHTML = _msTileHTML(id);
+      item.classList.add('ms-tile-host');
+      // Unhide in pending state. If id wasn't previously hidden this is a
+      // no-op (case 1 — initial load).
+      if (_msState.pendingHidden[id]) {
+        delete _msState.pendingHidden[id];
+        didUnhide = true;
+      }
+    });
+    _msSyncPendingFromGrid();
+    if (didUnhide) _msRebuildParking();
+  });
+
+  _msState.grid.on('change', () => _msSyncPendingFromGrid());
+
+  // Magnetic snap on drag/resize stop — aligns side-by-side neighbours when
+  // their edges land within the threshold. Sync after so pendingLayout
+  // captures the post-snap position.
+  _msState.grid.on('resizestop dragstop', (_e, el) => {
+    _applyMagnetSnap(_msState.grid, el);
+    _msSyncPendingFromGrid();
+  });
+
+  // 'removed' fires when a tile is dropped onto the Hidden zone (via the
+  // `removable` config above). Snapshot its size, mark it hidden in pending
+  // state, refresh the Hidden list. The DOM element is gone after this event.
+  _msState.grid.on('removed', (_e, items) => {
+    if (!Array.isArray(items)) return;
+    items.forEach(node => {
+      const id = node?.id || node?.el?.getAttribute('gs-id');
+      if (!id) return;
+      _msState.pendingHidden[id] = {
+        w: node.w || _msState.pendingLayout[id]?.w || 4,
+        h: node.h || _msState.pendingLayout[id]?.h || 20,
+      };
+    });
+    _msSyncPendingFromGrid();
+    _msRebuildParking();
+  });
+}
+
+// Read the live mini grid state into pendingLayout. Sizes/positions only —
+// hidden state is tracked separately via add/remove events.
+function _msSyncPendingFromGrid() {
+  if (!_msState?.grid) return;
+  _msState.grid.getGridItems().forEach(item => {
+    const n = item.gridstackNode;
+    const id = item.getAttribute('gs-id');
+    if (!n || !id) return;
+    const prev = _msState.pendingLayout[id] || {};
+    _msState.pendingLayout[id] = {
+      ...prev,
+      x: n.x, y: n.y, w: n.w, h: n.h,
+      minW: prev.minW ?? n.minW ?? 3,
+      minH: prev.minH ?? n.minH ?? 10,
+    };
+  });
+}
+
+// Rebuild the parking zone — every widget of this section that is NOT
+// currently in the mini grid (= hidden in pendingHidden, or absent from
+// pendingLayout). Sets up GridStack drag-in via setupDragIn.
+function _msRebuildParking() {
+  const parking = document.getElementById('ms-parking');
+  if (!parking) return;
+  const sectionIds = _msGetSectionWidgetIds(_msState.section);
+  const inGrid = new Set(_msState.grid?.getGridItems().map(it => it.getAttribute('gs-id')) || []);
+  const parkedIds = sectionIds.filter(id => !inGrid.has(id));
+
+  parking.innerHTML = parkedIds.length
+    ? parkedIds.map(id => {
+        // every parked tile signals "hidden from dashboard" — we keep the
+        // .ms-parked class for drag selectors but render a hidden visual cue.
+        const label = _msGetWidgetLabel(id);
+        const unmapped = _msState.unmapped.has(id);
+        // Default size for re-add — fall back to widget's last-known size in
+        // pendingLayout (preserves drag/resize done before hiding it), then
+        // the section's default layout entry.
+        const lastKnown = _msState.pendingLayout[id];
+        const def = lastKnown || (SECTION_LAYOUTS[_msState.section] && SECTION_LAYOUTS[_msState.section][id]) || { w: 4, h: 20 };
+        // gs-id (no data- prefix) is what GridStack reads when this element
+        // is dropped into the grid via acceptWidgets — without it, the new
+        // grid-stack-item has no id and our 'added' handler can't unhide it.
+        // We keep data-gs-id as well for the click-action handlers.
+        return `
+          <div class="ms-parked${unmapped ? ' ms-parked-unmapped' : ''}"
+               gs-id="${_escapeAttr(id)}"
+               data-gs-id="${_escapeAttr(id)}"
+               gs-w="${def.w}" gs-h="${def.h}"
+               gs-min-w="${def.minW || 3}" gs-min-h="${def.minH || 10}"
+               title="${_escapeAttr(label)}${unmapped ? ' — required data not mapped' : ''}">
+            ${_msGetWidgetIcon(id)}
+            <span class="ms-parked-label">${_escapeHtml(label)}</span>
+          </div>
+        `;
+      }).join('')
+    : '<div class="ms-parking-empty">No hidden widgets — all visible on the dashboard</div>';
+
+  // Wire GridStack drag-in for the freshly rendered parked tiles.
+  if (typeof GridStack !== 'undefined' && typeof GridStack.setupDragIn === 'function') {
+    GridStack.setupDragIn('#ms-parking .ms-parked', { appendTo: 'body', helper: 'clone' });
+  }
+}
+
+// Apply: write mini-grid changes to the live dashboard layout + hidden list.
+function _msApplyChanges() {
+  if (!_msState) return;
+  const sec = _msState.section;
+  // 1. Update _liveSectionLayouts[sec] from pendingLayout (positions+sizes)
+  const merged = { ...(_liveSectionLayouts[sec] || {}) };
+  Object.entries(_msState.pendingLayout).forEach(([id, d]) => {
+    merged[id] = { ...(merged[id] || {}), x: d.x, y: d.y, w: d.w, h: d.h, minW: d.minW, minH: d.minH };
+  });
+  _liveSectionLayouts[sec] = merged;
+
+  // 2. Update _hiddenWidgets from pendingHidden
+  _hiddenWidgets = { ..._msState.pendingHidden };
+  if (typeof _saveHiddenWidgets === 'function') _saveHiddenWidgets();
+
+  // 3. Re-apply the section so the live grid reflects the new state
+  if (typeof _applySectionFilter === 'function') {
+    _applySectionFilter(sec, { skipSync: true });
+  }
+
+  // 4. Persist the layout to the active autosave + named preset
+  if (typeof _saveActiveSlotLive === 'function') _saveActiveSlotLive();
+
+  // 5. Sync the Hide popover if it happens to be open
+  if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
+
+  if (typeof _showToast === 'function') _showToast('Layout applied from mini grid', 'ok');
+}
+
+// Send a tile to the parking zone (= hide it in pending state).
+function _msTileRemove(id) {
+  if (!_msState?.grid || !id) return;
+  const item = _msState.grid.getGridItems().find(it => it.getAttribute('gs-id') === id);
+  if (!item) return;
+  // Snapshot size before removal
+  const n = item.gridstackNode;
+  if (n) _msState.pendingHidden[id] = { w: n.w, h: n.h };
+  _msState.grid.removeWidget(item, true);
+  _msSyncPendingFromGrid();
+  _msRebuildParking();
+}
+
 function _getCustomSlots() {
   try {
     const raw = localStorage.getItem(LS_KEY_SLOTS);
@@ -26024,7 +26967,19 @@ function _buildGridDOM() {
     handle.innerHTML = '⠿⠿⠿';
     handle.title = 'Drag to move';
 
+    // Per-widget hide button (eye-off icon). Only visible in edit mode via CSS.
+    // Positioned top-right of the card, with horizontal clearance from the NE
+    // resize handle (14px-wide at top:0/right:0) — see .gs-hide-btn rules.
+    const hideBtn = document.createElement('button');
+    hideBtn.type = 'button';
+    hideBtn.className = 'gs-hide-btn';
+    hideBtn.title = 'Hide this widget';
+    hideBtn.setAttribute('data-action', 'layout-hide-widget-confirm');
+    hideBtn.setAttribute('data-gs-id', id);
+    hideBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
     content.appendChild(handle);
+    content.appendChild(hideBtn);
     content.appendChild(el);  // move the actual widget inside
     item.appendChild(content);
     gsDiv.appendChild(item);
@@ -26081,6 +27036,8 @@ function _buildToolbarHTML() {
       <input id="lt-import-file" class="lt-import-input" type="file" accept=".json,application/json">
     </label>
     <div class="lt-sep"></div>
+    <button class="lt-btn lt-hide" data-action="layout-hide-toggle" title="Manage widget visibility">👁 Hide</button>
+    <button class="lt-btn lt-mini" data-action="ms-toggle" title="Open mini grid editor — drag/resize/add/remove in a sidebar">▦ Mini grid</button>
     <button class="lt-btn lt-reset" data-action="layout-reset" title="Reset the active layout to defaults">↺ Reset</button>
   `;
 }
@@ -26092,6 +27049,11 @@ function _escapeAttr(s) { return _escapeHtml(s); }
 
 // ── Initialise Gridstack ──
 function initGridstack() {
+  // Load the global hidden-widget list before _buildGridDOM so the per-widget
+  // eye-off buttons render in the right initial state. _applySectionFilter
+  // (called below) reads _isWidgetHidden(id) to skip these from the visible
+  // grid on first paint — no flash of "all visible".
+  _loadHiddenWidgets();
   _buildGridDOM();
 
   _grid = GridStack.init({
@@ -26120,6 +27082,10 @@ function initGridstack() {
   // After any drag/resize, flush layout then redraw charts.
   // Drag persistence is now allowed on ALL sections.
   _grid.on('resizestop dragstop', (_e, _el) => {
+    // Magnetic snap before redraw: aligns side-by-side neighbours whose edges
+    // land within the threshold. Synchronous — must happen before _syncGridToLive
+    // so the persisted layout reflects the snapped position.
+    if (_el) _applyMagnetSnap(_grid, _el);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         _redrawAll();
