@@ -26563,6 +26563,39 @@ function _msBuildSidebarDOM() {
   document.body.appendChild(wrap);
 }
 
+// Tear down and recreate the mini GridStack on its current pending state.
+// Used after a drag-back from Hidden: GridStack's acceptWidgets path leaves
+// the new widget without registered resize handles, so subsequent removeWidget
+// or drag-out attempts fail silently and the widget gets stuck. Reiniting on
+// a fresh GridStack instance is the only path that reliably restores a working
+// state (load() registers handles correctly; addWidget on a corrupted instance
+// does not). pendingLayout / pendingHidden survive on _msState so the new grid
+// reads the same data the destroyed one had.
+//
+// We swap the container DOM rather than calling destroy() — destroy(true)
+// throws "removeChild: not a child" when the corrupted state has missing
+// handle refs, AND a subsequent load() into the same container silently
+// adds zero widgets even when serialized has 18. A fresh container avoids
+// both problems. _isReiniting flag tells the 'removed' listener to ignore
+// the events that fire during teardown so we don't mass-park everything.
+function _msReinitGridFresh() {
+  if (!_msState?.grid || _msState._isReiniting) return;
+  _msState._isReiniting = true;
+  _msSyncPendingFromGrid();
+  const oldContainer = document.getElementById('ms-grid-container');
+  if (oldContainer && oldContainer.parentNode) {
+    const parent = oldContainer.parentNode;
+    const fresh = document.createElement('div');
+    fresh.id = 'ms-grid-container';
+    fresh.className = 'grid-stack ms-grid';
+    parent.replaceChild(fresh, oldContainer);
+  }
+  _msState.grid = null;
+  _msInitGrid();
+  _msRebuildParking();
+  _msState._isReiniting = false;
+}
+
 // Initialize the mini GridStack with the section's currently-visible widgets.
 // We init on an EMPTY container (no gs-x/y attrs in markup) and add widgets
 // programmatically with explicit positions inside a float(true) + batchUpdate.
@@ -26660,6 +26693,11 @@ function _msInitGrid() {
       // .ms-tile structure with the × button.
       content.innerHTML = _msTileHTML(id);
       item.classList.add('ms-tile-host');
+      // Drag-drop from Hidden brings the .ms-parked / .ms-parked-unmapped
+      // classes onto the new grid-stack-item. CSS uses descendant selectors
+      // (.ms-parked .ms-tile-icon, etc.) so the tile would render with the
+      // red "hidden" cue even though it's now visible. Strip them here.
+      item.classList.remove('ms-parked', 'ms-parked-unmapped');
       // Unhide in pending state. If id wasn't previously hidden this is a
       // no-op (case 1 — initial load).
       if (_msState.pendingHidden[id]) {
@@ -26668,7 +26706,16 @@ function _msInitGrid() {
       }
     });
     _msSyncPendingFromGrid();
-    if (didUnhide) _msRebuildParking();
+    if (didUnhide) {
+      _msRebuildParking();
+      // GridStack's `acceptWidgets` drop path leaves the new widget in a
+      // half-initialized state — resize handles aren't registered, internal
+      // refs are stale — so the next removeWidget / drag-out fails silently
+      // and the widget gets stuck in the grid. Force a clean reinit so the
+      // user can hide / move it again. Deferred so this fires after GridStack
+      // finishes its current event chain.
+      setTimeout(_msReinitGridFresh, 0);
+    }
   });
 
   _msState.grid.on('change', () => _msSyncPendingFromGrid());
@@ -26684,7 +26731,10 @@ function _msInitGrid() {
   // 'removed' fires when a tile is dropped onto the Hidden zone (via the
   // `removable` config above). Snapshot its size, mark it hidden in pending
   // state, refresh the Hidden list. The DOM element is gone after this event.
+  // Skipped during _msReinitGridFresh — destroy(true) fires 'removed' for
+  // every item and we don't want to flag them all as user-hidden.
   _msState.grid.on('removed', (_e, items) => {
+    if (_msState?._isReiniting) return;
     if (!Array.isArray(items)) return;
     items.forEach(node => {
       const id = node?.id || node?.el?.getAttribute('gs-id');
