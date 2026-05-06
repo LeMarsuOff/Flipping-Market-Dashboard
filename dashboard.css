@@ -9428,7 +9428,14 @@ body.ms-sidebar-open .view-tabs {
 }
 .sv-cal-month-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr) 58px;
+  /* Week-total column was 58px which fits "+11.4R" at exactly 56px in live
+     view but clips the trailing "R" during PNG export — dom-to-image's SVG
+     foreignObject pipeline doesn't always embed the Anybody font, so the
+     fallback sans-serif renders ~10% wider and overflows. 76px absorbs the
+     font-metric variance and accommodates two-digit weekly totals like
+     "-12.4R" without changing the live appearance noticeably (each day
+     column at 1fr loses ~2.5px). */
+  grid-template-columns: repeat(7, 1fr) 76px;
   /* All week rows share the SAME minimum height — driven by the tallest cell
      of the whole month (computed in JS and exposed via --sv-cal-row-min-h).
      1fr distributes any leftover space equally so every cell in the calendar
