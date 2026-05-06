@@ -9498,9 +9498,11 @@ body.ms-sidebar-open .view-tabs {
   border-radius: 50%;
   display: inline-block;
 }
-.sv-cal-month-trade-dot.is-win  { background: var(--g, #34d399); }
-.sv-cal-month-trade-dot.is-loss { background: var(--r, #f43f5e); }
-.sv-cal-month-trade-dot.is-be   { background: rgba(255,255,255,0.42); }
+.sv-cal-month-trade-dot.is-win   { background: var(--g, #34d399); }
+.sv-cal-month-trade-dot.is-loss  { background: var(--r, #f43f5e); }
+.sv-cal-month-trade-dot.is-be    { background: rgba(255,255,255,0.42); }
+.sv-cal-month-trade-dot.is-be-tp { background: #2962ff; }
+.sv-cal-month-trade-dot.is-be-sl { background: #b478f0; }
 .sv-cal-month-trade-pair {
   color: rgba(235,242,255,0.86);
   white-space: nowrap;

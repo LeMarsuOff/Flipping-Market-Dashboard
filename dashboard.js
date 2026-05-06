@@ -29260,7 +29260,16 @@ function _svMonthlyCalDayCell(day, data, maxAbs, colors) {
   const tpConfig = appState.ui.tpConfig;
   const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
   const tradesMarkup = trades.map(t => {
-    const dotClass = isWinner(t, tpConfig) ? 'is-win' : isLoser(t, tpConfig) ? 'is-loss' : 'is-be';
+    // Notion-pure BE outcomes get their semantic colors (blue / violet)
+    // regardless of the mode-dependent effective classification — the dot
+    // mirrors the journal label, so a BE-TP that turned profitable in the
+    // active TP mode still reads as a BE-TP, not a green winner.
+    let dotClass;
+    if (t.outcome === 'BE-TP')      dotClass = 'is-be-tp';
+    else if (t.outcome === 'BE-SL') dotClass = 'is-be-sl';
+    else if (isWinner(t, tpConfig)) dotClass = 'is-win';
+    else if (isLoser(t, tpConfig))  dotClass = 'is-loss';
+    else                            dotClass = 'is-be';
     return `<div class="sv-cal-month-trade-row">
       <span class="sv-cal-month-trade-dot ${dotClass}"></span>
       <span class="sv-cal-month-trade-pair">${escapeHtml(t.pair || '')}</span>
