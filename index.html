@@ -1398,7 +1398,13 @@
 
     <!-- PRESETS -->
     <div class="filter-group">
-      <div class="fg-label fg-label-spaced">Presets</div>
+      <div class="fg-label fg-label-row fg-label-spaced">
+        <span>Presets</span>
+        <div class="filters-header-btns">
+          <button type="button" data-action="presets-export" class="preset-cmp-toggle-btn" title="Export all presets, overrides and live filters as a JSON file">Export</button>
+          <button type="button" data-action="presets-import" class="preset-cmp-toggle-btn" title="Import a presets JSON file (replaces ALL current presets)">Import</button>
+        </div>
+      </div>
       <div class="preset-list" id="preset-list"></div>
     </div>
 
@@ -2444,6 +2450,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=131"></script>
+<script src="dashboard.js?v=132"></script>
 </body>
 </html>
