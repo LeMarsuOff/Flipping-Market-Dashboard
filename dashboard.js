@@ -18553,17 +18553,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggle = document.getElementById('sidebar-toggle');
     const STORAGE_KEY = 'sidebarCollapsed';
     const sidebarW = () => getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w').trim();
+    let _sidebarToggleEndTimer = null;
 
     const positionToggle = (collapsed) => {
       toggle.style.left = collapsed ? '0px' : sidebarW();
     };
 
     const set = (collapsed) => {
+      // Suspend the grid ResizeObserver work during the 300ms CSS transition
+      // on .layout grid-template-columns. Without this, RO fires once per
+      // animation frame × ~30 widgets, each call running _applyAutoTypoScale
+      // synchronously — that's the visible freeze. We do ONE final
+      // _applyAutoTypoScale + _redrawAll after the transition settles.
+      _isSidebarToggling = true;
+      if (_sidebarToggleEndTimer) clearTimeout(_sidebarToggleEndTimer);
       layout.classList.toggle('sidebar-collapsed', collapsed);
       positionToggle(collapsed);
       try { localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0'); } catch {}
-      // let gridstack / charts reflow
-      setTimeout(() => window.dispatchEvent(new Event('resize')), 350);
+      // 350ms = 300ms transition + 50ms buffer. Re-clicking inside the window
+      // resets the timer so the final redraw runs after the last click.
+      _sidebarToggleEndTimer = setTimeout(() => {
+        _isSidebarToggling = false;
+        _sidebarToggleEndTimer = null;
+        if (typeof _applyAutoTypoScale === 'function') _applyAutoTypoScale();
+        if (typeof _redrawAll === 'function') _redrawAll();
+      }, 350);
     };
 
     toggle.addEventListener('click', () => set(!layout.classList.contains('sidebar-collapsed')));
@@ -27243,6 +27257,13 @@ let _activePresetName = 'default';
 // render() calls during _buildGridDOM() can crash because elements are mid-move.
 var _gsReady = false;
 var _svGsReady = false;
+// Flag: true while the sidebar collapse/expand CSS transition is animating
+// (.layout grid-template-columns, 300ms ease). The ResizeObserver in _initGrid
+// observes every .grid-stack-item-content; without this guard it fires once
+// per animation frame during the transition, each call running
+// _applyAutoTypoScale (loops every widget) + scheduling _debouncedRedrawAll.
+// We suspend RO work during the transition and do ONE final redraw after.
+let _isSidebarToggling = false;
 
 // ── Build Gridstack DOM from flat .gs-widget elements ──
 function _buildGridDOM() {
@@ -27412,6 +27433,12 @@ function initGridstack() {
   const _canvasWidgetIds = ['w-equity','w-monthly','w-outcome','w-streak-analytics','w-r-dist','w-montecarlo'];
   const _debouncedRedrawAll = _debounce(_redrawAll, 100);
   const ro = new ResizeObserver(() => {
+    // Suspended during sidebar collapse/expand: the .layout grid-template-columns
+    // transition resizes every widget on every animation frame; without this guard,
+    // _applyAutoTypoScale would run synchronously dozens of times during the 300ms
+    // animation and freeze the UI. The sidebar toggle does one final redraw after
+    // the transition settles.
+    if (_isSidebarToggling) return;
     // Per-widget --typo-* override updates synchronously for live drag feedback;
     // chart redraws are debounced because they're expensive.
     _applyAutoTypoScale();
