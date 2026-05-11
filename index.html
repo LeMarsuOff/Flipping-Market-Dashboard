@@ -1398,7 +1398,13 @@
 
     <!-- PRESETS -->
     <div class="filter-group">
-      <div class="fg-label fg-label-spaced">Presets</div>
+      <div class="fg-label fg-label-row fg-label-spaced">
+        <span>Presets</span>
+        <div class="filters-header-btns">
+          <button type="button" data-action="presets-export" class="preset-cmp-toggle-btn" title="Export all presets, overrides and live filters as a JSON file" aria-label="Export presets">⬇</button>
+          <button type="button" data-action="presets-import" class="preset-cmp-toggle-btn" title="Import a presets JSON file (replaces ALL current presets)" aria-label="Import presets">⬆</button>
+        </div>
+      </div>
       <div class="preset-list" id="preset-list"></div>
     </div>
 
