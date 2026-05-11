@@ -1517,6 +1517,11 @@ body.layout-edit-mode #layout-toolbar * {
   color: var(--gold);
   border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
 }
+.logo-guide-panel .csv-doc-section-title-badge.is-important {
+  background: color-mix(in srgb, #ff9e3d 14%, transparent);
+  color: #ff9e3d;
+  border: 1px solid color-mix(in srgb, #ff9e3d 40%, transparent);
+}
 .logo-guide-panel .csv-doc-prop-or {
   display: inline-block;
   margin: 0 4px;
@@ -11021,6 +11026,11 @@ body.ms-sidebar-open .view-tabs {
   background: var(--gold2);
   color: var(--gold);
   border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+}
+.csv-format-hint .csv-doc-section-title-badge.is-important {
+  background: color-mix(in srgb, #ff9e3d 14%, transparent);
+  color: #ff9e3d;
+  border: 1px solid color-mix(in srgb, #ff9e3d 40%, transparent);
 }
 
 .csv-format-hint .csv-doc-table {
