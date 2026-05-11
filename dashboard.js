@@ -18899,12 +18899,12 @@ function parseFlippingMarketCSV(text) {
   const iDate       = _colForDim(headers,'date','date');
   const iResultat   = _colForDim(headers,'outcome','résultat tp 1','resultat tp 1','position result');
   const iRR         = _colForDim(headers,'r','rr tp 1');
-  const iPair       = _colAny(headers,'pair','actif');   // journal = 'Pair', ancien = 'Actif'
+  const iPair       = _colForDim(headers,'pair','pair','actif');
   const iSetup      = _colForDim(headers,'setup','m15 confirmation / continuation','m15 confirmation / continu','m15 type');
   const iSetupDetail= _colForDim(headers,'setupDetail','m15 type détail','m15 type detail','m15 type détails','m15 type details','m15 type d\xe9tail','m15 type d\xe9tails');
   const iSession    = _colForDim(headers,'session','session');
   const iJour       = _colForDim(headers,'day','jour','day');
-  const iRRMax      = _colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
+  const iRRMax      = _colForDim(headers,'rrMax','rr max','rr max atteint');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr      = _colForDim(headers,'tp1_rr','rr tp 1');
   const iTp2Rr      = _colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
@@ -18913,8 +18913,8 @@ function parseFlippingMarketCSV(text) {
   const iObsH4      = _colForDim(headers,'h4','obstacles h4','h4 obstacles');
   const iBE         = _colForDim(headers,'beManagement','be management','gestion be');
   const iType       = _colForDim(headers,'positionType','type de trade');
-  const iBadFeeling = _colFirst(headers,'bad feeling');
-  const iOrdre      = _colAny(headers,'ordre','order');  // journal = 'Order', ancien = 'Ordre'
+  const iBadFeeling = _colForDim(headers,'badFeeling','bad feeling');
+  const iOrdre      = _colForDim(headers,'direction','order','ordre');
   const iNotionUrl  = _colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
   const iHour       = _hourColForDim(headers);
   // Screenshot/image columns: Notion "M15 Before" / "H4 Before" / "M15 After" —
@@ -19029,14 +19029,14 @@ function parseProTemplateCSV(text) {
   const lines = raw.split('\n').filter(l=>l.trim());
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,''));
-  const iPair   =_colLast(headers,'pair');      // last occurrence = full pair name
+  const iPair   =_colForDim(headers,'pair','pair');
   // Required dims routed through _colForDim so user overrides set via the
   // Mapping panel take precedence over the format default.
   const iResult =_colForDim(headers,'outcome','position result');
   const iDate   =_colForDim(headers,'date','date');
   const iRR     =_colForDim(headers,'r','rr tp 1');
   const iType   =_colForDim(headers,'positionType','position type');
-  const iRRMax  =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
+  const iRRMax  =_colForDim(headers,'rrMax','rr max','rr max atteint');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr  =_colForDim(headers,'tp1_rr','rr tp 1');
   const iTp2Rr  =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
@@ -19048,8 +19048,8 @@ function parseProTemplateCSV(text) {
   const iObsM15 =_colForDim(headers,'obstacles','m15 obstacles');
   const iObsH4  =_colForDim(headers,'h4','h4 obstacles');
   const iBE     =_colForDim(headers,'beManagement','be management','gestion be');
-  const iBad    =_colFirst(headers,'bad feeling');
-  const iOrder  =_colFirst(headers,'order');
+  const iBad    =_colForDim(headers,'badFeeling','bad feeling');
+  const iOrder  =_colForDim(headers,'direction','order');
   const iNotionUrl=_colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
   const iHour   = _hourColForDim(headers);
   // Screenshot/image columns: remappable via Mapping panel. Explicit aliases only —
@@ -19129,14 +19129,14 @@ function parseBeginnerCSV(text) {
   const lines = raw.split('\n').filter(l=>l.trim());
   if (lines.length<2) return {ok:false,error:'\u26a0 Empty file'};
   const headers=splitCsvLine(lines[0],',').map(h=>h.trim().replace(/^["']|["']$/g,'').replace(/^\uFEFF/,''));
-  const iPair  =_colLast(headers,'pair');
+  const iPair  =_colForDim(headers,'pair','pair');
   // Required dims routed through _colForDim so user overrides set via the
   // Mapping panel take precedence over the format default.
   const iResult=_colForDim(headers,'outcome','position result');
   const iDate  =_colForDim(headers,'date','date');
   const iRR    =_colForDim(headers,'r','rr tp 1');
   const iType  =_colForDim(headers,'positionType','position type');
-  const iRRMax =_colAny(headers,'rr max','rr max ','rr max atteint','rr max atteint ');
+  const iRRMax =_colForDim(headers,'rrMax','rr max','rr max atteint');
   // Multi TP (Phase 3): override-only, no format default. null when not mapped or empty.
   const iTp1Rr =_colForDim(headers,'tp1_rr','rr tp 1');
   const iTp2Rr =_colForDim(headers,'tp2_rr','rr tp 2','rr tp -27');
@@ -19146,9 +19146,10 @@ function parseBeginnerCSV(text) {
   const iDay   =_colForDim(headers,'day','day');
   const iSession=_colForDim(headers,'session','session');
   const iObs   =_colForDim(headers,'obstacles','m15 obstacles');
+  const iObsH4 =_colForDim(headers,'h4','h4 obstacles');
   const iBE    =_colForDim(headers,'beManagement','be management','gestion be');
-  const iBad   =_colFirst(headers,'bad feeling');
-  const iOrder =_colFirst(headers,'order');
+  const iBad   =_colForDim(headers,'badFeeling','bad feeling');
+  const iOrder =_colForDim(headers,'direction','order');
   const iNotionUrl=_colForDim(headers, 'notionUrl', 'notion url', 'url notion', 'page url', 'notion', 'url');
   const iHour  = _hourColForDim(headers);
   // Screenshot/image columns: explicit aliases only (same policy as Pro Template).
@@ -19183,7 +19184,7 @@ function parseBeginnerCSV(text) {
       session: _normSession(get(iSession)),
       day:     _normDay(get(iDay)),
       obstacles:_parseObs(get(iObs)),
-      h4:      [],
+      h4:       iObsH4 >= 0 ? _parseObs(get(iObsH4)) : [],
       beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome, r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
       tp1_rr: iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
@@ -21250,6 +21251,30 @@ function _resolvedHeaderFor(dimKey) {
   return _lastCsvHeaders[idx];
 }
 
+// JOURNAL_DIMS keys mostly match appState.filters.chips keys 1:1. These two
+// diverge for legacy reasons — keeping the map narrow rather than renaming
+// either side avoids touching every preset/save site.
+const _JOURNAL_DIM_TO_CHIP_KEY = {
+  h4:           'h4obs',
+  positionType: 'tradeType',
+};
+
+// Wipe the include/exclude sets + mode for a dim's chip filter. Used after a
+// remap: the previously-selected values belonged to the OLD source column,
+// so leaving them active would silently zero-out the widget against the new
+// data (e.g. an Include filter on "No-Sweep" remains after H4 -> Pair, then
+// no trade has h4 = "No-Sweep" anymore -> 0 trades pass -> empty widget).
+function _clearChipFilterForDim(dimKey) {
+  const chipKey = _JOURNAL_DIM_TO_CHIP_KEY[dimKey] || dimKey;
+  const entry = appState.filters?.chips?.[chipKey];
+  if (!entry) return;
+  entry.included?.clear?.();
+  entry.excluded?.clear?.();
+  entry.includedFromPreset?.clear?.();
+  entry.excludedFromPreset?.clear?.();
+  entry.mode = 'neutral';
+}
+
 // Apply / clear an override, persist, re-parse
 function _applyCsvColumnOverride(dimKey, headerName) {
   if (!dimKey) return;
@@ -21260,12 +21285,30 @@ function _applyCsvColumnOverride(dimKey, headerName) {
   }
   _saveCsvOverrides();
   _reparseCsvWithOverrides();
+  // _reparseCsvWithOverrides restores filter state from the snapshot taken
+  // BEFORE this remap — so the stale include/exclude is back. Clear it now,
+  // then re-render so the widget reflects the un-filtered new data.
+  _clearChipFilterForDim(dimKey);
+  if (typeof invalidateFilterCache === 'function') invalidateFilterCache();
+  if (typeof render === 'function') render();
   updateJournalPanel();
 }
 function _resetAllCsvOverrides() {
   _csvColumnOverrides = {};
   _saveCsvOverrides();
   _reparseCsvWithOverrides();
+  // Every dim's source may have changed — clear every chip filter so no
+  // stale Include/Exclude blanks out a widget after the full reset.
+  for (const chipKey of Object.keys(appState.filters?.chips || {})) {
+    const entry = appState.filters.chips[chipKey];
+    entry.included?.clear?.();
+    entry.excluded?.clear?.();
+    entry.includedFromPreset?.clear?.();
+    entry.excludedFromPreset?.clear?.();
+    entry.mode = 'neutral';
+  }
+  if (typeof invalidateFilterCache === 'function') invalidateFilterCache();
+  if (typeof render === 'function') render();
   updateJournalPanel();
 }
 
@@ -21807,12 +21850,41 @@ function openRemapPicker(triggerBtn) {
     emptyHtml = `<div class="csv-remap-empty">No CSV columns available.</div>`;
   }
 
+  // CSV branch: precompute non-empty-value count per header and sort the
+  // picker by density (most populated → first). Notion exports frequently
+  // include empty separator columns ("--------H4--------", "Paire" vs
+  // "Pair", "--Automatic Field-", etc.) — without a hint the user picks
+  // the first match by name and ends up with an empty source. A count
+  // badge shows beside each option; columns with 0 values are dimmed and
+  // labelled "empty" so they're still pickable but visibly inadvisable.
+  let csvColCounts = null;
+  if (!isAPI) {
+    csvColCounts = {};
+    const rows = _lastCsvRows || [];
+    for (const h of candidates) csvColCounts[h] = 0;
+    for (const row of rows) {
+      for (const h of candidates) {
+        const v = row[h];
+        if (v != null && String(v).trim() !== '') csvColCounts[h]++;
+      }
+    }
+    candidates = candidates.slice().sort((a, b) =>
+      (csvColCounts[b] - csvColCounts[a]) || a.localeCompare(b)
+    );
+  }
+
   const hintHeader = `<div class="csv-remap-picker-hint">${hint}</div>`;
   const opts = candidates.map(h => {
     const isActive = (currentOverride && h === currentOverride) ||
                      (!currentOverride && activeFallback && h === activeFallback);
-    return `<button class="csv-remap-option${isActive ? ' active' : ''}" data-action="${pickAction}" data-dim-key="${_escapeHtml(dimKey)}" data-header="${_escapeHtml(h)}">
-              <span>${_escapeHtml(h)}</span>
+    const count = csvColCounts ? csvColCounts[h] : null;
+    const isEmptyCol = count === 0;
+    const countBadge = count != null
+      ? `<span class="csv-remap-option-count${isEmptyCol ? ' is-empty' : ''}">${isEmptyCol ? 'empty' : count}</span>`
+      : '';
+    return `<button class="csv-remap-option${isActive ? ' active' : ''}${isEmptyCol ? ' is-empty-col' : ''}" data-action="${pickAction}" data-dim-key="${_escapeHtml(dimKey)}" data-header="${_escapeHtml(h)}">
+              <span class="csv-remap-option-label">${_escapeHtml(h)}</span>
+              ${countBadge}
               ${isActive ? '<span class="csv-remap-option-tag">current</span>' : ''}
             </button>`;
   }).join('');
