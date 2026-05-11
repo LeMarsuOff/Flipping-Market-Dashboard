@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=120">
+<link rel="stylesheet" href="dashboard.css?v=121">
 </head>
 <body class="is-booting">
 
@@ -962,6 +962,7 @@
         </button>
         <button class="theme-btn" id="theme-toggle-btn" data-action="toggle-theme-panel" title="Customize colors">🎨 Theme Editor</button>
         <button class="tpm-toggle-btn" id="tpm-toggle-btn" data-action="toggle-tpm-panel" title="Configure how effective RR is computed">🎯 TP Management</button>
+        <button class="settings-btn" id="backup-toggle-btn" data-action="toggle-backup-panel" title="Backup or restore your full dashboard setup">📦 Import / Export</button>
         <button class="reset-btn" data-action="reset-all">↺ Reset</button>
       </div>
     </div>
@@ -1015,6 +1016,39 @@
       <button class="bmt-btn ghost-th-btn" data-action="set-warning-threshold" data-threshold="20">20</button>
       <button class="bmt-btn ghost-th-btn" data-action="set-warning-threshold" data-threshold="50">50</button>
     </div>
+  </div>
+</div>
+
+<!-- ══ BACKUP PANEL (Import / Export full dashboard state) ══ -->
+<div class="backup-panel" id="backup-panel">
+  <div class="bp-header">
+    <span class="bp-title">📦 Backup</span>
+  </div>
+  <p class="bp-explanation">
+    Save or restore your <strong>full dashboard setup</strong> — presets, themes (including
+    your custom ones), GridStack layouts &amp; hidden widgets, TP Management config,
+    Multi-TP / Partial Optimizer / Monte Carlo arrangements, sidebar filters order,
+    and every UI preference.
+  </p>
+  <p class="bp-explanation bp-explanation-dim">
+    <strong>Not included:</strong> the API trade cache and raw CSV cache (re-fetched
+    on demand), and your data-source choice + API URL (kept per-machine).
+  </p>
+  <div class="bp-actions">
+    <button class="bp-btn bp-btn-primary" data-action="backup-export">
+      <span class="bp-btn-icon" aria-hidden="true">📤</span>
+      <div class="bp-btn-text">
+        <span class="bp-btn-label">Export Backup</span>
+        <span class="bp-btn-sub">Download a JSON file you can take to another PC</span>
+      </div>
+    </button>
+    <button class="bp-btn" data-action="backup-import">
+      <span class="bp-btn-icon" aria-hidden="true">📥</span>
+      <div class="bp-btn-text">
+        <span class="bp-btn-label">Import Backup</span>
+        <span class="bp-btn-sub">Restore from a JSON file (asks before overwriting)</span>
+      </div>
+    </button>
   </div>
 </div>
 
@@ -2507,6 +2541,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=135"></script>
+<script src="dashboard.js?v=137"></script>
 </body>
 </html>

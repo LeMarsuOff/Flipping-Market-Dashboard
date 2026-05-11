@@ -1502,6 +1502,23 @@ function handleActionClick(event) {
       _pimpInput.click();
       break;
     }
+    case 'toggle-backup-panel':
+      toggleBackupPanel();
+      document.getElementById('topbar-more-menu')?.classList.remove('open');
+      break;
+    case 'backup-export':
+      backupExportJSON();
+      _closeBackupPanel();
+      break;
+    case 'backup-import': {
+      const _bimpInput = document.createElement('input');
+      _bimpInput.type = 'file';
+      _bimpInput.accept = '.json,application/json';
+      _bimpInput.addEventListener('change', () => backupImportJSON(_bimpInput));
+      _bimpInput.click();
+      _closeBackupPanel();
+      break;
+    }
     case 'layout-reset': layoutReset(); break;
     case 'layout-hide-toggle': event.stopPropagation(); _toggleHidePopover(); break;
     case 'layout-hide-show-all': event.stopPropagation(); _unhideAllWidgets(); break;
@@ -20957,6 +20974,31 @@ document.addEventListener('click', e => {
   }
 });
 
+// ── Backup panel (Import / Export full dashboard state) ──
+let backupPanelOpen = false;
+function toggleBackupPanel() {
+  backupPanelOpen = !backupPanelOpen;
+  document.getElementById('backup-panel')?.classList.toggle('open', backupPanelOpen);
+  document.getElementById('backup-toggle-btn')?.classList.toggle('open', backupPanelOpen);
+}
+function _closeBackupPanel() {
+  backupPanelOpen = false;
+  document.getElementById('backup-panel')?.classList.remove('open');
+  document.getElementById('backup-toggle-btn')?.classList.remove('open');
+}
+document.addEventListener('click', e => {
+  if (!backupPanelOpen) return;
+  const btn   = document.getElementById('backup-toggle-btn');
+  const panel = document.getElementById('backup-panel');
+  // The toggle button lives inside the more-menu, which gets closed by the
+  // action handler when the panel opens — by then the button is detached, so
+  // we also accept clicks on any element with the toggle-backup-panel action.
+  if (!btn?.contains(e.target) && !panel?.contains(e.target) &&
+      !e.target.closest('[data-action="toggle-backup-panel"]')) {
+    _closeBackupPanel();
+  }
+});
+
 // ══════════════════════════════════════════════════════
 // MISSING-DATA ATTENTION + JOURNAL (column mapping) PANELS
 // ══════════════════════════════════════════════════════
@@ -28199,6 +28241,123 @@ function presetsImportJSON(input) {
       setTimeout(() => location.reload(), 700);
     } catch (err) {
       console.warn('[presetsImport] parse failed', err?.message || err);
+      _showToast('Could not parse JSON file', 'warn');
+    } finally {
+      input.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ── Full backup: export ALL user-configurable localStorage state ──
+// Scope: every localStorage key except the blacklist below. The blacklist
+// covers (a) huge caches that are re-fetched on demand (API trade cache, raw
+// CSV cache), (b) internal migration/version flags that should NOT cross
+// machines, (c) machine-specific data-source choice + API URL (per user
+// preference — each PC keeps its own source). Anything else — presets,
+// themes, GridStack layouts, TPM config, sidebar state, UI prefs — travels
+// with the backup.
+const BACKUP_EXCLUDE_KEYS = new Set([
+  // Caches: re-fetched / re-imported on demand, can be MB-sized
+  'apiTradesCache_v2_rrmax',
+  'apiTradesCacheTime_v2_rrmax',
+  'flipping_csv_cache_v1',
+  // Internal migration / cleanup / schema flags
+  'flipping_cache_cleanup_v1',
+  'flipping_invalide_bf_migration_v1',
+  'flipping_schema_version',
+  // Boot snapshot — derived on next render
+  'dashboard_boot_snapshot_v1',
+  // Machine-specific (user explicitly opted to keep these per-machine)
+  'dataSource',
+  'flipping_api_url',
+  // API field names — re-derived from current data source
+  'apiFieldNames_v1',
+]);
+
+function backupExportJSON() {
+  const data = {};
+  let count = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || BACKUP_EXCLUDE_KEYS.has(key)) continue;
+    const raw = localStorage.getItem(key);
+    if (raw == null) continue;
+    // Try to JSON.parse so objects/arrays/numbers/booleans live as proper JSON
+    // in the export file (more human-readable). Raw strings (e.g. 'be-fallback')
+    // fall through to the catch and are stored as-is.
+    let value;
+    try { value = JSON.parse(raw); }
+    catch { value = raw; }
+    data[key] = value;
+    count++;
+  }
+  const payload = JSON.stringify({
+    schema:     'flipping-backup-v1',
+    exportedAt: new Date().toISOString(),
+    data,
+  }, null, 2);
+  const blob  = new Blob([payload], { type: 'application/json' });
+  const url   = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const a     = document.createElement('a');
+  a.href      = url;
+  a.download  = `flipping_backup_${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  _showToast(`Backup exported: ${count} key${count === 1 ? '' : 's'}`);
+}
+
+function backupImportJSON(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!parsed || typeof parsed !== 'object' || !parsed.data ||
+          typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+        _showToast('Invalid file: not a recognised backup', 'warn');
+        return;
+      }
+      const schema = parsed.schema;
+      // Accept both: new full backup AND legacy presets-only export.
+      if (schema !== 'flipping-backup-v1' && schema !== 'presets-v1') {
+        _showToast(`Unsupported schema: ${schema || 'unknown'}`, 'warn');
+        return;
+      }
+      // Drop any blacklisted keys from the payload as a safety net (in case the
+      // file was hand-edited or came from an older export that included them).
+      const entries = Object.entries(parsed.data)
+        .filter(([k, v]) => !BACKUP_EXCLUDE_KEYS.has(k) && v != null);
+      if (entries.length === 0) {
+        _showToast('Nothing to import (empty data)', 'warn');
+        return;
+      }
+      const scopeLabel = schema === 'presets-v1' ? 'preset' : 'backup';
+      const ok = window.confirm(
+        `This will overwrite ${entries.length} ${scopeLabel} key${entries.length === 1 ? '' : 's'} in localStorage. Continue?`
+      );
+      if (!ok) return;
+      let written = 0, failed = 0;
+      for (const [key, value] of entries) {
+        try {
+          // Raw strings stay raw; everything else gets re-serialised.
+          const toStore = typeof value === 'string' ? value : JSON.stringify(value);
+          localStorage.setItem(key, toStore);
+          written++;
+        } catch (writeErr) {
+          console.warn('[backupImport] could not write', key, writeErr?.message || writeErr);
+          failed++;
+        }
+      }
+      const failNote = failed ? ` — ${failed} failed` : '';
+      _showToast(`Imported ${written} key${written === 1 ? '' : 's'}${failNote}. Reloading...`);
+      setTimeout(() => location.reload(), 700);
+    } catch (err) {
+      console.warn('[backupImport] parse failed', err?.message || err);
       _showToast('Could not parse JSON file', 'warn');
     } finally {
       input.value = '';

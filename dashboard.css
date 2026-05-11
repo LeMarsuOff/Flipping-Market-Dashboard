@@ -5424,6 +5424,111 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   margin: 4px 0;
 }
 
+/* ── Backup panel (Import / Export full state) ── */
+.backup-panel {
+  position: fixed;
+  top: 46px;
+  right: 70px;
+  width: 340px;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  z-index: 1200;
+  box-shadow: 0 10px 32px rgba(0,0,0,.6);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity .16s, transform .16s;
+}
+.backup-panel.open {
+  opacity: 1;
+  pointer-events: all;
+  transform: translateY(0);
+}
+.bp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bp-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  letter-spacing: .6px;
+  color: var(--fg);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.bp-explanation {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.bp-explanation strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+.bp-explanation-dim {
+  font-size: 10.5px;
+  opacity: .8;
+}
+.bp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 2px;
+}
+.bp-btn {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--surface-3, var(--bg));
+  border: 1px solid var(--line2);
+  border-radius: 7px;
+  padding: 9px 11px;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .14s, background .14s;
+  font-family: inherit;
+}
+.bp-btn:hover {
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  background: var(--surface-4, color-mix(in srgb, var(--gold) 4%, var(--bg2)));
+}
+.bp-btn-primary {
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  background: var(--gold2);
+}
+.bp-btn-primary:hover {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+}
+.bp-btn-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.bp-btn-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.bp-btn-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.bp-btn-sub {
+  font-size: 10.5px;
+  color: var(--dim);
+  line-height: 1.3;
+}
+
 /* ── Filters accordion ── */
 .filters-save-row {
   display: flex;
