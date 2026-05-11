@@ -1173,7 +1173,12 @@ function handleActionClick(event) {
   if (!actionEl) return;
   const { action } = actionEl.dataset;
   switch (action) {
-    case 'open-csv-overlay': openCsvOverlay(); break;
+    case 'open-csv-overlay':
+      // Direct file picker — skip the overlay, open OS file dialog immediately.
+      // The overlay still auto-opens on drag-enter (see document 'dragenter'
+      // listener) so drag-and-drop UX is preserved.
+      document.getElementById('csv-file-input')?.click();
+      break;
     case 'close-csv-overlay': closeCsvOverlay(); break;
     case 'set-data-source': setDataSource(actionEl.dataset.source); break;
     case 'refresh-api-source': refreshAPISource(); break;

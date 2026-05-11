@@ -104,6 +104,13 @@
 
 </div><!-- /mobile-shell -->
 
+<!-- CSV file input lives OUTSIDE .csv-overlay so it stays in layout when the
+     overlay is display:none. That lets Import-CSV buttons trigger
+     file-input.click() directly (file picker can't open from a display:none
+     ancestor). The label inside the overlay uses for="csv-file-input" so
+     drag-and-drop users who land on the overlay can still click it. -->
+<input type="file" id="csv-file-input" class="visually-hidden" accept=".csv">
+
 <!-- ══ CSV DRAG & DROP OVERLAY ══ -->
 <div class="csv-overlay" id="csv-overlay">
   <button class="csv-close-btn" data-action="close-csv-overlay" title="Close">✕</button>
@@ -111,9 +118,8 @@
     <div class="csv-drop-box-icon">⬇</div>
     <div class="csv-drop-box-title">Drop your CSV here</div>
     <div class="csv-drop-box-sub">or click to browse</div>
-    <label class="csv-browse-btn">
+    <label class="csv-browse-btn" for="csv-file-input">
       📂 Browse file
-      <input type="file" id="csv-file-input" class="visually-hidden" accept=".csv">
     </label>
     <div class="csv-status" id="csv-status"></div>
     <div class="csv-format-hint csv-format-hint-inline">
@@ -333,9 +339,9 @@
         <span>② Beginner Template</span>
       </div>
       <div class="empty-state-sample">
-        Don't have a CSV yet? Download a
-        <a href="samples/flipping_market_sample.csv" download>sample file</a>
-        to test the dashboard.
+        Don't have a CSV yet? Grab the
+        <a href="https://www.notion.so/Flipping-Market-M15-Pro-Template-3128c28c4436803bbb59ec579a9dbe77?source=copy_link" target="_blank" rel="noopener">Pro Template</a>
+        on Notion to test the dashboard.
       </div>
 
       <!-- ── Detailed CSV column reference ── -->
@@ -2450,6 +2456,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=134"></script>
+<script src="dashboard.js?v=135"></script>
 </body>
 </html>
