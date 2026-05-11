@@ -6546,22 +6546,25 @@ function renderDayBars(trades) {
       ? (v > 0 ? cG : v < 0 ? cR : cA)
       : _kpiTooltipColor(d ? d.ev : v, 'avgr');
 
-  // Build items from actual data
-  let items = DAY_ORDER
-    .filter(d => groups[d] && groups[d].rs.length > 0)
-    .map(d => {
-      const { rs, _oc } = groups[d];
-      const ev = _dsum(rs) / rs.length;
-      return {
-        label: DAY_FULL[d] || DAY_EN[d] || d, _rawKey: d, n: rs.length, ev, totalR: _dsum(rs),
-        oc: {
-          tp:   { r: _dsum(_oc.TP),       n: _oc.TP.length },
-          betp: { r: _dsum(_oc['BE-TP']), n: _oc['BE-TP'].length },
-          besl: { r: _dsum(_oc['BE-SL']), n: _oc['BE-SL'].length },
-          sl:   { r: _dsum(_oc.SL),       n: _oc.SL.length },
-        },
-      };
-    });
+  // Build items from actual data. Canonical Mon→Sun first, then any
+  // non-canonical keys (alphabetical) so users who remapped the Day column
+  // to a non-day-named source (e.g. Pair) still see every distinct value.
+  const _dataKeys = Object.keys(groups).filter(d => groups[d].rs.length > 0);
+  const _orderedKeys = DAY_ORDER.filter(d => _dataKeys.includes(d))
+    .concat(_dataKeys.filter(d => !DAY_ORDER.includes(d)).sort());
+  let items = _orderedKeys.map(d => {
+    const { rs, _oc } = groups[d];
+    const ev = _dsum(rs) / rs.length;
+    return {
+      label: DAY_FULL[d] || DAY_EN[d] || d, _rawKey: d, n: rs.length, ev, totalR: _dsum(rs),
+      oc: {
+        tp:   { r: _dsum(_oc.TP),       n: _oc.TP.length },
+        betp: { r: _dsum(_oc['BE-TP']), n: _oc['BE-TP'].length },
+        besl: { r: _dsum(_oc['BE-SL']), n: _oc['BE-SL'].length },
+        sl:   { r: _dsum(_oc.SL),       n: _oc.SL.length },
+      },
+    };
+  });
 
   // Sort: canonical = DAY_ORDER, desc/asc = by current metric
   const dayMode = barSortState['day'] || 'canonical';
@@ -8818,9 +8821,11 @@ function renderHeatmap(trades) {
   const _suSet = new Set(trades.map(t => t.sessionUtc || t.session).filter(Boolean));
   const sessions = SESSION_ORDER.filter(s => _suSet.has(s))
                    .concat([..._suSet].filter(s => !SESSION_ORDER.includes(s)).sort());
-  // Days from actual data, canonical order
+  // Days from actual data, canonical Mon→Sun first, then any non-canonical
+  // keys (alphabetical) so a remapped Day column still surfaces all values.
   const _daySet = new Set(trades.map(t => t.day).filter(Boolean));
-  const days = DAY_ORDER.filter(d => _daySet.has(d));
+  const days = DAY_ORDER.filter(d => _daySet.has(d))
+                .concat([..._daySet].filter(d => !DAY_ORDER.includes(d)).sort());
   const useTotal = barMode === 'total';
   const metric = barMode === 'wr' ? 'wr' : barMode === 'n' ? 'n' : _sdMetric;
   const tpConfig = appState.ui.tpConfig;
@@ -29134,9 +29139,11 @@ function renderMobileHeatmap(trades) {
   const _suSetM = new Set(trades.map(t => t.sessionUtc || t.session).filter(Boolean));
   const sessions  = SESSION_ORDER.filter(s => _suSetM.has(s))
                     .concat([..._suSetM].filter(s => !SESSION_ORDER.includes(s)).sort());
-  // Days from actual data, canonical order
+  // Days from actual data, canonical Mon→Sun first, then any non-canonical
+  // keys (alphabetical) — mirrors the desktop heatmap path.
   const _daySetM = new Set(trades.map(t => t.day).filter(Boolean));
-  const days      = DAY_ORDER.filter(d => _daySetM.has(d));
+  const days      = DAY_ORDER.filter(d => _daySetM.has(d))
+                     .concat([..._daySetM].filter(d => !DAY_ORDER.includes(d)).sort());
   const useTotal  = barMode === 'total';
   const useN      = barMode === 'n';
   const tpConfig = appState.ui.tpConfig;
