@@ -8887,7 +8887,7 @@ function renderHeatmap(trades) {
   days.forEach(d => {
     const el = document.createElement('div');
     el.style.cssText = `display:flex;align-items:flex-end;justify-content:center;font-family:'DM Mono',monospace;font-size:${lblFontSz}px;color:var(--dim);padding:0 2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center`;
-    el.textContent = DAY_EN[d];
+    el.textContent = DAY_EN[d] || d;
     container.appendChild(el);
   });
 
@@ -8944,7 +8944,7 @@ function renderHeatmap(trades) {
         const valueClass = (metric === 'wr' || (metric === 'ev' && !useTotal))
           ? _utipNeutralClass()
           : _utipValueClass(pos);
-        const tipHtml = `<div class="utip-header">${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]}</div>
+        const tipHtml = `<div class="utip-header">${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]||d}</div>
           <div class="utip-grid">
             <span class="utip-label">Value</span><span></span><span class="${valueClass}"${valueColorAttr}>${fmtFn(val)}</span>
             <span class="utip-label">Trades</span><span></span><span class="${_utipNeutralClass()}">×${v.n}</span>
@@ -8963,7 +8963,7 @@ function renderHeatmap(trades) {
           if (!cellTrades.length) return;
           document.querySelectorAll('#heatmap-container .wd-cell-active').forEach(el => el.classList.remove('wd-cell-active'));
           cell.classList.add('wd-cell-active');
-          openWidgetDrawer(`${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]}`, `${v.n} trades`, cellTrades);
+          openWidgetDrawer(`${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]||d}`, `${v.n} trades`, cellTrades);
         });
         bindManagedEvent(cell, '_managedCtxMenu', 'contextmenu', e => {
           e.preventDefault();
