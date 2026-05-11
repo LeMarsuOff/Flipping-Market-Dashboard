@@ -1488,6 +1488,15 @@ function handleActionClick(event) {
     case 'layout-save': layoutSave(); break;
     case 'layout-export-json': layoutExportJSON(); break;
     case 'layout-import-trigger': document.getElementById('lt-import-file')?.click(); break;
+    case 'presets-export': presetsExportJSON(); break;
+    case 'presets-import': {
+      const _pimpInput = document.createElement('input');
+      _pimpInput.type = 'file';
+      _pimpInput.accept = '.json,application/json';
+      _pimpInput.addEventListener('change', () => presetsImportJSON(_pimpInput));
+      _pimpInput.click();
+      break;
+    }
     case 'layout-reset': layoutReset(); break;
     case 'layout-hide-toggle': event.stopPropagation(); _toggleHidePopover(); break;
     case 'layout-hide-show-all': event.stopPropagation(); _unhideAllWidgets(); break;
@@ -28049,6 +28058,115 @@ function layoutImportJSON(input) {
       _updatePresetButtons();
       _showToast(`Imported: "${name}"`);
     } catch(err) {
+      _showToast('Could not parse JSON file', 'warn');
+    } finally {
+      input.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ── Export presets / overrides / live filters as a downloadable JSON file ──
+// Scope: PRESET_LS_KEY, LS_OVERRIDES_KEY, PRESET_LIVE_FILTERS_LS_KEY (3 keys only).
+function presetsExportJSON() {
+  const _readKey = key => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw == null) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('[presetsExport] could not parse', key, e?.message || e);
+      return null;
+    }
+  };
+  const data = {
+    [PRESET_LS_KEY]:              _readKey(PRESET_LS_KEY),
+    [LS_OVERRIDES_KEY]:           _readKey(LS_OVERRIDES_KEY),
+    [PRESET_LIVE_FILTERS_LS_KEY]: _readKey(PRESET_LIVE_FILTERS_LS_KEY),
+  };
+  const payload = JSON.stringify({
+    schema:     'presets-v1',
+    exportedAt: new Date().toISOString(),
+    data,
+  }, null, 2);
+  const blob  = new Blob([payload], { type: 'application/json' });
+  const url   = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const a     = document.createElement('a');
+  a.href      = url;
+  a.download  = `flipping_presets_${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  const presetsArr = data[PRESET_LS_KEY];
+  const nPresets   = Array.isArray(presetsArr) ? presetsArr.length : 0;
+  _showToast(`Exported: flipping_presets_${stamp}.json (${nPresets} preset${nPresets === 1 ? '' : 's'})`);
+}
+
+// ── Import a presets JSON file (replaces ALL preset data after confirmation) ──
+function presetsImportJSON(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!parsed || parsed.schema !== 'presets-v1') {
+        _showToast('Invalid file: not a presets-v1 export', 'warn');
+        return;
+      }
+      if (!parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+        _showToast('Invalid file: missing data object', 'warn');
+        return;
+      }
+      const slots = [
+        { key: PRESET_LS_KEY,              label: 'presets'      },
+        { key: LS_OVERRIDES_KEY,           label: 'overrides'    },
+        { key: PRESET_LIVE_FILTERS_LS_KEY, label: 'live filters' },
+      ];
+      const toWrite = [];
+      const missing = [];
+      for (const s of slots) {
+        const raw = parsed.data[s.key];
+        if (raw == null) { missing.push(s.label); continue; }
+        let cloned;
+        try {
+          cloned = JSON.parse(JSON.stringify(raw));
+        } catch (cloneErr) {
+          console.warn('[presetsImport] could not clone', s.key, cloneErr?.message || cloneErr);
+          missing.push(s.label);
+          continue;
+        }
+        if (cloned === null || typeof cloned !== 'object') {
+          missing.push(s.label);
+          continue;
+        }
+        toWrite.push({ key: s.key, value: cloned, label: s.label });
+      }
+      if (toWrite.length === 0) {
+        _showToast('Nothing to import (no valid keys found)', 'warn');
+        return;
+      }
+      const ok = window.confirm(
+        'This will replace ALL your current presets, overrides and live filters. Continue?'
+      );
+      if (!ok) return;
+      for (const w of toWrite) {
+        try {
+          localStorage.setItem(w.key, JSON.stringify(w.value));
+        } catch (writeErr) {
+          console.warn('[presetsImport] could not write', w.key, writeErr?.message || writeErr);
+        }
+      }
+      const presetsArr  = toWrite.find(w => w.key === PRESET_LS_KEY)?.value;
+      const importedN   = Array.isArray(presetsArr) ? presetsArr.length : 0;
+      const writtenLbl  = toWrite.map(w => w.label).join(', ');
+      const partialNote = missing.length ? ` — partial: ${writtenLbl} only (no ${missing.join(', ')})` : '';
+      _showToast(`Imported ${importedN} preset${importedN === 1 ? '' : 's'}${partialNote}. Reloading...`);
+      setTimeout(() => location.reload(), 700);
+    } catch (err) {
+      console.warn('[presetsImport] parse failed', err?.message || err);
       _showToast('Could not parse JSON file', 'warn');
     } finally {
       input.value = '';
