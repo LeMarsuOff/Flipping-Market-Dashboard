@@ -18319,6 +18319,30 @@ function _poRender(opts = {}) {
   const isPartialsActive = (activeSection === 'partials');
 
   const st = window._poState;
+
+  // BE Management mode gate: PO is only reliable in flipping-be. In
+  // be-fallback the BE-aware sim depends on per-trade Notion BE chips,
+  // which are often incomplete — null chips collapse the entire BE-TP /
+  // BE-SL population to 0R (BE neutre), producing unreliable plan
+  // comparisons. Block the widget here with a one-click switch.
+  const beMode = (appState.ui && appState.ui.beMode) || 'be-fallback';
+  if (beMode === 'be-fallback') {
+    const headNGate = document.getElementById('po-head-n');
+    if (headNGate) headNGate.textContent = '—';
+    if (st.scatterChart) { st.scatterChart.destroy(); st.scatterChart = null; }
+    if (st.equityChart)  { st.equityChart.destroy();  st.equityChart  = null; }
+    body.innerHTML = `
+      <div class="po-bemode-gate">
+        <div class="po-bemode-gate-icon">⚠</div>
+        <div class="po-bemode-gate-title">Partial Optimizer requires Flipping BE mode</div>
+        <div class="po-bemode-gate-body">In BE Fallback mode, the simulator relies on per-trade Notion BE chips, which are often incomplete and produce unreliable partial plan simulations. Flipping BE uses a uniform 2.4R BE trigger, giving consistent results across your dataset.</div>
+        <button type="button" class="po-btn-primary po-bemode-gate-btn" onclick="_setBeMode('flipping-be')">Switch to Flipping BE</button>
+      </div>
+    `;
+    st.built = false;
+    return;
+  }
+
   const rrMaxArr = _poAcquireRRMaxArr();
   const headN = document.getElementById('po-head-n');
 

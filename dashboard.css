@@ -13398,6 +13398,48 @@ body.ms-sidebar-open .view-tabs {
   filter: brightness(1.12);
 }
 
+/* ── BE Management mode gate (be-fallback blocks the PO) ─── */
+.po-bemode-gate {
+  /* #po-body is display:grid — span all columns to take full widget width.
+     Pinned to the top (no grid-row span) so the message stays in viewport
+     even though the widget's GridStack height (~2360px) far exceeds the
+     content. Content takes ~320px and sits at the top of the widget. */
+  grid-column: 1 / -1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 80px 32px 56px;
+  text-align: center;
+}
+.po-bemode-gate-icon {
+  font-size: 34px;
+  color: var(--gold);
+  opacity: 0.9;
+  line-height: 1;
+}
+.po-bemode-gate-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--text);
+}
+.po-bemode-gate-body {
+  max-width: 540px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+  opacity: 0.85;
+}
+.po-bemode-gate-btn {
+  margin-top: 6px;
+  padding: 10px 24px;
+  font-size: 13px;
+}
+
 /* ── v12: Setup intégré dans la toolbar haute du scatter ─── */
 .po-toolbar-setup {
   display: flex;
