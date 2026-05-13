@@ -15499,17 +15499,30 @@ function _resolveBeRFixed(trade) {
   return trade.r;
 }
 
-// Pure rrMax-based single-trade simulator for the Partial Optimizer.
-// Outcome labels (TP / SL / BE-TP / BE-SL) and the dashboard BE Management
-// mode are intentionally ignored: the PO answers "what would have happened
-// if the exit plan had been different?", and only the price excursion
-// (rrMax) drives that counterfactual. This keeps the PO doctrine stable
-// and independent of dashboard mode oscillations, and aligns Full TP
-// baselines with the ORR widget under strict-loss interpretation.
+// Outcome-aware single-trade simulator for the Partial Optimizer. Mirrors
+// computeEffectiveRR personalised mode to keep Optimizer ↔ Dashboard
+// numerically aligned on BE-TP / BE-SL.
 //
-// Function name kept for back-compat with call sites; the trade arg is now
-// only used by _poSimulateModel for the chronological equity-curve sort.
+//   - BE-TP : the outcome label encodes path info — we know the price
+//             retraced to BE before completing its excursion. Pure rrMax
+//             would overestimate (e.g. partial 1R / partial 2.4R + BE-TP
+//             at rrMax=2.8: pure rrMax credits 0.5*1 + 0.5*2.4 = 1.7R,
+//             but reality is 0.5R because the 2nd leg was closed at BE
+//             after the retrace). _resolveBeR captures the retrace by
+//             capping at the plan trigger / chip-derived trigger.
+//   - BE-SL : same closure mechanics as BE-TP. Cap at trigger, 0R or
+//             SL-pur fallback per BE Management mode.
+//   - TP/SL : delegate to _ppSimTrade(rrMax, partials).
 function _poSimTradeBeAware(trade, rrMax, partials) {
+  if (!partials || !partials.length) return _ppSimTrade(rrMax, partials);
+
+  if (trade && (trade.outcome === 'BE-TP' || trade.outcome === 'BE-SL')) {
+    // Routes through the global BE Management mode (be-fallback or
+    // flipping-be). `rrMax` here is already the reach proxy chosen by the
+    // caller (`_getTradeReachR` on the context-filtered dataset).
+    return _resolveBeR(trade, partials, rrMax);
+  }
+
   return _ppSimTrade(rrMax, partials);
 }
 
@@ -15851,13 +15864,15 @@ function _poSimulateSlotModel(slotKey) {
 function _poSimulateModel(model, rrMaxArr, trades) {
   const n = rrMaxArr.length;
   if (!n) return null;
-  // PO doctrine: pure rrMax-based counterfactual — outcome labels and dashboard
-  // BE Management mode are ignored. `trades` parity is still needed for the
-  // chronological equity-curve sort below (date + hour + _rawRowIndex).
-  const haveTradesParity = Array.isArray(trades) && trades.length === n;
+  // BE-aware per-trade simulation when trades parity matches the rrMax array,
+  // mirroring computeEffectiveRR's BE-TP/BE-SL handling. Without trades, fall
+  // back to plain _ppSimTrade (back-compat for callers with rrMax-only arrays).
+  const useBeAware = Array.isArray(trades) && trades.length === n;
   const simR = new Array(n);
   for (let i = 0; i < n; i++) {
-    simR[i] = _ppSimTrade(rrMaxArr[i], model.legs);
+    simR[i] = useBeAware
+      ? _poSimTradeBeAware(trades[i], rrMaxArr[i], model.legs)
+      : _ppSimTrade(rrMaxArr[i], model.legs);
   }
 
   let totalR = 0, posSum = 0, negSum = 0, posCount = 0;
@@ -15879,7 +15894,7 @@ function _poSimulateModel(model, rrMaxArr, trades) {
   // equity-curve trough timing on datasets with same-day / same-hour clusters
   // (observed gap up to 1.75R on the user's 628-trade set).
   let order;
-  if (haveTradesParity) {
+  if (useBeAware) {
     order = Array.from({ length: n }, (_, i) => i);
     order.sort((a, b) => {
       const ta = trades[a], tb = trades[b];
