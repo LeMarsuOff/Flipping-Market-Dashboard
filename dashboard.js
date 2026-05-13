@@ -22025,7 +22025,7 @@ function _initThemePanelDragOnce() {
 // selector (Fixed active; Multi/Personalised placeholders).
 // State lives in appState.ui.tpConfig; persistence via _saveTpConfig.
 // ══════════════════════════════════════════════════════════════
-const TPM_MODE_LABELS = { fixed: 'TP: Fixed', multi: 'TP: Multi', personalised: 'TP: Custom' };
+const TPM_MODE_LABELS = { fixed: 'TP: Single', multi: 'TP: Multi', personalised: 'TP: Custom' };
 let tpmPanelOpen = false;
 let _tpmPanelEscHandler = null;
 let _tpmPanelClickOutsideHandler = null;
