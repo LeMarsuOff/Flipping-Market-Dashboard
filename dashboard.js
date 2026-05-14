@@ -2718,7 +2718,7 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     month:       dateRaw.slice(0, 7),
     pair:        _firstText(_pick('pair', t.pair || t['Pair'] || t.paire || t['Paire'])),
     setup:       _firstText(_pick('setup', t['M15 Confirmation / Continuation'] || t['M15 Confirmation / Continu'] || t.confirmation || t['Confirmation / Continunation'] || t.m15Type || t['M15 Type'])),
-    setupDetail: _firstText(t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail),
+    setupDetail: _firstText(_pick('setupDetail', t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail)),
     session:     _normSession(_firstText(_pick('session', t.session || t['Session'] || t.sessionFormule || t['Session Formula']))),
     sessionUtc:  _normSession(_firstText(t.sessionUtc || t['Session UTC'] || t.sessionFormuleUtc || t.session || t['Session'] || t.sessionFormule || t['Session Formula'])),
     day:         _normDay(_firstText(_pick('day', t.jour || t['Jour']))),
