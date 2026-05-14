@@ -350,7 +350,7 @@ function _migrateCustomKey(oldKey, newKey) {
     delete cc[oldKey];
   }
   try {
-    const raw = localStorage.getItem(PRESET_LS_KEY);
+    const raw = localStorage.getItem(_htfKey(PRESET_LS_KEY));
     if (raw) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
@@ -362,7 +362,7 @@ function _migrateCustomKey(oldKey, newKey) {
             touched = true;
           }
         }
-        if (touched) localStorage.setItem(PRESET_LS_KEY, JSON.stringify(arr));
+        if (touched) localStorage.setItem(_htfKey(PRESET_LS_KEY), JSON.stringify(arr));
       }
     }
   } catch (e) {
@@ -2355,8 +2355,8 @@ function _logCacheInitTelemetry() {
   try {
     const byteLen = s => (s == null ? 0 : s.length * 2);
     const kb1 = b => (b / 1024).toFixed(1);
-    const parsedBytes = byteLen(localStorage.getItem(CACHE_KEY));
-    const fieldsBytes = byteLen(localStorage.getItem(API_FIELD_NAMES_KEY));
+    const parsedBytes = byteLen(localStorage.getItem(_cacheKey()));
+    const fieldsBytes = byteLen(localStorage.getItem(_fieldNamesKey()));
     let totalBytes = 0;
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -2371,13 +2371,28 @@ function _logCacheInitTelemetry() {
 
 const API_URL_DEFAULT = 'https://notion-dashboard-api-2.vercel.app/api/trades';
 // API URL can be overridden from the settings panel (stored in localStorage)
-const getAPIURL = () => localStorage.getItem('flipping_api_url') || API_URL_DEFAULT;
+const getAPIURL = () => {
+  const base = localStorage.getItem('flipping_api_url') || API_URL_DEFAULT;
+  const htf  = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
+  const sep  = base.includes('?') ? '&' : '?';
+  return `${base}${sep}source=${htf}`;
+};
 const DS_KEY         = 'dataSource';       // localStorage: "demo" | "csv" | "api"
+const HTF_SOURCE_KEY = 'htfSource';        // localStorage: "m15" | "h4"
+// Returns the HTF-namespaced localStorage key.
+// M15 uses no suffix (backward-compatible with existing data).
+// H4 gets '_h4' suffix — starts fresh on first use.
+function _htfKey(base) {
+  return (localStorage.getItem('htfSource') || 'm15') === 'h4' ? `${base}_h4` : base;
+}
 const CSV_CACHE_KEY  = 'flipping_csv_cache_v1'; // raw CSV text + filename + format for restart restore
-const CACHE_KEY      = 'apiTradesCache_v2_rrmax';
-const CACHE_TIME_KEY = 'apiTradesCacheTime_v2_rrmax';
-const API_FIELD_NAMES_KEY  = 'apiFieldNames_v1';   // sorted string[] of distinct Notion property keys (~1-2 KB)
-const API_OVERRIDES_KEY = 'apiFieldOverrides_v1'; // { [dimKey]: apiFieldName }
+// Per-source cache keys — switching M15↔H4 uses separate localStorage slots
+const _cacheKey     = () => `apiTradesCache_v2_rrmax_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
+const _cacheTimeKey = () => `apiTradesCacheTime_v2_rrmax_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
+const _mediaCacheKey = () => `apiTradesMedia_v1_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
+// Per-source field names & overrides — each HTF source has its own mapping
+const _fieldNamesKey     = () => `apiFieldNames_v1_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
+const _fieldOverridesKey = () => `apiFieldOverrides_v1_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
 const API_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;     // 5 minutes
 
 // ── Raw API cache — in-memory only (Phase 3.A quota fix) ──
@@ -2390,18 +2405,25 @@ const API_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;     // 5 minutes
 // For the Mapping-tab picker, the keys union alone is persisted in the
 // small API_FIELD_NAMES_KEY entry (~1-2 KB). For _reapplyAPIOverrides,
 // post-reload override changes trigger a fresh fetch (see that function).
-let _rawAPICacheMemory = null;
+let _rawAPICacheMemory = {}; // keyed by htf source: { m15: [...], h4: [...] }
+let _parsedAPICacheMemory = {}; // keyed by htf source: { m15: [...], h4: [...] }
+
+function _getCurrentHTFSource() {
+  return localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
+}
 
 function _getRawAPICache() {
-  return Array.isArray(_rawAPICacheMemory) ? _rawAPICacheMemory : [];
+  const src = _getCurrentHTFSource();
+  return Array.isArray(_rawAPICacheMemory[src]) ? _rawAPICacheMemory[src] : [];
 }
 function _setRawAPICache(rawTrades) {
+  const src = _getCurrentHTFSource();
   if (Array.isArray(rawTrades)) {
-    _rawAPICacheMemory = rawTrades;
+    _rawAPICacheMemory[src] = rawTrades;
     // Persist keys union only — the picker's sole post-reload requirement.
     try {
       const names = _listAPIKeys(rawTrades);
-      localStorage.setItem(API_FIELD_NAMES_KEY, JSON.stringify(names));
+      localStorage.setItem(_fieldNamesKey(), JSON.stringify(names));
     } catch (e) { console.warn('[DS] FieldNames persist failed:', e.message); }
   }
   // If the Journal panel is open, refresh its field count right away so the
@@ -2414,12 +2436,12 @@ function _setRawAPICache(rawTrades) {
 // ── API field overrides — { setup: 'm15Type', session: 'sessionUtc', ... } ──
 function _getAPIFieldOverrides() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(API_OVERRIDES_KEY) || '{}');
+    const parsed = JSON.parse(localStorage.getItem(_fieldOverridesKey()) || '{}');
     return (parsed && typeof parsed === 'object') ? parsed : {};
   } catch { return {}; }
 }
 function _saveAPIFieldOverrides(obj) {
-  try { localStorage.setItem(API_OVERRIDES_KEY, JSON.stringify(obj || {})); }
+  try { localStorage.setItem(_fieldOverridesKey(), JSON.stringify(obj || {})); }
   catch (e) { console.warn('[DS] API overrides save failed:', e.message); }
 }
 
@@ -2431,16 +2453,23 @@ function _saveAPIFieldOverrides(obj) {
 function _listAPIKeys(rawTrades) {
   const arr = Array.isArray(rawTrades) ? rawTrades : [];
   if (arr.length) {
-    const set = new Set();
+    // Only keep keys that have at least one non-null, non-empty value across
+    // the dataset. This filters out M15-specific fields (all null in H4)
+    // and H4-specific fields (all null in M15) from the mapping panel.
+    const hasValue = {};
     for (const t of arr) {
-      if (t && typeof t === 'object' && !Array.isArray(t)) {
-        Object.keys(t).forEach(k => set.add(k));
+      if (!t || typeof t !== 'object' || Array.isArray(t)) continue;
+      for (const [k, v] of Object.entries(t)) {
+        if (hasValue[k]) continue;
+        if (v === null || v === undefined || v === '') continue;
+        if (Array.isArray(v) && v.length === 0) continue;
+        hasValue[k] = true;
       }
     }
-    return [...set].sort((a, b) => a.localeCompare(b));
+    return Object.keys(hasValue).sort((a, b) => a.localeCompare(b));
   }
   try {
-    const parsed = JSON.parse(localStorage.getItem(API_FIELD_NAMES_KEY) || '[]');
+    const parsed = JSON.parse(localStorage.getItem(_fieldNamesKey()) || '[]');
     return Array.isArray(parsed)
       ? parsed.slice().sort((a, b) => a.localeCompare(b))
       : [];
@@ -2557,8 +2586,20 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     t.positionResult ?? t.resultatTp1 ?? t.resultatTP1 ?? t['Position Result']
   ));  // ex: t.resultatTp1
   if (!oc) return null;
-  const dateRaw = (t.date || '').slice(0, 10);
-  if (!dateRaw || dateRaw.length < 7) return null;
+  let dateRaw = (t.date || '').slice(0, 10);
+  if (!dateRaw || dateRaw.length < 7) {
+    // Fallback for backtest journals (H4) that have no specific date:
+    // reconstruct YYYY-MM-01 from formula fields so monthly/yearly widgets work.
+    const _MONTH_IDX = {
+      january:'01', february:'02', march:'03',    april:'04',
+      may:'05',     june:'06',     july:'07',      august:'08',
+      september:'09',october:'10', november:'11',  december:'12',
+    };
+    const yr = (t.anneeFormule || t.annee || '').toString().trim();
+    const mo = _MONTH_IDX[(t.moisFormule || t.mois || '').toLowerCase().trim()];
+    if (yr.length === 4 && mo) dateRaw = `${yr}-${mo}-01`;
+    else return null;
+  }
   const positionTypes = _parseField(
     t.positionType ?? t['Position Type'] ?? t.tradeType,
     s => _firstText(s)
@@ -2657,14 +2698,127 @@ function _normalizeAPITrade(t, _rawRowIndex) {
 
 // ── Cache helpers ──
 function getCachedAPIData() {
+  const src = _getCurrentHTFSource();
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && parsed.length) appState.settings.dataSource.cachedTrades = parsed;
-    return parsed || appState.settings.dataSource.cachedTrades || null;
+    const raw = localStorage.getItem(_cacheKey());
+    const parsed = raw ? _mergeMediaCache(_deserializeTradesFromStorage(JSON.parse(raw))) : null;
+    if (parsed && parsed.length) {
+      _parsedAPICacheMemory[src] = parsed;
+      appState.settings.dataSource.cachedTrades = parsed;
+      return parsed;
+    }
+    const memoryCache = Array.isArray(_parsedAPICacheMemory[src]) ? _parsedAPICacheMemory[src] : null;
+    if (memoryCache && memoryCache.length) {
+      appState.settings.dataSource.cachedTrades = memoryCache;
+      return memoryCache;
+    }
+    return null;
   } catch {
-    return appState.settings.dataSource.cachedTrades || null;
+    const memoryCache = Array.isArray(_parsedAPICacheMemory[src]) ? _parsedAPICacheMemory[src] : null;
+    if (memoryCache && memoryCache.length) {
+      appState.settings.dataSource.cachedTrades = memoryCache;
+      return memoryCache;
+    }
+    return null;
   }
+}
+function _extractMediaCache(trades) {
+  if (!Array.isArray(trades)) return [];
+  return trades.map(t => ({
+    imgM15: t.imgM15 || '',
+    imgH4Before: t.imgH4Before || '',
+    imgM15After: t.imgM15After || '',
+    imgM15Orig: t.imgM15Orig || '',
+    imgH4BeforeOrig: t.imgH4BeforeOrig || '',
+    imgM15AfterOrig: t.imgM15AfterOrig || '',
+  }));
+}
+function _persistMediaCache(trades) {
+  try {
+    sessionStorage.setItem(_mediaCacheKey(), JSON.stringify(_extractMediaCache(trades)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+function _mergeMediaCache(trades) {
+  if (!Array.isArray(trades) || !trades.length) return trades;
+  try {
+    const raw = sessionStorage.getItem(_mediaCacheKey());
+    const media = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(media) || !media.length) return trades;
+    return trades.map((t, i) => {
+      const m = media[i] || {};
+      return {
+        ...t,
+        imgM15: t.imgM15 || m.imgM15 || '',
+        imgH4Before: t.imgH4Before || m.imgH4Before || '',
+        imgM15After: t.imgM15After || m.imgM15After || '',
+        imgM15Orig: t.imgM15Orig || m.imgM15Orig || t.imgM15 || m.imgM15 || '',
+        imgH4BeforeOrig: t.imgH4BeforeOrig || m.imgH4BeforeOrig || t.imgH4Before || m.imgH4Before || '',
+        imgM15AfterOrig: t.imgM15AfterOrig || m.imgM15AfterOrig || t.imgM15After || m.imgM15After || '',
+      };
+    });
+  } catch {
+    return trades;
+  }
+}
+const _STORAGE_COMPACT_KEYS = [
+  'date','month','pair','setup','setupDetail','session','sessionUtc','day',
+  'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
+  'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
+  'imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig',
+  'imgM15AfterOrig','notionUrl','extras'
+];
+const _STORAGE_MINIMAL_KEYS = [
+  'date','month','pair','setup','setupDetail','session','sessionUtc','day',
+  'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
+  'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
+  'imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig',
+  'imgM15AfterOrig','notionUrl'
+];
+function _deserializeTradesFromStorage(payload) {
+  if (!payload) return null;
+  if (Array.isArray(payload)) return payload;
+  if (!payload || !Array.isArray(payload.rows) || !Array.isArray(payload.keys)) return null;
+  return payload.rows.map(row => {
+    const trade = {};
+    payload.keys.forEach((key, index) => {
+      trade[key] = Array.isArray(row) ? row[index] : undefined;
+    });
+    trade.obstacles = Array.isArray(trade.obstacles) ? trade.obstacles : [];
+    trade.h4 = Array.isArray(trade.h4) ? trade.h4 : [];
+    trade.beManagement = Array.isArray(trade.beManagement) ? trade.beManagement : [];
+    trade.tradeType = Array.isArray(trade.tradeType) ? trade.tradeType : [];
+    trade.extras = (trade.extras && typeof trade.extras === 'object') ? trade.extras : {};
+    trade.badFeeling = !!trade.badFeeling;
+    trade.invalide = !!trade.invalide;
+    trade.imgM15Orig = trade.imgM15Orig || trade.imgM15 || '';
+    trade.imgH4BeforeOrig = trade.imgH4BeforeOrig || trade.imgH4Before || '';
+    trade.imgM15AfterOrig = trade.imgM15AfterOrig || trade.imgM15After || '';
+    return trade;
+  });
+}
+function _serializeTradesForStorage(trades, mode = 'full') {
+  if (!Array.isArray(trades)) return [];
+  if (mode === 'full') return trades;
+  const keys = mode === 'compact' ? _STORAGE_COMPACT_KEYS : _STORAGE_MINIMAL_KEYS;
+  return {
+    __format: `api-cache-${mode}-v1`,
+    keys,
+    rows: trades.map(t => keys.map(key => {
+      if (key === 'obstacles' || key === 'h4' || key === 'beManagement' || key === 'tradeType') {
+        return Array.isArray(t[key]) ? t[key] : [];
+      }
+      if (key === 'extras') {
+        return (t.extras && typeof t.extras === 'object') ? t.extras : {};
+      }
+      if (key === 'badFeeling' || key === 'invalide') {
+        return !!t[key];
+      }
+      return t[key] ?? (key.includes('img') || key === 'notionUrl' || key === 'timeUtc1' ? '' : null);
+    })),
+  };
 }
 function setCachedAPIData(trades) {
   // appState.settings.dataSource.cachedTrades is the single source of truth for
@@ -2672,12 +2826,32 @@ function setCachedAPIData(trades) {
   // quota failure on the LS write must NOT leave appState inconsistent — the
   // app continues working for the current session; on next reload with no
   // cache key, initDataSource triggers a fresh fetch automatically.
+  const src = _getCurrentHTFSource();
+  _parsedAPICacheMemory[src] = Array.isArray(trades) ? trades : null;
   appState.settings.dataSource.cachedTrades = Array.isArray(trades) ? trades : null;
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(trades));
-    localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
-  } catch (e) {
-    console.warn('[DS] Cache persist failed (quota) — data will re-fetch on next load. Details:', e && e.message);
+  _persistMediaCache(trades);
+  // Always stamp the fetch time first — it's a tiny 13-byte write.
+  // The data serialization below may fail on quota, but the timestamp must
+  // reflect the actual fetch regardless so _getCacheAge() stays accurate.
+  try { localStorage.setItem(_cacheTimeKey(), Date.now().toString()); } catch {}
+  const persistModes = ['full', 'compact', 'minimal'];
+  let persistedMode = null;
+  let lastPersistError = null;
+  for (const mode of persistModes) {
+    try {
+      localStorage.setItem(_cacheKey(), JSON.stringify(_serializeTradesForStorage(trades, mode)));
+      persistedMode = mode;
+      break;
+    } catch (e) {
+      lastPersistError = e;
+    }
+  }
+  if (persistedMode === 'compact') {
+    console.warn('[DS] Cache persisted in compact mode after quota pressure.');
+  } else if (persistedMode === 'minimal') {
+    console.warn('[DS] Cache persisted in minimal mode after quota pressure.');
+  } else if (!persistedMode) {
+    console.warn('[DS] Cache persist failed (quota) — data will re-fetch on next load. Details:', lastPersistError && lastPersistError.message);
   }
   // Schedule a one-shot refresh exactly at the 60s mark so the status label
   // transitions to "API live (1 min ago)" on time, instead of waiting up to
@@ -2694,7 +2868,7 @@ function setCachedAPIData(trades) {
 }
 function _getCacheAge() {
   try {
-    const ts = parseInt(localStorage.getItem(CACHE_TIME_KEY) || '0', 10);
+    const ts = parseInt(localStorage.getItem(_cacheTimeKey()) || '0', 10);
     if (!ts) return null;
     const diffMs = Date.now() - ts;
     if (diffMs < 60000) return null;
@@ -2705,7 +2879,7 @@ function _getCacheAge() {
 
 function getAPICooldownRemainingMs() {
   try {
-    const ts = parseInt(localStorage.getItem(CACHE_TIME_KEY) || '0', 10);
+    const ts = parseInt(localStorage.getItem(_cacheTimeKey()) || '0', 10);
     if (!ts) return 0;
     return Math.max(0, API_REFRESH_COOLDOWN_MS - (Date.now() - ts));
   } catch { return 0; }
@@ -2781,6 +2955,81 @@ function setSourceIndicator(state) {
   if (lbl) lbl.textContent = _DS_LABELS[state] || state;
 }
 
+// ── HTF source toggle (M15 / H4) ──
+function _syncHTFToggleUI() {
+  const htf    = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
+  const btnM15 = document.getElementById('htf-btn-m15');
+  const btnH4  = document.getElementById('htf-btn-h4');
+  if (btnM15) btnM15.classList.toggle('active', htf === 'm15');
+  if (btnH4)  btnH4.classList.toggle('active',  htf === 'h4');
+}
+
+function setHTFSource(source) {
+  if (source !== 'm15' && source !== 'h4') return;
+  if ((localStorage.getItem(HTF_SOURCE_KEY) || 'm15') === source) return; // no-op
+  localStorage.setItem(HTF_SOURCE_KEY, source);
+  _syncHTFToggleUI();
+
+  // ── 1. Reset + reload all preset in-memory state for the new source ──
+  Object.keys(presetOverrides).forEach(k => delete presetOverrides[k]);
+  // Reset PRESETS to defaults first so that if the new source has no saved
+  // presets, the old source's list doesn't bleed through (loadPresetsList
+  // returns early without clearing PRESETS when there's no LS data).
+  PRESETS = DEFAULT_PRESETS.map(p => ({ ...p }));
+  loadPresetsList();
+  loadPresetOverrides();
+  initPresetSnapshots();
+  loadPresetSnapshots();
+  Object.keys(presetLiveFilters).forEach(k => delete presetLiveFilters[k]);
+  loadPresetLiveFilters();
+  _ensureLiveSlotsInitialized();
+
+  // ── 2. Load the new source's layout ──
+  const savedLayout = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'active'));
+  const savedName   = localStorage.getItem(_htfKey(LS_KEY_ACTIVE)) || 'default';
+  if (savedLayout && _loadSectionSlot(savedLayout)) {
+    _activePresetName = savedName;
+  } else {
+    _activePresetName = 'default';
+    _liveSectionLayouts = {
+      global:       { ...GLOBAL_OVERVIEW_LAYOUT },
+      'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
+      partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+    };
+  }
+
+  // ── 3. Re-apply hidden widgets for the new source ──
+  // First un-hide everything currently hidden so no stale widget stays invisible.
+  _unhideAllWidgets();
+  // Then load the new source's hidden set; _applySectionFilter below will handle
+  // removing those from the live grid automatically (reads _isWidgetHidden).
+  _loadHiddenWidgets();
+
+  // ── 4. Apply layout + hidden state to the live grid ──
+  if (_grid) {
+    _applySectionFilter(appState?.ui?.activeSection || 'global', { skipSync: true });
+  }
+
+  // ── 5. Sync preset / layout UI ──
+  if (typeof _updatePresetButtons === 'function') _updatePresetButtons();
+  if (typeof renderPresetList === 'function') renderPresetList();
+  syncPresetSelectionState(null);
+
+  // ── 6. Inject data from the new source's cache (if any) ──
+  const cached = getCachedAPIData();
+  if (cached && cached.length) {
+    _injectTrades(cached, 'Notion Live', null);
+    setSourceIndicator('live');
+    showDataStatus(_getAPICacheStatusLabel(), 'live');
+    _updateLastSync();
+  } else if (localStorage.getItem(DS_KEY) === 'api') {
+    // No cache yet for this source — show pending state and trigger a background fetch
+    setSourceIndicator('pending');
+    showDataStatus('API standby — no data for this source yet', 'warn');
+    _fetchAPICacheSilently({ force: true });
+  }
+}
+
 // ── Update source UI (toggle buttons + refresh btn) ──
 function updateSourceUI(mode) {
   const btnDemo = document.getElementById('ds-btn-demo');
@@ -2794,6 +3043,9 @@ function updateSourceUI(mode) {
                 btnApi.classList.toggle('api-live', mode === 'api'); }
   if (btnRef) setVisible(btnRef, false);
   _syncDsButtonTitles();
+  const htfGroup = document.getElementById('htf-toggle-group');
+  if (htfGroup) htfGroup.classList.toggle('is-hidden', mode !== 'api');
+  _syncHTFToggleUI();
 }
 
 // ── Inject parsed trades into the dashboard (shared by CSV and API paths) ──
@@ -2839,11 +3091,11 @@ function _injectTrades(parsed, totalLabel, savedState) {
       _csvFormat = null;
       requestAnimationFrame(() => {
         if (typeof _applySerializedLayout !== 'function') return;
-        const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
+        const savedKey = localStorage.getItem(_htfKey(LS_KEY_ACTIVE));
         let savedLayout = null;
         try {
           savedLayout = savedKey
-            ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null')
+            ? JSON.parse(localStorage.getItem(_htfKey(LS_KEY_PREFIX + savedKey)) || 'null')
             : null;
         } catch (e) {
           console.warn('[layout restore CSV]', e.message);
@@ -2928,7 +3180,7 @@ async function loadFromAPI(options = {}) {
       if (loading) setVisible(loading, false);
       if (badge)   setVisible(badge, true);
 
-    showDataStatus('API live — ' + appState.trades.items.length + ' trades', 'live');
+    showDataStatus(_getAPICacheStatusLabel(), 'live');
     _updateLastSync();
     debugDataSource('loadFromAPI:success', { count: appState.trades.items.length });
 
@@ -3448,6 +3700,7 @@ function refreshAPISource() {
   }
   _setBtnCooldown(0);
   loadFromAPI({ force: false });
+  _fetchOtherSourceBackground(); // concurrent fetch for the non-active HTF source
 }
 
 // ── switchToAPI — the "Notion Live" tab now ONLY refreshes the cache in background ──
@@ -3469,6 +3722,7 @@ function switchToAPI() {
     if (loading) setVisible(loading, false);
     if (badge)   setVisible(badge, true);
   });
+  _fetchOtherSourceBackground(); // concurrent fetch for the non-active HTF source
 }
 
 // ── Silent cache refresh (no mode switch, no data injection) ──
@@ -3541,19 +3795,83 @@ async function _fetchAPICacheSilently(options = {}) {
   }
 }
 
+// ── Background fetch for the non-active HTF source ──
+// Fire-and-forget: fetches and caches the *other* HTF (M15↔H4) concurrently
+// with the active-source fetch. Updates _rawAPICacheMemory / _parsedAPICacheMemory
+// and persists to the other source's LS keys. Never touches appState or the UI.
+let _otherSourceFetching = false;
+async function _fetchOtherSourceBackground() {
+  if (_otherSourceFetching) return;
+  const current = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
+  const other   = current === 'm15' ? 'h4' : 'm15';
+  // Respect cooldown for the other source independently
+  const otherTimeKey = `apiTradesCacheTime_v2_rrmax_${other}`;
+  try {
+    const ts = parseInt(localStorage.getItem(otherTimeKey) || '0', 10);
+    if (ts && (Date.now() - ts) < API_REFRESH_COOLDOWN_MS) return;
+  } catch {}
+  _otherSourceFetching = true;
+  try {
+    // Swap 1 (sync): get the other source's API URL then restore immediately
+    localStorage.setItem(HTF_SOURCE_KEY, other);
+    let url;
+    try { url = getAPIURL(); } finally { localStorage.setItem(HTF_SOURCE_KEY, current); }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new DOMException('Timeout 45s', 'AbortError')), 45000);
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    if (!json.trades || !json.trades.length) return;
+
+    // Swap 2 (sync): parse under the other source's field overrides then restore
+    localStorage.setItem(HTF_SOURCE_KEY, other);
+    let parsed;
+    try {
+      parsed = json.trades.map((t, i) => {
+        try { return _normalizeAPITrade(t, i); } catch { return null; }
+      }).filter(Boolean);
+    } finally {
+      localStorage.setItem(HTF_SOURCE_KEY, current);
+    }
+
+    // Store in per-source memory caches (never touches appState.settings.dataSource.cachedTrades)
+    _rawAPICacheMemory[other]    = json.trades;
+    _parsedAPICacheMemory[other] = parsed;
+
+    // Always stamp the fetch time first (tiny 13-byte write, rarely fails)
+    try { localStorage.setItem(otherTimeKey, Date.now().toString()); } catch {}
+    // Persist data to LS under the other source's key (best-effort, may fail on quota)
+    const otherCacheKey = `apiTradesCache_v2_rrmax_${other}`;
+    try {
+      localStorage.setItem(otherCacheKey, JSON.stringify(_serializeTradesForStorage(parsed, 'full')));
+    } catch {
+      // Quota pressure: in-memory cache is already set, LS write is best-effort
+    }
+    debugDataSource('fetchOtherSourceBackground:success', { other, count: parsed.length });
+  } catch (err) {
+    debugDataSource('fetchOtherSourceBackground:error', { other, err: err?.message });
+  } finally {
+    _otherSourceFetching = false;
+  }
+}
+
 // ── Initial data load on page start ──
-// If the previous session was in API mode AND the cache holds data, stay in
-// API mode and reuse the cache (NO auto-fetch). Otherwise start in DEMO mode.
-// A background fetch is only fired when there is no cached data at all.
+// If the previous session was in API mode and the cache holds data, stay in
+// API mode and reuse the cache. If the previous session was in API mode but
+// the cache is missing, keep API selected in "pending" state — page refreshes
+// must never trigger a network call. Only the Notion Live button may refresh.
 async function initDataSource() {
   // Legacy cleanup must run BEFORE any cache read/write so freed space is
   // available for subsequent writes. Idempotent — no-op on repeat loads.
   _runCacheCleanupMigration();
 
   const prevMode = localStorage.getItem(DS_KEY);
+  const prevWasAPI = prevMode === 'api';
   const cached   = getCachedAPIData();
   const hasCache = !!(cached && cached.length);
-  const restoreAPI = prevMode === 'api' && hasCache;
+  const restoreAPI = prevWasAPI && hasCache;
 
   // CSV restore: check for a persisted raw CSV blob. Only honored when the
   // previous mode was csv AND the blob contains rawText (quota-fallback blobs
@@ -3579,7 +3897,7 @@ async function initDataSource() {
     }
   }
 
-  const startupMode = restoreAPI ? 'api' : (restoreCSV ? 'csv' : 'demo');
+  const startupMode = restoreAPI ? 'api' : (restoreCSV ? 'csv' : (prevWasAPI ? 'api' : 'demo'));
   localStorage.setItem(DS_KEY, startupMode);
   updateSourceUI(startupMode);
 
@@ -3608,6 +3926,15 @@ async function initDataSource() {
       updateSourceUI('demo');
       loadBuiltinCSV(persistedSidebar);
     }
+  } else if (prevWasAPI) {
+    appState.settings.dataSource.pendingRestoreState = persistedSidebar || null;
+    appState.trades.items.length = 0;
+    appState.trades.totalOverride = 0;
+    invalidateFilterCache();
+    render();
+    hideEmptyState();
+    setSourceIndicator('pending');
+    showDataStatus('API pending — click Notion Live to load', 'warn');
   } else {
     loadBuiltinCSV(persistedSidebar);
   }
@@ -3653,33 +3980,8 @@ async function initDataSource() {
     }
   } catch (e) {}
 
-  // Background: fetch silently ONLY when there is no cached data. As long as
-  // the cache holds something usable, a plain page refresh never triggers a
-  // network call — the user has to click Notion Live to force a refresh.
-  if (!hasCache) {
-    const loading = getByIdSafe('tab-api-loading');
-    const badge   = getByIdSafe('tab-api-badge');
-    if (loading) setVisible(loading, true);
-    if (badge)   setVisible(badge, false);
-
-    _fetchAPICacheSilently({ force: true }).finally(() => {
-      if (loading) setVisible(loading, false);
-      if (badge)   setVisible(badge, true);
-      _logCacheInitTelemetry();
-    });
-  } else if (restoreAPI && !localStorage.getItem(API_FIELD_NAMES_KEY)) {
-    // Upgrade-user backfill: parsed cache is present (restore works) but the
-    // field-names index (API_FIELD_NAMES_KEY) wasn't written by any prior
-    // version. Fire a silent refresh so the Mapping tab's picker has data
-    // without requiring the user to click "Load fields". No UI badge — the
-    // dashboard display is already populated from the parsed cache.
-    _fetchAPICacheSilently({ force: true })
-      .catch(() => {})
-      .finally(() => _logCacheInitTelemetry());
-  } else {
-    // Steady state — no fetch. Telemetry fires synchronously.
-    _logCacheInitTelemetry();
-  }
+  // Steady state — no boot-time fetch. A page refresh must never hit the API.
+  _logCacheInitTelemetry();
 
   // Periodic refresh of the cache-age label (only in api mode with a valid cache)
   if (_cacheAgeTicker !== null) {
@@ -4199,7 +4501,7 @@ let PRESETS = DEFAULT_PRESETS.map(p => ({ ...p }));
 
 function loadPresetsList() {
   try {
-    const raw = localStorage.getItem(PRESET_LS_KEY);
+    const raw = localStorage.getItem(_htfKey(PRESET_LS_KEY));
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || !parsed.length) return;
@@ -4219,7 +4521,7 @@ function loadPresetsList() {
 }
 
 function savePresetsList() {
-  try { localStorage.setItem(PRESET_LS_KEY, JSON.stringify(PRESETS)); } catch(e) {}
+  try { localStorage.setItem(_htfKey(PRESET_LS_KEY), JSON.stringify(PRESETS)); } catch(e) {}
 }
 
 // Return max(existing id) + 1 — ids are stable and never recycled, so all
@@ -19319,10 +19621,10 @@ function injectParsedTrades(parsed, filename, csvFormat) {
   // Apply saved or default layout after render (applyLayout defined later in script)
   requestAnimationFrame(() => {
     if (typeof _applySerializedLayout !== 'function') return;
-    const savedKey = localStorage.getItem(LS_KEY_ACTIVE);
+    const savedKey = localStorage.getItem(_htfKey(LS_KEY_ACTIVE));
     let savedLayout = null;
     try {
-      savedLayout = savedKey ? JSON.parse(localStorage.getItem(LS_KEY_PREFIX + savedKey) || 'null') : null;
+      savedLayout = savedKey ? JSON.parse(localStorage.getItem(_htfKey(LS_KEY_PREFIX + savedKey)) || 'null') : null;
     } catch (e) {
       console.warn('[layout restore import]', e.message);
       savedLayout = null;
@@ -24328,12 +24630,12 @@ function savePresetOverrides() {
       const cc = _serializeCustomChips(presetOverrides[id].customChips || {});
       if (Object.keys(cc).length) s[id].customChips = cc;
     }
-    localStorage.setItem(LS_OVERRIDES_KEY, JSON.stringify(s));
+    localStorage.setItem(_htfKey(LS_OVERRIDES_KEY), JSON.stringify(s));
   } catch(e) {}
 }
 function loadPresetOverrides() {
   try {
-    const raw = localStorage.getItem(LS_OVERRIDES_KEY);
+    const raw = localStorage.getItem(_htfKey(LS_OVERRIDES_KEY));
     if (!raw) return;
     const saved = JSON.parse(raw);
     const coerceMode = (m, included, excluded) => {
@@ -24421,7 +24723,7 @@ function initPresetSnapshots() {
 
 function loadPresetSnapshots() {
   try {
-    const raw = localStorage.getItem(PRESET_SNAPSHOTS_LS_KEY);
+    const raw = localStorage.getItem(_htfKey(PRESET_SNAPSHOTS_LS_KEY));
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return;
@@ -24500,7 +24802,7 @@ function savePresetSnapshots() {
         if (tpcOut) out[id].tpConfig = tpcOut;
       }
     }
-    localStorage.setItem(PRESET_SNAPSHOTS_LS_KEY, JSON.stringify(out));
+    localStorage.setItem(_htfKey(PRESET_SNAPSHOTS_LS_KEY), JSON.stringify(out));
   } catch (e) { console.warn('[snapshots] save failed:', e.message); }
 }
 
@@ -24574,7 +24876,7 @@ function getPresetLiveSlot(id) {
 
 function loadPresetLiveFilters() {
   try {
-    const raw = localStorage.getItem(PRESET_LIVE_FILTERS_LS_KEY);
+    const raw = localStorage.getItem(_htfKey(PRESET_LIVE_FILTERS_LS_KEY));
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return;
@@ -24706,7 +25008,7 @@ function savePresetLiveFilters() {
         if (poSlotsOut) out[k].poPresetSlots = poSlotsOut;
       }
     }
-    localStorage.setItem(PRESET_LIVE_FILTERS_LS_KEY, JSON.stringify(out));
+    localStorage.setItem(_htfKey(PRESET_LIVE_FILTERS_LS_KEY), JSON.stringify(out));
   } catch (e) { console.warn('[presetLiveFilters] save failed:', e.message); }
 }
 
@@ -24714,7 +25016,7 @@ function savePresetLiveFilters() {
  *  chaque preset courant + pour le pseudo-preset null. Appelée au boot
  *  juste après loadPresetLiveFilters. */
 function _ensureLiveSlotsInitialized() {
-  const hadKey = !!localStorage.getItem(PRESET_LIVE_FILTERS_LS_KEY);
+  const hadKey = !!localStorage.getItem(_htfKey(PRESET_LIVE_FILTERS_LS_KEY));
   PRESETS.forEach(p => {
     if (!presetLiveFilters[p.id]) presetLiveFilters[p.id] = _blankLiveSlot();
   });
@@ -24830,7 +25132,7 @@ function _migrateInvalideBadFeelingV1() {
   const isExistingUser = !!(
     localStorage.getItem('flipping_presets') ||
     localStorage.getItem('flipping_sidebar_state') ||
-    localStorage.getItem(PRESET_SNAPSHOTS_LS_KEY) ||
+    localStorage.getItem(_htfKey(PRESET_SNAPSHOTS_LS_KEY)) ||
     localStorage.getItem('flipping_preset_snapshots')
   );
 
@@ -26309,14 +26611,14 @@ let _hiddenWidgets = {};
 
 function _loadHiddenWidgets() {
   try {
-    const raw = localStorage.getItem(LS_KEY_HIDDEN);
+    const raw = localStorage.getItem(_htfKey(LS_KEY_HIDDEN));
     const obj = raw ? JSON.parse(raw) : {};
     _hiddenWidgets = (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
   } catch { _hiddenWidgets = {}; }
 }
 
 function _saveHiddenWidgets() {
-  try { localStorage.setItem(LS_KEY_HIDDEN, JSON.stringify(_hiddenWidgets)); } catch {}
+  try { localStorage.setItem(_htfKey(LS_KEY_HIDDEN), JSON.stringify(_hiddenWidgets)); } catch {}
 }
 
 function _isWidgetHidden(id) {
@@ -27277,14 +27579,14 @@ function _msTileRemove(id) {
 
 function _getCustomSlots() {
   try {
-    const raw = localStorage.getItem(LS_KEY_SLOTS);
+    const raw = localStorage.getItem(_htfKey(LS_KEY_SLOTS));
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr.slice(0, LAYOUT_SLOTS_MAX) : [];
   } catch { return []; }
 }
 
 function _setCustomSlots(slots) {
-  localStorage.setItem(LS_KEY_SLOTS, JSON.stringify(slots.slice(0, LAYOUT_SLOTS_MAX)));
+  localStorage.setItem(_htfKey(LS_KEY_SLOTS), JSON.stringify(slots.slice(0, LAYOUT_SLOTS_MAX)));
 }
 
 function _addCustomSlot(name) {
@@ -27300,7 +27602,7 @@ function _addCustomSlot(name) {
 function _removeCustomSlot(name) {
   const slots = _getCustomSlots().filter(s => s !== name);
   _setCustomSlots(slots);
-  localStorage.removeItem(LS_KEY_PREFIX + name);
+  localStorage.removeItem(_htfKey(LS_KEY_PREFIX + name));
 }
 
 // Detect legacy flat-layout slots (pre-refactor). Returns true if the parsed
@@ -27353,8 +27655,8 @@ function _serializeSectionLayouts() {
 // Save the live layouts to a named slot (or 'active' for the autosave).
 function _saveSectionSlot(key) {
   const payload = _serializeSectionLayouts();
-  localStorage.setItem(LS_KEY_PREFIX + key, JSON.stringify(payload));
-  if (key !== 'active') localStorage.setItem(LS_KEY_ACTIVE, key);
+  localStorage.setItem(_htfKey(LS_KEY_PREFIX + key), JSON.stringify(payload));
+  if (key !== 'active') localStorage.setItem(_htfKey(LS_KEY_ACTIVE), key);
 }
 
 // Autosave the active slot (called after every drag/resize).
@@ -27548,8 +27850,8 @@ function initGridstack() {
   }, '#gs-container');
 
   // Load saved layout if present
-  const saved = localStorage.getItem(LS_KEY_PREFIX + 'active');
-  const name  = localStorage.getItem(LS_KEY_ACTIVE) || 'default';
+  const saved = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'active'));
+  const name  = localStorage.getItem(_htfKey(LS_KEY_ACTIVE)) || 'default';
   if (saved) {
     if (_loadSectionSlot(saved)) {
       _activePresetName = name;
@@ -28039,8 +28341,8 @@ function _applySerializedLayout(data) {
 // ── Save layout to localStorage ──
 function _saveCurrentLayout(key) {
   const layout = _serializeLayout();
-  localStorage.setItem(LS_KEY_PREFIX + key, JSON.stringify(layout));
-  if (key !== 'active') localStorage.setItem(LS_KEY_ACTIVE, key);
+  localStorage.setItem(_htfKey(LS_KEY_PREFIX + key), JSON.stringify(layout));
+  if (key !== 'active') localStorage.setItem(_htfKey(LS_KEY_ACTIVE), key);
 }
 
 function _saveCurrentShareLayout() {
@@ -28058,18 +28360,18 @@ function layoutLoadPreset(name) {
       partials:     { ...PARTIAL_PLANNERS_LAYOUT },
     };
     _saveSectionSlot('active');
-    localStorage.setItem(LS_KEY_ACTIVE, 'default');
+    localStorage.setItem(_htfKey(LS_KEY_ACTIVE), 'default');
     _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
     _updatePresetButtons();
     _showToast('Layout: default');
     return;
   }
-  const raw = localStorage.getItem(LS_KEY_PREFIX + name);
+  const raw = localStorage.getItem(_htfKey(LS_KEY_PREFIX + name));
   if (!raw) { _showToast(`No layout: "${name}"`, 'warn'); return; }
   if (!_loadSectionSlot(raw)) { _showToast('Corrupt layout data', 'warn'); return; }
   _activePresetName = name;
   _saveSectionSlot('active');
-  localStorage.setItem(LS_KEY_ACTIVE, name);
+  localStorage.setItem(_htfKey(LS_KEY_ACTIVE), name);
   _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
   _updatePresetButtons();
   _showToast(`Layout: ${name}`);
@@ -28101,7 +28403,7 @@ function layoutNew() {
   _syncGridToLive();
   _saveSectionSlot(name);
   _activePresetName = name;
-  localStorage.setItem(LS_KEY_ACTIVE, name);
+  localStorage.setItem(_htfKey(LS_KEY_ACTIVE), name);
   _rebuildLayoutToolbar();
   _showToast(`Created: "${name}"`);
 }
@@ -28111,7 +28413,7 @@ function layoutDeleteSlot(name) {
   _removeCustomSlot(name);
   if (_activePresetName === name) {
     _activePresetName = 'default';
-    localStorage.setItem(LS_KEY_ACTIVE, 'default');
+    localStorage.setItem(_htfKey(LS_KEY_ACTIVE), 'default');
   }
   _rebuildLayoutToolbar();
   _showToast(`Deleted: "${name}"`);
@@ -28128,16 +28430,16 @@ function layoutRenameSlot(oldName, newName) {
   const idx = slots.indexOf(oldName);
   if (idx === -1) return;
   // Move the layout data under the new key, preserve slot position
-  const raw = localStorage.getItem(LS_KEY_PREFIX + oldName);
+  const raw = localStorage.getItem(_htfKey(LS_KEY_PREFIX + oldName));
   if (raw) {
-    localStorage.setItem(LS_KEY_PREFIX + newName, raw);
-    localStorage.removeItem(LS_KEY_PREFIX + oldName);
+    localStorage.setItem(_htfKey(LS_KEY_PREFIX + newName), raw);
+    localStorage.removeItem(_htfKey(LS_KEY_PREFIX + oldName));
   }
   slots[idx] = newName;
   _setCustomSlots(slots);
   if (_activePresetName === oldName) {
     _activePresetName = newName;
-    localStorage.setItem(LS_KEY_ACTIVE, newName);
+    localStorage.setItem(_htfKey(LS_KEY_ACTIVE), newName);
   }
   _rebuildLayoutToolbar();
   _showToast(`Renamed: "${newName}"`);
@@ -28253,9 +28555,9 @@ function presetsExportJSON() {
     }
   };
   const data = {
-    [PRESET_LS_KEY]:              _readKey(PRESET_LS_KEY),
-    [LS_OVERRIDES_KEY]:           _readKey(LS_OVERRIDES_KEY),
-    [PRESET_LIVE_FILTERS_LS_KEY]: _readKey(PRESET_LIVE_FILTERS_LS_KEY),
+    [_htfKey(PRESET_LS_KEY)]:              _readKey(_htfKey(PRESET_LS_KEY)),
+    [_htfKey(LS_OVERRIDES_KEY)]:           _readKey(_htfKey(LS_OVERRIDES_KEY)),
+    [_htfKey(PRESET_LIVE_FILTERS_LS_KEY)]: _readKey(_htfKey(PRESET_LIVE_FILTERS_LS_KEY)),
   };
   const payload = JSON.stringify({
     schema:     'presets-v1',
@@ -28272,7 +28574,7 @@ function presetsExportJSON() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  const presetsArr = data[PRESET_LS_KEY];
+  const presetsArr = data[_htfKey(PRESET_LS_KEY)];
   const nPresets   = Array.isArray(presetsArr) ? presetsArr.length : 0;
   _showToast(`Exported: flipping_presets_${stamp}.json (${nPresets} preset${nPresets === 1 ? '' : 's'})`);
 }
@@ -28294,9 +28596,9 @@ function presetsImportJSON(input) {
         return;
       }
       const slots = [
-        { key: PRESET_LS_KEY,              label: 'presets'      },
-        { key: LS_OVERRIDES_KEY,           label: 'overrides'    },
-        { key: PRESET_LIVE_FILTERS_LS_KEY, label: 'live filters' },
+        { key: _htfKey(PRESET_LS_KEY),              label: 'presets'      },
+        { key: _htfKey(LS_OVERRIDES_KEY),           label: 'overrides'    },
+        { key: _htfKey(PRESET_LIVE_FILTERS_LS_KEY), label: 'live filters' },
       ];
       const toWrite = [];
       const missing = [];
@@ -28332,7 +28634,7 @@ function presetsImportJSON(input) {
           console.warn('[presetsImport] could not write', w.key, writeErr?.message || writeErr);
         }
       }
-      const presetsArr  = toWrite.find(w => w.key === PRESET_LS_KEY)?.value;
+      const presetsArr  = toWrite.find(w => w.key === _htfKey(PRESET_LS_KEY))?.value;
       const importedN   = Array.isArray(presetsArr) ? presetsArr.length : 0;
       const writtenLbl  = toWrite.map(w => w.label).join(', ');
       const partialNote = missing.length ? ` — partial: ${writtenLbl} only (no ${missing.join(', ')})` : '';
@@ -28360,6 +28662,10 @@ const BACKUP_EXCLUDE_KEYS = new Set([
   // Caches: re-fetched / re-imported on demand, can be MB-sized
   'apiTradesCache_v2_rrmax',
   'apiTradesCacheTime_v2_rrmax',
+  'apiTradesCache_v2_rrmax_m15',
+  'apiTradesCacheTime_v2_rrmax_m15',
+  'apiTradesCache_v2_rrmax_h4',
+  'apiTradesCacheTime_v2_rrmax_h4',
   'flipping_csv_cache_v1',
   // Internal migration / cleanup / schema flags
   'flipping_cache_cleanup_v1',
@@ -28370,8 +28676,9 @@ const BACKUP_EXCLUDE_KEYS = new Set([
   // Machine-specific (user explicitly opted to keep these per-machine)
   'dataSource',
   'flipping_api_url',
-  // API field names — re-derived from current data source
-  'apiFieldNames_v1',
+  // API field names — re-derived from current data source (per HTF source)
+  'apiFieldNames_v1_m15',
+  'apiFieldNames_v1_h4',
 ]);
 
 function backupExportJSON() {

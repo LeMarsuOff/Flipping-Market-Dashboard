@@ -8535,6 +8535,38 @@ body.ms-sidebar-open .view-tabs {
   color: var(--r) !important;
 }
 
+/* ══ HTF TIMEFRAME TOGGLE ══ */
+.htf-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  padding: 3px;
+}
+.htf-toggle-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.htf-toggle-btn:hover { color: var(--body); }
+.htf-toggle-btn.active {
+  background: color-mix(in srgb, #2962ff 14%, transparent);
+  border: 1px solid color-mix(in srgb, #2962ff 35%, transparent);
+  color: #2962ff;
+}
+
 /* ══ DATA SOURCE SYSTEM ══ */
 .ds-toggle-group {
   display: flex;
