@@ -162,6 +162,36 @@ const CUSTOM_PROPS_LS_KEY = 'flipping_notion_properties';
 // Hoisted up here so _migrateCustomKey (defined below) can read/write the
 // preset store without a TDZ risk. The full preset definitions still live
 // in the PRESET DEFINITIONS section further down — see comment there.
+
+// ── Custom Widget Defs ── user-created bar/heatmap widgets for extras fields
+const CUSTOM_WIDGETS_LS_KEY = 'flipping_custom_widgets';
+let _customWidgetDefsCache = null;
+
+function _loadCustomWidgetDefs() {
+  if (_customWidgetDefsCache) return _customWidgetDefsCache;
+  try {
+    const raw = localStorage.getItem(CUSTOM_WIDGETS_LS_KEY);
+    _customWidgetDefsCache = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(_customWidgetDefsCache)) _customWidgetDefsCache = [];
+  } catch { _customWidgetDefsCache = []; }
+  return _customWidgetDefsCache;
+}
+
+function _saveCustomWidgetDefs(defs) {
+  _customWidgetDefsCache = defs;
+  try { localStorage.setItem(CUSTOM_WIDGETS_LS_KEY, JSON.stringify(defs)); } catch {}
+}
+
+function _addCustomWidgetDef(def) {
+  const defs = _loadCustomWidgetDefs();
+  defs.push(def);
+  _saveCustomWidgetDefs(defs);
+}
+
+function _removeCustomWidgetDef(id) {
+  const defs = _loadCustomWidgetDefs().filter(d => d.id !== id);
+  _saveCustomWidgetDefs(defs);
+}
 const PRESET_LS_KEY = 'flipping_presets';
 
 const CUSTOM_PROPS_MAX  = 20;
@@ -1225,6 +1255,54 @@ function handleActionClick(event) {
     case 'open-remap-picker':      event.stopPropagation(); openRemapPicker(actionEl); break;
     case 'pick-remap-column':      event.stopPropagation(); pickRemapColumn(actionEl); break;
     case 'pick-api-field':         event.stopPropagation(); pickAPIField(actionEl); break;
+    case 'cw-create-bars': {
+      event.stopPropagation();
+      const cwField = actionEl.dataset.cwField;
+      const cwLabel = actionEl.dataset.cwLabel || cwField;
+      const cwId    = 'w-cust-' + Math.random().toString(36).slice(2, 9);
+      const cwDef   = { id: cwId, type: 'bars', field: cwField, label: cwLabel };
+      _addCustomWidgetDef(cwDef);
+      _injectNewCustomWidget(cwDef);
+      const ljpList = actionEl.closest('#ljp-list');
+      if (ljpList) {
+        const items = (appState.trades && appState.trades.items) || [];
+        _renderCwMappingSection(ljpList, items);
+      }
+      break;
+    }
+    case 'cw-open-heatmap-picker':
+      event.stopPropagation();
+      _openHeatmapPicker(actionEl);
+      break;
+    case 'cw-create-heatmap': {
+      event.stopPropagation();
+      const cwField  = actionEl.dataset.cwField;
+      const cwField2 = actionEl.dataset.cwField2;
+      const cwLabel  = actionEl.dataset.cwLabel || (cwField + ' × ' + cwField2);
+      const cwId     = 'w-cust-' + Math.random().toString(36).slice(2, 9);
+      const cwDef    = { id: cwId, type: 'heatmap', field: cwField, field2: cwField2, label: cwLabel };
+      _addCustomWidgetDef(cwDef);
+      _injectNewCustomWidget(cwDef);
+      document.querySelectorAll('.cw-heatmap-picker').forEach(el => el.remove());
+      const ljpList = actionEl.closest('#ljp-list');
+      if (ljpList) {
+        const items = (appState.trades && appState.trades.items) || [];
+        _renderCwMappingSection(ljpList, items);
+      }
+      break;
+    }
+    case 'cw-remove': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      if (!cwId) break;
+      _destroyCustomWidget(cwId);
+      const ljpList = actionEl.closest('#ljp-list');
+      if (ljpList) {
+        const items = (appState.trades && appState.trades.items) || [];
+        _renderCwMappingSection(ljpList, items);
+      }
+      break;
+    }
     case 'reset-csv-overrides':    event.stopPropagation(); _resetAllCsvOverrides(); break;
     case 'reset-api-overrides':    event.stopPropagation(); _resetAPIFieldOverrides(); break;
     case 'refresh-api-fields':     event.stopPropagation(); _refreshAPIFieldsFromPicker(actionEl); break;
@@ -6140,6 +6218,11 @@ function setBarSort(chart, mode) {
   if (chart === 'obs')     renderObsBars(filtered);
   if (chart === 'h4obs')   renderH4ObsBars(filtered);
   if (chart === 'day')     renderDayBars(filtered);
+  // Custom bar chart sort
+  if (chart.startsWith('w-cust-')) {
+    const cwDef = _loadCustomWidgetDefs().find(d => d.id === chart);
+    if (cwDef && cwDef.type === 'bars') renderCustomBars(cwDef, filtered);
+  }
 
   // Propagate to all other charts if sync is enabled
   if (_sortSyncEnabled && !_sortSyncGuard) {
@@ -6553,6 +6636,7 @@ function setBarMode(mode) {
   renderHeatmap(filtered);
   renderHourBars(filtered);
   renderPairSession(filtered);
+  renderAllCustomWidgets(filtered);
   // Rerender mobile charts
   if (_isMobile()) {
     drawMobileMonthly2(filtered);
@@ -6621,6 +6705,110 @@ function _isLowVolume(n) {
   // Share view ignores the threshold for the same reason as ghost mode.
   if (currentView === 'share') return false;
   return appState.ui.warningThreshold > 0 && n < appState.ui.warningThreshold;
+}
+
+// ══════════════════════════════════════════════════════
+// CUSTOM WIDGET RENDERERS
+// ══════════════════════════════════════════════════════
+
+// Read a field value from a trade: top-level first, then .extras
+function _cwGetFieldValue(t, fieldKey) {
+  if (t[fieldKey] !== undefined && t[fieldKey] !== null) return t[fieldKey];
+  if (t.extras && t.extras[fieldKey] !== undefined) return t.extras[fieldKey];
+  return null;
+}
+
+function renderCustomBars(def, trades) {
+  const containerId = `bars-${def.id}`;
+  if (!trades.length) { renderWidgetEmptyState(containerId); return; }
+  const data = groupByEV(trades, t => {
+    const v = _cwGetFieldValue(t, def.field);
+    return (v !== null && v !== undefined && String(v).trim()) ? String(v) : null;
+  });
+  if (!data.length) { renderWidgetEmptyState(containerId); return; }
+  renderBars(containerId, data, 1.8, false, def.id);
+}
+
+function renderCustomHeatmap(def, trades) {
+  const containerId = `heatmap-${def.id}`;
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!trades.length) { renderWidgetEmptyState(containerId); return; }
+
+  const rowSet = new Set(), colSet = new Set();
+  trades.forEach(t => {
+    const r = _cwGetFieldValue(t, def.field);
+    const c = _cwGetFieldValue(t, def.field2);
+    if (r && String(r).trim() && c && String(c).trim()) {
+      rowSet.add(String(r)); colSet.add(String(c));
+    }
+  });
+  if (!rowSet.size || !colSet.size) { renderWidgetEmptyState(containerId); return; }
+
+  const rows = [...rowSet].sort();
+  const cols = [...colSet].sort();
+
+  const tpCfg = appState.ui.tpConfig;
+  const cells = {};
+  trades.forEach(t => {
+    const r = _cwGetFieldValue(t, def.field);
+    const c = _cwGetFieldValue(t, def.field2);
+    if (!r || !c || !String(r).trim() || !String(c).trim()) return;
+    const key = `${r}\x00${c}`;
+    if (!cells[key]) cells[key] = { sum: 0, n: 0, wins: 0 };
+    const eff = computeEffectiveRR(t, tpCfg);
+    cells[key].sum += eff;
+    cells[key].n++;
+    if (isWinner(t, tpCfg)) cells[key].wins++;
+  });
+
+  let globalMax = 0;
+  Object.values(cells).forEach(cell => {
+    if (cell.n) {
+      const abs = Math.abs(cell.sum / cell.n);
+      if (abs > globalMax) globalMax = abs;
+    }
+  });
+  if (!globalMax) globalMax = 1;
+
+  const ROW_LBL = 72;
+  const cellH = Math.max(22, Math.floor(Math.max(0, container.clientHeight - 28) / rows.length));
+  const fs = Math.max(8, Math.min(12, Math.floor(cellH * 0.38)));
+
+  let html = `<div class="cw-hm" style="display:grid;grid-template-columns:${ROW_LBL}px repeat(${cols.length},1fr);font-size:${fs}px;">`;
+  html += `<div class="cw-hm-corner"></div>`;
+  cols.forEach(c => {
+    html += `<div class="cw-hm-col-hdr" title="${_escapeHtml(c)}">${_escapeHtml(c.substring(0,10))}</div>`;
+  });
+  rows.forEach(r => {
+    html += `<div class="cw-hm-row-hdr" title="${_escapeHtml(r)}">${_escapeHtml(r.substring(0,10))}</div>`;
+    cols.forEach(c => {
+      const key = `${r}\x00${c}`;
+      const cell = cells[key];
+      if (!cell || !cell.n) { html += `<div class="cw-hm-cell cw-hm-empty" style="height:${cellH}px">—</div>`; return; }
+      const ev = cell.sum / cell.n;
+      const intensity = Math.min(1, Math.abs(ev) / globalMax);
+      const alpha = 0.15 + intensity * 0.55;
+      const bg = ev > 0
+        ? `rgba(0,210,96,${alpha.toFixed(2)})`
+        : `rgba(255,82,82,${alpha.toFixed(2)})`;
+      const wr = (cell.wins / cell.n * 100).toFixed(0);
+      const val = (ev > 0 ? '+' : '') + ev.toFixed(2);
+      html += `<div class="cw-hm-cell" style="background:${bg};height:${cellH}px" title="${cell.n} trades · WR ${wr}% · Avg R ${val}">
+        <span class="cw-hm-val">${val}</span><span class="cw-hm-n">${cell.n}</span>
+      </div>`;
+    });
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderAllCustomWidgets(trades) {
+  const defs = _loadCustomWidgetDefs();
+  for (const def of defs) {
+    if (def.type === 'bars')    renderCustomBars(def, trades);
+    else if (def.type === 'heatmap') renderCustomHeatmap(def, trades);
+  }
 }
 
 function renderBarsSplit(containerId, items, small, chart) {
@@ -10032,7 +10220,7 @@ function hideEmptyWidgets(trades) {
       if (!hNotion  && t.notionUrl && String(t.notionUrl).trim())  hNotion = true;
       if (hSetup && hSession && hDay && hObs && hH4 && hHour && hNotion) break;
     }
-    return {
+    const result = {
       'w-setup':        hSetup,
       'w-session':      hSession,
       'w-day':          hDay,
@@ -10043,6 +10231,15 @@ function hideEmptyWidgets(trades) {
       'w-pair-session': hSession,
       'w-notion':       hNotion,
     };
+    // Custom widgets: visible when at least one trade has a non-empty value for the mapped field
+    const cwDefs = _loadCustomWidgetDefs();
+    for (const def of cwDefs) {
+      result[def.id] = arr.some(t => {
+        const v = _cwGetFieldValue(t, def.field);
+        return v !== null && v !== undefined && String(v).trim() !== '';
+      });
+    }
+    return result;
   };
 
   if (!trades.length) {
@@ -18753,6 +18950,7 @@ function renderPanels(filtered) {
 
   if (typeof updateContextStrip === 'function') updateContextStrip();
   if (appState.filters.temporal.tf.compare) tfUpdateCompareUI();
+  renderAllCustomWidgets(filtered);
   if (_gsReady) hideEmptyWidgets(filtered);
   if (_isMobile()) requestAnimationFrame(() => renderMobile());
 }
@@ -22115,7 +22313,171 @@ function updateJournalPanel() {
               ${pencil}
             </li>`;
   }).filter(Boolean).join('');
+
+  // ── Custom Fields → Widgets section ──
+  _renderCwMappingSection(list, items);
+
   _reopenIfNeeded();
+}
+
+// Detect extras fields across trades: returns [{key, label, sample, count}]
+function _detectExtrasFields(trades) {
+  const fields = {};
+  trades.forEach(t => {
+    if (!t.extras || typeof t.extras !== 'object') return;
+    Object.keys(t.extras).forEach(key => {
+      if (!fields[key]) fields[key] = { count: 0, sample: null };
+      const v = t.extras[key];
+      if (v !== null && v !== undefined && String(v).trim()) {
+        fields[key].count++;
+        if (!fields[key].sample) fields[key].sample = String(v);
+      }
+    });
+  });
+  return Object.entries(fields)
+    .filter(([, { count }]) => count > 0)
+    .map(([key, { count, sample }]) => {
+      const props = loadCustomProps();
+      const prop = props.find(p => p.key === key);
+      return { key, label: prop ? prop.name : key, sample: sample || '—', count };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// Categorical top-level fields from JOURNAL_DIMS that make sense as widget dimensions.
+// Numeric/URL/screenshot fields are excluded.
+const _CW_MAPPED_DIMS = [
+  { key: 'pair',         label: 'Pair' },
+  { key: 'setup',        label: 'Setup' },
+  { key: 'setupDetail',  label: 'Setup Detail' },
+  { key: 'session',      label: 'Session' },
+  { key: 'day',          label: 'Day' },
+  { key: 'direction',    label: 'Direction' },
+  { key: 'positionType', label: 'Position Type' },
+  { key: 'beManagement', label: 'BE Management' },
+  { key: 'badFeeling',   label: 'Bad Feeling' },
+  { key: 'obstacles',    label: 'M15 Obstacles' },
+  { key: 'h4',           label: 'H4 Obstacles' },
+];
+
+// Returns [{key, label, sample, count}] for top-level mapped fields that have data.
+function _detectMappedFields(trades) {
+  return _CW_MAPPED_DIMS.map(({ key, label }) => {
+    let sample = '—', count = 0;
+    for (const t of trades) {
+      const v = t[key];
+      const str = Array.isArray(v) ? v.join(', ') : (v != null ? String(v) : '');
+      if (str.trim()) { count++; if (sample === '—') sample = str.substring(0, 40); }
+    }
+    return count > 0 ? { key, label, sample, count } : null;
+  }).filter(Boolean);
+}
+
+// All widgetizable field keys (mapped + extras) for heatmap axis picker.
+function _cwAllAxes(trades, excludeKey) {
+  const mapped = _CW_MAPPED_DIMS.map(d => ({ key: d.key, label: d.label }));
+  const extras = _detectExtrasFields(trades).map(f => ({ key: f.key, label: f.label }));
+  const seen = new Set([excludeKey]);
+  return [...mapped, ...extras].filter(a => {
+    if (seen.has(a.key)) return false;
+    seen.add(a.key);
+    return true;
+  });
+}
+
+// Render the "Custom Fields → Widgets" section at the bottom of the mapping list.
+function _renderCwMappingSection(list, trades) {
+  list.querySelectorAll('.ljp-cw-section-header, .ljp-cw-note, .ljp-custom-field').forEach(el => el.remove());
+
+  const mappedFields = _detectMappedFields(trades);
+  const extrasFields = _detectExtrasFields(trades);
+  const allFields    = [...mappedFields, ...extrasFields];
+  if (!allFields.length) return;
+
+  const cwDefs = _loadCustomWidgetDefs();
+  const total  = trades.length;
+
+  const header = document.createElement('li');
+  header.className = 'ljp-cw-section-header';
+  header.textContent = 'Custom Fields → Widgets';
+  list.appendChild(header);
+
+  const note = document.createElement('li');
+  note.className = 'ljp-cw-note';
+  note.textContent = 'Add bar chart or heatmap widgets for any mapped or detected field';
+  list.appendChild(note);
+
+  const renderFieldRow = ({ key, label, sample, count }) => {
+    const existingBars    = cwDefs.find(d => d.field === key && d.type === 'bars');
+    const existingHeatmaps = cwDefs.filter(d => d.field === key && d.type === 'heatmap');
+
+    const barBtn = existingBars
+      ? `<button class="ljp-cw-btn ljp-cw-btn-active" data-action="cw-remove" data-cw-id="${_escapeAttr(existingBars.id)}" title="Remove bar chart widget">✓ Bar chart</button>`
+      : `<button class="ljp-cw-btn" data-action="cw-create-bars" data-cw-field="${_escapeAttr(key)}" data-cw-label="${_escapeAttr(label)}">+ Bar chart</button>`;
+
+    const hmBtns = existingHeatmaps.map(d =>
+      `<button class="ljp-cw-btn ljp-cw-btn-active" data-action="cw-remove" data-cw-id="${_escapeAttr(d.id)}" title="Remove heatmap (${_escapeHtml(d.field2)})">✓ HM×${_escapeHtml(d.field2 || '')}</button>`
+    ).join('');
+    const addHmBtn = `<button class="ljp-cw-btn ljp-cw-btn-hm" data-action="cw-open-heatmap-picker" data-cw-field="${_escapeAttr(key)}" data-cw-label="${_escapeAttr(label)}">+ Heatmap</button>`;
+
+    const li = document.createElement('li');
+    li.className = 'ljp-item ljp-custom-field';
+    li.setAttribute('data-cw-key', key);
+    li.innerHTML = `
+      <div class="ljp-item-row">
+        <span class="ljp-item-label">${_escapeHtml(label)}</span>
+        <span class="ljp-status is-ok">detected</span>
+      </div>
+      <div class="ljp-item-col">sample · <strong>${_escapeHtml(sample)}</strong> <span style="opacity:.55">· ${count}/${total} trades</span></div>
+      <div class="ljp-cw-actions">${barBtn}${hmBtns}${addHmBtn}</div>`;
+    list.appendChild(li);
+  };
+
+  if (mappedFields.length) {
+    const sub = document.createElement('li');
+    sub.className = 'ljp-cw-note ljp-cw-subsep';
+    sub.textContent = 'Mapped fields';
+    list.appendChild(sub);
+    mappedFields.forEach(renderFieldRow);
+  }
+  if (extrasFields.length) {
+    const sub = document.createElement('li');
+    sub.className = 'ljp-cw-note ljp-cw-subsep';
+    sub.textContent = 'Extra Notion fields';
+    list.appendChild(sub);
+    extrasFields.forEach(renderFieldRow);
+  }
+}
+
+// Open heatmap second-axis picker inline (like openRemapPicker)
+function _openHeatmapPicker(triggerBtn) {
+  if (!triggerBtn) return;
+  const field  = triggerBtn.getAttribute('data-cw-field');
+  const label  = triggerBtn.getAttribute('data-cw-label') || field;
+  const li = triggerBtn.closest('.ljp-custom-field');
+  if (!li) return;
+
+  // Toggle
+  const existing = li.querySelector('.cw-heatmap-picker');
+  document.querySelectorAll('.cw-heatmap-picker').forEach(el => el.remove());
+  if (existing) return;
+
+  const items = (appState.trades && appState.trades.items) || [];
+  const allAxes = _cwAllAxes(items, field);
+
+  const picker = document.createElement('div');
+  picker.className = 'csv-remap-picker cw-heatmap-picker';
+  picker.innerHTML = `<div class="crp-hint">Choose second axis (columns)</div>
+    <ul class="crp-list">
+      ${allAxes.map(ax =>
+        `<li class="crp-option" data-action="cw-create-heatmap"
+            data-cw-field="${_escapeAttr(field)}"
+            data-cw-label="${_escapeAttr(label + ' × ' + ax.label)}"
+            data-cw-field2="${_escapeAttr(ax.key)}">${_escapeHtml(ax.label)}</li>`
+      ).join('')}
+    </ul>`;
+
+  li.appendChild(picker);
 }
 
 // ── Remap picker (inline dropdown attached to a pencil click) ──
@@ -27073,7 +27435,11 @@ function _msGetWidgetIcon(id) {
     'w-stats':'cells', 'w-tradelog':'cells',
     'w-selection':'mixed', 'w-monthly':'mixed', 'w-partial-optimizer':'mixed',
   };
-  const kind = KIND_BY_ID[id] || 'mixed';
+  let kind = KIND_BY_ID[id] || 'mixed';
+  if (!KIND_BY_ID[id] && id && id.startsWith('w-cust-')) {
+    const cwDef = _loadCustomWidgetDefs().find(d => d.id === id);
+    if (cwDef) kind = cwDef.type === 'heatmap' ? 'heatmap' : 'bars';
+  }
   const ICONS = {
     bars:    '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><rect x="2" y="9" width="3" height="6"/><rect x="7" y="5" width="3" height="10"/><rect x="12" y="2" width="3" height="13"/><rect x="17" y="7" width="3" height="8"/></svg>',
     heatmap: '<svg viewBox="0 0 24 16" preserveAspectRatio="xMidYMid meet"><rect x="1" y="1" width="6" height="4"/><rect x="9" y="1" width="6" height="4" opacity=".5"/><rect x="17" y="1" width="6" height="4" opacity=".7"/><rect x="1" y="6" width="6" height="4" opacity=".4"/><rect x="9" y="6" width="6" height="4"/><rect x="17" y="6" width="6" height="4" opacity=".6"/><rect x="1" y="11" width="6" height="4" opacity=".6"/><rect x="9" y="11" width="6" height="4" opacity=".4"/><rect x="17" y="11" width="6" height="4" opacity=".8"/></svg>',
@@ -27713,6 +28079,181 @@ var _svGsReady = false;
 // We suspend RO work during the transition and do ONE final redraw after.
 let _isSidebarToggling = false;
 
+// ── Inject custom widget .gs-widget elements into #main-panel before _buildGridDOM ──
+// Called once at initGridstack time. Each def generates one .gs-widget that
+// _buildGridDOM then wraps in .grid-stack-item like any native widget.
+function _injectCustomWidgetHTML() {
+  const main = document.getElementById('main-panel');
+  if (!main) return;
+  const defs = _loadCustomWidgetDefs();
+  defs.forEach(def => {
+    if (main.querySelector(`[data-gs-id="${CSS.escape(def.id)}"]`)) return;
+    const widget = document.createElement('div');
+    widget.className = 'chart-card gs-widget cw-widget';
+    widget.setAttribute('data-gs-id', def.id);
+    widget.setAttribute('data-section', 'global');
+    widget.setAttribute('data-cw-id', def.id);
+    if (def.type === 'bars') {
+      widget.innerHTML = `
+        <div class="cc-head">
+          <span class="cc-title">${_escapeHtml(def.label)}</span>
+          <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
+        </div>
+        <div class="bar-sort-row" id="sort-${_escapeAttr(def.id)}">
+          <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="alpha">A → Z</button>
+          <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="desc">Best → Worst</button>
+          <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="asc">Worst → Best</button>
+          <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="volume">Volume</button>
+        </div>
+        <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
+    } else {
+      widget.innerHTML = `
+        <div class="cc-head">
+          <span class="cc-title">${_escapeHtml(def.label)}</span>
+          <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
+        </div>
+        <div id="heatmap-${_escapeAttr(def.id)}" class="cw-hm-wrap"></div>`;
+    }
+    main.appendChild(widget);
+  });
+}
+
+// Inject a single new custom widget into the live grid (after initGridstack).
+// Used when the user creates a widget from the mapping panel without a page reload.
+function _injectNewCustomWidget(def) {
+  if (!_grid) return;
+  const gsContainer = document.getElementById('gs-container');
+  if (!gsContainer) return;
+  if (document.querySelector(`#gs-container .grid-stack-item[gs-id="${CSS.escape(def.id)}"]`)) return;
+
+  // Build the same widget element structure _buildGridDOM would produce
+  const widget = document.createElement('div');
+  widget.className = 'chart-card gs-widget cw-widget';
+  widget.setAttribute('data-gs-id', def.id);
+  widget.setAttribute('data-section', 'global');
+  widget.setAttribute('data-cw-id', def.id);
+  if (def.type === 'bars') {
+    widget.innerHTML = `
+      <div class="cc-head">
+        <span class="cc-title">${_escapeHtml(def.label)}</span>
+        <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
+      </div>
+      <div class="bar-sort-row" id="sort-${_escapeAttr(def.id)}">
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="alpha">A → Z</button>
+        <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="desc">Best → Worst</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="asc">Worst → Best</button>
+        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="volume">Volume</button>
+      </div>
+      <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
+  } else {
+    widget.innerHTML = `
+      <div class="cc-head">
+        <span class="cc-title">${_escapeHtml(def.label)}</span>
+        <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
+      </div>
+      <div id="heatmap-${_escapeAttr(def.id)}" class="cw-hm-wrap"></div>`;
+  }
+
+  const item = document.createElement('div');
+  item.className = 'grid-stack-item';
+  item.setAttribute('gs-id', def.id);
+
+  const content = document.createElement('div');
+  content.className = 'grid-stack-item-content';
+
+  const handle = document.createElement('div');
+  handle.className = 'gs-drag-handle';
+  handle.innerHTML = '⠿⠿⠿';
+  handle.title = 'Drag to move';
+
+  const hideBtn = document.createElement('button');
+  hideBtn.type = 'button';
+  hideBtn.className = 'gs-hide-btn';
+  hideBtn.title = 'Hide this widget';
+  hideBtn.setAttribute('data-action', 'layout-hide-widget-confirm');
+  hideBtn.setAttribute('data-gs-id', def.id);
+  hideBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+  content.appendChild(handle);
+  content.appendChild(hideBtn);
+  content.appendChild(widget);
+  item.appendChild(content);
+  gsContainer.appendChild(item);
+
+  // Compute bottom of global section
+  let maxBottom = 0;
+  _grid.getGridItems().forEach(it => {
+    const n = it.gridstackNode;
+    if (!n) return;
+    const sec = it.querySelector('.gs-widget[data-section]')?.dataset.section;
+    if (sec !== 'global') return;
+    const bot = (n.y || 0) + (n.h || 0);
+    if (bot > maxBottom) maxBottom = bot;
+  });
+
+  const dw = 6, dh = 39;
+  item.setAttribute('gs-x', 0);
+  item.setAttribute('gs-y', maxBottom);
+  item.setAttribute('gs-w', dw);
+  item.setAttribute('gs-h', dh);
+  item.setAttribute('gs-min-w', 2);
+  item.setAttribute('gs-min-h', 14);
+
+  const activeSec = appState?.ui?.activeSection || 'global';
+  if (activeSec === 'global') {
+    _grid.float(true);
+    _grid.batchUpdate();
+    try {
+      _grid.makeWidget(item);
+      _grid.update(item, { x: 0, y: maxBottom, w: dw, h: dh });
+    } finally { _grid.commit(); }
+    _grid.float(false);
+  } else {
+    item.style.display = 'none';
+  }
+
+  // Mirror into live layouts
+  if (!_liveSectionLayouts.global) _liveSectionLayouts.global = {};
+  _liveSectionLayouts.global[def.id] = { x: 0, y: maxBottom, w: dw, h: dh, minW: 2, minH: 14 };
+  if (typeof _saveActiveSlotLive === 'function') _saveActiveSlotLive();
+
+  // Render content immediately
+  const filtered = getFiltered();
+  if (def.type === 'bars')    renderCustomBars(def, filtered);
+  else if (def.type === 'heatmap') renderCustomHeatmap(def, filtered);
+
+  if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
+}
+
+// Remove a custom widget from DOM, grid, layout, and defs storage.
+function _destroyCustomWidget(id) {
+  // Remove from defs
+  _removeCustomWidgetDef(id);
+
+  // Remove from hidden state
+  if (_hiddenWidgets && _hiddenWidgets[id]) {
+    delete _hiddenWidgets[id];
+    _saveHiddenWidgets();
+  }
+
+  // Remove from live layouts
+  if (_liveSectionLayouts) {
+    Object.values(_liveSectionLayouts).forEach(layout => { delete layout[id]; });
+  }
+
+  // Remove from grid + DOM
+  if (_grid) {
+    const item = document.querySelector(`#gs-container .grid-stack-item[gs-id="${CSS.escape(id)}"]`);
+    if (item) {
+      if (item.gridstackNode) _grid.removeWidget(item, true);
+      else item.remove();
+    }
+  }
+
+  if (typeof _saveActiveSlotLive === 'function') _saveActiveSlotLive();
+  if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
+}
+
 // ── Build Gridstack DOM from flat .gs-widget elements ──
 function _buildGridDOM() {
   const main = document.getElementById('main-panel');
@@ -27834,6 +28375,7 @@ function initGridstack() {
   // (called below) reads _isWidgetHidden(id) to skip these from the visible
   // grid on first paint — no flash of "all visible".
   _loadHiddenWidgets();
+  _injectCustomWidgetHTML(); // inject user-created widgets before DOM is wrapped
   _buildGridDOM();
 
   _grid = GridStack.init({
