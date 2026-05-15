@@ -313,6 +313,7 @@ const _SW = (() => {
     init() { _getClient(); }
   };
 })();
+window._SW = _SW;
 /* ─── END STORAGE WRAPPER ──────────────────────────────────────────────── */
 
 const SCHEMA_VERSION_KEY    = 'flipping_schema_version';
