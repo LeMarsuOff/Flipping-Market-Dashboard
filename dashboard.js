@@ -283,26 +283,29 @@ const _SW = (() => {
     },
 
     async syncFromRemote() {
-      // Appelé au SIGNED_IN : tire toutes les rows de l'user et
-      // écrase localStorage si remote.updated_at > local (last-write-wins)
       const c = _getClient();
-      if (!c || !_user) return;
+      if (!c) return;
+      // Récupère la session directement — ne pas dépendre de _user
+      // qui peut ne pas être encore peuplé au moment du SIGNED_IN event
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id;
+      if (!uid) return;
       const { data, error } = await c.from('user_data')
         .select('dashboard_id, key, value, updated_at')
-        .eq('user_id', _user.id);
+        .eq('user_id', uid);
       if (error) { console.warn('[SW] syncFromRemote error', error.message); return; }
       let merged = 0;
       for (const row of data ?? []) {
         const lsKey = row.dashboard_id === 'h4'
           ? row.key + '_h4' : row.key;
-        const localVal = localStorage.getItem(lsKey);
-        if (!localVal) {
-          const serialized = row.value?._raw !== undefined
-            ? row.value._raw
-            : JSON.stringify(row.value);
-          localStorage.setItem(lsKey, serialized);
-          merged++;
-        }
+        // Remote toujours prioritaire sur local au sync
+        // (last-write-wins : Supabase est la source de vérité cross-device)
+        const serialized = row.value?._raw !== undefined
+          ? row.value._raw
+          : JSON.stringify(row.value);
+        // Utilise _lsSet pour bypasser le monkey-patch (évite re-sync inutile)
+        _lsSet(lsKey, serialized);
+        merged++;
       }
       console.log('[SW] syncFromRemote done —', merged, 'keys merged');
     },
