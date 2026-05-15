@@ -234,6 +234,7 @@ const _SW = (() => {
 
     set(key, value) {
       localStorage.setItem(key, value);
+      if (!value || value === 'null') return;
       if (_isSync(key) && _user) {
         const c = _getClient();
         if (!c) return;
