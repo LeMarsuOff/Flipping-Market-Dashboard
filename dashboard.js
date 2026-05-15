@@ -154,6 +154,167 @@ function _syncGhostUI() {
 //              appState.filters.chips with the *FromPreset parallel-Set flag.
 //              On first v2 boot, _migrateToV2() rewrites v1 data into snapshots
 //              and zeros out the legacy fields on PRESETS so they can't drift.
+/* ─── STORAGE WRAPPER ──────────────────────────────────────────────────── */
+const _SB_URL  = 'https://pjkilmmltbyugjxbvyvh.supabase.co';
+const _SB_KEY  = 'sb_publishable_XYwK5z-G9Dhf1ZThUbje1g_ZW3SzeSC';
+
+// Tier 1 + Tier 2 keys à syncer (hors caches lourds)
+const _SYNC_KEYS = new Set([
+  'flipping_presets','flipping_preset_snapshots_v2','presetLiveFilters_v1',
+  'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets',
+  'flipping_notion_properties','flipping_custom_widgets',
+  'flipping_dashboard_theme','flipping_active_theme_meta',
+  'flipping_builtin_overrides','flipping_user_themes',
+  'flipping_sidebar_state','flipping_be_mode','flipping_bar_mode',
+  'flipping_bar_view','flipping_bar_color_mode','flipping_typo_mode',
+  'flipping_orr_sim_mode','notionOpenMode','colorblind_mode',
+  'warningThreshold','filters_display_order_v1',
+  'fr_csv_col_overrides_v1','apiFieldOverrides_v1_m15','apiFieldOverrides_v1_h4'
+]);
+
+// Keys HTF-dupliquées (existent en base + base_h4)
+const _HTF_KEYS = new Set([
+  'flipping_presets','flipping_preset_snapshots_v2','presetLiveFilters_v1',
+  'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets'
+]);
+
+const _SW = (() => {
+  let _client = null;
+  let _user   = null;
+  let _dbId   = 'm15'; // dashboard_id actif
+
+  function _getClient() {
+    if (!_client && window.supabase) {
+      _client = window.supabase.createClient(_SB_URL, _SB_KEY);
+      _client.auth.onAuthStateChange((event, session) => {
+        _user = session?.user ?? null;
+        console.log('[SW] auth', event, _user?.email ?? 'no user');
+        const statusEl = document.getElementById('sw-auth-status');
+        const toggleBtn = document.getElementById('sw-toggle-btn');
+        if (statusEl && toggleBtn) {
+          if (_user) {
+            statusEl.textContent = '● ' + _user.email;
+            statusEl.style.color = '#6ee0b4';
+            toggleBtn.textContent = 'Logout';
+          } else {
+            statusEl.textContent = '⬤ local only';
+            statusEl.style.color = '#8892b0';
+            toggleBtn.textContent = 'Login';
+          }
+        }
+        if (event === 'SIGNED_IN') _SW.syncFromRemote();
+      });
+      _client.auth.getSession().then(({ data }) => {
+        _user = data?.session?.user ?? null;
+      });
+    }
+    return _client;
+  }
+
+  function _isSync(key) {
+    // Gère les keys HTF (base + base_h4)
+    const base = key.replace(/_h4$/, '');
+    return _SYNC_KEYS.has(key) || _SYNC_KEYS.has(base);
+  }
+
+  function _dashId(key) {
+    return key.endsWith('_h4') ? 'h4' : _dbId;
+  }
+
+  function _normKey(key) {
+    return key.replace(/_h4$/, '');
+  }
+
+  return {
+    setDashboardId(id) { _dbId = id; },
+
+    get(key) {
+      return localStorage.getItem(key);
+    },
+
+    set(key, value) {
+      localStorage.setItem(key, value);
+      if (_isSync(key) && _user) {
+        const c = _getClient();
+        if (!c) return;
+        c.from('user_data').upsert({
+          user_id     : _user.id,
+          dashboard_id: _dashId(key),
+          key         : _normKey(key),
+          value       : (() => { try { return JSON.parse(value); }
+                                 catch { return { _raw: value }; } })(),
+          updated_at  : new Date().toISOString()
+        }, { onConflict: 'user_id,dashboard_id,key' })
+        .then(({ error }) => {
+          if (error) console.warn('[SW] write error', key, error.message);
+        });
+      }
+    },
+
+    remove(key) {
+      localStorage.removeItem(key);
+      if (_isSync(key) && _user) {
+        const c = _getClient();
+        if (!c) return;
+        c.from('user_data')
+          .delete()
+          .eq('user_id', _user.id)
+          .eq('dashboard_id', _dashId(key))
+          .eq('key', _normKey(key))
+          .then(({ error }) => {
+            if (error) console.warn('[SW] delete error', key, error.message);
+          });
+      }
+    },
+
+    async syncFromRemote() {
+      // Appelé au SIGNED_IN : tire toutes les rows de l'user et
+      // écrase localStorage si remote.updated_at > local (last-write-wins)
+      const c = _getClient();
+      if (!c || !_user) return;
+      const { data, error } = await c.from('user_data')
+        .select('dashboard_id, key, value, updated_at')
+        .eq('user_id', _user.id);
+      if (error) { console.warn('[SW] syncFromRemote error', error.message); return; }
+      let merged = 0;
+      for (const row of data ?? []) {
+        const lsKey = row.dashboard_id === 'h4'
+          ? row.key + '_h4' : row.key;
+        const localVal = localStorage.getItem(lsKey);
+        if (!localVal) {
+          const serialized = row.value?._raw !== undefined
+            ? row.value._raw
+            : JSON.stringify(row.value);
+          localStorage.setItem(lsKey, serialized);
+          merged++;
+        }
+      }
+      console.log('[SW] syncFromRemote done —', merged, 'keys merged');
+    },
+
+    async signIn(email) {
+      const c = _getClient();
+      if (!c) return { error: { message: 'Supabase not loaded' } };
+      return c.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.origin + window.location.pathname }
+      });
+    },
+
+    async signOut() {
+      const c = _getClient();
+      if (!c) return;
+      await c.auth.signOut();
+      _user = null;
+    },
+
+    getUser() { return _user; },
+
+    init() { _getClient(); }
+  };
+})();
+/* ─── END STORAGE WRAPPER ──────────────────────────────────────────────── */
+
 const SCHEMA_VERSION_KEY    = 'flipping_schema_version';
 const SCHEMA_VERSION_CURRENT = 2;
 const PRESET_SNAPSHOTS_LS_KEY = 'flipping_preset_snapshots_v2';
@@ -19213,6 +19374,7 @@ function closeCsvOverlay() {
 
 // Drag events
 document.addEventListener('DOMContentLoaded', () => {
+  _SW.init();
   /* Silent cleanup of retired Partials Planner localStorage keys. */
   try {
     localStorage.removeItem('pp-custom-presets');
