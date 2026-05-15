@@ -179,6 +179,8 @@ const _HTF_KEYS = new Set([
 ]);
 
 const _SW = (() => {
+  const _lsSet    = localStorage.setItem.bind(localStorage);
+  const _lsRemove = localStorage.removeItem.bind(localStorage);
   let _client = null;
   let _user   = null;
   let _dbId   = 'm15'; // dashboard_id actif
@@ -233,7 +235,7 @@ const _SW = (() => {
     },
 
     set(key, value) {
-      localStorage.setItem(key, value);
+      _lsSet(key, value);
       if (!value || value === 'null') return;
       if (_isSync(key) && _user) {
         const c = _getClient();
@@ -253,7 +255,7 @@ const _SW = (() => {
     },
 
     remove(key) {
-      localStorage.removeItem(key);
+      _lsRemove(key);
       if (_isSync(key) && _user) {
         const c = _getClient();
         if (!c) return;
@@ -315,6 +317,29 @@ const _SW = (() => {
   };
 })();
 window._SW = _SW;
+
+/* ─── LOCALSTORAGE MONKEY-PATCH ─────────────────────────────────────────── */
+((() => {
+  const _origSet    = localStorage.setItem.bind(localStorage);
+  const _origRemove = localStorage.removeItem.bind(localStorage);
+
+  localStorage.setItem = function(key, value) {
+    _origSet(key, value);
+    if (!value || value === 'null') return;
+    if (window._SW && window._SW.getUser && window._SW.getUser()) {
+      window._SW.set(key, value);
+    }
+  };
+
+  localStorage.removeItem = function(key) {
+    _origRemove(key);
+    if (window._SW && window._SW.getUser && window._SW.getUser()) {
+      window._SW.remove(key);
+    }
+  };
+}))();
+/* ─── END LOCALSTORAGE MONKEY-PATCH ─────────────────────────────────────── */
+
 /* ─── END STORAGE WRAPPER ──────────────────────────────────────────────── */
 
 const SCHEMA_VERSION_KEY    = 'flipping_schema_version';
