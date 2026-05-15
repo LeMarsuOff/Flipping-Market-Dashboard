@@ -974,6 +974,50 @@
   </div>
 </header>
 
+<div id="sw-auth-bar" style="
+  position:fixed;bottom:1rem;right:1rem;z-index:9999;
+  display:flex;gap:0.5rem;align-items:center;
+  background:#1a1f2e;border:1px solid #2a3050;
+  border-radius:8px;padding:0.5rem 1rem;
+  font-family:monospace;font-size:12px;color:#8892b0;">
+  <span id="sw-auth-status">⬤ local only</span>
+  <input id="sw-email-input" type="email"
+    placeholder="email@example.com"
+    style="display:none;padding:0.25rem 0.5rem;
+           background:#0d1117;border:1px solid #2a3050;
+           border-radius:4px;color:#c9d1d9;font-size:12px;width:180px;" />
+  <button id="sw-login-btn"
+    onclick="(async()=>{
+      const email=document.getElementById('sw-email-input').value;
+      if(!email)return;
+      const {error}=await _SW.signIn(email);
+      document.getElementById('sw-auth-status').textContent=
+        error ? '✗ '+error.message : '✉ magic link sent';
+    })()"
+    style="display:none;padding:0.25rem 0.5rem;
+           background:#2962ff;border:none;border-radius:4px;
+           color:#fff;cursor:pointer;font-size:12px;">Send</button>
+  <button id="sw-toggle-btn"
+    onclick="(()=>{
+      const user=_SW.getUser();
+      const emailInput=document.getElementById('sw-email-input');
+      const loginBtn=document.getElementById('sw-login-btn');
+      if(user){
+        _SW.signOut().then(()=>{
+          document.getElementById('sw-auth-status').textContent='⬤ local only';
+          document.getElementById('sw-toggle-btn').textContent='Login';
+        });
+      } else {
+        const visible=emailInput.style.display!=='none';
+        emailInput.style.display=visible?'none':'inline-block';
+        loginBtn.style.display=visible?'none':'inline-block';
+      }
+    })()"
+    style="padding:0.25rem 0.5rem;background:#2a3050;
+           border:none;border-radius:4px;color:#c9d1d9;
+           cursor:pointer;font-size:12px;">Login</button>
+</div>
+
 <!-- ══ ONBOARDING BANNER (demo-mode first-visit hint) ══ -->
 <div class="onboard-banner is-hidden" id="onboard-banner">
   <div class="onboard-banner-content">
@@ -2540,6 +2584,7 @@
 </script>
 
 <!-- External libraries -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-all.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
