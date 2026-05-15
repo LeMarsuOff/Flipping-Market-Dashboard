@@ -4,11 +4,30 @@
 > Pour le détail des règles métier, voir `docs/business-rules.md`.
 > Pour la cartographie fichiers, voir `docs/file-map.md`.
 >
-> **Dernière mise à jour** : 4 mai 2026
+> **Dernière mise à jour** : 15 mai 2026
 
 ---
 
 ## PRs livrées
+
+### Chantier "Auth + Sync Supabase" (15 mai 2026)
+
+- ROBUST-11 fix initial : `_isSafeCssValue` blacklist (PR #21)
+- ROBUST-11 hardening Unicode escape : normalisation CSS avant blacklist match (PR #22)
+- Supabase storage wrapper `_SW` : wraps localStorage avec sync async vers
+  table `user_data` (user_id / dashboard_id / key / value jsonb / updated_at)
+- Monkey-patch localStorage : `setItem`/`removeItem` patchés pour sync
+  automatique, `_lsSet`/`_lsRemove` bindés avant patch pour éviter boucle infinie
+- Guard null dans `_SW.set` : filtre `null` et string `'null'` avant write Supabase
+- Auth email + password : `signIn`, `signUp`, `resetPassword`, `updatePassword`
+- UI auth bar : fixed bottom-right, login/logout/status, form email+password,
+  reset password form activé par event PASSWORD_RECOVERY
+- `syncFromRemote` : remote-wins, `getSession()` pour timing fix, `_lsSet`
+  pour bypass monkey-patch, retourne `merged` count
+- Auto-reload après sync si merged > 0
+- `window._SW` exposé sur window pour accès depuis onclick inline
+- Spike Supabase isolé validé (spike/ ignoré via .gitignore)
+- Validation prod : sync cross-device validé sur navigateur privé
 
 ### Chantier "Audit-driven cleanup" (4 mai 2026) — 3 PRs séquentielles sur main
 
