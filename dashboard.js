@@ -24975,6 +24975,26 @@ function exportTheme() {
   URL.revokeObjectURL(a.href);
 }
 
+function _isSafeCssValue(val) {
+  if (typeof val !== 'string') return false;
+  if (val.length > 200) return false;
+  // Resolve CSS unicode escapes (\HH or \HHHHHH, optionally followed by whitespace)
+  // before blacklist match, so that e.g. "\75 rl(..." cannot bypass the "url(" check.
+  // Per CSS spec, escapes are 1-6 hex chars, optionally followed by a single whitespace.
+  let normalized;
+  try {
+    normalized = val.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex) => {
+      const cp = parseInt(hex, 16);
+      // Guard against invalid codepoints (surrogates, out-of-range)
+      if (!Number.isFinite(cp) || cp < 0 || cp > 0x10FFFF) return '';
+      try { return String.fromCodePoint(cp); } catch { return ''; }
+    });
+  } catch {
+    return false; // any unexpected error → fail closed
+  }
+  return !/url\s*\(|expression\s*\(|javascript\s*:|data\s*:/i.test(normalized);
+}
+
 function importTheme(input) {
   const file = input.files[0];
   if (!file) return;
@@ -24985,7 +25005,12 @@ function importTheme(input) {
       const theme = data.theme || data;
       // Validate: must have at least --bg and --gold
       if (!theme['--bg'] || !theme['--gold']) throw new Error('Missing required keys');
-      currentTheme = { ...THEME_DEFAULT, ...theme };
+      const sanitized = {};
+      for (const [k, v] of Object.entries(theme)) {
+        if (_isSafeCssValue(v)) sanitized[k] = v;
+        else console.warn('[importTheme] rejected unsafe CSS value for', k);
+      }
+      currentTheme = { ...THEME_DEFAULT, ...sanitized };
       applyThemeToCss(currentTheme);
       buildColorSection('tp-bg-colors',        Object.entries(THEME_META).filter(([,m])=>m.group==='backgrounds'));
       buildColorSection('tp-border-colors',    Object.entries(THEME_META).filter(([,m])=>m.group==='borders'));
