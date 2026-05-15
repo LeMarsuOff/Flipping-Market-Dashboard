@@ -997,7 +997,7 @@
       const {error}=await _SW.signIn(email,password);
       if(error){
         if(error.message.includes('Invalid login')){
-          status.textContent='✗ Email ou mot de passe incorrect';
+          status.textContent='✗ Invalid email or password';
         } else {
           status.textContent='✗ '+error.message;
         }
@@ -1015,7 +1015,7 @@
       if(error){
         status.textContent='✗ '+error.message;
       } else {
-        status.textContent='✉ Vérifie ton email pour confirmer';
+        status.textContent='✉ Check your email to confirm';
       }
     })()"
       style="padding:0.25rem 0.5rem;background:#1a3a1a;border:1px solid #2a5a2a;
@@ -1025,7 +1025,7 @@
       if(!email)return;
       const status=document.getElementById('sw-auth-status');
       const {error}=await _SW.resetPassword(email);
-      status.textContent=error?'✗ '+error.message:'✉ Reset envoyé';
+      status.textContent=error?'✗ '+error.message:'✉ Reset email sent';
     })()"
       style="padding:0.25rem 0.5rem;background:none;border:none;
              color:#8892b0;cursor:pointer;font-size:11px;text-decoration:underline;">
