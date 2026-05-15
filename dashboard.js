@@ -204,7 +204,11 @@ const _SW = (() => {
             toggleBtn.textContent = 'Login';
           }
         }
-        if (event === 'SIGNED_IN') _SW.syncFromRemote();
+        if (event === 'SIGNED_IN') {
+            _SW.syncFromRemote().then(merged => {
+              if (merged > 0) window.location.reload();
+            });
+          }
         if (event === 'PASSWORD_RECOVERY') {
           const form = document.getElementById('sw-reset-form');
           const authForm = document.getElementById('sw-auth-form');
@@ -308,6 +312,7 @@ const _SW = (() => {
         merged++;
       }
       console.log('[SW] syncFromRemote done —', merged, 'keys merged');
+      return merged;
     },
 
     async signIn(email, password) {
