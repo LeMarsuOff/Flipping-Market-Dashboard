@@ -206,7 +206,10 @@ const _SW = (() => {
         }
         if (event === 'SIGNED_IN') {
             _SW.syncFromRemote().then(merged => {
-              if (merged > 0) window.location.reload();
+              if (merged > 0 && !sessionStorage.getItem('_sw_synced')) {
+                sessionStorage.setItem('_sw_synced', '1');
+                window.location.reload();
+              }
             });
           }
         if (event === 'PASSWORD_RECOVERY') {
