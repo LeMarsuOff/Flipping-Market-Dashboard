@@ -199,6 +199,9 @@ Si repris, additions à valeur réelle :
    - **Tentative live-view scaling rejetée** : un wrapper `#sv-export-frame` + `transform: scale()` + `setTimeout(0)` post-render avait été implémenté puis reverté (user préfère que le live garde son comportement natif `repeat(5, 1fr)` qui s'étire). Ne pas re-tenter sans demande explicite.
    - Commits : `2cea5b6`, `f2c4d90`, `8ee207b`, `68afb35`, `c157d40` (canonical pin fixe + bottom-alignment règle dure).
    - **À potentiellement faire** : subgrid pour auto-fit du label setup, bottom summary strip (`WIN DAYS / LOSS DAYS / NO TRADES / BEST DAY / WORST DAY / AVG PER TRADE`) visible dans la référence user mais pas implémenté.
+13. **ROBUST-11 — `importTheme` CSS injection hardening 2026-05-15** ✅ — [PR #22](https://github.com/LeMarsuOff/Flipping-Market-Dashboard/pull/22). Deux couches :
+   - **Couche 1 (ROBUST-11 initial)** : ajout `_isSafeCssValue(val)` + boucle sanitize dans `importTheme`. Blacklist `url(`, `expression(`, `javascript:`, `data:` (flag `i`, `\s*`), max 200 chars. Les valeurs refusées sont droppées avec `console.warn`, pas d'erreur silencieuse.
+   - **Couche 2 (hardening)** : normalisation des CSS unicode escapes (`\HH`–`\HHHHHH` + whitespace optionnel) via `.replace()` avant le match blacklist. Empêche le bypass `\75 rl(https://evil.com)` → `url(...)` au runtime navigateur. Fail closed sur toute erreur de normalisation. Commit `44a711d`.
 
 ### Conséquences post-patches sur calcStats
 
