@@ -30,3 +30,6 @@ secrets.json
 # Claude Code local
 .claude/settings.local.json
 .claude/launch.json
+
+# Spike / POC (local only, never committed)
+spike/
