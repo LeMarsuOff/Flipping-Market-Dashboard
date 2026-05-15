@@ -981,41 +981,75 @@
   border-radius:8px;padding:0.5rem 1rem;
   font-family:monospace;font-size:12px;color:#8892b0;">
   <span id="sw-auth-status">⬤ local only</span>
-  <input id="sw-email-input" type="email"
-    placeholder="email@example.com"
-    style="display:none;padding:0.25rem 0.5rem;
-           background:#0d1117;border:1px solid #2a3050;
-           border-radius:4px;color:#c9d1d9;font-size:12px;width:180px;" />
-  <button id="sw-login-btn"
-    onclick="(async()=>{
+  <div id="sw-auth-form" style="display:none;gap:0.4rem;align-items:center;flex-wrap:wrap;max-width:320px;">
+    <input id="sw-email-input" type="email" placeholder="email"
+      style="padding:0.25rem 0.5rem;background:#0d1117;border:1px solid #2a3050;
+             border-radius:4px;color:#c9d1d9;font-size:12px;width:150px;" />
+    <input id="sw-password-input" type="password" placeholder="password"
+      style="padding:0.25rem 0.5rem;background:#0d1117;border:1px solid #2a3050;
+             border-radius:4px;color:#c9d1d9;font-size:12px;width:100px;" />
+    <button onclick="(async()=>{
+      const email=document.getElementById('sw-email-input').value;
+      const password=document.getElementById('sw-password-input').value;
+      if(!email||!password)return;
+      const status=document.getElementById('sw-auth-status');
+      status.textContent='…';
+      const {error}=await _SW.signIn(email,password);
+      if(error){
+        if(error.message.includes('Invalid login')){
+          status.textContent='✗ Email ou mot de passe incorrect';
+        } else {
+          status.textContent='✗ '+error.message;
+        }
+      }
+    })()"
+      style="padding:0.25rem 0.5rem;background:#2962ff;border:none;
+             border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">Login</button>
+    <button onclick="(async()=>{
+      const email=document.getElementById('sw-email-input').value;
+      const password=document.getElementById('sw-password-input').value;
+      if(!email||!password)return;
+      const status=document.getElementById('sw-auth-status');
+      status.textContent='…';
+      const {error}=await _SW.signUp(email,password);
+      if(error){
+        status.textContent='✗ '+error.message;
+      } else {
+        status.textContent='✉ Vérifie ton email pour confirmer';
+      }
+    })()"
+      style="padding:0.25rem 0.5rem;background:#1a3a1a;border:1px solid #2a5a2a;
+             border-radius:4px;color:#6ee0b4;cursor:pointer;font-size:12px;">Sign up</button>
+    <button onclick="(async()=>{
       const email=document.getElementById('sw-email-input').value;
       if(!email)return;
-      const {error}=await _SW.signIn(email);
-      document.getElementById('sw-auth-status').textContent=
-        error ? '✗ '+error.message : '✉ magic link sent';
+      const status=document.getElementById('sw-auth-status');
+      const {error}=await _SW.resetPassword(email);
+      status.textContent=error?'✗ '+error.message:'✉ Reset envoyé';
     })()"
-    style="display:none;padding:0.25rem 0.5rem;
-           background:#2962ff;border:none;border-radius:4px;
-           color:#fff;cursor:pointer;font-size:12px;">Send</button>
+      style="padding:0.25rem 0.5rem;background:none;border:none;
+             color:#8892b0;cursor:pointer;font-size:11px;text-decoration:underline;">
+      Forgot password?</button>
+  </div>
   <button id="sw-toggle-btn"
     onclick="(()=>{
       const user=_SW.getUser();
-      const emailInput=document.getElementById('sw-email-input');
-      const loginBtn=document.getElementById('sw-login-btn');
       if(user){
         _SW.signOut().then(()=>{
           document.getElementById('sw-auth-status').textContent='⬤ local only';
+          document.getElementById('sw-auth-status').style.color='#8892b0';
           document.getElementById('sw-toggle-btn').textContent='Login';
+          const form=document.getElementById('sw-auth-form');
+          form.style.display='none';
         });
       } else {
-        const visible=emailInput.style.display!=='none';
-        emailInput.style.display=visible?'none':'inline-block';
-        loginBtn.style.display=visible?'none':'inline-block';
+        const form=document.getElementById('sw-auth-form');
+        const visible=form.style.display==='flex';
+        form.style.display=visible?'none':'flex';
       }
     })()"
-    style="padding:0.25rem 0.5rem;background:#2a3050;
-           border:none;border-radius:4px;color:#c9d1d9;
-           cursor:pointer;font-size:12px;">Login</button>
+    style="padding:0.25rem 0.5rem;background:#2a3050;border:none;
+           border-radius:4px;color:#c9d1d9;cursor:pointer;font-size:12px;">Login</button>
 </div>
 
 <!-- ══ ONBOARDING BANNER (demo-mode first-visit hint) ══ -->

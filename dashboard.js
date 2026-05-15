@@ -295,12 +295,23 @@ const _SW = (() => {
       console.log('[SW] syncFromRemote done —', merged, 'keys merged');
     },
 
-    async signIn(email) {
+    async signIn(email, password) {
       const c = _getClient();
       if (!c) return { error: { message: 'Supabase not loaded' } };
-      return c.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: window.location.origin + window.location.pathname }
+      return c.auth.signInWithPassword({ email, password });
+    },
+
+    async signUp(email, password) {
+      const c = _getClient();
+      if (!c) return { error: { message: 'Supabase not loaded' } };
+      return c.auth.signUp({ email, password });
+    },
+
+    async resetPassword(email) {
+      const c = _getClient();
+      if (!c) return { error: { message: 'Supabase not loaded' } };
+      return c.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + window.location.pathname
       });
     },
 
