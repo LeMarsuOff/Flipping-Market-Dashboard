@@ -1031,6 +1031,30 @@
              color:#8892b0;cursor:pointer;font-size:11px;text-decoration:underline;">
       Forgot password?</button>
   </div>
+  <div id="sw-reset-form" style="display:none;gap:0.4rem;align-items:center;">
+    <input id="sw-newpassword-input" type="password"
+      placeholder="new password"
+      style="padding:0.25rem 0.5rem;background:#0d1117;border:1px solid #2a3050;
+             border-radius:4px;color:#c9d1d9;font-size:12px;width:160px;" />
+    <button onclick="(async()=>{
+      const pwd=document.getElementById('sw-newpassword-input').value;
+      if(!pwd||pwd.length<6)return;
+      const status=document.getElementById('sw-auth-status');
+      status.textContent='…';
+      const {error}=await _SW.updatePassword(pwd);
+      if(error){
+        status.textContent='✗ '+error.message;
+      } else {
+        status.textContent='● '+(_SW.getUser()?.email??'');
+        status.style.color='#6ee0b4';
+        document.getElementById('sw-reset-form').style.display='none';
+        document.getElementById('sw-toggle-btn').textContent='Logout';
+      }
+    })()"
+      style="padding:0.25rem 0.5rem;background:#2962ff;border:none;
+             border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">
+      Confirm</button>
+  </div>
   <button id="sw-toggle-btn"
     onclick="(()=>{
       const user=_SW.getUser();

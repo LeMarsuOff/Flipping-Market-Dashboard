@@ -194,17 +194,29 @@ const _SW = (() => {
         const statusEl = document.getElementById('sw-auth-status');
         const toggleBtn = document.getElementById('sw-toggle-btn');
         if (statusEl && toggleBtn) {
-          if (_user) {
+          if (_user && event !== 'PASSWORD_RECOVERY') {
             statusEl.textContent = '● ' + _user.email;
             statusEl.style.color = '#6ee0b4';
             toggleBtn.textContent = 'Logout';
-          } else {
+          } else if (event !== 'PASSWORD_RECOVERY') {
             statusEl.textContent = '⬤ local only';
             statusEl.style.color = '#8892b0';
             toggleBtn.textContent = 'Login';
           }
         }
         if (event === 'SIGNED_IN') _SW.syncFromRemote();
+        if (event === 'PASSWORD_RECOVERY') {
+          const form = document.getElementById('sw-reset-form');
+          const authForm = document.getElementById('sw-auth-form');
+          if (form && authForm) {
+            authForm.style.display = 'none';
+            form.style.display = 'flex';
+            if (statusEl) {
+              statusEl.textContent = '🔑 New password';
+              statusEl.style.color = '#ffd700';
+            }
+          }
+        }
       });
       _client.auth.getSession().then(({ data }) => {
         _user = data?.session?.user ?? null;
@@ -313,6 +325,12 @@ const _SW = (() => {
       return c.auth.resetPasswordForEmail(email, {
         redirectTo: window.location.origin + window.location.pathname
       });
+    },
+
+    async updatePassword(newPassword) {
+      const c = _getClient();
+      if (!c) return { error: { message: 'Supabase not loaded' } };
+      return c.auth.updateUser({ password: newPassword });
     },
 
     async signOut() {
