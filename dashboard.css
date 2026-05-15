@@ -1671,6 +1671,10 @@ body.layout-edit-mode #layout-toolbar * {
   border-color: color-mix(in srgb, var(--r) 28%, transparent);
   background: color-mix(in srgb, var(--r) 5%, transparent);
 }
+.ljp-item.is-no-mapping {
+  border-color: color-mix(in srgb, #7dd3fc 32%, transparent);
+  background: color-mix(in srgb, #7dd3fc 7%, transparent);
+}
 .ljp-item.is-remapped {
   border-color: color-mix(in srgb, var(--gold) 35%, transparent);
   background: color-mix(in srgb, var(--gold) 6%, transparent);
@@ -1699,6 +1703,7 @@ body.layout-edit-mode #layout-toolbar * {
 }
 .ljp-status.is-ok       { color: var(--g);    background: color-mix(in srgb, var(--g) 14%, transparent); }
 .ljp-status.is-missing  { color: var(--r);    background: var(--r2); }
+.ljp-status.is-no-mapping { color: #7dd3fc; background: color-mix(in srgb, #7dd3fc 16%, transparent); }
 .ljp-status.is-remapped { color: var(--gold); background: var(--gold2); }
 .ljp-required-badge {
   display: inline-block;

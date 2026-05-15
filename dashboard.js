@@ -1424,6 +1424,7 @@ function handleActionClick(event) {
       const lbScope = actionEl.dataset.scope || '';
       const dEl = document.getElementById('wd-drawer');
       const drawerOpen = dEl && dEl.classList.contains('is-open');
+      let openedDrawerThisClick = false;
 
       // Selection widget: surface the active equity selection in the drawer
       // so the lightbox has prev/next context across all selected trades.
@@ -1434,7 +1435,8 @@ function handleActionClick(event) {
         const sub = isRange
           ? `Range  ${s.dateFrom} → ${s.dateTo}  ·  ${(s.days||[]).length} day${(s.days||[]).length > 1 ? 's' : ''}`
           : `Day  ${s.dateFrom}`;
-        openWidgetDrawer('Selection', sub, s.trades);
+        openWidgetDrawer('Selection', sub, _getSelectionTradesInDisplayedOrder(), null, { preserveOrder: true });
+        openedDrawerThisClick = true;
       }
       // Trade Log: open the drawer with ALL filtered trades, grouped by day,
       // and highlight the trade matching the clicked row. Mirrors the
@@ -1461,11 +1463,30 @@ function handleActionClick(event) {
               preserveOrder: true,
               groupByCol: tableSort.col,
             });
+            openedDrawerThisClick = true;
           }
         }
       }
 
-      openImgLightbox(actionEl.dataset.imgUrl, lbScope, actionEl.dataset.imgStep || 'm15Before');
+      const _openLb = () => openImgLightbox(
+        actionEl.dataset.imgUrl,
+        lbScope,
+        actionEl.dataset.imgStep || 'm15Before',
+        {
+          tradeId: actionEl.dataset.tradeId || '',
+          pair: actionEl.dataset.tradePair || '',
+          date: actionEl.dataset.tradeDate || '',
+          step: actionEl.dataset.imgStep || 'm15Before',
+          url: actionEl.dataset.imgUrl || '',
+        }
+      );
+      if (openedDrawerThisClick) {
+        // Let the drawer mount + paint first so the lightbox can build its
+        // navigation context from the final sidebar DOM on the very first click.
+        requestAnimationFrame(() => requestAnimationFrame(_openLb));
+      } else {
+        _openLb();
+      }
       break;
     }
     case 'open-notion-overlay': openNotionOverlay(actionEl.dataset.notionUrl || ''); break;
@@ -2594,7 +2615,8 @@ let _cacheAgeOneShot = null;
 function _normalizeAPITrade(t, _rawRowIndex) {
   const _apiOverrides = _getAPIFieldOverrides();
   const _pick = (dimKey, fallbackRaw) => {
-    const ov = _apiOverrides[dimKey];
+    const ov = _getEffectiveApiOverride(dimKey);
+    if (_isNoMappingValue(ov)) return undefined;
     if (ov && t && Object.prototype.hasOwnProperty.call(t, ov)) return t[ov];
     return fallbackRaw;
   };
@@ -2718,7 +2740,11 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     month:       dateRaw.slice(0, 7),
     pair:        _firstText(_pick('pair', t.pair || t['Pair'] || t.paire || t['Paire'])),
     setup:       _firstText(_pick('setup', t['M15 Confirmation / Continuation'] || t['M15 Confirmation / Continu'] || t.confirmation || t['Confirmation / Continunation'] || t.m15Type || t['M15 Type'])),
-    setupDetail: _firstText(t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail),
+    setupDetail: _firstText(_pick('setupDetail',
+      _getCurrentHTFSource() === 'h4'
+        ? (t.h4TypeDetail || t['H4 Type Detailed'] || t.h4TypeDetails || t.h4TypeDétail || t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail)
+        : (t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail)
+    )),
     session:     _normSession(_firstText(_pick('session', t.session || t['Session'] || t.sessionFormule || t['Session Formula']))),
     sessionUtc:  _normSession(_firstText(t.sessionUtc || t['Session UTC'] || t.sessionFormuleUtc || t.session || t['Session'] || t.sessionFormule || t['Session Formula'])),
     day:         _normDay(_firstText(_pick('day', t.jour || t['Jour']))),
@@ -2743,7 +2769,9 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     tradeType:   positionTypes,
     badFeeling:  Boolean(t.badFeeling),
     invalide:    positionTypes.some(v => v.toLowerCase().includes('invalide')),
-    hour: (_apiOverrides.hour && t && Object.prototype.hasOwnProperty.call(t, _apiOverrides.hour))
+    hour: (_isNoMappingValue(_apiOverrides.hour))
+          ? null
+          : (_apiOverrides.hour && t && Object.prototype.hasOwnProperty.call(t, _apiOverrides.hour))
           ? _parseHourValue(t[_apiOverrides.hour])
           : _extractTradeHour(t),
     timeUtc1:    _firstText(t.timeUtc1 || t.timeUtcPlus1 || t['Hour'] || t['Time (UTC+1)'] || t['Hour +1']),
@@ -2751,6 +2779,7 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     // or plain string) and feed through _normalizeTvImageUrl so TV /x/ share
     // URLs in plain URL properties become S3 snapshot PNGs. The *Orig mirror
     // retains the original TV page URL (or '') for lightbox error fallback.
+    // In API+H4 mode, the img_m15_after slot is repurposed to carry H4-after.
     ...(() => {
       const _rawUrl = raw => {
         if (!raw) return '';
@@ -2758,9 +2787,15 @@ function _normalizeAPITrade(t, _rawRowIndex) {
         if (typeof raw === 'object' && raw !== null) return raw.url || '';
         return String(raw);
       };
-      const a = _normalizeTvImageUrl(_rawUrl(t.imgM15      || t.m15Before    || t.m15Image      || t.imageM15   || ''));
-      const b = _normalizeTvImageUrl(_rawUrl(t.imgH4Before || t.h4Before     || t.h4Image       || t.imageH4    || ''));
-      const c = _normalizeTvImageUrl(_rawUrl(t.imgM15After || t.m15After     || t.m15AfterImage || ''));
+      const useH4AfterInImgM15After = _getCurrentHTFSource() === 'h4';
+      const aFallback = t.imgM15 || t.m15Before || t.m15Image || t.imageM15 || '';
+      const bFallback = t.imgH4Before || t.h4Before || t.h4Image || t.imageH4 || '';
+      const cFallback = useH4AfterInImgM15After
+        ? (t.imgH4After || t.h4After || t.h4AfterImage || t.imageH4After || t.h4ImageAfter || '')
+        : (t.imgM15After || t.m15After || t.m15AfterImage || '');
+      const a = _normalizeTvImageUrl(_rawUrl(_pick('img_m15', aFallback)));
+      const b = _normalizeTvImageUrl(_rawUrl(_pick('img_h4_before', bFallback)));
+      const c = _normalizeTvImageUrl(_rawUrl(_pick('img_m15_after', cFallback)));
       return {
         imgM15:      a.url, imgM15Orig:      a.origLink,
         imgH4Before: b.url, imgH4BeforeOrig: b.origLink,
@@ -6368,6 +6403,31 @@ let _lbKeyHandler = null;
 const _LB_STEPS       = ['h4Before', 'm15Before', 'm15After'];
 const _LB_STEP_LABELS = { h4Before: 'H4 Before', m15Before: 'M15 Before', m15After: 'M15 After' };
 
+function _getTradeMediaStepLabel(step) {
+  if (step === 'm15After' && _isH4ApiMode()) return 'H4 After';
+  return _LB_STEP_LABELS[step] || step;
+}
+
+function _getTradeLightboxId(trade) {
+  if (trade && Number.isFinite(trade._rawRowIndex)) return `row:${trade._rawRowIndex}`;
+  if (!trade) return '';
+  return [
+    trade.date || '',
+    trade.pair || '',
+    trade.hour ?? '',
+    trade.r ?? '',
+    trade.outcome || '',
+  ].join('|');
+}
+
+function _lbGetStepOrder() {
+  // In API+H4 mode, M15 Before is intentionally defaulted to No Mapping, so
+  // keyboard navigation should cycle only through the two visible screenshot
+  // slots to match the smoother M15 behavior the user expects.
+  if (_isH4ApiMode()) return ['h4Before', 'm15After'];
+  return _LB_STEPS;
+}
+
 function _lbRemoveKeyHandler() {
   if (_lbKeyHandler) { document.removeEventListener('keydown', _lbKeyHandler); _lbKeyHandler = null; }
 }
@@ -6409,7 +6469,15 @@ function _lbShow(tradeIdx, step) {
     btn.style.outline = 'none';
   });
   if (url) {
-    const activeBtn = document.querySelector(`#wd-drawer [data-img-url="${CSS.escape(url)}"]`);
+    const activeBtn = [...document.querySelectorAll('#wd-drawer [data-img-step]')].find(btn =>
+      (tr.tradeId && (btn.dataset.tradeId || '') === tr.tradeId && btn.dataset.imgStep === _lbStep) ||
+      (
+        btn.dataset.imgStep === _lbStep &&
+        btn.dataset.imgUrl === url &&
+        (btn.dataset.tradePair || '') === (tr.pair || '') &&
+        (btn.dataset.tradeDate || '') === (tr.date || '')
+      )
+    ) || document.querySelector(`#wd-drawer [data-img-url="${CSS.escape(url)}"]`);
     if (activeBtn) {
       const card = activeBtn.closest('.wd-trade-card');
       if (card) {
@@ -6439,7 +6507,7 @@ function _lbShow(tradeIdx, step) {
   const sel = document.getElementById('img-lightbox-sel');
   if (sel) {
     const label     = [tr.pair, tr.date].filter(Boolean).join('  ·  ');
-    const stepLabel = _LB_STEP_LABELS[_lbStep] || _lbStep;
+    const stepLabel = _getTradeMediaStepLabel(_lbStep);
     const tradeTotal = _lbData.length;
     const tradeNum   = _lbTradeIdx + 1;
     const hasMulti   = tradeTotal > 1;
@@ -6462,23 +6530,24 @@ function _lbNavigateTrade(delta) {
   if (tr[_lbStep]) {
     _lbShow(idx, _lbStep);
   } else {
-    const fallback = _LB_STEPS.find(s => tr[s]);
+    const fallback = _lbGetStepOrder().find(s => tr[s]);
     _lbShow(idx, fallback || _lbStep);
   }
 }
 
 // Up/Down: advance/rewind through H4 Before → M15 Before → M15 After at current trade
 function _lbNavigateStep(delta) {
-  const stepIdx = _LB_STEPS.indexOf(_lbStep);
-  const n = _LB_STEPS.length;
+  const steps = _lbGetStepOrder();
+  const stepIdx = steps.indexOf(_lbStep);
+  const n = steps.length;
   for (let i = 1; i <= n; i++) {
     const newIdx  = ((stepIdx + delta * i) % n + n) % n;
-    const newStep = _LB_STEPS[newIdx];
+    const newStep = steps[newIdx];
     if (_lbData[_lbTradeIdx] && _lbData[_lbTradeIdx][newStep]) { _lbShow(_lbTradeIdx, newStep); return; }
   }
 }
 
-function openImgLightbox(url, scopeSelector, imgStep) {
+function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
   // Collect [data-img-step] buttons from the scope (or drawer fallback)
   const scope = scopeSelector ? document.querySelector(scopeSelector) : null;
   const btns  = scope
@@ -6491,9 +6560,11 @@ function openImgLightbox(url, scopeSelector, imgStep) {
     // fallback deep-link back to TV when the snapshot PNG fails to load.
     const seen = new Map();
     Array.from(btns).forEach(b => {
-      const key = (b.dataset.tradeH4before || '') + '|' + (b.dataset.tradeM15before || '') + '|' + (b.dataset.tradeM15after || '');
+      const key = b.dataset.tradeId
+        || ((b.dataset.tradePair || '') + '|' + (b.dataset.tradeDate || '') + '|' + (b.dataset.imgUrl || '') + '|' + (b.dataset.imgStep || ''));
       if (!seen.has(key)) {
         seen.set(key, {
+          tradeId:       b.dataset.tradeId || key,
           pair:          b.dataset.tradePair    || '',
           date:          b.dataset.tradeDate    || '',
           h4Before:      b.dataset.tradeH4before  || '',
@@ -6508,14 +6579,38 @@ function openImgLightbox(url, scopeSelector, imgStep) {
     _lbData = Array.from(seen.values());
   } else {
     // Fallback: single image, treat as m15Before — no Orig (caller unknown)
-    _lbData = [{ pair: '', date: '', h4Before: '', m15Before: url, m15After: '',
+    _lbData = [{ tradeId: '', pair: '', date: '', h4Before: '', m15Before: url, m15After: '',
                  h4BeforeOrig: '', m15BeforeOrig: '', m15AfterOrig: '' }];
   }
 
   _lbStep     = imgStep || 'm15Before';
   _lbTradeIdx = 0;
-  for (let i = 0; i < _lbData.length; i++) {
-    if (_lbData[i][_lbStep] === url) { _lbTradeIdx = i; break; }
+  if (triggerMeta) {
+    const targetTradeId = triggerMeta.tradeId || '';
+    const targetPair = triggerMeta.pair || '';
+    const targetDate = triggerMeta.date || '';
+    const targetUrl  = triggerMeta.url || url || '';
+    const targetStep = triggerMeta.step || _lbStep;
+    const exactIdx = _lbData.findIndex(t =>
+      (targetTradeId && (t.tradeId || '') === targetTradeId) ||
+      (
+      (t.pair || '') === targetPair &&
+      (t.date || '') === targetDate &&
+      (t[targetStep] || '') === targetUrl
+      )
+    );
+    if (exactIdx >= 0) _lbTradeIdx = exactIdx;
+    else {
+      const pairDateIdx = _lbData.findIndex(t =>
+        (t.pair || '') === targetPair &&
+        (t.date || '') === targetDate
+      );
+      if (pairDateIdx >= 0) _lbTradeIdx = pairDateIdx;
+    }
+  } else {
+    for (let i = 0; i < _lbData.length; i++) {
+      if (_lbData[i][_lbStep] === url) { _lbTradeIdx = i; break; }
+    }
   }
 
   let overlay = document.getElementById('img-lightbox-overlay');
@@ -8149,6 +8244,14 @@ function updateSelectionWidget(sel) {
   }
 }
 
+function _getSelectionTradesInDisplayedOrder() {
+  const rows = [...document.querySelectorAll('#sel-tbody tr[data-trade-id]')];
+  const trades = Array.isArray(_activeSelection?.trades) ? _activeSelection.trades : [];
+  if (!rows.length || !trades.length) return trades;
+  const byId = new Map(trades.map(t => [_getTradeLightboxId(t), t]));
+  return rows.map(row => byId.get(row.dataset.tradeId)).filter(Boolean);
+}
+
 // Helper: build one <tr> for the selection table
 function _selTradeRow(t, highlighted) {
   const _rEff   = t.effectiveR ?? computeEffectiveRR(t, appState.ui.tpConfig);
@@ -8175,6 +8278,7 @@ function _selTradeRow(t, highlighted) {
     : `background:${rowBg}`;
   const safePair   = (t.pair || '').replace(/"/g, '&quot;');
   const safeDate   = (t.date || '').replace(/"/g, '&quot;');
+  const safeTradeId = _getTradeLightboxId(t).replace(/"/g, '&quot;');
   const safeH4b    = (t.imgH4Before || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;');
   const safeM15b   = (t.imgM15      || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;');
   const safeM15a   = (t.imgM15After || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -8185,19 +8289,20 @@ function _selTradeRow(t, highlighted) {
     ? `<button class="trade-media-btn" data-action="open-img-lightbox"
          data-scope="#sel-tbody"
          data-img-url="${url}" data-img-step="${step}"
+         data-trade-id="${safeTradeId}"
          data-trade-pair="${safePair}" data-trade-date="${safeDate}"
          data-trade-h4before="${safeH4b}" data-trade-m15before="${safeM15b}" data-trade-m15after="${safeM15a}"
          data-trade-h4before-orig="${safeH4bOrig}" data-trade-m15before-orig="${safeM15bOrig}" data-trade-m15after-orig="${safeM15aOrig}"
          title="${title}">${emoji}</button>`
     : '';
   const imgBtns    = `<div class="trade-media-group">
-    ${_selBtn(safeH4b,'h4Before','📷','H4 Before')}${_selBtn(safeM15b,'m15Before','📷','M15 Before')}${_selBtn(safeM15a,'m15After','📸','M15 After')}
+    ${_selBtn(safeH4b,'h4Before','📷',_getTradeMediaStepLabel('h4Before'))}${_selBtn(safeM15b,'m15Before','📷',_getTradeMediaStepLabel('m15Before'))}${_selBtn(safeM15a,'m15After','📸',_getTradeMediaStepLabel('m15After'))}
   </div>`;
   const notionUrl  = (t.notionUrl || '').trim();
   const notionBtn  = notionUrl
     ? `<button class="trade-media-btn trade-link-btn" data-action="open-notion-overlay" data-notion-url="${notionUrl.replace(/"/g, '&quot;')}" title="Open in Notion">🔗</button>`
     : '';
-  return `<tr style="${hlStyle}">
+  return `<tr data-trade-id="${safeTradeId}" style="${hlStyle}">
     <td class="mono" style="color:var(--dim)">${t.date || '—'}</td>
     <td><div style="display:flex;align-items:center;gap:4px">${notionBtn}<span class="dpt-pair">${t.pair || '—'}</span></div></td>
     <td><span class="${ocClass[outcome] || ''}" style="font-weight:600">${outcome}</span></td>
@@ -9619,6 +9724,7 @@ function renderTable(trades) {
     ? `<button class="trade-media-btn" data-action="open-img-lightbox"
          data-scope="#trade-tbody"
          data-img-url="${url}" data-img-step="${step}"
+         data-trade-id="${meta.safeTradeId}"
          data-trade-pair="${meta.safePair}" data-trade-date="${meta.safeDate}"
          data-trade-h4before="${meta.safeH4b}" data-trade-m15before="${meta.safeM15b}" data-trade-m15after="${meta.safeM15a}"
          data-trade-h4before-orig="${meta.safeH4bOrig}" data-trade-m15before-orig="${meta.safeM15bOrig}" data-trade-m15after-orig="${meta.safeM15aOrig}"
@@ -9632,6 +9738,7 @@ function renderTable(trades) {
       ? `<span style="font-family:'DM Mono',monospace;font-size:var(--typo-micro-size,9px);font-weight:700;letter-spacing:.5px;color:${dirCol}">${dir.toUpperCase()}</span>`
       : '<span style="color:var(--dim)">—</span>';
     const meta = {
+      safeTradeId: _getTradeLightboxId(t).replace(/"/g, '&quot;'),
       safePair: (t.pair || '').replace(/"/g, '&quot;'),
       safeDate: (t.date || '').replace(/"/g, '&quot;'),
       safeH4b: (t.imgH4Before || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'),
@@ -9642,9 +9749,9 @@ function renderTable(trades) {
       safeM15aOrig: (t.imgM15AfterOrig || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'),
     };
     const imgBtns = `<div class="trade-media-group">
-      ${createTradeMediaButton(meta.safeH4b, 'h4Before', '📷', 'H4 Before', meta)}
-      ${createTradeMediaButton(meta.safeM15b, 'm15Before', '📷', 'M15 Before', meta)}
-      ${createTradeMediaButton(meta.safeM15a, 'm15After', '📸', 'M15 After', meta)}
+      ${createTradeMediaButton(meta.safeH4b, 'h4Before', '📷', _getTradeMediaStepLabel('h4Before'), meta)}
+      ${createTradeMediaButton(meta.safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before'), meta)}
+      ${createTradeMediaButton(meta.safeM15a, 'm15After', '📸', _getTradeMediaStepLabel('m15After'), meta)}
     </div>`;
     const notionUrl = (t.notionUrl || '').trim();
     const notionBtn = notionUrl
@@ -10251,7 +10358,7 @@ function hideEmptyWidgets(trades) {
     const hidden0 = [];
     const fullRules0 = buildRules(fullItems0);
     Object.keys(fullRules0).forEach(id => {
-      if (!fullRules0[id] && MISSING_DATA_META[id]) {
+      if (!fullRules0[id] && MISSING_DATA_META[id] && !_isWidgetSuppressedByNoMapping(id)) {
         hidden0.push({ id, ...MISSING_DATA_META[id] });
       }
     });
@@ -10272,12 +10379,12 @@ function hideEmptyWidgets(trades) {
   _grid.getGridItems().forEach(item => {
     const id = item.getAttribute('gs-id');
     if (!(id in viewRules)) return;
-    if (!fullRules[id] && MISSING_DATA_META[id]) {
+    if (!fullRules[id] && MISSING_DATA_META[id] && !_isWidgetSuppressedByNoMapping(id)) {
       hidden.push({ id, ...MISSING_DATA_META[id] });
     }
   });
   // Virtual entries (no grid widget) — evaluated directly from the rules map.
-  if (!fullRules['w-notion'] && MISSING_DATA_META['w-notion']) {
+  if (!fullRules['w-notion'] && MISSING_DATA_META['w-notion'] && !_isWidgetSuppressedByNoMapping('w-notion')) {
     hidden.push({ id: 'w-notion', ...MISSING_DATA_META['w-notion'] });
   }
   updateAttentionButton(hidden);
@@ -12884,6 +12991,7 @@ const _WD_BG_CLASS = {
 /* Build one trade card HTML for the shared drawer */
 function _wdTradeCard(t) {
   // Screenshot buttons: H4 Before · M15 Before · M15 After
+  const safeTradeId = _getTradeLightboxId(t).replace(/"/g,'&quot;');
   const safePair  = (t.pair||'').replace(/"/g,'&quot;');
   const safeDate  = (t.date||'').replace(/"/g,'&quot;');
   const safeH4b   = (t.imgH4Before||'').trim().replace(/'/g,"\\'").replace(/"/g,'&quot;');
@@ -12898,6 +13006,7 @@ function _wdTradeCard(t) {
          <button class="trade-media-btn wd-media-btn" data-action="open-img-lightbox"
            data-img-url="${url}"
            data-img-step="${step}"
+           data-trade-id="${safeTradeId}"
            data-trade-pair="${safePair}"
            data-trade-date="${safeDate}"
            data-trade-h4before="${safeH4b}"
@@ -12912,9 +13021,9 @@ function _wdTradeCard(t) {
     : '';
 
   const imgBtn = [
-    _wdBtn(safeH4b,  'h4Before',  '📷', 'H4 Before'),
-    _wdBtn(safeM15b, 'm15Before', '📷', 'M15 Before'),
-    _wdBtn(safeM15a, 'm15After',  '📸', 'M15 After'),
+    _wdBtn(safeH4b,  'h4Before',  '📷', _getTradeMediaStepLabel('h4Before')),
+    _wdBtn(safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before')),
+    _wdBtn(safeM15a, 'm15After',  '📸', _getTradeMediaStepLabel('m15After')),
   ].filter(Boolean).join('');
 
   // Notion page button
@@ -19036,9 +19145,33 @@ function _saveCsvOverrides() {
 }
 _loadCsvOverrides();
 
+const NO_MAPPING_VALUE = '__NO_MAPPING__';
+function _isNoMappingValue(value) {
+  return value === NO_MAPPING_VALUE;
+}
+
+function _isH4ApiMode() {
+  return localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === 'h4';
+}
+
+function _isDimDefaultNoMappedInCurrentContext(dimKey) {
+  if (!_isH4ApiMode()) return false;
+  return dimKey === 'obstacles' || dimKey === 'img_m15';
+}
+
+function _getEffectiveApiOverride(dimKey) {
+  const overrides = _getAPIFieldOverrides();
+  const explicit = overrides[dimKey];
+  if (_isNoMappingValue(explicit)) return NO_MAPPING_VALUE;
+  if (explicit) return explicit;
+  if (_isDimDefaultNoMappedInCurrentContext(dimKey)) return NO_MAPPING_VALUE;
+  return '';
+}
+
 // ── Column lookup honoring user remap overrides ──
 function _colForDim(headers, dimKey, ...defaults) {
   const override = _csvColumnOverrides && _csvColumnOverrides[dimKey];
+  if (_isNoMappingValue(override)) return -1;
   if (override != null && override !== '') {
     const i = _colFirst(headers, override);
     if (i >= 0) return i;
@@ -19048,6 +19181,7 @@ function _colForDim(headers, dimKey, ...defaults) {
 }
 function _hourColForDim(headers) {
   const override = _csvColumnOverrides && _csvColumnOverrides.hour;
+  if (_isNoMappingValue(override)) return -1;
   if (override != null && override !== '') {
     const i = _colFirst(headers, override);
     if (i >= 0) return i;
@@ -21632,6 +21766,20 @@ const JOURNAL_DIMS = [
     flipping: 'RR TP 3', pro: 'RR TP 3', beginner: 'RR TP 3',
   }, widgets: [] },
 ];
+
+function _getJournalDimLabel(dimOrKey) {
+  const key = typeof dimOrKey === 'string' ? dimOrKey : dimOrKey?.key;
+  const baseLabel = typeof dimOrKey === 'string'
+    ? (JOURNAL_DIMS.find(d => d.key === dimOrKey)?.label || dimOrKey)
+    : (dimOrKey?.label || '');
+  // In API + H4 mode, the img_m15_after slot is relabelled to reflect that it
+  // maps the H4-after screenshot property instead of the M15-after one.
+  if (key === 'img_m15_after' && localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === 'h4') {
+    return 'H4 After screenshot';
+  }
+  return baseLabel;
+}
+
 const FORMAT_LABEL = {
   flipping: 'Flipping Market M15',
   pro:      'Pro Template',
@@ -21780,6 +21928,20 @@ const _JOURNAL_DIM_TO_CHIP_KEY = {
   h4:           'h4obs',
   positionType: 'tradeType',
 };
+
+function _isDimExplicitlyNoMapped(dimKey) {
+  if (!dimKey) return false;
+  const dsMode = localStorage.getItem(DS_KEY) || 'demo';
+  if (dsMode === 'api') {
+    return _isNoMappingValue(_getEffectiveApiOverride(dimKey));
+  }
+  return _isNoMappingValue(_csvColumnOverrides?.[dimKey]);
+}
+
+function _isWidgetSuppressedByNoMapping(widgetId) {
+  const dimKey = WIDGET_DIM_KEY[widgetId];
+  return _isDimExplicitlyNoMapped(dimKey);
+}
 
 // Wipe the include/exclude sets + mode for a dim's chip filter. Used after a
 // remap: the previously-selected values belonged to the OLD source column,
@@ -22194,7 +22356,12 @@ function updateJournalPanel() {
       const resolved   = _resolvedHeaderFor(dim.key);
       const ok         = !!resolved;
       let status, statusTxt, shown, defaultNote;
-      if (isOverrideOnly) {
+      if (_isNoMappingValue(override)) {
+        status      = 'is-no-mapping';
+        statusTxt   = 'no mapping';
+        shown       = '— No Mapping —';
+        defaultNote = '';
+      } else if (isOverrideOnly) {
         status      = override ? 'is-remapped' : 'is-missing';
         statusTxt   = override ? 'remapped' : 'not mapped';
         shown       = override || '— not mapped —';
@@ -22205,10 +22372,11 @@ function updateJournalPanel() {
         shown       = override ? override : (resolved || declaredDefault);
         defaultNote = override ? ` <span style="opacity:.6">(default: ${_escapeHtml(declaredDefault)})</span>` : '';
       }
+      const dimLabel = _getJournalDimLabel(dim);
       const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
       return `<li class="ljp-item ${status}" data-dim-key="${_escapeHtml(dim.key)}">
                 <div class="ljp-item-row">
-                  <span class="ljp-item-label">${_escapeHtml(dim.label)}${requiredBadge}</span>
+                  <span class="ljp-item-label">${_escapeHtml(dimLabel)}${requiredBadge}</span>
                   <span class="ljp-status ${status}">${statusTxt}</span>
                 </div>
                 <div class="ljp-item-col">column · <strong>${_escapeHtml(shown)}</strong>${defaultNote}</div>
@@ -22281,10 +22449,15 @@ function updateJournalPanel() {
     // entirely rather than render a dead "missing / no pencil" line.
     if (isOverrideOnly && !isAPI) return '';
     const { sample, populated } = _inspectDimInTrades(dim.key);
-    const override   = apiOverrides[dim.key];
+    const override   = isAPI ? _getEffectiveApiOverride(dim.key) : apiOverrides[dim.key];
     const ok         = populated > 0;
     let status, statusTxt, shown, coverage;
-    if (isOverrideOnly) {
+    if (_isNoMappingValue(override)) {
+      status    = 'is-no-mapping';
+      statusTxt = 'no mapping';
+      shown     = '— No Mapping —';
+      coverage  = 'disabled';
+    } else if (isOverrideOnly) {
       status    = override ? 'is-remapped' : 'is-missing';
       statusTxt = override ? 'remapped' : 'not mapped';
       shown     = sample || '— not mapped —';
@@ -22295,7 +22468,7 @@ function updateJournalPanel() {
       shown     = sample || '—';
       coverage  = ok ? `${populated}/${items.length} trades` : 'no values detected';
     }
-    const overrideNote = override
+    const overrideNote = (override && !_isNoMappingValue(override))
       ? ` <span style="opacity:.6">(field: <span class="ljp-field-name">${_escapeHtml(override)}</span>)</span>`
       : '';
     const pencil = canRemap
@@ -22303,10 +22476,11 @@ function updateJournalPanel() {
            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
          </button>`
       : '';
+    const dimLabel = _getJournalDimLabel(dim);
     const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
     return `<li class="ljp-item ${status}${canRemap ? '' : ' is-readonly'}" data-dim-key="${_escapeHtml(dim.key)}">
               <div class="ljp-item-row">
-                <span class="ljp-item-label">${_escapeHtml(dim.label)}${requiredBadge}</span>
+                <span class="ljp-item-label">${_escapeHtml(dimLabel)}${requiredBadge}</span>
                 <span class="ljp-status ${status}">${statusTxt}</span>
               </div>
               <div class="ljp-item-col">sample · <strong>${_escapeHtml(shown)}</strong> <span style="opacity:.55">· ${_escapeHtml(coverage)}</span>${overrideNote}</div>
@@ -22506,8 +22680,7 @@ function openRemapPicker(triggerBtn) {
   if (isAPI) {
     const raw = _getRawAPICache();
     candidates = _listAPIKeys(raw || []);
-    const overrides = _getAPIFieldOverrides();
-    currentOverride = overrides[dimKey] || '';
+    currentOverride = _getEffectiveApiOverride(dimKey);
     activeFallback = '';
     hint = 'Pick a Notion API field for this dimension';
     pickAction = 'pick-api-field';
@@ -22560,6 +22733,10 @@ function openRemapPicker(triggerBtn) {
   }
 
   const hintHeader = `<div class="csv-remap-picker-hint">${hint}</div>`;
+  const noMappingBtn = `<button class="csv-remap-option${_isNoMappingValue(currentOverride) ? ' active' : ''}" data-action="${pickAction}" data-dim-key="${_escapeHtml(dimKey)}" data-header="${NO_MAPPING_VALUE}">
+              <span class="csv-remap-option-label">No Mapping</span>
+              ${_isNoMappingValue(currentOverride) ? '<span class="csv-remap-option-tag">current</span>' : ''}
+            </button>`;
   const opts = candidates.map(h => {
     const isActive = (currentOverride && h === currentOverride) ||
                      (!currentOverride && activeFallback && h === activeFallback);
@@ -22575,9 +22752,9 @@ function openRemapPicker(triggerBtn) {
             </button>`;
   }).join('');
   const clearBtn = currentOverride
-    ? `<button class="csv-remap-option" data-action="${pickAction}" data-dim-key="${_escapeHtml(dimKey)}" data-header=""><span>— Clear override (use default) —</span></button>`
+    ? `<button class="csv-remap-option" data-action="${pickAction}" data-dim-key="${_escapeHtml(dimKey)}" data-header=""><span>— Use default / auto-detect —</span></button>`
     : '';
-  picker.innerHTML = hintHeader + (candidates.length ? opts : emptyHtml) + clearBtn;
+  picker.innerHTML = hintHeader + noMappingBtn + (candidates.length ? opts : emptyHtml) + clearBtn;
   existingHost?.appendChild(picker);
   triggerBtn.classList.add('open');
   // Ensure the newly-opened picker is fully visible inside its scroll container.
@@ -23125,9 +23302,9 @@ function _getMultiMappingStatus(tpCount) {
     const label = JOURNAL_DIMS.find(d => d.key === dim)?.label || dim;
     let mapped = null;
     if (dsMode === 'api') {
-      mapped = apiOverrides[dim] || (_hasData(dim) ? '(auto-detected)' : null);
+      mapped = _isNoMappingValue(apiOverrides[dim]) ? null : (apiOverrides[dim] || (_hasData(dim) ? '(auto-detected)' : null));
     } else if (_lastCsvHeaders && _lastCsvHeaders.length) {
-      mapped = csvOverrides[dim] || _resolvedHeaderFor(dim) || null;
+      mapped = _isNoMappingValue(csvOverrides[dim]) ? null : (csvOverrides[dim] || _resolvedHeaderFor(dim) || null);
     } else {
       mapped = _hasData(dim) ? '(auto-detected)' : null;
     }
@@ -23152,6 +23329,7 @@ function _isPersonalisedRrMaxMapped() {
   const dsMode = localStorage.getItem(DS_KEY) || 'demo';
   if (dsMode === 'api') {
     const o = _getAPIFieldOverrides();
+    if (_isNoMappingValue(o.rrMax)) return false;
     if (o.rrMax) return true;
     // API has no format default — without an override, consider mapped only
     // if we actually observe rrMax data (covers auto-detected paths).
@@ -23159,6 +23337,7 @@ function _isPersonalisedRrMaxMapped() {
   }
   // CSV / demo: format defaults resolve rrMax for the 3 templates + demo
   // ships with rm. Check override first, then CSV resolution, then data.
+  if (_csvColumnOverrides && _isNoMappingValue(_csvColumnOverrides.rrMax)) return false;
   if (_csvColumnOverrides && _csvColumnOverrides.rrMax) return true;
   if (_lastCsvHeaders && _lastCsvHeaders.length) {
     if (typeof _dimResolvesInCsv === 'function' && _dimResolvesInCsv('rrMax')) return true;
@@ -23478,9 +23657,11 @@ function _getPersonalisedMappingStatus() {
   if (hasData) {
     if (dsMode === 'api') {
       const o = _getAPIFieldOverrides();
-      source = o.rrMax || 'auto-detected';
+      source = _isNoMappingValue(o.rrMax) ? 'No Mapping' : (o.rrMax || 'auto-detected');
     } else if (_lastCsvHeaders && _lastCsvHeaders.length) {
-      source = (_csvColumnOverrides && _csvColumnOverrides.rrMax) || _resolvedHeaderFor('rrMax') || 'auto-detected';
+      source = (_csvColumnOverrides && _isNoMappingValue(_csvColumnOverrides.rrMax))
+        ? 'No Mapping'
+        : ((_csvColumnOverrides && _csvColumnOverrides.rrMax) || _resolvedHeaderFor('rrMax') || 'auto-detected');
     } else {
       source = 'built-in';
     }
@@ -24040,9 +24221,11 @@ const _NATIVE_DETECTION_BLACKLIST = new Set([
   'm15 confirmation / continu','m15 confirmation / continunation','confirmation','confirmation / continunation',
   'time (utc+1)','hour +1','time utc+1',
   'm15 before','h4 before','m15 after','m15after','h4before',
-  'tv m15 before','tv h4 before','tv m15 after',   // TradingView share URL convention
+  'h4 after','h4after',
+  'tv m15 before','tv h4 before','tv m15 after','tv h4 after',   // TradingView share URL convention
   'screenshot m15','m15 screenshot','image m15','m15 image','photo m15','m15 photo',
   'screenshot h4','h4 screenshot','image h4','h4 image',
+  'screenshot h4 after','h4 after screenshot','image h4 after','h4 image after',
   'screenshot m15 after','m15 after screenshot',
   'm15',           // standalone screenshot column
   'session utc','session formule','session formula','sessionformule','sessionformuleutc',
@@ -24792,6 +24975,26 @@ function exportTheme() {
   URL.revokeObjectURL(a.href);
 }
 
+function _isSafeCssValue(val) {
+  if (typeof val !== 'string') return false;
+  if (val.length > 200) return false;
+  // Resolve CSS unicode escapes (\HH or \HHHHHH, optionally followed by whitespace)
+  // before blacklist match, so that e.g. "\75 rl(..." cannot bypass the "url(" check.
+  // Per CSS spec, escapes are 1-6 hex chars, optionally followed by a single whitespace.
+  let normalized;
+  try {
+    normalized = val.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex) => {
+      const cp = parseInt(hex, 16);
+      // Guard against invalid codepoints (surrogates, out-of-range)
+      if (!Number.isFinite(cp) || cp < 0 || cp > 0x10FFFF) return '';
+      try { return String.fromCodePoint(cp); } catch { return ''; }
+    });
+  } catch {
+    return false; // any unexpected error → fail closed
+  }
+  return !/url\s*\(|expression\s*\(|javascript\s*:|data\s*:/i.test(normalized);
+}
+
 function importTheme(input) {
   const file = input.files[0];
   if (!file) return;
@@ -24802,7 +25005,12 @@ function importTheme(input) {
       const theme = data.theme || data;
       // Validate: must have at least --bg and --gold
       if (!theme['--bg'] || !theme['--gold']) throw new Error('Missing required keys');
-      currentTheme = { ...THEME_DEFAULT, ...theme };
+      const sanitized = {};
+      for (const [k, v] of Object.entries(theme)) {
+        if (_isSafeCssValue(v)) sanitized[k] = v;
+        else console.warn('[importTheme] rejected unsafe CSS value for', k);
+      }
+      currentTheme = { ...THEME_DEFAULT, ...sanitized };
       applyThemeToCss(currentTheme);
       buildColorSection('tp-bg-colors',        Object.entries(THEME_META).filter(([,m])=>m.group==='backgrounds'));
       buildColorSection('tp-border-colors',    Object.entries(THEME_META).filter(([,m])=>m.group==='borders'));
@@ -27474,7 +27682,9 @@ function _msComputeUnmappedSet() {
     'w-heatmap': hSession && hDay, 'w-m15': hObs, 'w-h4': hH4,
     'w-hour': hHour, 'w-pair-session': hSession, 'w-notion': hNotion,
   };
-  Object.keys(flags).forEach(id => { if (!flags[id]) out.add(id); });
+  Object.keys(flags).forEach(id => {
+    if (!flags[id] && !_isWidgetSuppressedByNoMapping(id)) out.add(id);
+  });
   return out;
 }
 
