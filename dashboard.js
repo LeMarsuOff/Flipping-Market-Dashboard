@@ -169,7 +169,7 @@ const _SYNC_KEYS = new Set([
   'flipping_bar_view','flipping_bar_color_mode','flipping_typo_mode',
   'flipping_orr_sim_mode','notionOpenMode','colorblind_mode',
   'warningThreshold','filters_display_order_v1',
-  'fr_csv_col_overrides_v1','apiFieldOverrides_v1_m15','apiFieldOverrides_v1_h4'
+  'fr_csv_col_overrides_v1'
 ]);
 
 // Keys HTF-dupliquées (existent en base + base_h4)
@@ -184,6 +184,7 @@ const _SW = (() => {
   let _client = null;
   let _user   = null;
   let _dbId   = 'm15'; // dashboard_id actif
+  let _signedInHook = null; // registered by hydrateJournalProfilesFromRemote
 
   function _getClient() {
     if (!_client && window.supabase) {
@@ -191,42 +192,36 @@ const _SW = (() => {
       _client.auth.onAuthStateChange((event, session) => {
         _user = session?.user ?? null;
         console.log('[SW] auth', event, _user?.email ?? 'no user');
-        const statusEl = document.getElementById('sw-auth-status');
-        const toggleBtn = document.getElementById('sw-toggle-btn');
-        if (statusEl && toggleBtn) {
-          if (_user && event !== 'PASSWORD_RECOVERY') {
-            statusEl.textContent = '● ' + _user.email;
-            statusEl.style.color = '#6ee0b4';
-            toggleBtn.textContent = 'Logout';
-          } else if (event !== 'PASSWORD_RECOVERY') {
-            statusEl.textContent = '⬤ local only';
-            statusEl.style.color = '#8892b0';
-            toggleBtn.textContent = 'Login';
-          }
+        if (event === 'PASSWORD_RECOVERY') {
+          _accountRecoveryMode = true;
+          _accountView = 'reset_password';
+          _setAccountAlert();
+          _clearAccountForms();
+          _renderAccountPanelAuthState();
+          if (!accountPanelOpen) toggleAccountPanel();
+        } else {
+          _accountRecoveryMode = false;
+          _accountView = _getDefaultAccountView();
+          _renderAccountPanelAuthState();
         }
         if (event === 'SIGNED_IN') {
+            _accountView = 'signed_in';
+            _setAccountAlert();
+            _clearAccountForms();
             _SW.syncFromRemote().then(merged => {
-              if (merged > 0 && !sessionStorage.getItem('_sw_synced')) {
-                sessionStorage.setItem('_sw_synced', '1');
-                window.location.reload();
-              }
+              console.log('[JournalProfilesRemote] SIGNED_IN — calling hook, merged:', merged);
+              if (typeof _signedInHook === 'function') _signedInHook(merged || 0);
             });
           }
-        if (event === 'PASSWORD_RECOVERY') {
-          const form = document.getElementById('sw-reset-form');
-          const authForm = document.getElementById('sw-auth-form');
-          if (form && authForm) {
-            authForm.style.display = 'none';
-            form.style.display = 'flex';
-            if (statusEl) {
-              statusEl.textContent = '🔑 New password';
-              statusEl.style.color = '#ffd700';
-            }
+        if (event === 'INITIAL_SESSION' && session?.user) {
+            console.log('[JournalProfilesRemote] INITIAL_SESSION with user — calling hook');
+            if (typeof _signedInHook === 'function') _signedInHook(0);
           }
-        }
       });
       _client.auth.getSession().then(({ data }) => {
         _user = data?.session?.user ?? null;
+        _accountView = _getDefaultAccountView();
+        _renderAccountPanelAuthState();
       });
     }
     return _client;
@@ -344,12 +339,105 @@ const _SW = (() => {
       return c.auth.updateUser({ password: newPassword });
     },
 
+    async refreshSession(email, password) {
+      const c = _getClient();
+      if (!c) return { error: { message: 'Supabase not loaded' } };
+      const result = await c.auth.signInWithPassword({ email, password });
+      if (!result?.error) {
+        try {
+          const { data } = await c.auth.getSession();
+          _user = data?.session?.user ?? _user;
+        } catch (_) {}
+      }
+      return result;
+    },
+
     async signOut() {
       const c = _getClient();
       if (!c) return;
       await c.auth.signOut();
       _user = null;
     },
+
+    async saveJournalProfilesToRemote(profiles, activeId) {
+      const c = _getClient();
+      if (!c) { console.warn('[JournalProfilesRemote] saveJournalProfilesToRemote — no Supabase client'); return; }
+      const { data: sd } = await c.auth.getSession();
+      const uid = sd?.session?.user?.id ?? _user?.id;
+      console.log('[JournalProfilesRemote] current user:', uid || '(none)');
+      if (!uid) { console.warn('[JournalProfilesRemote] saveJournalProfilesToRemote — no authenticated user'); return; }
+      const rows = (Array.isArray(profiles) ? profiles : []).map((p, i) => ({
+        id                    : p.id,
+        user_id               : uid,
+        name                  : p.name || 'Untitled Journal',
+        type                  : p.type || 'm15',
+        api_url               : p.apiUrl || '',
+        source                : p.source || 'api',
+        notion_database_id    : p.notionDatabaseId    || '',
+        notion_workspace_name : p.notionWorkspaceName || '',
+        connection_type       : p.connectionType      || 'api',
+        is_active             : p.id === String(activeId || ''),
+        sort_order            : i,
+        updated_at            : new Date().toISOString()
+      }));
+      console.log('[JournalProfilesRemote] saving to Supabase — profiles:', profiles.map(p => ({ id: p.id, name: p.name })), 'activeId:', activeId);
+      console.log('[JournalProfilesRemote] payload:', rows);
+      if (rows.length === 0) { console.warn('[JournalProfilesRemote] empty payload — nothing to upsert'); return; }
+      const { data: upsertData, error } = await c.from('journal_profiles')
+        .upsert(rows, { onConflict: 'user_id,id' })
+        .select('id');
+      if (error) {
+        console.error('[JournalProfilesRemote] error:', error.message, error);
+        return;
+      }
+      console.log('[JournalProfilesRemote] success — upserted:', upsertData?.map(r => r.id));
+      // Supprime les profils qui n'existent plus localement
+      const { data: existing, error: fetchErr } = await c.from('journal_profiles')
+        .select('id').eq('user_id', uid);
+      if (fetchErr) { console.warn('[JournalProfilesRemote] cleanup fetch error:', fetchErr.message); return; }
+      const ids = rows.map(r => r.id);
+      const toDelete = (existing || []).map(r => r.id).filter(id => !ids.includes(id));
+      if (toDelete.length > 0) {
+        const { error: delErr } = await c.from('journal_profiles').delete().eq('user_id', uid).in('id', toDelete);
+        if (delErr) console.warn('[JournalProfilesRemote] cleanup delete error:', delErr.message);
+        else console.log('[JournalProfilesRemote] stale profiles deleted:', toDelete);
+      }
+    },
+
+    async loadJournalProfilesFromRemote() {
+      const c = _getClient();
+      if (!c) { console.warn('[JournalProfilesRemote] loadJournalProfilesFromRemote — no Supabase client'); return null; }
+      const { data: sd } = await c.auth.getSession();
+      const uid = sd?.session?.user?.id ?? _user?.id;
+      if (!uid) { console.warn('[JournalProfilesRemote] loadJournalProfilesFromRemote — no authenticated user'); return null; }
+      const { data, error } = await c.from('journal_profiles')
+        .select('id,name,type,api_url,source,notion_database_id,notion_workspace_name,connection_type,is_active,sort_order')
+        .eq('user_id', uid)
+        .order('sort_order', { ascending: true });
+      if (error) {
+        console.error('[JournalProfilesRemote] load error:', error.message, error);
+        return null;
+      }
+      console.log('[JournalProfilesRemote] raw rows from DB:', data);
+      if (!data || data.length === 0) return null;
+      const mapped = data.map(r => ({
+        id                  : r.id,
+        name                : r.name,
+        type                : r.type,
+        apiUrl              : r.api_url,
+        source              : r.source,
+        notionDatabaseId    : r.notion_database_id    || '',
+        notionWorkspaceName : r.notion_workspace_name || '',
+        connectionType      : r.connection_type       || 'api',
+      }));
+      console.log('[JournalProfilesRemote] mapped profiles:', mapped);
+      return {
+        profiles: mapped,
+        activeId: data.find(r => r.is_active)?.id || data[0].id
+      };
+    },
+
+    setSignedInHook(fn) { _signedInHook = fn; },
 
     getUser() { return _user; },
 
@@ -401,6 +489,7 @@ function _loadCustomWidgetDefs() {
     const raw = localStorage.getItem(CUSTOM_WIDGETS_LS_KEY);
     _customWidgetDefsCache = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(_customWidgetDefsCache)) _customWidgetDefsCache = [];
+    _customWidgetDefsCache = _customWidgetDefsCache.map(_normalizeCustomWidgetDef);
   } catch { _customWidgetDefsCache = []; }
   return _customWidgetDefsCache;
 }
@@ -410,15 +499,222 @@ function _saveCustomWidgetDefs(defs) {
   try { localStorage.setItem(CUSTOM_WIDGETS_LS_KEY, JSON.stringify(defs)); } catch {}
 }
 
+function _normalizeCustomWidgetDef(def) {
+  if (!def || typeof def !== 'object') return def;
+  if (def.type !== 'heatmap') return def;
+  const settings = def.settings && typeof def.settings === 'object' ? def.settings : {};
+  return {
+    ...def,
+    settings: {
+      metricMode: settings.metricMode === 'n' ? 'n' : 'ev',
+      threshold: _parseHmThreshold(settings.threshold),
+      hardMode: settings.hardMode === true,
+    },
+  };
+}
+
 function _addCustomWidgetDef(def) {
   const defs = _loadCustomWidgetDefs();
-  defs.push(def);
+  defs.push(_normalizeCustomWidgetDef(def));
   _saveCustomWidgetDefs(defs);
 }
 
 function _removeCustomWidgetDef(id) {
   const defs = _loadCustomWidgetDefs().filter(d => d.id !== id);
   _saveCustomWidgetDefs(defs);
+}
+
+function _updateCustomWidgetDef(id, updater) {
+  const defs = _loadCustomWidgetDefs();
+  const idx = defs.findIndex(d => d.id === id);
+  if (idx < 0) return null;
+  const current = _normalizeCustomWidgetDef(defs[idx]);
+  const next = typeof updater === 'function'
+    ? updater(current)
+    : { ...current, ...(updater || {}) };
+  defs[idx] = _normalizeCustomWidgetDef(next);
+  _saveCustomWidgetDefs(defs);
+  return defs[idx];
+}
+
+// Bake the raw API field values for a freshly-created custom widget into both
+// in-memory trades and the localStorage cache, so the data survives page reload.
+// The raw API cache (_rawAPICacheMemory) is in-memory only and is cleared on
+// refresh; without this, the widget shows "no data" after reload because
+// _cwGetFieldValue can't find the value in either t[key] or t.extras.
+// Extract a widget-ready value from a raw Notion field and write it into
+// t.extras[fieldKey]. Stores a plain string (via _flattenApiWidgetValue), NOT
+// the raw Notion object — raw objects can be 10-50× larger and push the
+// localStorage trade cache into minimal/ultra serialization mode, which drops
+// extras entirely and causes widgets to show "no data" after page reload.
+function _extractWidgetValueForExtras(rawVal) {
+  if (rawVal === null || rawVal === undefined) return undefined;
+  // _flattenApiWidgetValue is defined later in the file but hoisted.
+  const flat = (typeof _flattenApiWidgetValue === 'function')
+    ? _flattenApiWidgetValue(rawVal)
+    : (typeof rawVal === 'string' ? rawVal : String(rawVal));
+  return flat || undefined;
+}
+
+function _bakeCustomWidgetExtrasIntoCache(def) {
+  const mode = localStorage.getItem(DS_KEY) || 'demo';
+  if (mode !== 'api') return;
+  const rawCache = _getRawAPICache();
+  if (!rawCache || !rawCache.length) return;
+
+  const fieldsToProcess = [];
+  if ((def.fieldSource || def.propertySource || '') === 'api' && def.field)
+    fieldsToProcess.push(def.field);
+  if ((def.field2Source || def.propertySource || '') === 'api' && def.field2)
+    fieldsToProcess.push(def.field2);
+  if (!fieldsToProcess.length) return;
+
+  const src = _getCurrentHTFSource();
+
+  // Update in-memory trades (the currently filtered/active view).
+  for (const t of (appState?.trades?.items || [])) {
+    if (typeof t._rawRowIndex !== 'number') continue;
+    const rawRow = rawCache[t._rawRowIndex];
+    if (!rawRow) continue;
+    t.extras = t.extras || {};
+    for (const fk of fieldsToProcess) {
+      if (t.extras[fk] !== undefined) continue;
+      if (Object.prototype.hasOwnProperty.call(rawRow, fk)) {
+        const v = _extractWidgetValueForExtras(rawRow[fk]);
+        if (v !== undefined) t.extras[fk] = v;
+      }
+    }
+  }
+
+  // Also update the full parsed cache (all trades, not just the filtered view)
+  // and re-persist to localStorage so extras survive a page reload.
+  const slot = _getProfileScopedSourceSlot(src);
+  const allTrades = Array.isArray(_parsedAPICacheMemory[slot]) ? _parsedAPICacheMemory[slot] : null;
+  if (allTrades && allTrades.length) {
+    let changed = false;
+    for (const t of allTrades) {
+      if (typeof t._rawRowIndex !== 'number') continue;
+      const rawRow = rawCache[t._rawRowIndex];
+      if (!rawRow) continue;
+      for (const fk of fieldsToProcess) {
+        if (t.extras && t.extras[fk] !== undefined) continue;
+        if (Object.prototype.hasOwnProperty.call(rawRow, fk)) {
+          const v = _extractWidgetValueForExtras(rawRow[fk]);
+          if (v !== undefined) {
+            t.extras = t.extras || {};
+            t.extras[fk] = v;
+            changed = true;
+          }
+        }
+      }
+    }
+    if (changed) setCachedAPIData(allTrades, src);
+  }
+}
+
+function _createCustomBarsWidget({ field, label, propertySource = 'mapped', inferredType = 'text', createdFrom = 'mapping-card' }) {
+  if (!field) return null;
+  const cwId = 'w-cust-' + Math.random().toString(36).slice(2, 9);
+  barSortState[cwId] = _getInitialBarSortMode(cwId);
+  const cwDef = {
+    id: cwId,
+    type: 'bars',
+    field,
+    label: label || field,
+    propertyKey: field,
+    propertyLabel: label || field,
+    fieldSource: propertySource,
+    propertySource,
+    inferredType,
+    createdFrom,
+  };
+  _addCustomWidgetDef(cwDef);
+  _bakeCustomWidgetExtrasIntoCache(cwDef);
+  _injectNewCustomWidget(cwDef);
+  return cwDef;
+}
+
+function _createCustomHeatmapWidget({
+  field,
+  field2,
+  label,
+  fieldLabel = '',
+  field2Label = '',
+  fieldSource = 'mapped',
+  field2Source = 'mapped',
+  propertySource = 'mapped',
+  inferredType = 'text',
+  createdFrom = 'mapping-card',
+}) {
+  if (!field || !field2) return null;
+  const cwId = 'w-cust-' + Math.random().toString(36).slice(2, 9);
+  const cwDef = {
+    id: cwId,
+    type: 'heatmap',
+    field,
+    field2,
+    label: label || `${field} × ${field2}`,
+    fieldLabel: fieldLabel || field,
+    propertyKey: field,
+    propertyLabel: label || field,
+    fieldSource,
+    field2Source,
+    propertySource,
+    inferredType,
+    createdFrom,
+    field2Label,
+    settings: {
+      metricMode: 'ev',
+      threshold: 5,
+      hardMode: false,
+    },
+  };
+  _addCustomWidgetDef(cwDef);
+  _bakeCustomWidgetExtrasIntoCache(cwDef);
+  _injectNewCustomWidget(cwDef);
+  return cwDef;
+}
+
+function _getCustomHeatmapRuntimeState(def) {
+  const settings = def?.settings || {};
+  if (_heatmapSyncEnabled) {
+    return {
+      metricMode: _sdMetric,
+      threshold: _heatmapThreshold,
+      hardMode: _hmHardMode,
+    };
+  }
+  return {
+    metricMode: settings.metricMode === 'n' ? 'n' : 'ev',
+    threshold: _parseHmThreshold(settings.threshold),
+    hardMode: settings.hardMode === true,
+  };
+}
+
+function _renderSharedHeatmapToolbarHTML(scope = 'sd', def = null) {
+  const isCustom = !!def;
+  const isSd = scope === 'sd';
+  const runtime = isCustom ? _getCustomHeatmapRuntimeState(def) : null;
+  const metric = isCustom ? runtime.metricMode : (isSd ? _sdMetric : _pairSessionMetric);
+  const threshold = isCustom ? runtime.threshold : (isSd ? _heatmapThreshold : _hourHeatmapThreshold);
+  const hardMode = isCustom ? runtime.hardMode : _hmHardMode;
+  const syncAction = 'toggle-heatmap-sync';
+  const metricAction = isSd ? 'set-heatmap-metric' : 'set-pair-session-metric';
+  const thresholdAction = isSd ? 'set-heatmap-threshold' : 'set-pair-session-threshold';
+  const hardModeAction = 'toggle-hard-mode';
+  const cwAttr = isCustom ? ` data-cw-id="${_escapeAttr(def.id)}"` : '';
+  return `
+    <div class="cc-head-controls cc-head-controls-sm">
+      <button class="bar-sort-btn hm-sync-btn${_heatmapSyncEnabled ? ' active' : ''}" data-action="${syncAction}" data-hm-scope="${_escapeAttr(scope)}"${cwAttr} title="Sync both heatmaps together">⛓</button>
+      ${isCustom ? '' : `<button class="cc-tab hm-hardmode-btn${hardMode ? ' active' : ''}" data-action="${hardModeAction}"${cwAttr} title="Hardmode: red/green around 40%">Hardmode</button>`}
+      <div class="cc-tabs hm-metric-btns" data-hm-scope="${_escapeAttr(scope)}">
+        <button class="cc-tab${metric === 'ev' ? ' active' : ''}" data-action="${metricAction}"${cwAttr} data-metric="ev">Avg R</button>
+        <button class="cc-tab${metric === 'n' ? ' active' : ''}" data-action="${metricAction}"${cwAttr} data-metric="n">Volume</button>
+      </div>
+      <div class="cc-tabs hm-threshold-btns" data-hm-scope="${_escapeAttr(scope)}" title="Hachures on cells with n &lt; threshold">
+        ${[0, 5, 10, 20].map(n => `<button class="cc-tab${threshold === n ? ' active' : ''}" data-action="${thresholdAction}"${cwAttr} data-threshold="${n}">${n}</button>`).join('')}
+      </div>
+    </div>`;
 }
 const PRESET_LS_KEY = 'flipping_presets';
 
@@ -1440,6 +1736,25 @@ function handleActionClick(event) {
     case 'close-csv-overlay': closeCsvOverlay(); break;
     case 'set-data-source': setDataSource(actionEl.dataset.source); break;
     case 'refresh-api-source': refreshAPISource(); break;
+    case 'toggle-account-section': _toggleAccountSection(); break;
+    case 'toggle-data-sources-section': _toggleDataSourcesSection(); break;
+    case 'toggle-integrations-section':    _toggleIntegrationsSection(); break;
+    case 'notion-integration-connect':     _handleNotionIntegrationConnect(); break;
+    case 'notion-integration-reconnect':   _handleNotionIntegrationConnect(); break;
+    case 'notion-integration-disconnect':  _handleNotionIntegrationDisconnect(); break;
+    case 'notion-editor-db-refresh':       _notionDbPickerProfileId = ''; _handleNotionDbPickerOpen('_editor'); break;
+    case 'journal-profile-add-source': console.log('[JournalProfilesUI] add source clicked'); _openJournalProfileEditor('create'); break;
+    case 'journal-profile-save-editor': console.log('[JournalProfilesUI] save source clicked, mode:', _journalProfileEditorMode); _saveJournalProfileEditor(); break;
+    case 'journal-profile-cancel-editor': _closeJournalProfileEditor(); break;
+    case 'journal-profile-test-connection': _testJournalProfileEditorConnection(); break;
+    case 'journal-profile-connect-notion': _handleNotionConnectClick(); break;
+    case 'journal-profile-row-switch': _handleJournalProfileSelectChange(actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-row-menu-toggle': event.stopPropagation(); _toggleJournalProfileRowMenu(actionEl); break;
+    case 'journal-profile-row-edit': event.stopPropagation(); _openJournalProfileEditor('edit', actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-row-delete': event.stopPropagation(); _deleteJournalProfileById(actionEl.dataset.profileId || ''); break;
+    case 'notion-db-picker-open':    event.stopPropagation(); _handleNotionDbPickerOpen(actionEl.dataset.profileId || ''); break;
+    case 'notion-db-picker-close':   event.stopPropagation(); _handleNotionDbPickerClose(); break;
+    case 'notion-db-picker-confirm': event.stopPropagation(); _handleNotionDbPickerConfirm(actionEl.dataset.profileId || ''); break;
     case 'dismiss-onboard': {
       document.getElementById('onboard-banner')?.classList.add('is-hidden');
       try { localStorage.setItem('onboard_dismissed', '1'); } catch(e) {}
@@ -1471,7 +1786,19 @@ function handleActionClick(event) {
       }
       break;
     }
+    case 'toggle-account-panel': toggleAccountPanel(); document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
     case 'toggle-settings-panel': toggleSettingsPanel(); document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
+    case 'toggle-password-visibility': event.stopPropagation(); _togglePasswordVisibility(actionEl); break;
+    case 'auth-show-forgot-password': event.stopPropagation(); _setAccountView('forgot_password', { clearForms: true }); break;
+    case 'auth-back-to-sign-in': event.stopPropagation(); _setAccountView('signed_out', { clearForms: true }); break;
+    case 'auth-show-change-password': event.stopPropagation(); _setAccountView('change_password', { clearForms: true }); break;
+    case 'auth-cancel-change-password': event.stopPropagation(); _setAccountView('signed_in', { clearForms: true }); break;
+    case 'auth-cancel-recovery': event.stopPropagation(); _accountRecoveryMode = false; _setAccountView(_getDefaultAccountView(), { clearForms: true }); break;
+    case 'sw-login': event.stopPropagation(); _handleAccountLogin(); break;
+    case 'sw-signup': event.stopPropagation(); _handleAccountSignup(); break;
+    case 'sw-send-reset-link': event.stopPropagation(); _handleAccountSendResetLink(); break;
+    case 'sw-update-password': event.stopPropagation(); _handleAccountUpdatePassword(); break;
+    case 'sw-logout': event.stopPropagation(); _handleAccountLogout(); break;
     case 'toggle-ghost-mode': event.stopPropagation(); _setGhostMode(actionEl.dataset.ghost === 'true'); break;
     case 'set-warning-threshold': event.stopPropagation(); _setWarningThreshold(parseInt(actionEl.dataset.threshold, 10)); break;
     case 'toggle-data-hub':        event.stopPropagation(); toggleDataHub(); break;
@@ -1479,6 +1806,14 @@ function handleActionClick(event) {
     case 'toggle-attention-panel': event.stopPropagation(); toggleAttentionPanel(); break;
     case 'toggle-journal-panel':   event.stopPropagation(); toggleJournalPanel(); break;
     case 'toggle-guide-panel':     event.stopPropagation(); toggleGuidePanel(actionEl); break;
+    case 'cw-open-create-modal':   event.stopPropagation(); _openCreateWidgetModal(actionEl.dataset.cwType); break;
+    case 'cw-create-close':        event.stopPropagation(); _closeCreateWidgetBuilder(); break;
+    case 'cw-create-select-field': event.stopPropagation(); _selectCreateWidgetField(actionEl.dataset.cwId); break;
+    case 'cw-create-set-x':        event.stopPropagation(); _setCreateWidgetHeatmapAxis('x', actionEl.dataset.cwId); break;
+    case 'cw-create-set-y':        event.stopPropagation(); _setCreateWidgetHeatmapAxis('y', actionEl.dataset.cwId); break;
+    case 'cw-create-set-filter':   event.stopPropagation(); _setCreateWidgetSourceFilter(actionEl.dataset.cwFilter); break;
+    case 'cw-create-continue-inline': event.stopPropagation(); _selectCreateWidgetField(actionEl.dataset.cwId); _handleCreateWidgetContinue(); break;
+    case 'cw-create-continue':     event.stopPropagation(); _handleCreateWidgetContinue(); break;
     case 'copy-snippet':           event.stopPropagation(); _copySnippet(actionEl); break;
     case 'open-remap-picker':      event.stopPropagation(); openRemapPicker(actionEl); break;
     case 'pick-remap-column':      event.stopPropagation(); pickRemapColumn(actionEl); break;
@@ -1487,10 +1822,13 @@ function handleActionClick(event) {
       event.stopPropagation();
       const cwField = actionEl.dataset.cwField;
       const cwLabel = actionEl.dataset.cwLabel || cwField;
-      const cwId    = 'w-cust-' + Math.random().toString(36).slice(2, 9);
-      const cwDef   = { id: cwId, type: 'bars', field: cwField, label: cwLabel };
-      _addCustomWidgetDef(cwDef);
-      _injectNewCustomWidget(cwDef);
+      _createCustomBarsWidget({
+        field: cwField,
+        label: cwLabel,
+        propertySource: 'mapped',
+        inferredType: 'text',
+        createdFrom: 'mapping-card',
+      });
       const ljpList = actionEl.closest('#ljp-list');
       if (ljpList) {
         const items = (appState.trades && appState.trades.items) || [];
@@ -1507,10 +1845,14 @@ function handleActionClick(event) {
       const cwField  = actionEl.dataset.cwField;
       const cwField2 = actionEl.dataset.cwField2;
       const cwLabel  = actionEl.dataset.cwLabel || (cwField + ' × ' + cwField2);
-      const cwId     = 'w-cust-' + Math.random().toString(36).slice(2, 9);
-      const cwDef    = { id: cwId, type: 'heatmap', field: cwField, field2: cwField2, label: cwLabel };
-      _addCustomWidgetDef(cwDef);
-      _injectNewCustomWidget(cwDef);
+      _createCustomHeatmapWidget({
+        field: cwField,
+        field2: cwField2,
+        label: cwLabel,
+        propertySource: 'mapped',
+        inferredType: 'text',
+        createdFrom: 'mapping-card',
+      });
       document.querySelectorAll('.cw-heatmap-picker').forEach(el => el.remove());
       const ljpList = actionEl.closest('#ljp-list');
       if (ljpList) {
@@ -1525,6 +1867,27 @@ function handleActionClick(event) {
       if (!cwId) break;
       _destroyCustomWidget(cwId);
       const ljpList = actionEl.closest('#ljp-list');
+      if (ljpList) {
+        const items = (appState.trades && appState.trades.items) || [];
+        _renderCwMappingSection(ljpList, items);
+      }
+      break;
+    }
+    case 'layout-delete-widget-confirm':
+      event.stopPropagation();
+      _openDeleteConfirm(actionEl.dataset.cwId, actionEl);
+      break;
+    case 'layout-delete-cancel':
+      event.stopPropagation();
+      _closeDeleteConfirm();
+      break;
+    case 'layout-delete-confirm': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      if (!cwId) break;
+      _closeDeleteConfirm();
+      _destroyCustomWidget(cwId);
+      const ljpList = document.getElementById('ljp-list');
       if (ljpList) {
         const items = (appState.trades && appState.trades.items) || [];
         _renderCwMappingSection(ljpList, items);
@@ -1622,10 +1985,10 @@ function handleActionClick(event) {
     case 'set-bar-sort': setBarSort(actionEl.dataset.chart, actionEl.dataset.sort); break;
     case 'set-hour-sort': setHourSort(actionEl.dataset.sort); break;
     case 'toggle-sort-sync': toggleSortSync(); break;
-    case 'toggle-heatmap-sync': toggleHeatmapSync(); break;
-    case 'toggle-hard-mode': toggleHardMode(); break;
-    case 'set-heatmap-metric': setHeatmapMetric(actionEl.dataset.metric); break;
-    case 'set-heatmap-threshold': setHeatmapThreshold(actionEl.dataset.threshold); break;
+    case 'toggle-heatmap-sync': toggleHeatmapSync(actionEl.dataset.cwId, actionEl.dataset.hmScope); break;
+    case 'toggle-hard-mode': toggleHardMode(actionEl.dataset.cwId); break;
+    case 'set-heatmap-metric': setHeatmapMetric(actionEl.dataset.metric, actionEl.dataset.cwId); break;
+    case 'set-heatmap-threshold': setHeatmapThreshold(actionEl.dataset.threshold, actionEl.dataset.cwId); break;
     case 'set-pair-session-threshold': setPairSessionThreshold(actionEl.dataset.threshold); break;
     case 'set-streak-tab': setStreakTab(actionEl.dataset.tab); break;
     case 'set-pair-session-metric': setPairSessionMetric(actionEl.dataset.metric); break;
@@ -1911,6 +2274,11 @@ function handleActionChange(event) {
     onHexInput(event.target.dataset.themeVar, event.target.dataset.themeSafe);
     return;
   }
+  if (event.target.name === 'jp-conn-type') {
+    _journalProfileEditorConnectionType = event.target.value;
+    _toggleJournalProfileConnectionSections(event.target.value);
+    return;
+  }
   if (event.target.name === 'notionOpenMode') {
     setNotionOpenMode(event.target.value);
     return;
@@ -1945,6 +2313,10 @@ function handleActionChange(event) {
   }
 }
 function handleActionInput(event) {
+  if (event.target?.id === 'journal-profile-name-input' || event.target?.id === 'journal-profile-type-input' || event.target?.id === 'journal-profile-api-url-input') {
+    _resetJournalProfileCheckState();
+    return;
+  }
   if (event.target.matches('[data-theme-input="hex"]')) {
     onHexInput(event.target.dataset.themeVar, event.target.dataset.themeSafe);
     return;
@@ -2639,8 +3011,14 @@ const CACHE_CLEANUP_FLAG = 'flipping_cache_cleanup_v1';
 const CACHE_CLEANUP_LEGACY_KEYS = [
   'apiTradesCache',                   // pre-v2 parsed cache (up to 3+ MB)
   'apiTradesCache_v2',                // pre-rrmax parsed cache
+  'apiTradesCache_v2_rrmax',          // pre-profile scoped parsed cache (m15 default)
+  'apiTradesCache_v2_rrmax_m15',      // pre-profile scoped parsed cache (m15)
+  'apiTradesCache_v2_rrmax_h4',       // pre-profile scoped parsed cache (h4)
   'apiTradesCacheTime',               // pre-v2 timestamp (orphaned)
   'apiTradesCacheTime_v2',            // pre-rrmax timestamp (orphaned)
+  'apiTradesCacheTime_v2_rrmax',      // pre-profile scoped timestamp (m15 default)
+  'apiTradesCacheTime_v2_rrmax_m15',  // pre-profile scoped timestamp (m15)
+  'apiTradesCacheTime_v2_rrmax_h4',   // pre-profile scoped timestamp (h4)
   'apiTradesRawCache_v1',             // raw cache (now in-memory only, ~9 MB on upgrade users)
   'mc2-section-layout-v1',            // superseded by mc2-section-layout-v2
   'pp-section-layout-v2',             // superseded by pp-section-layout-v3
@@ -2651,20 +3029,28 @@ const CACHE_CLEANUP_LEGACY_KEYS = [
   'flipping_bar_label_mode',          // superseded by flipping_bar_mode + flipping_bar_view
 ];
 let _cacheMigrationStats = { removedCount: 0, freedBytes: 0 };
+function _removeLocalStorageKeyWithAudit(key, reason = 'legacy') {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === null) return 0;
+    const sizeBytes = _storageBytes(key) + _storageBytes(value);
+    localStorage.removeItem(key);
+    console.warn('[CacheCleanup] removed legacy API cache key:', key, 'sizeKB:', (sizeBytes / 1024).toFixed(1), 'reason:', reason);
+    return sizeBytes;
+  } catch (e) {
+    console.warn('[Migration] Failed to remove', key, e && e.message);
+    return 0;
+  }
+}
 
 function _runCacheCleanupMigration() {
   if (localStorage.getItem(CACHE_CLEANUP_FLAG)) return;
   let removed = 0, freedBytes = 0;
   for (const k of CACHE_CLEANUP_LEGACY_KEYS) {
-    try {
-      const v = localStorage.getItem(k);
-      if (v !== null) {
-        freedBytes += (k.length + v.length) * 2; // UTF-16 approx
-        localStorage.removeItem(k);
-        removed++;
-      }
-    } catch (e) {
-      console.warn('[Migration] Failed to remove', k, e && e.message);
+    const removedBytes = _removeLocalStorageKeyWithAudit(k, 'startup-migration');
+    if (removedBytes > 0) {
+      freedBytes += removedBytes;
+      removed++;
     }
   }
   try { localStorage.setItem(CACHE_CLEANUP_FLAG, '1'); } catch (e) {}
@@ -2676,21 +3062,39 @@ function _runCacheCleanupMigration() {
 // Fires exactly once per page load after migration + parsed hydration +
 // (optional) Fix A backfill complete. Prefix fixed to "[Cache]" per spec.
 let _cacheTelemetryLogged = false;
+function _getLocalStorageUsageEntries() {
+  const entries = [];
+  let totalBytes = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    const value = localStorage.getItem(key);
+    const sizeBytes = _storageBytes(key) + _storageBytes(value);
+    totalBytes += sizeBytes;
+    entries.push({ key, sizeBytes });
+  }
+  entries.sort((a, b) => b.sizeBytes - a.sizeBytes);
+  return { totalBytes, entries };
+}
+function _logLocalStorageAudit(limit = 20) {
+  try {
+    const { entries } = _getLocalStorageUsageEntries();
+    entries.slice(0, limit).forEach(entry => {
+      console.log('[LocalStorageAudit]', entry.key, `${(entry.sizeBytes / 1024).toFixed(1)} KB`);
+    });
+  } catch (e) {}
+}
 function _logCacheInitTelemetry() {
   if (_cacheTelemetryLogged) return;
   _cacheTelemetryLogged = true;
   try {
-    const byteLen = s => (s == null ? 0 : s.length * 2);
     const kb1 = b => (b / 1024).toFixed(1);
-    const parsedBytes = byteLen(localStorage.getItem(_cacheKey()));
-    const fieldsBytes = byteLen(localStorage.getItem(_fieldNamesKey()));
-    let totalBytes = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      totalBytes += byteLen(k) + byteLen(localStorage.getItem(k));
-    }
+    const parsedBytes = _storageBytes(localStorage.getItem(_cacheKey()));
+    const fieldsBytes = _storageBytes(localStorage.getItem(_fieldNamesKey()));
+    const { totalBytes } = _getLocalStorageUsageEntries();
     const freedKB = kb1(_cacheMigrationStats.freedBytes);
     console.log(`[Cache] Init complete. Migration: ${_cacheMigrationStats.removedCount} legacy keys removed (freed ${freedKB} KB). Parsed: ${kb1(parsedBytes)} KB, FieldNames: ${kb1(fieldsBytes)} KB, Total LS: ${kb1(totalBytes)} KB.`);
+    _logLocalStorageAudit(20);
   } catch (e) {
     // Telemetry must never block init — swallow any DOM/storage access errors.
   }
@@ -2699,13 +3103,1323 @@ function _logCacheInitTelemetry() {
 const API_URL_DEFAULT = 'https://notion-dashboard-api-2.vercel.app/api/trades';
 // API URL can be overridden from the settings panel (stored in localStorage)
 const getAPIURL = () => {
-  const base = localStorage.getItem('flipping_api_url') || API_URL_DEFAULT;
+  const activeProfile = getActiveJournalProfile();
+  const activeProfileId = String(activeProfile?.id || '').trim();
+  const rawActiveProfile = activeProfileId
+    ? _getStoredJournalProfilesRaw().find(profile => String(profile?.id || '').trim() === activeProfileId)
+    : null;
+  const activeProfileUrl = String(rawActiveProfile?.apiUrl || '').trim();
+  const base = activeProfileUrl
+    || localStorage.getItem('flipping_api_url')
+    || API_URL_DEFAULT;
   const htf  = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
   const sep  = base.includes('?') ? '&' : '?';
-  return `${base}${sep}source=${htf}`;
+  const finalUrl = `${base}${sep}source=${htf}`;
+  console.debug('[JournalProfile] API URL used:', finalUrl);
+  return finalUrl;
 };
+const JOURNAL_PROFILES_LS_KEY = 'journalProfiles_v1';
+const ACTIVE_JOURNAL_PROFILE_LS_KEY = 'activeJournalProfileId_v1';
 const DS_KEY         = 'dataSource';       // localStorage: "demo" | "csv" | "api"
 const HTF_SOURCE_KEY = 'htfSource';        // localStorage: "m15" | "h4"
+function _makeJournalProfileId() {
+  return 'jp_' + Math.random().toString(36).slice(2, 10);
+}
+function _normalizeJournalProfile(profile = {}) {
+  const id = String(profile.id || '').trim() || _makeJournalProfileId();
+  const name = String(profile.name || '').trim() || 'Untitled Journal';
+  const type = String(profile.type || '').trim() || 'm15';
+  const source = String(profile.source || '').trim() || 'api';
+  const apiUrl = String(profile.apiUrl || '').trim() || API_URL_DEFAULT;
+  const notionDatabaseId    = String(profile.notionDatabaseId    || '').trim();
+  const notionDatabaseTitle = String(profile.notionDatabaseTitle || '').trim();
+  const notionWorkspaceName = String(profile.notionWorkspaceName || '').trim();
+  const connectionType      = String(profile.connectionType      || '').trim() || 'api';
+  return { id, name, type, apiUrl, source, notionDatabaseId, notionDatabaseTitle, notionWorkspaceName, connectionType };
+}
+function _getStoredJournalProfilesRaw() {
+  try {
+    const raw = localStorage.getItem(JOURNAL_PROFILES_LS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+function getJournalProfiles() {
+  return _getStoredJournalProfilesRaw().map(_normalizeJournalProfile);
+}
+function saveJournalProfiles(profiles) {
+  const normalized = Array.isArray(profiles)
+    ? profiles.map(_normalizeJournalProfile)
+    : [];
+  try {
+    localStorage.setItem(JOURNAL_PROFILES_LS_KEY, JSON.stringify(normalized));
+  } catch {}
+  const activeId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '');
+  console.log('[JournalProfilesRemote] saveJournalProfiles called — profiles:', normalized.length, 'activeId:', activeId);
+  window._SW.saveJournalProfilesToRemote(normalized, activeId).catch(e => console.error('[JournalProfilesRemote] saveJournalProfiles error:', e));
+  return normalized;
+}
+function getActiveJournalProfile() {
+  const profiles = getJournalProfiles();
+  if (!profiles.length) return null;
+  const activeId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '').trim();
+  return profiles.find(p => p.id === activeId) || profiles[0] || null;
+}
+function setActiveJournalProfile(id) {
+  const profiles = getJournalProfiles();
+  if (!profiles.length) return null;
+  const targetId = String(id || '').trim();
+  const active = profiles.find(p => p.id === targetId) || profiles[0] || null;
+  if (!active) return null;
+  try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, active.id); } catch {}
+  console.log('[JournalProfilesRemote] setActiveJournalProfile → calling saveJournalProfilesToRemote, activeId:', active.id);
+  window._SW.saveJournalProfilesToRemote(profiles, active.id).catch(e => console.error('[JournalProfilesRemote] setActiveJournalProfile error:', e));
+  return active;
+}
+// Appelée directement par _SW après SIGNED_IN ou INITIAL_SESSION (pas via CustomEvent).
+// Si la table journal_profiles a des données → on les écrit dans localStorage (source de vérité).
+// Sinon → on y pousse les profils locaux (migration initiale).
+async function hydrateJournalProfilesFromRemote(mergedFromSync) {
+  console.log('[JournalProfilesRemote] hydrateJournalProfilesFromRemote called, mergedFromSync:', mergedFromSync);
+  let jpMerged = 0;
+  const remote = await _SW.loadJournalProfilesFromRemote();
+  if (remote) {
+    try { localStorage.setItem(JOURNAL_PROFILES_LS_KEY, JSON.stringify(remote.profiles)); } catch {}
+    try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, remote.activeId); } catch {}
+    jpMerged = remote.profiles.length;
+    console.log('[JournalProfilesRemote] loaded', jpMerged, 'profiles from remote — applied to localStorage');
+    console.log('[JournalProfilesRemote] localStorage now contains:', JSON.parse(localStorage.getItem(JOURNAL_PROFILES_LS_KEY) || '[]').map(p => ({ id: p.id, name: p.name })));
+  } else {
+    const localProfiles = getJournalProfiles();
+    const localActiveId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '');
+    console.log('[JournalProfilesRemote] remote empty — migrating', localProfiles.length, 'local profiles');
+    if (localProfiles.length > 0) {
+      await _SW.saveJournalProfilesToRemote(localProfiles, localActiveId);
+    }
+  }
+  const totalMerged = (mergedFromSync || 0) + jpMerged;
+  if (totalMerged > 0 && !sessionStorage.getItem('_sw_synced')) {
+    sessionStorage.setItem('_sw_synced', '1');
+    window.location.reload();
+  } else if (jpMerged > 0) {
+    // Pas de reload (session déjà synced), mais l'UI doit refléter les profils remote
+    console.log('[JournalProfilesRemote] no reload needed — refreshing UI with remote profiles');
+    if (typeof _syncJournalProfileUI === 'function') _syncJournalProfileUI();
+  }
+}
+_SW.setSignedInHook(hydrateJournalProfilesFromRemote);
+console.log('[JournalProfilesRemote] hook registered');
+
+function ensureDefaultJournalProfile() {
+  let profiles = getJournalProfiles();
+  if (!profiles.length) {
+    profiles = saveJournalProfiles([{
+      id: _makeJournalProfileId(),
+      name: 'M15 Personnel',
+      type: 'm15',
+      apiUrl: API_URL_DEFAULT,
+      source: 'api',
+    }]);
+  } else {
+    const normalized = profiles.map(_normalizeJournalProfile);
+    const changed = JSON.stringify(normalized) !== JSON.stringify(profiles);
+    profiles = changed ? saveJournalProfiles(normalized) : normalized;
+  }
+
+  const activeId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '').trim();
+  if (!profiles.some(p => p.id === activeId)) {
+    try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, profiles[0].id); } catch {}
+  }
+  return getActiveJournalProfile();
+}
+ensureDefaultJournalProfile();
+function _cleanupLegacyApiCacheKeysForProfiles() {
+  if (localStorage.getItem(JOURNAL_PROFILES_LS_KEY) === null) return 0;
+  const legacyKeys = [
+    'apiTradesCache_v2_rrmax',
+    'apiTradesCache_v2_rrmax_m15',
+    'apiTradesCache_v2_rrmax_h4',
+    'apiTradesCacheTime_v2_rrmax',
+    'apiTradesCacheTime_v2_rrmax_m15',
+    'apiTradesCacheTime_v2_rrmax_h4',
+  ];
+  let removed = 0;
+  for (const key of legacyKeys) {
+    removed += _removeLocalStorageKeyWithAudit(key, 'profile-scoped-startup') > 0 ? 1 : 0;
+  }
+  return removed;
+}
+_cleanupLegacyApiCacheKeysForProfiles();
+function _isDefaultJournalProfile(profile) {
+  if (!profile || typeof profile !== 'object') return false;
+  return String(profile.name || '').trim() === 'M15 Personnel'
+    && String(profile.type || '').trim() === 'm15'
+    && String(profile.source || '').trim() === 'api'
+    && String(profile.apiUrl || '').trim() === API_URL_DEFAULT;
+}
+function _getJournalProfileCacheContext() {
+  const active = getActiveJournalProfile();
+  const profileId = String(active?.id || '').trim();
+  console.debug('[JournalProfile] Active profile:', profileId || '(legacy)');
+  return { active, profileId, profiles: getJournalProfiles() };
+}
+function _getJournalProfilePreferredSource(profile = null) {
+  const preferred = String(profile?.type || '').trim().toLowerCase();
+  return preferred === 'm15' || preferred === 'h4' ? preferred : null;
+}
+function _getJournalProfileDisplayName(profile = null) {
+  if (!profile) return 'Profile: —';
+  const name = String(profile.name || '').trim() || 'Untitled Journal';
+  const type = String(profile.type || '').trim() || 'custom';
+  return `Profile: ${name} (${type})`;
+}
+const ACCOUNT_SECTION_OPEN_LS_KEY = 'accountSectionOpen_v1';
+const DATA_SOURCES_SECTION_OPEN_LS_KEY = 'dataSourcesSectionOpen_v1';
+let _journalProfileManagerOpen = false;
+let _journalProfileEditorOpen = false;
+let _journalProfileEditorMode = 'create';
+let _journalProfileEditingId = '';
+let _journalProfileRowMenuOpenId = '';
+let _journalProfileSwitcherOpen = false;
+let _journalProfileCheckState = 'idle';
+let _journalProfileCheckResetTimer = null;
+let _journalProfileEditorConnectionType = 'api';
+let _notionConnectState = 'idle'; // 'idle' | 'loading' | 'info'
+let _togglingConnSections = false; // re-entry guard for _toggleJournalProfileConnectionSections
+let _notionDbPickerProfileId  = ''; // which profile currently shows the DB picker
+let _notionDbPickerState      = 'idle'; // 'idle' | 'loading' | 'loaded' | 'error'
+let _notionDbPickerDatabases  = []; // fetched [{id, title, url}]
+// ── Integrations (OAuth connections) state ────────────────────────────────────
+let _notionIntegrationStatus   = 'unknown'; // 'unknown'|'connected'|'disconnected'|'checking'
+let _notionIntegrationWorkspace = '';
+let _notionIntegrationLastCheck = 0;
+let _checkNotionStatusInFlight  = false;
+const INTEGRATIONS_SECTION_LS_KEY = 'integrationsSectionOpen_v1';
+let _integrationsSectionOpen = (() => {
+  try { return localStorage.getItem(INTEGRATIONS_SECTION_LS_KEY) === '1'; } catch { return false; }
+})();
+let _accountSectionOpen = (() => {
+  try { return localStorage.getItem(ACCOUNT_SECTION_OPEN_LS_KEY) === '1'; } catch { return false; }
+})();
+let _dataSourcesSectionOpen = (() => {
+  try { return localStorage.getItem(DATA_SOURCES_SECTION_OPEN_LS_KEY) === '1'; } catch { return false; }
+})();
+function _closeAccountPanel() {
+  if (accountPanelOpen) toggleAccountPanel();
+}
+function _persistAccountSectionState(key, value) {
+  try { localStorage.setItem(key, value ? '1' : '0'); } catch {}
+}
+function _toggleAccountSection(force = null) {
+  _accountSectionOpen = typeof force === 'boolean' ? force : !_accountSectionOpen;
+  _persistAccountSectionState(ACCOUNT_SECTION_OPEN_LS_KEY, _accountSectionOpen);
+  _syncJournalProfileUI();
+}
+function _toggleDataSourcesSection(force = null) {
+  _dataSourcesSectionOpen = typeof force === 'boolean' ? force : !_dataSourcesSectionOpen;
+  _persistAccountSectionState(DATA_SOURCES_SECTION_OPEN_LS_KEY, _dataSourcesSectionOpen);
+  if (_dataSourcesSectionOpen) _checkNotionIntegrationStatus();
+  _syncJournalProfileUI();
+}
+function _toggleIntegrationsSection(force = null) {
+  _integrationsSectionOpen = typeof force === 'boolean' ? force : !_integrationsSectionOpen;
+  _persistAccountSectionState(INTEGRATIONS_SECTION_LS_KEY, _integrationsSectionOpen);
+  if (_integrationsSectionOpen) _checkNotionIntegrationStatus();
+  _syncJournalProfileUI();
+}
+async function _checkNotionIntegrationStatus() {
+  const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
+  if (!user?.id) {
+    // Auth not ready yet — stay 'unknown', don't flash "Not connected"
+    if (_notionIntegrationStatus !== 'unknown') {
+      _notionIntegrationStatus = 'unknown';
+      _syncJournalProfileUI();
+    }
+    return;
+  }
+  if (_checkNotionStatusInFlight) return;
+  if (_notionIntegrationStatus === 'checking') return;
+  const now = Date.now();
+  if (_notionIntegrationStatus === 'connected' && (now - _notionIntegrationLastCheck) < 60000) return;
+
+  _checkNotionStatusInFlight = true;
+  _notionIntegrationStatus   = 'checking';
+  _syncJournalProfileUI();
+
+  const endpoint = `${NOTION_OAUTH_BACKEND}/api/notion/connection-status?user_id=${encodeURIComponent(user.id)}`;
+  console.log('[Integrations] check start userId:', user.id);
+  console.log('[Integrations] endpoint:', endpoint);
+
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 10000);
+
+  try {
+    const resp = await fetch(endpoint, { signal: ctrl.signal });
+    clearTimeout(timeoutId);
+    console.log('[Integrations] response status:', resp.status);
+
+    if (resp.ok) {
+      const data = await resp.json();
+      console.log('[Integrations] response json:', JSON.stringify(data));
+      if (data.connected) {
+        _notionIntegrationStatus   = 'connected';
+        _notionIntegrationWorkspace = data.workspace_name || '';
+        _notionIntegrationLastCheck = Date.now();
+        console.log('[Integrations] set status: connected — workspace:', _notionIntegrationWorkspace);
+      } else {
+        _notionIntegrationStatus   = 'disconnected';
+        _notionIntegrationWorkspace = '';
+        console.log('[Integrations] set status: disconnected');
+      }
+      // Auto-load databases if the editor is open with Notion type and picker not already active
+      if (_notionIntegrationStatus === 'connected'
+          && _journalProfileEditorOpen
+          && _journalProfileEditorConnectionType === 'notion'
+          && _notionDbPickerState === 'idle'
+          && _notionDbPickerProfileId !== '_editor') {
+        console.log('[DataSource] loading databases');
+        _handleNotionDbPickerOpen('_editor');
+      }
+    } else {
+      _notionIntegrationStatus = 'error';
+      console.warn('[Integrations] set status: error — HTTP', resp.status);
+    }
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      console.warn('[Integrations] set status: error — timeout after 10s');
+    } else {
+      console.warn('[Integrations] set status: error —', e.message);
+    }
+    _notionIntegrationStatus = 'error';
+  }
+
+  _checkNotionStatusInFlight = false;
+  _syncJournalProfileUI();
+}
+function _renderIntegrationsSection() {
+  const st = _notionIntegrationStatus;
+  const ws = _escapeHtml(_notionIntegrationWorkspace || '');
+  let badge, badgeClass, actions;
+  if (st === 'connected') {
+    badge = '● Connected'; badgeClass = 'int-badge--connected';
+    actions = `
+      <button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-reconnect">Reconnect</button>
+      <button class="account-secondary-btn int-btn int-btn--danger" type="button" data-action="notion-integration-disconnect">Disconnect</button>`;
+  } else if (st === 'checking' || st === 'unknown') {
+    badge = '● Checking…'; badgeClass = 'int-badge--checking';
+    actions = '';
+  } else if (st === 'error') {
+    badge = '○ Error'; badgeClass = 'int-badge--disconnected';
+    actions = `<button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-connect">Connect with Notion</button>`;
+  } else {
+    badge = '○ Not connected'; badgeClass = 'int-badge--disconnected';
+    actions = `<button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-connect">Connect with Notion</button>`;
+  }
+  return `<div class="int-list">
+    <div class="int-row">
+      <div class="int-row-top">
+        <span class="int-name">Notion</span>
+        <span class="int-badge ${badgeClass}">${badge}</span>
+      </div>
+      ${ws ? `<div class="int-workspace">${ws}</div>` : ''}
+      <div class="int-actions">${actions}</div>
+    </div>
+  </div>`;
+}
+async function _handleNotionIntegrationConnect() {
+  _notionConnectState = 'loading';
+  _syncJournalProfileUI();
+  startNotionOAuth('').catch(err => {
+    console.error('[Integrations] OAuth error:', err);
+    _notionConnectState = 'idle';
+    _syncJournalProfileUI();
+  });
+}
+async function _handleNotionIntegrationDisconnect() {
+  if (!confirm('Disconnect Notion? Existing profiles will remain but won\'t load data until reconnected.')) return;
+  const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
+  if (!user?.id) return;
+  try {
+    const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/notion/disconnect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id }),
+    });
+    if (resp.ok) {
+      _notionIntegrationStatus = 'disconnected';
+      _notionIntegrationWorkspace = '';
+      _notionIntegrationLastCheck = 0;
+      console.log('[Integrations] Notion disconnected');
+      _syncJournalProfileUI();
+    }
+  } catch (e) { console.warn('[Integrations] disconnect failed:', e.message); }
+}
+function _getJournalProfileById(id) {
+  const targetId = String(id || '').trim();
+  if (!targetId) return null;
+  return getJournalProfiles().find(profile => profile.id === targetId) || null;
+}
+function _prefillJournalProfileForm(profile = null, options = {}) {
+  const { blankName = false } = options;
+  const active = profile || getActiveJournalProfile();
+  const nameInput    = document.getElementById('journal-profile-name-input');
+  const typeInput    = document.getElementById('journal-profile-type-input');
+  const apiUrlInput  = document.getElementById('journal-profile-api-url-input');
+  const notionDbInput = document.getElementById('jp-notion-database-id-input');
+  const notionWsInput = document.getElementById('jp-notion-workspace-input');
+  const connTypeRadio = document.querySelector(`input[name="jp-conn-type"][value="${_journalProfileEditorConnectionType}"]`);
+  const currentSource = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
+  const activeType = String(active?.type || '').trim().toLowerCase();
+  const preferredType = (activeType === 'm15' || activeType === 'h4' || activeType === 'custom')
+    ? activeType : currentSource;
+  const fallbackUrl = String(active?.apiUrl || localStorage.getItem('flipping_api_url') || API_URL_DEFAULT).trim();
+  if (nameInput)    nameInput.value    = blankName ? '' : String(active?.name || '').trim();
+  if (typeInput)    typeInput.value    = preferredType === 'h4' ? 'h4' : (preferredType === 'custom' ? 'custom' : 'm15');
+  if (apiUrlInput)  apiUrlInput.value  = fallbackUrl;
+  if (notionDbInput) notionDbInput.value = String(active?.notionDatabaseId    || '').trim();
+  if (notionWsInput) notionWsInput.value = String(active?.notionWorkspaceName || '').trim();
+  if (connTypeRadio) connTypeRadio.checked = true;
+  _toggleJournalProfileConnectionSections(_journalProfileEditorConnectionType);
+}
+function _toggleJournalProfileConnectionSections(type) {
+  console.log('[DataSource] connectionType:', type, '| notionIntegrationStatus:', _notionIntegrationStatus);
+  if (_togglingConnSections) {
+    // Re-entrant call from _prefillJournalProfileForm inside _syncJournalProfileUI —
+    // _syncJournalProfileUI is already re-rendering everything, just sync DOM classes
+    const apiSec    = document.getElementById('jp-api-section');
+    const notionSec = document.getElementById('jp-notion-section');
+    if (apiSec)    apiSec.classList.toggle('jp-conn-section--visible',    type === 'api');
+    if (notionSec) notionSec.classList.toggle('jp-conn-section--visible', type === 'notion');
+    return;
+  }
+
+  const prevType = _journalProfileEditorConnectionType;
+  _journalProfileEditorConnectionType = type;
+
+  if (type !== prevType) {
+    // Type changed — full re-render so the section gets correct inner HTML
+    _togglingConnSections = true;
+    try {
+      _syncJournalProfileUI();
+    } finally {
+      _togglingConnSections = false;
+    }
+  } else {
+    // Same type — just toggle CSS classes without re-render
+    const apiSec    = document.getElementById('jp-api-section');
+    const notionSec = document.getElementById('jp-notion-section');
+    if (apiSec)    apiSec.classList.toggle('jp-conn-section--visible',    type === 'api');
+    if (notionSec) notionSec.classList.toggle('jp-conn-section--visible', type === 'notion');
+  }
+
+  if (type === 'notion') {
+    if (_notionIntegrationStatus === 'connected') {
+      // Status already known — auto-load databases if picker not already active
+      if (_notionDbPickerState === 'idle') {
+        console.log('[DataSource] loading databases');
+        _handleNotionDbPickerOpen('_editor');
+      }
+    } else {
+      // Kick off status check; auto-load happens in _checkNotionIntegrationStatus when connected
+      _checkNotionIntegrationStatus();
+    }
+  }
+}
+function _openJournalProfileEditor(mode = 'create', id = '') {
+  _journalProfileSwitcherOpen = true;
+  if (mode === 'create' && _journalProfileEditorOpen && _journalProfileEditorMode === 'create') {
+    _closeJournalProfileEditor();
+    return;
+  }
+  _journalProfileEditorOpen = true;
+  _journalProfileEditorMode = mode === 'edit' ? 'edit' : 'create';
+  _journalProfileEditingId = _journalProfileEditorMode === 'edit' ? String(id || '').trim() : '';
+  _journalProfileRowMenuOpenId = '';
+  if (_journalProfileEditorMode === 'edit') {
+    const p = _getJournalProfileById(_journalProfileEditingId);
+    _journalProfileEditorConnectionType = String(p?.connectionType || '').trim() || 'api';
+  } else {
+    _journalProfileEditorConnectionType = 'api';
+  }
+  _syncJournalProfileUI();
+  const profile = _journalProfileEditorMode === 'edit' ? _getJournalProfileById(_journalProfileEditingId) : null;
+  _prefillJournalProfileForm(profile, { blankName: _journalProfileEditorMode !== 'edit' });
+  requestAnimationFrame(() => document.getElementById('journal-profile-name-input')?.focus());
+  // For Notion profiles, check integration status and pre-load databases
+  if (_journalProfileEditorConnectionType === 'notion') {
+    _checkNotionIntegrationStatus().then(() => {
+      if (_notionIntegrationStatus === 'connected') {
+        _notionDbPickerProfileId = ''; // prevent toggle guard
+        _handleNotionDbPickerOpen('_editor');
+      }
+    });
+  }
+}
+function _closeJournalProfileEditor() {
+  _journalProfileEditorOpen = false;
+  _journalProfileEditorMode = 'create';
+  _journalProfileEditingId = '';
+  _journalProfileRowMenuOpenId = '';
+  _journalProfileEditorConnectionType = 'api';
+  _notionConnectState = 'idle';
+  if (_notionDbPickerProfileId === '_editor') {
+    _notionDbPickerProfileId = '';
+    _notionDbPickerState     = 'idle';
+    _notionDbPickerDatabases = [];
+  }
+  _resetJournalProfileCheckState();
+  _syncJournalProfileUI();
+}
+const NOTION_OAUTH_BACKEND = 'https://notion-dashboard-api-2.vercel.app';
+
+function _handleNotionOAuthReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const connected     = params.get('notion_connected');
+  const notionError   = params.get('notion_error');
+  const profileId     = params.get('profile_id') || '';
+  const workspaceName = params.get('workspace_name') || '';
+
+  if (!connected && !notionError) return;
+
+  // Clean URL immediately — prevents re-trigger on refresh
+  history.replaceState(null, '', window.location.pathname);
+  console.log('[NotionOAuth] url cleaned');
+
+  // Read and clear pending draft
+  let pending = null;
+  try {
+    const raw = sessionStorage.getItem('notion_oauth_pending');
+    if (raw) {
+      pending = JSON.parse(raw);
+      sessionStorage.removeItem('notion_oauth_pending');
+      console.log('[NotionOAuth] pending draft read, mode:', pending.mode);
+    }
+  } catch (e) {
+    console.warn('[NotionOAuth] could not read pending draft:', e);
+  }
+
+  if (notionError) {
+    console.warn('[NotionOAuth] return with error:', notionError);
+    showThemeToast('Notion connection failed: ' + notionError, true);
+    return;
+  }
+
+  if (connected !== 'true') return;
+
+  // Update integration status immediately on OAuth return
+  _notionIntegrationStatus   = 'connected';
+  _notionIntegrationWorkspace = workspaceName;
+  _notionIntegrationLastCheck = Date.now();
+  console.log('[Integrations] Notion connected via OAuth — workspace:', workspaceName);
+
+  console.log('[NotionOAuth] return detected — profileId:', profileId || '(none)', 'workspace:', workspaceName || '(none)');
+
+  const profiles = getJournalProfiles();
+
+  // ── Edit mode: update existing profile ───────────────────────────────────
+  if (profileId) {
+    const idx = profiles.findIndex(p => p.id === profileId);
+    if (idx !== -1) {
+      profiles[idx].connectionType = 'notion';
+      if (workspaceName && !profiles[idx].notionWorkspaceName) {
+        profiles[idx].notionWorkspaceName = workspaceName;
+      }
+      saveJournalProfiles(profiles);
+      console.log('[NotionOAuth] profile updated (edit) — connectionType=notion for:', profileId);
+    } else {
+      console.warn('[NotionOAuth] edit profileId not found locally:', profileId);
+    }
+    _journalProfileEditorOpen = false;
+    _dataSourcesSectionOpen   = true;
+    _persistAccountSectionState(DATA_SOURCES_SECTION_OPEN_LS_KEY, true);
+    _syncJournalProfileUI();
+    console.log('[NotionOAuth] auto-created profile rendered:', profileId);
+    showThemeToast('Notion connected!');
+    return;
+  }
+
+  // ── Create mode: auto-create profile then open editor for DB selection ──
+  if (pending?.mode === 'create') {
+    const draftName = pending.draft?.name || '';
+    const newProfile = {
+      id             : 'jp_' + Date.now(),
+      name           : draftName || 'Notion',
+      connectionType : 'notion',
+      notionWorkspaceName: workspaceName,
+      notionDatabaseId: '',
+      type           : pending.draft?.type || 'm15',
+      apiUrl         : '',
+    };
+    const profiles = getJournalProfiles();
+    profiles.push(newProfile);
+    saveJournalProfiles(profiles);
+    console.log('[NotionOAuth] auto-created profile:', newProfile.id, 'name:', newProfile.name);
+    _journalProfileEditorOpen = true;
+    _journalProfileEditorMode = 'edit';
+    _journalProfileEditingId  = newProfile.id;
+    _journalProfileEditorConnectionType = 'notion';
+    _dataSourcesSectionOpen = true;
+    _persistAccountSectionState(DATA_SOURCES_SECTION_OPEN_LS_KEY, true);
+    _syncJournalProfileUI();
+    _prefillJournalProfileForm(newProfile);
+    _notionDbPickerProfileId = '';
+    _handleNotionDbPickerOpen('_editor');
+    showThemeToast('Notion connected — select a database for this source');
+    console.log('[DataSource] editor opened for DB selection, profileId:', newProfile.id);
+    return;
+  }
+
+  // Fallback — no draft context
+  showThemeToast('Notion connected!');
+}
+
+function _handleNotionConnectClick() {
+  console.log('[NotionOAuth] button clicked');
+  if (_notionConnectState === 'loading') return;
+  const profileId = _journalProfileEditorMode === 'edit' ? _journalProfileEditingId : '';
+  console.log('[NotionOAuth] startNotionOAuth called profileId:', profileId || '(none)');
+  _notionConnectState = 'loading';
+  _syncJournalProfileUI();
+  startNotionOAuth(profileId).catch(err => {
+    console.error('[NotionOAuth] startNotionOAuth threw:', err);
+    _notionConnectState = 'idle';
+    _syncJournalProfileUI();
+  });
+}
+
+async function startNotionOAuth(profileId) {
+  const user = _SW.getUser();
+  console.log('[NotionOAuth] current user:', user?.id || null);
+
+  if (!user?.id) {
+    _notionConnectState = 'idle';
+    _syncJournalProfileUI();
+    // show inline message instead of alert
+    const infoEl = document.querySelector('.jp-notion-info');
+    if (infoEl) infoEl.textContent = 'Please sign in first.';
+    return;
+  }
+
+  let clientId, redirectUri;
+  try {
+    const startUrl = `${NOTION_OAUTH_BACKEND}/api/notion/oauth/start`;
+    console.log('[NotionOAuth] fetching start endpoint:', startUrl);
+    const res = await fetch(startUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    clientId    = data.client_id;
+    redirectUri = data.redirect_uri;
+    console.log('[NotionOAuth] start endpoint result: client_id=', clientId, 'redirect_uri=', redirectUri);
+  } catch (err) {
+    console.error('[NotionOAuth] Failed to fetch OAuth params:', err);
+    _notionConnectState = 'idle';
+    _syncJournalProfileUI();
+    return;
+  }
+
+  // Persist editor draft so _handleNotionOAuthReturn can auto-save after reload
+  try {
+    const draft = _getJournalProfileEditorDraft();
+    const pending = {
+      mode     : _journalProfileEditorMode,   // 'create' | 'edit'
+      profileId: profileId || '',
+      draft,
+    };
+    sessionStorage.setItem('notion_oauth_pending', JSON.stringify(pending));
+    console.log('[NotionOAuth] pending draft saved to sessionStorage, mode:', pending.mode);
+  } catch (e) {
+    console.warn('[NotionOAuth] could not persist draft:', e);
+  }
+
+  const state    = encodeURIComponent(user.id + '::' + (profileId || ''));
+  const oauthUrl = `https://api.notion.com/v1/oauth/authorize`
+    + `?client_id=${encodeURIComponent(clientId)}`
+    + `&response_type=code`
+    + `&owner=user`
+    + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+    + `&state=${state}`;
+
+  console.log('[NotionOAuth] redirecting to:', oauthUrl);
+  window.location.href = oauthUrl;
+}
+
+// ── Notion database picker handlers ──────────────────────────────────────────
+async function _handleNotionDbPickerOpen(profileId) {
+  // Toggle off if clicking same profile that already has picker open
+  if (_notionDbPickerProfileId === profileId && _notionDbPickerState !== 'idle') {
+    _handleNotionDbPickerClose();
+    return;
+  }
+
+  const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
+  if (!user?.id) {
+    showThemeToast('Please sign in to access Notion databases.', true);
+    return;
+  }
+
+  _notionDbPickerProfileId = profileId;
+  _notionDbPickerState     = 'loading';
+  _notionDbPickerDatabases = [];
+  console.log('[DataSource] loading databases — profileId:', profileId);
+  _syncJournalProfileUI();
+
+  try {
+    const url = `${NOTION_OAUTH_BACKEND}/api/notion/databases?user_id=${encodeURIComponent(user.id)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    _notionDbPickerDatabases = Array.isArray(data.databases) ? data.databases : [];
+    _notionDbPickerState = 'loaded';
+    console.log('[DataSource] databases loaded:', _notionDbPickerDatabases.length, _notionDbPickerDatabases.map(d => d.title));
+    console.log('[DataSource] rendering database selector');
+  } catch (err) {
+    console.error('[DataSource] databases error:', err.message);
+    _notionDbPickerState = 'error';
+  }
+
+  _syncJournalProfileUI();
+}
+
+function _handleNotionDbPickerClose() {
+  _notionDbPickerProfileId = '';
+  _notionDbPickerState     = 'idle';
+  _notionDbPickerDatabases = [];
+  _syncJournalProfileUI();
+}
+
+function _handleNotionDbPickerConfirm(profileId) {
+  const select = document.getElementById(`jp-notion-db-dropdown-${profileId}`);
+  if (!select) return;
+
+  const selectedId    = select.value;
+  const selectedTitle = select.selectedOptions?.[0]?.dataset?.title || selectedId;
+  if (!selectedId) {
+    showThemeToast('Please choose a database first.', true);
+    return;
+  }
+
+  const profiles = getJournalProfiles();
+  const idx = profiles.findIndex(p => p.id === profileId);
+  if (idx === -1) return;
+
+  profiles[idx].notionDatabaseId    = selectedId;
+  profiles[idx].notionDatabaseTitle = selectedTitle;
+  saveJournalProfiles(profiles);
+
+  // Close picker
+  _notionDbPickerProfileId = '';
+  _notionDbPickerState     = 'idle';
+  _notionDbPickerDatabases = [];
+  _syncJournalProfileUI();
+
+  showThemeToast(`Database selected — loading trades…`);
+
+  // If this is the active profile, immediately trigger a Notion load
+  const active = getActiveJournalProfile();
+  if (active?.id === profileId) {
+    loadFromAPI({ force: true });
+  }
+}
+
+function _getJournalProfileEditorDraft() {
+  const name                = String(document.getElementById('journal-profile-name-input')?.value || '').trim();
+  const type                = String(document.getElementById('journal-profile-type-input')?.value || 'm15').trim().toLowerCase();
+  const apiUrl              = String(document.getElementById('journal-profile-api-url-input')?.value || '').trim();
+  const editorDbSelect       = document.getElementById('jp-editor-notion-db-select');
+  const notionDatabaseId    = editorDbSelect?.value
+    || String(document.getElementById('jp-notion-database-id-input')?.value || '').trim();
+  const notionDatabaseTitle = editorDbSelect
+    ? (editorDbSelect.selectedOptions?.[0]?.dataset?.title || editorDbSelect.value || '')
+    : '';
+  const notionWorkspaceName = _notionIntegrationWorkspace
+    || String(document.getElementById('jp-notion-workspace-input')?.value || '').trim();
+  const connectionType      = _journalProfileEditorConnectionType || 'api';
+  return {
+    name,
+    type: (type === 'm15' || type === 'h4' || type === 'custom') ? type : 'custom',
+    apiUrl,
+    notionDatabaseId,
+    notionDatabaseTitle,
+    notionWorkspaceName,
+    connectionType,
+    source: 'api',
+  };
+}
+function _renderNotionEditorDbSection() {
+  const st  = _notionDbPickerState;
+  const dbs = _notionDbPickerDatabases;
+  if (st === 'loading' || (st === 'idle' && _notionDbPickerProfileId === '_editor')) {
+    return `<div class="jp-editor-db-loading">Loading databases…</div>`;
+  }
+  if (st === 'error') {
+    return `<div class="jp-editor-db-error"><span>Could not load databases.</span>
+      <button class="account-secondary-btn" type="button" data-action="notion-editor-db-refresh">Retry</button></div>`;
+  }
+  if (st === 'loaded') {
+    if (!dbs.length) return `<div class="jp-editor-db-empty">No databases found. Share at least one database with this Notion integration.</div>`;
+    const opts = dbs.map(db =>
+      `<option value="${_escapeHtml(db.id)}" data-title="${_escapeHtml(db.title)}">${_escapeHtml(db.title)}</option>`
+    ).join('');
+    return `<label class="account-field">
+      <span class="account-field-label">Database</span>
+      <select class="account-input" id="jp-editor-notion-db-select">${opts}</select>
+    </label>`;
+  }
+  return '';
+}
+function _renderJournalProfileEditorMarkup(mode = 'create') {
+  const isEdit = mode === 'edit';
+  const checkLabel = _journalProfileCheckState === 'checking'
+    ? 'Checking source...'
+    : _journalProfileCheckState === 'success'
+      ? 'Connection successful'
+      : _journalProfileCheckState === 'error'
+        ? 'Connection failed'
+        : 'Check source';
+  const checkIcon = _journalProfileCheckState === 'checking'
+    ? '<span class="journal-profile-check-btn-spinner" aria-hidden="true"></span>'
+    : _journalProfileCheckState === 'success'
+      ? '<span aria-hidden="true">✓</span>'
+      : _journalProfileCheckState === 'error'
+        ? '<span aria-hidden="true">⚠</span>'
+        : '';
+  const ct = _journalProfileEditorConnectionType || 'api';
+  return `
+    <div class="journal-profile-editor-inline">
+      <div class="account-form-title" id="journal-profile-editor-title">${isEdit ? 'Edit source' : 'Create data source'}</div>
+      <label class="account-field" id="jp-name-field"${ct === 'notion' && _notionIntegrationStatus !== 'connected' ? ' hidden' : ''}>
+        <span class="account-field-label">Source name</span>
+        <input class="account-input" id="journal-profile-name-input" type="text" placeholder="Profile name" />
+      </label>
+      <label class="account-field" hidden>
+        <select class="account-input" id="journal-profile-type-input">
+          <option value="m15">M15</option>
+          <option value="h4">H4</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <div class="account-field">
+        <span class="account-field-label">Connection type</span>
+        <div class="jp-conn-radio-group">
+          <label class="jp-conn-radio-label">
+            <input type="radio" name="jp-conn-type" value="api" ${ct === 'api' ? 'checked' : ''} />
+            <span>API</span>
+          </label>
+          <label class="jp-conn-radio-label">
+            <input type="radio" name="jp-conn-type" value="notion" ${ct === 'notion' ? 'checked' : ''} />
+            <span>Notion</span>
+          </label>
+        </div>
+      </div>
+      <div class="jp-conn-section${ct === 'api' ? ' jp-conn-section--visible' : ''}" id="jp-api-section">
+        <label class="account-field">
+          <span class="account-field-label">API URL</span>
+          <input class="account-input" id="journal-profile-api-url-input" type="text" placeholder="https://your-project.vercel.app/api/trades" />
+        </label>
+        <div class="account-actions">
+          <button class="account-secondary-btn journal-profile-check-btn journal-profile-check-btn--${_journalProfileCheckState}" type="button" data-action="journal-profile-test-connection" ${_journalProfileCheckState === 'checking' ? 'disabled' : ''}>
+            <span class="journal-profile-check-btn-content">${checkIcon}<span>${checkLabel}</span></span>
+          </button>
+        </div>
+      </div>
+      <div class="jp-conn-section${ct === 'notion' ? ' jp-conn-section--visible' : ''}" id="jp-notion-section">
+        ${ct === 'notion' ? (() => {
+          if (_notionIntegrationStatus === 'connected') {
+            return `${_renderNotionEditorDbSection()}
+              <div class="account-actions">
+                <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">${isEdit ? 'Save changes' : 'Create source'}</button>
+                <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
+              </div>`;
+          }
+          if (_notionIntegrationStatus === 'checking') {
+            return `<div class="jp-notion-checking">Checking Notion connection…</div>
+              <div class="account-actions">
+                <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
+              </div>`;
+          }
+          // not connected or unknown — show OAuth button
+          return `<div class="jp-notion-not-connected">Notion is not connected yet.</div>
+            <div class="account-actions">
+              <button class="account-secondary-btn jp-conn-notion-btn jp-conn-notion-btn--${_notionConnectState}" type="button" data-action="journal-profile-connect-notion" ${_notionConnectState === 'loading' ? 'disabled' : ''}>
+                ${_notionConnectState === 'loading' ? 'Connecting...' : 'Connect with Notion'}
+              </button>
+              <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
+            </div>`;
+        })() : ''}
+      </div>
+      ${ct !== 'notion' ? `<div class="account-actions">
+        <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">${isEdit ? 'Save changes' : 'Create source'}</button>
+        <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
+      </div>` : ''}
+    </div>
+  `;
+}
+function _clearJournalProfileCheckResetTimer() {
+  if (_journalProfileCheckResetTimer) {
+    clearTimeout(_journalProfileCheckResetTimer);
+    _journalProfileCheckResetTimer = null;
+  }
+}
+function _setJournalProfileCheckState(state = 'idle', options = {}) {
+  const { autoReset = false } = options;
+  _clearJournalProfileCheckResetTimer();
+  _journalProfileCheckState = state;
+  _syncJournalProfileUI();
+  if (autoReset && state !== 'idle') {
+    _journalProfileCheckResetTimer = setTimeout(() => {
+      _journalProfileCheckResetTimer = null;
+      _journalProfileCheckState = 'idle';
+      _syncJournalProfileUI();
+    }, 2400);
+  }
+}
+function _resetJournalProfileCheckState() {
+  _clearJournalProfileCheckResetTimer();
+  if (_journalProfileCheckState === 'idle') return;
+  _journalProfileCheckState = 'idle';
+  _syncJournalProfileUI();
+}
+function _buildJournalProfileTestUrl(apiUrl, type) {
+  const base = String(apiUrl || '').trim();
+  if (!base) return '';
+  const src = type === 'h4' ? 'h4' : 'm15';
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}source=${src}`;
+}
+function _showJournalProfileToast(message, type = 'ok') {
+  if (typeof _showToast === 'function') {
+    _showToast(message, type === 'warn' ? 'warn' : undefined);
+    return;
+  }
+  showThemeToast(message, type === 'warn');
+}
+function _getJournalProfileListSource(profile = null) {
+  return _getJournalProfilePreferredSource(profile) || 'm15';
+}
+function _getJournalProfileCacheCount(profile = null) {
+  const profileId = String(profile?.id || '').trim();
+  const source = _getJournalProfileListSource(profile);
+  if (!profileId) return 0;
+  const slot = `${source}_${profileId}`;
+  const memory = Array.isArray(_parsedAPICacheMemory?.[slot]) ? _parsedAPICacheMemory[slot] : null;
+  if (memory && memory.length) return memory.length;
+  const localKey = `apiTradesCache_v2_rrmax_${profileId}_${source}`;
+  const sessionKey = `apiTradesSessionCache_v1_${profileId}_${source}`;
+  try {
+    const raw = localStorage.getItem(localKey);
+    if (raw) {
+      const payload = JSON.parse(raw);
+      const count = Array.isArray(payload) ? payload.length : Array.isArray(payload?.rows) ? payload.rows.length : 0;
+      if (count) return count;
+    }
+  } catch {}
+  try {
+    const raw = sessionStorage.getItem(sessionKey);
+    if (raw) {
+      const payload = JSON.parse(raw);
+      return Array.isArray(payload) ? payload.length : Array.isArray(payload?.rows) ? payload.rows.length : 0;
+    }
+  } catch {}
+  return 0;
+}
+function _renderJournalProfileModalList() {
+  return;
+}
+
+// ── Notion database picker section rendered inside each Notion profile row ────
+function _renderNotionDbSection(profile) {
+  if (profile.connectionType !== 'notion') return '';
+  const pid = _escapeHtml(profile.id);
+  const isPickerOpen = _notionDbPickerProfileId === profile.id;
+  const hasDb = !!profile.notionDatabaseId;
+
+  if (!isPickerOpen) {
+    if (hasDb) {
+      const title = _escapeHtml(profile.notionDatabaseTitle || profile.notionDatabaseId);
+      return `<div class="jp-notion-db-section jp-notion-db-section--linked">
+        <span class="jp-notion-db-label">Syncing: <strong>${title}</strong></span>
+        <button class="jp-notion-db-change-btn" type="button"
+          data-action="notion-db-picker-open" data-profile-id="${pid}">Change</button>
+      </div>`;
+    }
+    return `<div class="jp-notion-db-section jp-notion-db-section--empty">
+      <span class="jp-notion-db-hint">No database selected</span>
+      <button class="jp-notion-db-select-btn" type="button"
+        data-action="notion-db-picker-open" data-profile-id="${pid}">Select database</button>
+    </div>`;
+  }
+
+  // Picker is open for this profile
+  if (_notionDbPickerState === 'loading') {
+    return `<div class="jp-notion-db-section jp-notion-db-section--picker">
+      <span class="jp-notion-db-loading">Loading databases…</span>
+    </div>`;
+  }
+  if (_notionDbPickerState === 'error') {
+    return `<div class="jp-notion-db-section jp-notion-db-section--picker">
+      <span class="jp-notion-db-error">Could not load databases — check console.</span>
+      <button class="jp-notion-db-cancel-btn" type="button" data-action="notion-db-picker-close">Cancel</button>
+    </div>`;
+  }
+  if (_notionDbPickerState === 'loaded') {
+    const dbs = _notionDbPickerDatabases;
+    if (!dbs.length) {
+      return `<div class="jp-notion-db-section jp-notion-db-section--picker">
+        <span class="jp-notion-db-empty">No databases found. Share at least one Notion database with this integration.</span>
+        <button class="jp-notion-db-cancel-btn" type="button" data-action="notion-db-picker-close">Cancel</button>
+      </div>`;
+    }
+    const currentId = profile.notionDatabaseId || '';
+    const options = dbs.map(db => {
+      const selected = currentId === db.id ? ' selected' : '';
+      return `<option value="${_escapeHtml(db.id)}" data-title="${_escapeHtml(db.title)}"${selected}>${_escapeHtml(db.title)}</option>`;
+    }).join('');
+    return `<div class="jp-notion-db-section jp-notion-db-section--picker">
+      <label class="jp-notion-db-select-label">
+        <span>Select database</span>
+        <select class="jp-notion-db-dropdown" id="jp-notion-db-dropdown-${pid}">${options}</select>
+      </label>
+      <div class="jp-notion-db-picker-actions">
+        <button class="account-secondary-btn jp-notion-db-confirm-btn" type="button"
+          data-action="notion-db-picker-confirm" data-profile-id="${pid}">Confirm</button>
+        <button class="account-secondary-btn" type="button"
+          data-action="notion-db-picker-close">Cancel</button>
+      </div>
+    </div>`;
+  }
+  return '';
+}
+
+function _renderJournalProfileSwitchList() {
+  const list = document.getElementById('journal-profile-switch-list');
+  if (!list) return;
+  const profiles = getJournalProfiles();
+  const active = getActiveJournalProfile();
+  console.log('[JournalProfilesUI] profiles rendered:', profiles.map(p => ({ id: p.id, name: p.name, type: p.type })), 'active:', active?.id);
+  list.innerHTML = profiles.map(profile => {
+    const isActive = active?.id === profile.id;
+    const isEditing = _journalProfileEditorOpen && _journalProfileEditorMode === 'edit' && _journalProfileEditingId === profile.id;
+    const name = _escapeHtml(String(profile.name || '').trim() || 'Untitled Journal');
+    return `
+      <div class="journal-profile-row${isActive ? ' is-active' : ''}${isEditing ? ' is-editing' : ''}" data-profile-id="${_escapeHtml(profile.id)}">
+        <div class="journal-profile-row-inner">
+          <button class="journal-profile-row-main journal-profile-row-main--switch" type="button" data-action="journal-profile-row-switch" data-profile-id="${_escapeHtml(profile.id)}" ${isActive ? 'disabled' : ''}>
+            <span class="journal-profile-row-title-wrap">
+              <span class="journal-profile-switch-radio" aria-hidden="true">${isActive ? '✓' : '○'}</span>
+              <span class="journal-profile-row-title">${name}</span>
+            </span>
+          </button>
+          <div class="journal-profile-row-actions${_journalProfileRowMenuOpenId === profile.id ? ' menu-open' : ''}">
+            <div class="journal-profile-row-menu-wrap">
+              <button class="journal-profile-row-menu-btn" type="button" data-action="journal-profile-row-menu-toggle" data-profile-id="${_escapeHtml(profile.id)}" aria-label="More actions">⋯</button>
+              <div class="journal-profile-row-menu${_journalProfileRowMenuOpenId === profile.id ? '' : ' is-hidden'}" data-profile-id="${_escapeHtml(profile.id)}">
+                <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-edit" data-profile-id="${_escapeHtml(profile.id)}">Edit</button>
+                <button class="journal-profile-row-menu-item journal-profile-row-menu-item--danger" type="button" data-action="journal-profile-row-delete" data-profile-id="${_escapeHtml(profile.id)}">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        ${isEditing ? `<div class="journal-profile-row-editor">${_renderJournalProfileEditorMarkup('edit')}</div>` : ''}
+        ${_renderNotionDbSection(profile)}
+      </div>
+    `;
+  }).join('');
+  list.tabIndex = -1;
+}
+function _toggleJournalProfileRowMenu(triggerEl) {
+  const profileId = String(triggerEl?.dataset?.profileId || '').trim();
+  if (!profileId) return;
+  if (_journalProfileRowMenuOpenId === profileId) {
+    _journalProfileRowMenuOpenId = '';
+    _syncJournalProfileUI();
+    return;
+  }
+  _journalProfileRowMenuOpenId = profileId;
+  _syncJournalProfileUI();
+}
+function _syncJournalProfileUI() {
+  const accountBody = document.getElementById('account-section-body');
+  const accountTrigger = document.querySelector('[data-action="toggle-account-section"]');
+  const dataBody = document.getElementById('data-sources-section-body');
+  const dataTrigger = document.querySelector('[data-action="toggle-data-sources-section"]');
+  const accountSummary = document.getElementById('account-section-summary');
+  const dataSummary = document.getElementById('data-sources-section-summary');
+  const dataStatus = document.getElementById('data-sources-section-status');
+  const addBtn = document.getElementById('journal-profile-add-btn');
+  const editorSlot = document.getElementById('journal-profile-editor-slot');
+  const active = getActiveJournalProfile();
+  const activeProfileName = String(active?.name || '').trim() || 'Untitled Journal';
+  if (accountBody) {
+    if (_accountSectionOpen) accountBody.removeAttribute('hidden');
+    else accountBody.setAttribute('hidden', '');
+  }
+  if (accountTrigger) accountTrigger.setAttribute('aria-expanded', _accountSectionOpen ? 'true' : 'false');
+  const intBody    = document.getElementById('integrations-section-body');
+  const intTrigger = document.querySelector('[data-action="toggle-integrations-section"]');
+  const intStatus  = document.getElementById('integrations-section-status');
+  if (intBody) {
+    if (_integrationsSectionOpen) { intBody.removeAttribute('hidden'); intBody.innerHTML = _renderIntegrationsSection(); }
+    else intBody.setAttribute('hidden', '');
+  }
+  if (intTrigger) intTrigger.setAttribute('aria-expanded', _integrationsSectionOpen ? 'true' : 'false');
+  if (intStatus) {
+    if (_notionIntegrationStatus === 'connected') { intStatus.textContent = '● Notion'; intStatus.dataset.tone = 'success'; }
+    else if (_notionIntegrationStatus === 'checking') { intStatus.textContent = '● Checking…'; intStatus.dataset.tone = 'muted'; }
+    else { intStatus.textContent = '○ Not connected'; intStatus.dataset.tone = 'muted'; }
+  }
+  if (dataBody) {
+    if (_dataSourcesSectionOpen) dataBody.removeAttribute('hidden');
+    else dataBody.setAttribute('hidden', '');
+  }
+  if (dataTrigger) dataTrigger.setAttribute('aria-expanded', _dataSourcesSectionOpen ? 'true' : 'false');
+  const hasUser = !!window._SW?.getUser?.();
+  if (accountSummary) {
+    accountSummary.textContent = hasUser ? '● Connected' : '● Local only';
+  }
+  if (dataSummary) dataSummary.textContent = hasUser ? `${activeProfileName} · Active` : 'No account connected';
+  if (dataSummary) dataSummary.dataset.tone = hasUser ? 'success' : 'muted';
+  if (dataStatus) dataStatus.textContent = hasUser ? '● Notion API connected' : '○ Local only';
+  if (dataStatus) dataStatus.dataset.tone = hasUser ? 'success' : 'muted';
+  if (addBtn) addBtn.hidden = false;
+  _renderJournalProfileSwitchList();
+  _renderJournalProfileModalList();
+  if (editorSlot) {
+    editorSlot.innerHTML = _journalProfileEditorOpen && _journalProfileEditorMode === 'create'
+      ? _renderJournalProfileEditorMarkup('create')
+      : '';
+  }
+  if (_journalProfileEditorOpen) {
+    const profile = _journalProfileEditorMode === 'edit' ? _getJournalProfileById(_journalProfileEditingId) : null;
+    _prefillJournalProfileForm(profile, { blankName: _journalProfileEditorMode !== 'edit' });
+  }
+}
+function _clearProfileRuntimeStateForSwitch() {
+  if (typeof _closeAllRemapPickers === 'function') {
+    try { _closeAllRemapPickers(); } catch (e) {}
+  }
+  appState.settings.dataSource.cachedTrades = null;
+  appState.settings.dataSource.pendingRestoreState = null;
+  appState.trades.items.length = 0;
+  appState.trades.totalOverride = 0;
+  invalidateFilterCache();
+  if (typeof render === 'function') render();
+  if (typeof updateJournalPanel === 'function') {
+    try { updateJournalPanel(); } catch (e) {}
+  }
+}
+async function _reloadJournalProfileSelection(options = {}) {
+  const { forceFetch = false } = options;
+  const mode = localStorage.getItem(DS_KEY) || 'demo';
+  const activeProfile = getActiveJournalProfile();
+  const isNotionWithDb = activeProfile?.connectionType === 'notion' && !!activeProfile?.notionDatabaseId;
+  console.log('[ProfileSwitch] active profile: id/name/database', {
+    id: activeProfile?.id || '',
+    name: activeProfile?.name || '',
+    database: activeProfile?.notionDatabaseId || activeProfile?.apiUrl || '',
+  });
+  console.log('[Mapping] key used:', _fieldOverridesKeyFor());
+  console.log('[Mapping] overrides loaded:', _getAPIFieldOverrides());
+  console.log('[Mapping] fieldNames loaded:', _listAPIKeys([]));
+
+  // Notion profiles always operate in 'api' mode — don't skip them.
+  // Non-Notion profiles in demo/csv mode have nothing to reload here.
+  if (mode !== 'api' && !isNotionWithDb) {
+    _syncJournalProfileUI();
+    return;
+  }
+
+  // Ensure DS_KEY reflects api mode for Notion profiles
+  if (isNotionWithDb && mode !== 'api') {
+    localStorage.setItem(DS_KEY, 'api');
+    if (typeof updateSourceUI === 'function') updateSourceUI('api');
+  }
+
+  if (!forceFetch && localStorage.getItem(DS_KEY) === 'api') {
+    const raw = _getRawAPICache();
+    if (raw && raw.length && _reapplyAPIOverrides()) {
+      _syncJournalProfileUI();
+      return;
+    }
+  }
+
+  const cached = getCachedAPIData();
+  if (cached && cached.length && !forceFetch) {
+    _injectTrades(cached, 'Notion Live', null);
+    setSourceIndicator('live');
+    showDataStatus(_getAPICacheStatusLabel(), 'live');
+    _updateLastSync();
+    _syncJournalProfileUI();
+    return;
+  }
+  _syncJournalProfileUI();
+  await loadFromAPI({ force: true });
+}
+async function _applyActiveJournalProfile(profile, options = {}) {
+  if (!profile) return;
+  const preferredSource = _getJournalProfilePreferredSource(profile);
+  _clearProfileRuntimeStateForSwitch();
+  if (preferredSource && (localStorage.getItem(HTF_SOURCE_KEY) || 'm15') !== preferredSource) {
+    setHTFSource(preferredSource);
+  }
+  await _reloadJournalProfileSelection(options);
+}
+async function _handleJournalProfileSelectChange(id) {
+  const active = setActiveJournalProfile(id);
+  if (!active) {
+    _syncJournalProfileUI();
+    return;
+  }
+  _showJournalProfileToast(`Switched to ${active.name || 'Untitled Journal'}`);
+  await _applyActiveJournalProfile(active);
+}
+async function _testJournalProfileEditorConnection() {
+  const draft = _getJournalProfileEditorDraft();
+  const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const timeoutMs = 45000;
+  console.debug('[CheckSource] start');
+  if (!draft.apiUrl) {
+    const elapsed = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+    console.warn(`[CheckSource] failed in ${elapsed}ms reason: empty-url`);
+    _setJournalProfileCheckState('error', { autoReset: true });
+    document.getElementById('journal-profile-api-url-input')?.focus();
+    return;
+  }
+  const url = _buildJournalProfileTestUrl(draft.apiUrl, draft.type);
+  _setJournalProfileCheckState('checking');
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let didTimeout = false;
+  const timeoutId = controller ? setTimeout(() => {
+    didTimeout = true;
+    console.warn(`[CheckSource] timeout after ${timeoutMs}ms`);
+    controller.abort();
+  }, timeoutMs) : null;
+  try {
+    const res = await fetch(url, { method: 'GET', cache: 'no-store', signal: controller?.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    const isValidPayload = Array.isArray(payload)
+      || (payload && typeof payload === 'object' && (Array.isArray(payload.rows) || Array.isArray(payload.results) || Object.keys(payload).length > 0));
+    if (!isValidPayload) throw new Error('Invalid JSON');
+    const elapsed = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+    console.debug(`[CheckSource] success in ${elapsed}ms`);
+    _setJournalProfileCheckState('success', { autoReset: true });
+  } catch (err) {
+    const elapsed = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+    const reason = didTimeout
+      ? 'timeout'
+      : (err?.name === 'AbortError' ? 'aborted' : (err?.message || 'request-error'));
+    console.warn(`[CheckSource] failed in ${elapsed}ms reason: ${reason}`);
+    _setJournalProfileCheckState('error', { autoReset: true });
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+function _saveJournalProfileEditor() {
+  const nameInput = document.getElementById('journal-profile-name-input');
+  const draft = _getJournalProfileEditorDraft();
+  const editorMode = _journalProfileEditorMode;
+  if (!draft.name) {
+    nameInput?.focus();
+    return;
+  }
+  if (draft.connectionType === 'notion' && _notionIntegrationStatus === 'connected' && !draft.notionDatabaseId) {
+    showThemeToast('Please select a database first.', true);
+    return;
+  }
+  const nextProfile = _normalizeJournalProfile({
+    id: _journalProfileEditorMode === 'edit' ? _journalProfileEditingId : _makeJournalProfileId(),
+    ...draft,
+    apiUrl: draft.apiUrl || API_URL_DEFAULT,
+  });
+  const profiles = _journalProfileEditorMode === 'edit'
+    ? saveJournalProfiles(getJournalProfiles().map(profile => profile.id === nextProfile.id ? nextProfile : profile))
+    : saveJournalProfiles([...getJournalProfiles(), nextProfile]);
+  console.log('[DataSource] profiles after', _journalProfileEditorMode === 'edit' ? 'edit' : 'add', '—', profiles.length, 'total:', profiles.map(p => ({ id: p.id, name: p.name })));
+  const created = profiles.find(profile => profile.id === nextProfile.id) || nextProfile;
+  if (editorMode === 'edit') {
+    console.log('[DataSource] profile updated:', { id: created.id, name: created.name });
+  } else {
+    console.log('[DataSource] profile created:', { id: created.id, name: created.name });
+  }
+  const currentActive = getActiveJournalProfile();
+  const shouldActivate = _journalProfileEditorMode !== 'edit' || currentActive?.id === created.id;
+  if (shouldActivate) setActiveJournalProfile(created.id);
+  _journalProfileEditorOpen = false;
+  _journalProfileEditorMode = 'create';
+  _journalProfileEditingId = '';
+  _showJournalProfileToast(`${editorMode === 'edit' ? 'Profile updated' : 'Profile created'}: ${created.name || 'Untitled Journal'}`);
+  if (shouldActivate) _applyActiveJournalProfile(created, { forceFetch: true });
+  else _syncJournalProfileUI();
+}
+function _deleteJournalProfileById(id) {
+  const profiles = getJournalProfiles();
+  if (profiles.length <= 1) return;
+  const target = _getJournalProfileById(id);
+  if (!target) return;
+  if (!confirm(`Delete profile "${target.name}"?`)) return;
+  console.log('[JournalProfilesUI] delete source:', { id: target.id, name: target.name });
+  const active = getActiveJournalProfile();
+  const remaining = profiles.filter(profile => profile.id !== target.id);
+  console.log('[JournalProfilesUI] profiles after delete —', remaining.length, 'remaining:', remaining.map(p => ({ id: p.id, name: p.name })));
+  const saved = saveJournalProfiles(remaining);
+  const nextActive = saved[0] || null;
+  if (active?.id === target.id && nextActive) setActiveJournalProfile(nextActive.id);
+  _journalProfileRowMenuOpenId = '';
+  if (active?.id === target.id && nextActive) {
+    _showJournalProfileToast(`Profile deleted. Active: ${nextActive.name || 'Untitled Journal'}`);
+    _applyActiveJournalProfile(nextActive);
+  } else {
+    _showJournalProfileToast(`Profile deleted: ${target.name || 'Untitled Journal'}`);
+    _syncJournalProfileUI();
+  }
+}
+function getProfileScopedKey(baseKey) {
+  const rawBaseKey = String(baseKey || '').trim();
+  if (!rawBaseKey) {
+    console.debug('[JournalProfile] Cache key generated:', rawBaseKey);
+    return rawBaseKey;
+  }
+  const { profileId } = _getJournalProfileCacheContext();
+  if (!profileId) {
+    console.debug('[JournalProfile] Cache key generated:', rawBaseKey);
+    return rawBaseKey;
+  }
+  const match = rawBaseKey.match(/^(.*)_(m15|h4)$/);
+  const scoped = match
+    ? `${match[1]}_${profileId}_${match[2]}`
+    : `${rawBaseKey}_${profileId}`;
+  console.debug('[JournalProfile] Cache key generated:', scoped);
+  return scoped;
+}
+function _shouldUseLegacyProfileCacheFallback() {
+  const { active, profileId, profiles } = _getJournalProfileCacheContext();
+  return !!profileId && profiles.length === 1 && _isDefaultJournalProfile(active);
+}
+function _getProfileScopedKeyCandidates(baseKey) {
+  const primary = getProfileScopedKey(baseKey);
+  if (!_shouldUseLegacyProfileCacheFallback() || primary === baseKey) return [primary];
+  return [primary, baseKey];
+}
+function _readFirstLocalStorageValue(baseKey) {
+  for (const candidate of _getProfileScopedKeyCandidates(baseKey)) {
+    const value = localStorage.getItem(candidate);
+    if (value !== null) return value;
+  }
+  return null;
+}
+function _readFirstSessionStorageValue(baseKey) {
+  for (const candidate of _getProfileScopedKeyCandidates(baseKey)) {
+    const value = sessionStorage.getItem(candidate);
+    if (value !== null) return value;
+  }
+  return null;
+}
+function _getProfileScopedSourceSlot(source = null) {
+  return getProfileScopedKey(source || (localStorage.getItem(HTF_SOURCE_KEY) || 'm15'));
+}
 // Returns the HTF-namespaced localStorage key.
 // M15 uses no suffix (backward-compatible with existing data).
 // H4 gets '_h4' suffix — starts fresh on first use.
@@ -2714,44 +4428,82 @@ function _htfKey(base) {
 }
 const CSV_CACHE_KEY  = 'flipping_csv_cache_v1'; // raw CSV text + filename + format for restart restore
 // Per-source cache keys — switching M15↔H4 uses separate localStorage slots
-const _cacheKey     = () => `apiTradesCache_v2_rrmax_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
-const _cacheTimeKey = () => `apiTradesCacheTime_v2_rrmax_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
-const _mediaCacheKey = () => `apiTradesMedia_v1_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
-// Per-source field names & overrides — each HTF source has its own mapping
-const _fieldNamesKey     = () => `apiFieldNames_v1_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
-const _fieldOverridesKey = () => `apiFieldOverrides_v1_${localStorage.getItem(HTF_SOURCE_KEY) || 'm15'}`;
+const _cacheKeyFor      = source => getProfileScopedKey(`apiTradesCache_v2_rrmax_${source || (localStorage.getItem(HTF_SOURCE_KEY) || 'm15')}`);
+const _cacheTimeKeyFor  = source => getProfileScopedKey(`apiTradesCacheTime_v2_rrmax_${source || (localStorage.getItem(HTF_SOURCE_KEY) || 'm15')}`);
+const _mediaCacheKeyFor = source => getProfileScopedKey(`apiTradesMedia_v1_${source || (localStorage.getItem(HTF_SOURCE_KEY) || 'm15')}`);
+const _sessionCacheKeyFor = source => getProfileScopedKey(`apiTradesSessionCache_v1_${source || (localStorage.getItem(HTF_SOURCE_KEY) || 'm15')}`);
+const _cacheKey     = () => _cacheKeyFor();
+const _cacheTimeKey = () => _cacheTimeKeyFor();
+const _mediaCacheKey = () => _mediaCacheKeyFor();
+// source param kept for call-site compat but ignored — overrides are per-profile, not per-source
+const _fieldNamesKeyFor     = (_source) => getProfileScopedKey('apiFieldNames_v1');
+const _fieldOverridesKeyFor = (_source) => getProfileScopedKey('apiFieldOverrides_v1');
+const _fieldNamesKey     = () => _fieldNamesKeyFor();
+const _fieldOverridesKey = () => _fieldOverridesKeyFor();
 const API_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;     // 5 minutes
 
-// ── Raw API cache — in-memory only (Phase 3.A quota fix) ──
-// The full raw Notion payload is ~9 MB for 600 trades (signed image URLs
-// dominate). Persisting it blew the 5 MB localStorage quota on upgrade. We
-// now keep it in a module-level shadow that lives for the current session
-// only. Cleared on page reload.
-// Multi-tab users carry an independent ~9 MB heap per tab — acceptable since
-// most users run a single tab.
-// For the Mapping-tab picker, the keys union alone is persisted in the
-// small API_FIELD_NAMES_KEY entry (~1-2 KB). For _reapplyAPIOverrides,
-// post-reload override changes trigger a fresh fetch (see that function).
-let _rawAPICacheMemory = {}; // keyed by htf source: { m15: [...], h4: [...] }
-let _parsedAPICacheMemory = {}; // keyed by htf source: { m15: [...], h4: [...] }
+// ── Raw API cache ──
+// The full raw Notion payload can be large (~9 MB) when signed image URLs are
+// included. localStorage quota (5 MB) was blown in Phase 3.A, so raw trades
+// are kept in a module-level map and additionally persisted to sessionStorage
+// (separate quota, persists across page refresh, auto-cleared on tab close).
+// If sessionStorage quota is exceeded the first attempt, image/file fields
+// (arrays of Notion file objects with signed S3 URLs) are stripped before a
+// second attempt — they expire anyway and aren't needed for widget fields.
+let _rawAPICacheMemory = {}; // keyed by profile+htf source slot
+let _parsedAPICacheMemory = {}; // keyed by profile+htf source slot
+const _rawSessionKeyFor = src => getProfileScopedKey(`apiTradesRaw_session_v2_${src}`);
+
+function _persistRawAPIToSession(rawTrades, src) {
+  // Raw API is intentionally kept in memory only. Persisting it to
+  // sessionStorage duplicates the signed image URLs and was the main source
+  // of quota blowups after profile-scoped caches were introduced.
+  void rawTrades; void src;
+}
+
+function _loadRawAPIFromSession(src) {
+  void src;
+  return null;
+}
 
 function _getCurrentHTFSource() {
   return localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
 }
 
-function _getRawAPICache() {
-  const src = _getCurrentHTFSource();
-  return Array.isArray(_rawAPICacheMemory[src]) ? _rawAPICacheMemory[src] : [];
+function _getRawAPICache(source = null) {
+  const src = source || _getCurrentHTFSource();
+  const slot = _getProfileScopedSourceSlot(src);
+  if (Array.isArray(_rawAPICacheMemory[slot]) && _rawAPICacheMemory[slot].length) {
+    return _rawAPICacheMemory[slot];
+  }
+  // In-memory cache empty (page reloaded) — restore from sessionStorage.
+  const session = _loadRawAPIFromSession(src);
+  if (session) {
+    _rawAPICacheMemory[slot] = session;
+    return session;
+  }
+  return [];
 }
-function _setRawAPICache(rawTrades) {
-  const src = _getCurrentHTFSource();
+function _setRawAPICache(rawTrades, source = null) {
+  const src = source || _getCurrentHTFSource();
+  const slot = _getProfileScopedSourceSlot(src);
   if (Array.isArray(rawTrades)) {
-    _rawAPICacheMemory[src] = rawTrades;
-    // Persist keys union only — the picker's sole post-reload requirement.
+    _rawAPICacheMemory[slot] = rawTrades;
+    // Persist field names for the Mapping-tab picker.
     try {
       const names = _listAPIKeys(rawTrades);
-      localStorage.setItem(_fieldNamesKey(), JSON.stringify(names));
+      console.log('[Mapping] key used:', _fieldNamesKeyFor(src));
+      console.log('[Mapping] fieldNames loaded:', names);
+      safeSetLocalStorage(_fieldNamesKeyFor(src), JSON.stringify(names), {
+        kind: 'apiFieldNames',
+        activeProfileId: getActiveJournalProfile()?.id || '',
+        activeHtfSource: src,
+      });
     } catch (e) { console.warn('[DS] FieldNames persist failed:', e.message); }
+    // Persist raw trades to sessionStorage so custom widget fields survive
+    // page reload (raw cache was in-memory only — widgets showed "no data"
+    // after refresh because _getRawAPICache() returned empty).
+    _persistRawAPIToSession(rawTrades, src);
   }
   // If the Journal panel is open, refresh its field count right away so the
   // "loading fields…" placeholder never sticks after a background API fetch.
@@ -2760,15 +4512,63 @@ function _setRawAPICache(rawTrades) {
   }
 }
 
+// One-time migration: copy only old keys that were already scoped to the same
+// profile. Never copy bare source keys (apiFieldOverrides_v1_m15/_h4), because
+// those can belong to a different profile and would contaminate M15/H4 mappings.
+function _migrateFieldOverridesToProfileScope() {
+  const { profileId } = _getJournalProfileCacheContext();
+  if (!profileId) return;
+  const newKey = _fieldOverridesKeyFor();
+  console.log('[Mapping] key used:', newKey);
+  if (localStorage.getItem(newKey) !== null) {
+    console.log('[Mapping] migration skipped/copied from:', 'skipped-existing', '→', newKey);
+    return; // already migrated
+  }
+  const src = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
+  const oldScopedKey = `apiFieldOverrides_v1_${profileId}_${src}`;
+  const oldBareKey = `apiFieldOverrides_v1_${src}`;
+  const candidate = localStorage.getItem(oldScopedKey);
+  if (candidate) {
+    try {
+      localStorage.setItem(newKey, candidate);
+      console.log('[Mapping] migration skipped/copied from:', oldScopedKey, '→', newKey);
+    } catch (e) { console.warn('[Mapping] migration failed:', e.message); }
+  } else {
+    console.log('[Mapping] migration skipped/copied from:', `skipped ${oldBareKey} (not profile-scoped)`);
+  }
+  // Same for field names
+  const newNamesKey = _fieldNamesKeyFor();
+  if (localStorage.getItem(newNamesKey) === null) {
+    const oldScopedNamesKey = `apiFieldNames_v1_${profileId}_${src}`;
+    const oldBareNamesKey = `apiFieldNames_v1_${src}`;
+    const namesCandidate = localStorage.getItem(oldScopedNamesKey);
+    if (namesCandidate) {
+      try {
+        localStorage.setItem(newNamesKey, namesCandidate);
+        console.log('[Mapping] migration skipped/copied from:', oldScopedNamesKey, '→', newNamesKey);
+      } catch (e) { console.warn('[Mapping] migration names failed:', e.message); }
+    } else {
+      console.log('[Mapping] migration skipped/copied from:', `skipped ${oldBareNamesKey} (not profile-scoped)`);
+    }
+  }
+}
+
 // ── API field overrides — { setup: 'm15Type', session: 'sessionUtc', ... } ──
-function _getAPIFieldOverrides() {
+function _getAPIFieldOverrides(_source = null) {
+  // _source ignored — overrides are per-profile, not per-source
+  const { profileId } = _getJournalProfileCacheContext();
+  const key = _fieldOverridesKeyFor();
+  console.log('[Mapping] key used:', key);
   try {
-    const parsed = JSON.parse(localStorage.getItem(_fieldOverridesKey()) || '{}');
+    const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+    console.log('[Mapping] overrides loaded:', Object.keys(parsed).length ? parsed : '(none)', '| profile:', profileId || '(legacy)');
     return (parsed && typeof parsed === 'object') ? parsed : {};
   } catch { return {}; }
 }
 function _saveAPIFieldOverrides(obj) {
-  try { localStorage.setItem(_fieldOverridesKey(), JSON.stringify(obj || {})); }
+  const key = _fieldOverridesKey();
+  console.log('[Mapping] key used:', key);
+  try { safeSetLocalStorage(key, JSON.stringify(obj || {}), { kind: 'apiFieldOverrides' }); }
   catch (e) { console.warn('[DS] API overrides save failed:', e.message); }
 }
 
@@ -2796,7 +4596,11 @@ function _listAPIKeys(rawTrades) {
     return Object.keys(hasValue).sort((a, b) => a.localeCompare(b));
   }
   try {
-    const parsed = JSON.parse(localStorage.getItem(_fieldNamesKey()) || '[]');
+    const { profileId: _fnProfileId } = _getJournalProfileCacheContext();
+    const key = _fieldNamesKeyFor();
+    console.log('[Mapping] key used:', key);
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    console.log('[Mapping] fieldNames loaded:', Array.isArray(parsed) ? parsed.length + ' keys' : '(invalid)', '| profile:', _fnProfileId || '(legacy)');
     return Array.isArray(parsed)
       ? parsed.slice().sort((a, b) => a.localeCompare(b))
       : [];
@@ -2809,13 +4613,179 @@ function _listAPIKeys(rawTrades) {
 // — trigger a fresh fetch instead. The fetch writes both the parsed cache and
 // apiFieldNames_v1, and calls _injectTrades on completion (see
 // _fetchAPICacheSilently's success path).
+// Pre-inject user-mapped outcome field as `positionResult` before normalization.
+// _normalizeAPITrade does not use _pick() for the outcome — it reads a hardcoded
+// set of fallback keys. When the user overrides 'outcome' via the mapping UI,
+// this wrapper bridges the gap so _reapplyAPIOverrides + _loadNotionTrades both
+// benefit from the same mapping without touching _normalizeAPITrade.
+function _applyOutcomeOverride(trades, source) {
+  return _applyMappedFieldAliases(trades, source);
+}
+
+function _copyMappedAliasPatch(t, overrides, dimKey, aliasKey) {
+  const field = overrides && overrides[dimKey];
+  if (!field || (typeof _isNoMappingValue === 'function' && _isNoMappingValue(field))) return null;
+  if (!t || typeof t !== 'object' || !(field in t)) return null;
+  const existing = t[aliasKey];
+  if (existing !== null && existing !== undefined && existing !== '' && !(Array.isArray(existing) && !existing.length)) return null;
+  return { [aliasKey]: t[field] };
+}
+
+// Bridge user mappings into the raw aliases that _normalizeAPITrade reads
+// directly. This keeps _normalizeAPITrade unchanged while allowing remaps for
+// hard-coded fields such as date, rrMax, order and positionResult.
+function _applyMappedFieldAliases(trades, source) {
+  if (!trades || !trades.length) return trades;
+  const activeSource = source || _getCurrentHTFSource();
+  const ov = (typeof _getAPIFieldOverrides === 'function') ? _getAPIFieldOverrides(activeSource) : {};
+  const setupDetailAlias = activeSource === 'h4' ? 'h4TypeDetail' : 'm15TypeDetail';
+  return trades.map(t => {
+    if (!t || typeof t !== 'object') return t;
+    const patch = {
+      ...(_copyMappedAliasPatch(t, ov, 'outcome', 'positionResult') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'date', 'date') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'rrMax', 'rrMax') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'direction', 'order') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'pair', 'pair') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'setupDetail', setupDetailAlias) || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'setup', activeSource === 'h4' ? 'm15Type' : 'm15Type') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'h4', 'obstaclesH4') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'obstacles', activeSource === 'h4' ? 'obstaclesH4' : 'obstaclesM15') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'beManagement', 'beManagement') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'tp1_rr', 'rrTp1') || {}),
+    };
+    return Object.keys(patch).length ? { ...t, ...patch } : t;
+  });
+}
+
+function _resolveNotionAlias(sample, candidates) {
+  if (!sample || typeof sample !== 'object') return null;
+  return candidates.find(k => {
+    if (!(k in sample)) return false;
+    const v = sample[k];
+    return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
+  }) || null;
+}
+
+function _applyResolvedAlias(aliasMap, alias, sample, candidates) {
+  if (alias in sample) {
+    const existing = sample[alias];
+    if (existing !== null && existing !== undefined && existing !== '' && !(Array.isArray(existing) && !existing.length)) return;
+  }
+  const resolved = _resolveNotionAlias(sample, candidates);
+  if (resolved) aliasMap[alias] = resolved;
+}
+
+function _applyH4NotionAliases(aliasMap, sample) {
+  _applyResolvedAlias(aliasMap, 'h4TypeDetail', sample, [
+    'setupDetail', 'H4 Type Detailed', 'h4TypeDetailed', 'h4TypeDetail', 'h4TypeDetails',
+    'setup', 'Position Type', 'positionType',
+  ]);
+  _applyResolvedAlias(aliasMap, 'm15Type', sample, [
+    'setup', 'H4 Type Detailed', 'h4TypeDetailed', 'h4TypeDetail', 'setupDetail',
+    'Position Type', 'positionType',
+  ]);
+  _applyResolvedAlias(aliasMap, 'obstaclesH4', sample, [
+    'h4', 'structure', 'H4 Structure', 'h4Structure',
+    'h4Obstacles', 'obstaclesH4', 'H4 Obstacles', 'obstacles',
+  ]);
+}
+
+function _applyCommonNotionAliases(aliasMap, sample) {
+  _applyResolvedAlias(aliasMap, 'date', sample, ['Date Start', 'dateStart', 'Date', 'date']);
+  _applyResolvedAlias(aliasMap, 'beManagement', sample, ['beManagement', 'BE Management']);
+  _applyResolvedAlias(aliasMap, 'rrMax', sample, ['rrMax', 'RR Max', 'RR Max ', 'rrMaxAtteint', 'RR max atteint']);
+  _applyResolvedAlias(aliasMap, 'pair', sample, ['pair', 'Pair', 'paire', 'Paire']);
+  _applyResolvedAlias(aliasMap, 'order', sample, ['order', 'Order']);
+  _applyResolvedAlias(aliasMap, 'rrTp1', sample, ['rr', 'tp', 'RR TP 1', 'rrTp1', 'RR Max', 'rrMax']);
+}
+
+// Auto-map Notion property keys to the aliases expected by _normalizeAPITrade,
+// without modifying _normalizeAPITrade or overwriting any explicit user overrides.
+// Only called for Notion profiles; safe to call on legacy profiles (no-ops when
+// the target alias is already present in the raw trade object).
+function _applyNotionAutoMap(trades, source) {
+  if (!trades || !trades.length) return trades;
+  const overrides = _getAPIFieldOverrides(source);
+  const sample = trades.find(t => t && typeof t === 'object');
+  if (!sample) return trades;
+
+  // ── Resolve a single alias from a candidate list ─────────────────────────────
+  // Returns the first candidate key that (a) exists in sample and (b) has a
+  // non-empty value. Skips the whole alias if a user override is already set.
+  const _resolve = (alias, dimKey, candidates) => {
+    if (alias in sample) return null; // already present
+    if (dimKey && overrides[dimKey] && !_isNoMappingValue(overrides[dimKey])) return null;
+    return candidates.find(k => {
+      if (!(k in sample)) return false;
+      const v = sample[k];
+      return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
+    }) || null;
+  };
+
+  const aliasMap = {};
+
+  // ── positionResult (outcome) ────────────────────────────────────────────────
+  // _normalizeAPITrade hard-codes t.positionResult ?? t.resultatTp1 ?? t.resultatTP1
+  // ?? t['Position Result']. French Notion databases often use different names.
+  // Priority: most-specific French camelCase variants first, then generic English.
+  const posResult = _resolve('positionResult', 'outcome', [
+    'resultatRr3', 'resultatRr2', 'resultatRr1',
+    'resultatOb',
+    'resultat27',
+    'resultatTp3', 'resultatTp2', 'resultatTp1',
+    'resultatTP3', 'resultatTP2', 'resultatTP1',
+    'positionResult', 'Position Result',
+    'result', 'Result', 'outcome', 'Outcome',
+  ]);
+  if (posResult) {
+    aliasMap.positionResult = posResult;
+  } else if (!('positionResult' in sample) &&
+             !(overrides.outcome && !_isNoMappingValue(overrides.outcome))) {
+    // Fallback: scan all keys for any that contain "resultat" or "result"
+    // in their normalized name and carry a non-empty value.
+    const fallback = Object.keys(sample).find(k => {
+      if (k.startsWith('_') || k === 'notionUrl' || k === 'notion url') return false;
+      const norm = k.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (!norm.includes('resultat') && !norm.includes('result') && !norm.includes('outcome')) return false;
+      const v = sample[k];
+      return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && !v.length);
+    });
+    if (fallback) aliasMap.positionResult = fallback;
+  }
+
+  _applyCommonNotionAliases(aliasMap, sample);
+  if ((source || _getCurrentHTFSource()) === 'h4') _applyH4NotionAliases(aliasMap, sample);
+
+  if (!Object.keys(aliasMap).length) {
+    console.log('[NotionAutoMap] selected aliases:', '(none)');
+    return trades;
+  }
+
+  console.log('[NotionAutoMap] selected aliases:', aliasMap);
+
+  return trades.map(t => {
+    if (!t || typeof t !== 'object') return t;
+    const patch = {};
+    for (const [alias, src] of Object.entries(aliasMap)) {
+      const existing = t[alias];
+      const hasExisting = existing !== null && existing !== undefined && existing !== '' && !(Array.isArray(existing) && !existing.length);
+      if (!hasExisting && src in t) patch[alias] = t[src];
+    }
+    return Object.keys(patch).length ? { ...t, ...patch } : t;
+  });
+}
+
 function _reapplyAPIOverrides() {
   const raw = _getRawAPICache();
   if (!raw || !raw.length) {
-    _fetchAPICacheSilently({ force: true });
+    // No raw cache after a page refresh: do not auto-fetch. The user must
+    // explicitly press Notion Live to refresh the API.
     return false;
   }
-  const parsed = raw.map((t, i) => _normalizeAPITrade(t, i)).filter(Boolean);
+  const processed = _applyOutcomeOverride(raw, _getCurrentHTFSource());
+  const autoMapped = _applyNotionAutoMap(processed, _getCurrentHTFSource());
+  const parsed = autoMapped.map((t, i) => _normalizeAPITrade(t, i)).filter(Boolean);
   setCachedAPIData(parsed);
   if (localStorage.getItem(DS_KEY) === 'api') {
     const savedState = (typeof _saveFilterState === 'function') ? _saveFilterState() : null;
@@ -2840,10 +4810,11 @@ let _cacheAgeOneShot = null;
 // Per-dimension user overrides (set via the Journal panel in API mode) are
 // consulted first: if `_getAPIFieldOverrides()[dimKey]` names a field that
 // exists on `t`, its value is used instead of the default candidate chain.
-function _normalizeAPITrade(t, _rawRowIndex) {
-  const _apiOverrides = _getAPIFieldOverrides();
+function _normalizeAPITrade(t, _rawRowIndex, source = null) {
+  const activeSource = source || _getCurrentHTFSource();
+  const _apiOverrides = _getAPIFieldOverrides(activeSource);
   const _pick = (dimKey, fallbackRaw) => {
-    const ov = _getEffectiveApiOverride(dimKey);
+    const ov = _getEffectiveApiOverride(dimKey, activeSource);
     if (_isNoMappingValue(ov)) return undefined;
     if (ov && t && Object.prototype.hasOwnProperty.call(t, ov)) return t[ov];
     return fallbackRaw;
@@ -2963,14 +4934,35 @@ function _normalizeAPITrade(t, _rawRowIndex) {
     }
   }
 
+  // Custom-widget API fields → bake flattened string values into extras so they
+  // survive page reload. Store plain strings (not raw Notion objects) to keep
+  // extras small — large Notion objects would push the cache into minimal/ultra
+  // serialization mode which drops extras entirely.
+  if (typeof _loadCustomWidgetDefs === 'function') {
+    for (const def of _loadCustomWidgetDefs()) {
+      const f1Src = def.fieldSource || def.propertySource || '';
+      if (f1Src === 'api' && def.field && extras[def.field] === undefined
+          && Object.prototype.hasOwnProperty.call(t, def.field)) {
+        const v1 = _flattenApiWidgetValue(t[def.field]);
+        if (v1) extras[def.field] = v1;
+      }
+      const f2Src = def.field2Source || def.propertySource || '';
+      if (f2Src === 'api' && def.field2 && extras[def.field2] === undefined
+          && Object.prototype.hasOwnProperty.call(t, def.field2)) {
+        const v2 = _flattenApiWidgetValue(t[def.field2]);
+        if (v2) extras[def.field2] = v2;
+      }
+    }
+  }
+
   return {
     date:        dateRaw,
     month:       dateRaw.slice(0, 7),
     pair:        _firstText(_pick('pair', t.pair || t['Pair'] || t.paire || t['Paire'])),
     setup:       _firstText(_pick('setup', t['M15 Confirmation / Continuation'] || t['M15 Confirmation / Continu'] || t.confirmation || t['Confirmation / Continunation'] || t.m15Type || t['M15 Type'])),
     setupDetail: _firstText(_pick('setupDetail',
-      _getCurrentHTFSource() === 'h4'
-        ? (t.h4TypeDetail || t['H4 Type Detailed'] || t.h4TypeDetails || t.h4TypeDétail || t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail)
+      activeSource === 'h4'
+        ? (t.h4TypeDetail || t['H4 Type Detailed'] || t.h4TypeDetails || t.h4TypeDétail)
         : (t.m15TypeDetail || t['M15 Type Detailed'] || t.m15TypeDetails || t.m15TypeDétail)
     )),
     session:     _normSession(_firstText(_pick('session', t.session || t['Session'] || t.sessionFormule || t['Session Formula']))),
@@ -3015,7 +5007,7 @@ function _normalizeAPITrade(t, _rawRowIndex) {
         if (typeof raw === 'object' && raw !== null) return raw.url || '';
         return String(raw);
       };
-      const useH4AfterInImgM15After = _getCurrentHTFSource() === 'h4';
+      const useH4AfterInImgM15After = activeSource === 'h4';
       const aFallback = t.imgM15 || t.m15Before || t.m15Image || t.imageM15 || '';
       const bFallback = t.imgH4Before || t.h4Before || t.h4Image || t.imageH4 || '';
       const cFallback = useH4AfterInImgM15After
@@ -3038,28 +5030,47 @@ function _normalizeAPITrade(t, _rawRowIndex) {
 }
 
 // ── Cache helpers ──
-function getCachedAPIData() {
-  const src = _getCurrentHTFSource();
+function getCachedAPIData(source = null) {
+  const src = source || _getCurrentHTFSource();
+  const slot = _getProfileScopedSourceSlot(src);
   try {
-    const raw = localStorage.getItem(_cacheKey());
-    const parsed = raw ? _mergeMediaCache(_deserializeTradesFromStorage(JSON.parse(raw))) : null;
+    const raw = _readFirstLocalStorageValue(`apiTradesCache_v2_rrmax_${src}`);
+    const parsed = raw ? _mergeMediaCache(_deserializeTradesFromStorage(JSON.parse(raw)), src) : null;
     if (parsed && parsed.length) {
-      _parsedAPICacheMemory[src] = parsed;
-      appState.settings.dataSource.cachedTrades = parsed;
+      _parsedAPICacheMemory[slot] = parsed;
+      if (_getCurrentHTFSource() === src) appState.settings.dataSource.cachedTrades = parsed;
       return parsed;
     }
-    const memoryCache = Array.isArray(_parsedAPICacheMemory[src]) ? _parsedAPICacheMemory[src] : null;
+    const memoryCache = Array.isArray(_parsedAPICacheMemory[slot]) ? _parsedAPICacheMemory[slot] : null;
     if (memoryCache && memoryCache.length) {
-      appState.settings.dataSource.cachedTrades = memoryCache;
+      if (_getCurrentHTFSource() === src) appState.settings.dataSource.cachedTrades = memoryCache;
       return memoryCache;
     }
+    try {
+      const sessionRaw = _readFirstSessionStorageValue(`apiTradesSessionCache_v1_${src}`);
+      const sessionParsed = sessionRaw ? _mergeMediaCache(_deserializeTradesFromStorage(JSON.parse(sessionRaw)), src) : null;
+      if (sessionParsed && sessionParsed.length) {
+        _parsedAPICacheMemory[slot] = sessionParsed;
+        if (_getCurrentHTFSource() === src) appState.settings.dataSource.cachedTrades = sessionParsed;
+        return sessionParsed;
+      }
+    } catch {}
     return null;
   } catch {
-    const memoryCache = Array.isArray(_parsedAPICacheMemory[src]) ? _parsedAPICacheMemory[src] : null;
+    const memoryCache = Array.isArray(_parsedAPICacheMemory[slot]) ? _parsedAPICacheMemory[slot] : null;
     if (memoryCache && memoryCache.length) {
-      appState.settings.dataSource.cachedTrades = memoryCache;
+      if (_getCurrentHTFSource() === src) appState.settings.dataSource.cachedTrades = memoryCache;
       return memoryCache;
     }
+    try {
+      const sessionRaw = _readFirstSessionStorageValue(`apiTradesSessionCache_v1_${src}`);
+      const sessionParsed = sessionRaw ? _mergeMediaCache(_deserializeTradesFromStorage(JSON.parse(sessionRaw)), src) : null;
+      if (sessionParsed && sessionParsed.length) {
+        _parsedAPICacheMemory[slot] = sessionParsed;
+        if (_getCurrentHTFSource() === src) appState.settings.dataSource.cachedTrades = sessionParsed;
+        return sessionParsed;
+      }
+    } catch {}
     return null;
   }
 }
@@ -3074,18 +5085,174 @@ function _extractMediaCache(trades) {
     imgM15AfterOrig: t.imgM15AfterOrig || '',
   }));
 }
-function _persistMediaCache(trades) {
+function _storageBytes(raw) {
   try {
-    sessionStorage.setItem(_mediaCacheKey(), JSON.stringify(_extractMediaCache(trades)));
+    return new TextEncoder().encode(String(raw || '')).length;
+  } catch {
+    return String(raw || '').length * 2;
+  }
+}
+function _formatStorageMB(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(2);
+}
+function _buildCachePayloadDebugMeta(serialized, trades, mode, key) {
+  const payloadKeys = Array.isArray(serialized)
+    ? Object.keys(serialized[0] || {})
+    : Array.isArray(serialized?.keys)
+    ? serialized.keys
+    : [];
+  const hasField = field => payloadKeys.includes(field);
+  return {
+    key,
+    mode,
+    trades: Array.isArray(trades) ? trades.length : 0,
+    hasFields: {
+      imgM15: hasField('imgM15'),
+      imgH4Before: hasField('imgH4Before'),
+      imgM15After: hasField('imgM15After'),
+      imgM15Orig: hasField('imgM15Orig'),
+      imgH4BeforeOrig: hasField('imgH4BeforeOrig'),
+      imgM15AfterOrig: hasField('imgM15AfterOrig'),
+      extras: hasField('extras'),
+      notionUrl: hasField('notionUrl'),
+    },
+  };
+}
+function _isApiLocalStorageKey(key) {
+  return /^apiTradesCache_v2_rrmax_/.test(key)
+    || /^apiTradesCacheTime_v2_rrmax_/.test(key)
+    || /^apiTradesCache_v2_rrmax_(m15|h4)$/.test(key)
+    || /^apiTradesCacheTime_v2_rrmax_(m15|h4)$/.test(key);
+}
+function _isApiSessionStorageKey(key) {
+  return /^apiTradesMedia_v1_/.test(key)
+    || /^apiTradesSessionCache_v1_/.test(key)
+    || /^apiTradesRaw_session_v2_/.test(key)
+    || /^apiTradesMedia_v1_(m15|h4)$/.test(key)
+    || /^apiTradesSessionCache_v1_(m15|h4)$/.test(key)
+    || /^apiTradesRaw_session_v2_(m15|h4)$/.test(key);
+}
+function cleanupAPIStorage({ activeProfileId = '', activeHtfSource = 'm15' } = {}) {
+  const keepLocal = new Set();
+  const keepSession = new Set();
+  if (activeProfileId && String(activeProfileId).startsWith('jp_')) {
+    keepLocal.add(`apiTradesCache_v2_rrmax_${activeProfileId}_${activeHtfSource}`);
+    keepLocal.add(`apiTradesCacheTime_v2_rrmax_${activeProfileId}_${activeHtfSource}`);
+    keepSession.add(`apiTradesMedia_v1_${activeProfileId}_${activeHtfSource}`);
+    keepSession.add(`apiTradesSessionCache_v1_${activeProfileId}_${activeHtfSource}`);
+    keepSession.add(`apiTradesRaw_session_v2_${activeProfileId}_${activeHtfSource}`);
+  }
+
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (!key || !_isApiLocalStorageKey(key) || keepLocal.has(key)) continue;
+    _removeLocalStorageKeyWithAudit(key, 'api-storage-cleanup');
+  }
+  for (let i = sessionStorage.length - 1; i >= 0; i--) {
+    const key = sessionStorage.key(i);
+    if (!key || !_isApiSessionStorageKey(key) || keepSession.has(key)) continue;
+    try {
+      const value = sessionStorage.getItem(key);
+      const sizeBytes = _storageBytes(key) + _storageBytes(value);
+      sessionStorage.removeItem(key);
+      console.warn('[CacheCleanup] removed legacy API cache key:', key, 'sizeKB:', (sizeBytes / 1024).toFixed(1), 'reason:', 'api-storage-cleanup');
+    } catch (e) {
+      console.warn('[CacheCleanup] failed to remove session key:', key, e?.message || e);
+    }
+  }
+}
+function safeSetLocalStorage(key, value, context = {}) {
+  const payloadBytes = _storageBytes(value);
+  const currentTotalBytes = _getLocalStorageUsageEntries().totalBytes;
+  if (context.kind === 'apiTradesCache' && currentTotalBytes > (8000 * 1024)) {
+    cleanupAPIStorage({
+      activeProfileId: context.activeProfileId || '',
+      activeHtfSource: context.activeHtfSource || _getCurrentHTFSource(),
+    });
+  }
+  const afterCleanupBytes = _getLocalStorageUsageEntries().totalBytes;
+  if (context.kind === 'apiTradesCache' && afterCleanupBytes > (8000 * 1024)) {
+    console.warn('[DS] Skipping localStorage cache write — localStorage still above 8000 KB after API cleanup.', {
+      key,
+      totalKB: (afterCleanupBytes / 1024).toFixed(1),
+      payloadMB: _formatStorageMB(payloadBytes),
+      mode: context.mode || 'unknown',
+    });
+    return false;
+  }
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    console.warn('[DS] localStorage write failed', {
+      key,
+      kind: context.kind || 'generic',
+      mode: context.mode || 'unknown',
+      payloadMB: _formatStorageMB(payloadBytes),
+      totalKB: (_getLocalStorageUsageEntries().totalBytes / 1024).toFixed(1),
+      message: e?.message || String(e),
+    });
+    return false;
+  }
+}
+function _hasHeavyImageFields(trades) {
+  if (!Array.isArray(trades) || !trades.length) return false;
+  return trades.some(t => {
+    const a = String(t?.imgM15 || '');
+    const b = String(t?.imgH4Before || '');
+    const c = String(t?.imgM15After || '');
+    return a.length > 128 || b.length > 128 || c.length > 128;
+  });
+}
+function _cleanupLegacyUnscopedCacheKeysIfScopedExists(source = null) {
+  const src = source || _getCurrentHTFSource();
+  const scopedCacheKey = _cacheKeyFor(src);
+  const legacyCacheKey = `apiTradesCache_v2_rrmax_${src}`;
+  const scopedSessionCacheKey = _sessionCacheKeyFor(src);
+  const legacySessionCacheKey = `apiTradesSessionCache_v1_${src}`;
+  const scopedMediaKey = _mediaCacheKeyFor(src);
+  const legacyMediaKey = `apiTradesMedia_v1_${src}`;
+  const scopedRawKey = _rawSessionKeyFor(src);
+  const legacyRawKey = `apiTradesRaw_session_v2_${src}`;
+
+  if (scopedCacheKey !== legacyCacheKey && localStorage.getItem(scopedCacheKey) !== null) {
+    if (localStorage.getItem(legacyCacheKey) !== null) {
+      localStorage.removeItem(legacyCacheKey);
+      console.debug('[CacheCleanup] removed legacy key:', legacyCacheKey);
+    }
+  }
+  if (scopedSessionCacheKey !== legacySessionCacheKey && sessionStorage.getItem(scopedSessionCacheKey) !== null) {
+    if (sessionStorage.getItem(legacySessionCacheKey) !== null) {
+      sessionStorage.removeItem(legacySessionCacheKey);
+      console.debug('[CacheCleanup] removed legacy key:', legacySessionCacheKey);
+    }
+  }
+  if (scopedMediaKey !== legacyMediaKey && sessionStorage.getItem(scopedMediaKey) !== null) {
+    if (sessionStorage.getItem(legacyMediaKey) !== null) {
+      sessionStorage.removeItem(legacyMediaKey);
+      console.debug('[CacheCleanup] removed legacy key:', legacyMediaKey);
+    }
+  }
+  if (scopedRawKey !== legacyRawKey && _rawAPICacheMemory[_getProfileScopedSourceSlot(src)]) {
+    if (sessionStorage.getItem(legacyRawKey) !== null) {
+      sessionStorage.removeItem(legacyRawKey);
+      console.debug('[CacheCleanup] removed legacy key:', legacyRawKey);
+    }
+  }
+}
+function _persistMediaCache(trades, source = null) {
+  try {
+    sessionStorage.setItem(_mediaCacheKeyFor(source), JSON.stringify(_extractMediaCache(trades)));
     return true;
   } catch {
     return false;
   }
 }
-function _mergeMediaCache(trades) {
+function _mergeMediaCache(trades, source = null) {
   if (!Array.isArray(trades) || !trades.length) return trades;
   try {
-    const raw = sessionStorage.getItem(_mediaCacheKey());
+    const src = source || _getCurrentHTFSource();
+    const raw = _readFirstSessionStorageValue(`apiTradesMedia_v1_${src}`);
     const media = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(media) || !media.length) return trades;
     return trades.map((t, i) => {
@@ -3115,8 +5282,12 @@ const _STORAGE_MINIMAL_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
   'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
-  'imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig',
-  'imgM15AfterOrig','notionUrl'
+  'notionUrl'
+];
+const _STORAGE_ULTRA_KEYS = [
+  'date','month','pair','setup','setupDetail','session','sessionUtc','day',
+  'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
+  'tp3_rr','direction','tradeType','badFeeling','invalide','hour','notionUrl'
 ];
 function _deserializeTradesFromStorage(payload) {
   if (!payload) return null;
@@ -3143,7 +5314,9 @@ function _deserializeTradesFromStorage(payload) {
 function _serializeTradesForStorage(trades, mode = 'full') {
   if (!Array.isArray(trades)) return [];
   if (mode === 'full') return trades;
-  const keys = mode === 'compact' ? _STORAGE_COMPACT_KEYS : _STORAGE_MINIMAL_KEYS;
+  const keys = mode === 'compact'
+    ? _STORAGE_COMPACT_KEYS
+    : (mode === 'minimal' ? _STORAGE_MINIMAL_KEYS : _STORAGE_ULTRA_KEYS);
   return {
     __format: `api-cache-${mode}-v1`,
     keys,
@@ -3161,28 +5334,88 @@ function _serializeTradesForStorage(trades, mode = 'full') {
     })),
   };
 }
-function setCachedAPIData(trades) {
+function setCachedAPIData(trades, source = null) {
   // appState.settings.dataSource.cachedTrades is the single source of truth for
   // display. Populate it FIRST, then attempt the localStorage persistence. A
   // quota failure on the LS write must NOT leave appState inconsistent — the
   // app continues working for the current session; on next reload with no
   // cache key, initDataSource triggers a fresh fetch automatically.
-  const src = _getCurrentHTFSource();
-  _parsedAPICacheMemory[src] = Array.isArray(trades) ? trades : null;
-  appState.settings.dataSource.cachedTrades = Array.isArray(trades) ? trades : null;
-  _persistMediaCache(trades);
+  const src = source || _getCurrentHTFSource();
+  const slot = _getProfileScopedSourceSlot(src);
+  const cacheKey = _cacheKeyFor(src);
+  const activeProfileId = getActiveJournalProfile()?.id || '';
+  _parsedAPICacheMemory[slot] = Array.isArray(trades) ? trades : null;
+  if (_getCurrentHTFSource() === src) {
+    appState.settings.dataSource.cachedTrades = Array.isArray(trades) ? trades : null;
+  }
+  try {
+    sessionStorage.setItem(_sessionCacheKeyFor(src), JSON.stringify(_serializeTradesForStorage(trades, 'ultra')));
+  } catch (e) {
+    console.warn('[DS] Session cache persist failed:', e.message);
+  }
+  const mediaPayload = JSON.stringify(_extractMediaCache(trades));
+  const mediaBytes = _storageBytes(mediaPayload);
+  try {
+    sessionStorage.setItem(_mediaCacheKeyFor(src), mediaPayload);
+  } catch {
+    // Best-effort only: widgets still work in-memory, and the dashboard can
+    // re-fetch the API later if a reload lands without media cache.
+  }
   // Always stamp the fetch time first — it's a tiny 13-byte write.
   // The data serialization below may fail on quota, but the timestamp must
   // reflect the actual fetch regardless so _getCacheAge() stays accurate.
-  try { localStorage.setItem(_cacheTimeKey(), Date.now().toString()); } catch {}
-  const persistModes = ['full', 'compact', 'minimal'];
+  safeSetLocalStorage(_cacheTimeKeyFor(src), Date.now().toString(), {
+    kind: 'apiTradesCacheTime',
+    activeProfileId,
+    activeHtfSource: src,
+  });
+  const fullPayload = JSON.stringify(_serializeTradesForStorage(trades, 'full'));
+  const compactPayload = JSON.stringify(_serializeTradesForStorage(trades, 'compact'));
+  const normalizedFullBytes = _storageBytes(fullPayload);
+  const compactBytes = _storageBytes(compactPayload);
+  console.debug('[CacheSize] normalized full:', `${_formatStorageMB(normalizedFullBytes)} MB`);
+  console.debug('[CacheSize] persisted compact:', `${_formatStorageMB(compactBytes)} MB`);
+  console.debug('[CacheSize] media:', `${_formatStorageMB(mediaBytes)} MB`);
+
+  const persistModes = _hasHeavyImageFields(trades)
+    ? ['minimal', 'ultra']
+    : ['full', 'compact', 'minimal', 'ultra'];
   let persistedMode = null;
   let lastPersistError = null;
   for (const mode of persistModes) {
+    const serialized = _serializeTradesForStorage(trades, mode);
+    const payload = JSON.stringify(serialized);
+    const payloadBytes = _storageBytes(payload);
+    const meta = _buildCachePayloadDebugMeta(serialized, trades, mode, cacheKey);
+    console.log('[CacheWriteAttempt]', {
+      key: meta.key,
+      mode: meta.mode,
+      sizeMB: _formatStorageMB(payloadBytes),
+      trades: meta.trades,
+      ...meta.hasFields,
+    });
+    if (payloadBytes > (2 * 1024 * 1024)) {
+      console.warn('[DS] Skipping localStorage cache write — payload exceeds 2 MB guard.', {
+        key: cacheKey,
+        mode,
+        sizeMB: _formatStorageMB(payloadBytes),
+        trades: meta.trades,
+      });
+      lastPersistError = new Error(`Payload too large for localStorage guard (${mode}, ${payloadBytes} bytes)`);
+      continue;
+    }
     try {
-      localStorage.setItem(_cacheKey(), JSON.stringify(_serializeTradesForStorage(trades, mode)));
-      persistedMode = mode;
-      break;
+      const wrote = safeSetLocalStorage(cacheKey, payload, {
+        kind: 'apiTradesCache',
+        mode,
+        activeProfileId,
+        activeHtfSource: src,
+      });
+      if (wrote) {
+        persistedMode = mode;
+        break;
+      }
+      lastPersistError = new Error(`safeSetLocalStorage skipped or failed (${mode})`);
     } catch (e) {
       lastPersistError = e;
     }
@@ -3191,9 +5424,12 @@ function setCachedAPIData(trades) {
     console.warn('[DS] Cache persisted in compact mode after quota pressure.');
   } else if (persistedMode === 'minimal') {
     console.warn('[DS] Cache persisted in minimal mode after quota pressure.');
+  } else if (persistedMode === 'ultra') {
+    console.warn('[DS] Cache persisted in ultra mode after heavy quota pressure.');
   } else if (!persistedMode) {
     console.warn('[DS] Cache persist failed (quota) — data will re-fetch on next load. Details:', lastPersistError && lastPersistError.message);
   }
+  _cleanupLegacyUnscopedCacheKeysIfScopedExists(src);
   // Schedule a one-shot refresh exactly at the 60s mark so the status label
   // transitions to "API live (1 min ago)" on time, instead of waiting up to
   // 60s more for the next periodic tick.
@@ -3201,15 +5437,17 @@ function setCachedAPIData(trades) {
   _cacheAgeOneShot = setTimeout(() => {
     _cacheAgeOneShot = null;
     if (localStorage.getItem(DS_KEY) !== 'api') return;
-    const c = getCachedAPIData();
+    if (_getCurrentHTFSource() !== src) return;
+    const c = getCachedAPIData(src);
     if (!c || !c.length) return;
-    showDataStatus(_getAPICacheStatusLabel(), 'live');
+    showDataStatus(_getAPICacheStatusLabel(src), 'live');
     _updateLastSync();
   }, 60500);
 }
-function _getCacheAge() {
+function _getCacheAge(source = null) {
   try {
-    const ts = parseInt(localStorage.getItem(_cacheTimeKey()) || '0', 10);
+    const src = source || _getCurrentHTFSource();
+    const ts = parseInt(_readFirstLocalStorageValue(`apiTradesCacheTime_v2_rrmax_${src}`) || '0', 10);
     if (!ts) return null;
     const diffMs = Date.now() - ts;
     if (diffMs < 60000) return null;
@@ -3218,9 +5456,10 @@ function _getCacheAge() {
   } catch { return null; }
 }
 
-function getAPICooldownRemainingMs() {
+function getAPICooldownRemainingMs(source = null) {
   try {
-    const ts = parseInt(localStorage.getItem(_cacheTimeKey()) || '0', 10);
+    const src = source || _getCurrentHTFSource();
+    const ts = parseInt(_readFirstLocalStorageValue(`apiTradesCacheTime_v2_rrmax_${src}`) || '0', 10);
     if (!ts) return 0;
     return Math.max(0, API_REFRESH_COOLDOWN_MS - (Date.now() - ts));
   } catch { return 0; }
@@ -3232,8 +5471,8 @@ function _formatCooldown(ms) {
   return minutes <= 1 ? '1 min' : `${minutes} min`;
 }
 
-function _getAPICacheStatusLabel() {
-  const age = _getCacheAge();
+function _getAPICacheStatusLabel(source = null) {
+  const age = _getCacheAge(source);
   return age ? `API live (${age})` : 'API live';
 }
 
@@ -3364,10 +5603,18 @@ function setHTFSource(source) {
     showDataStatus(_getAPICacheStatusLabel(), 'live');
     _updateLastSync();
   } else if (localStorage.getItem(DS_KEY) === 'api') {
-    // No cache yet for this source — show pending state and trigger a background fetch
+    // No cache yet for this source — clear the currently displayed dataset so
+    // the previous HTF source cannot visually bleed into the new one.
+    appState.settings.dataSource.cachedTrades = null;
+    appState.trades.items.length = 0;
+    appState.trades.totalOverride = 0;
+    invalidateFilterCache();
+    render();
+    hideEmptyState();
+    // Show pending state only. Do not auto-fetch: API refreshes are strictly
+    // user-driven via the Notion Live button.
     setSourceIndicator('pending');
     showDataStatus('API standby — no data for this source yet', 'warn');
-    _fetchAPICacheSilently({ force: true });
   }
 }
 
@@ -3385,8 +5632,9 @@ function updateSourceUI(mode) {
   if (btnRef) setVisible(btnRef, false);
   _syncDsButtonTitles();
   const htfGroup = document.getElementById('htf-toggle-group');
-  if (htfGroup) htfGroup.classList.toggle('is-hidden', mode !== 'api');
+  if (htfGroup) htfGroup.classList.add('is-hidden'); // always hidden — profiles determine M15/H4
   _syncHTFToggleUI();
+  _syncJournalProfileUI();
 }
 
 // ── Inject parsed trades into the dashboard (shared by CSV and API paths) ──
@@ -3409,6 +5657,14 @@ function _injectTrades(parsed, totalLabel, savedState) {
   // branches below handles re-render once at the end.
   if (typeof loadCustomProps === 'function' && typeof _repopulateExtrasForProp === 'function') {
     for (const p of loadCustomProps()) _repopulateExtrasForProp(p, { silent: true });
+  }
+
+  // Backfill extras for any existing custom widgets whose API fields haven't
+  // been baked yet (e.g. widgets created before this fix, or in a session where
+  // the raw cache is still warm). Only runs when the raw cache is available.
+  if (typeof _bakeCustomWidgetExtrasIntoCache === 'function') {
+    const _cwDefs = (typeof _loadCustomWidgetDefs === 'function') ? _loadCustomWidgetDefs() : [];
+    for (const def of _cwDefs) _bakeCustomWidgetExtrasIntoCache(def);
   }
 
   if (savedState) {
@@ -3471,19 +5727,38 @@ async function loadFromAPI(options = {}) {
   const { silent = false, force = false } = options;
   if (appState.settings.dataSource.loading) return;
 
-  const cached = getCachedAPIData();
+  // Notion profiles bypass the legacy /api/trades endpoint
+  const _activeForFetch = getActiveJournalProfile();
+  if (_activeForFetch?.connectionType === 'notion') {
+    if (_activeForFetch.notionDatabaseId) {
+      console.log('[NotionProfile] loading from Notion database:', _activeForFetch.notionDatabaseId);
+      return _loadNotionTrades(_activeForFetch, { silent, force });
+    }
+    console.log('[NotionProfile] no database selected yet — showing prompt');
+    setSourceIndicator('pending');
+    showDataStatus('Notion connected — select a database in Data Sources to sync.', 'warn');
+    return;
+  }
+
+  const requestSource = _getCurrentHTFSource();
+  const requestURL = getAPIURL();
+
+  const cached = getCachedAPIData(requestSource);
+  const existingCache = (cached && cached.length) ? cached : null;
   if (!force && cached && cached.length) {
     debugDataSource('loadFromAPI:reuse-cache', { count: cached.length });
-    _injectTrades(cached, 'Cache', appState.settings.dataSource.pendingRestoreState);
-    appState.settings.dataSource.pendingRestoreState = null;
-    setSourceIndicator('live');
-    showDataStatus(_getAPICacheStatusLabel(), 'live');
-    _updateLastSync();
+    if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
+      _injectTrades(cached, 'Cache', appState.settings.dataSource.pendingRestoreState);
+      appState.settings.dataSource.pendingRestoreState = null;
+      setSourceIndicator('live');
+      showDataStatus(_getAPICacheStatusLabel(requestSource), 'live');
+      _updateLastSync();
+    }
     return;
   }
 
   appState.settings.dataSource.loading = true;
-  debugDataSource('loadFromAPI:start', { silent, force, url: getAPIURL() });
+  debugDataSource('loadFromAPI:start', { silent, force, url: requestURL, source: requestSource });
 
   const btn = getByIdSafe('ds-refresh-btn');
   if (btn) btn.classList.add('spinning');
@@ -3498,32 +5773,50 @@ async function loadFromAPI(options = {}) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new DOMException('Timeout 45s', 'AbortError')), 45000);
-    const resp  = await fetch(getAPIURL(), { signal: controller.signal });
+    const resp  = await fetch(requestURL, { signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const json = await resp.json();
-    if (!json.trades || !json.trades.length) throw new Error('No trades');
+    if (!json.trades || !json.trades.length) {
+      if (existingCache && existingCache.length) {
+        debugDataSource('loadFromAPI:empty-response-keep-cache', { count: existingCache.length, source: requestSource });
+        if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
+          _injectTrades(existingCache, 'Cache', appState.settings.dataSource.pendingRestoreState);
+          appState.settings.dataSource.pendingRestoreState = null;
+          setSourceIndicator('cache');
+          showDataStatus('API returned no trades — kept cached data', 'warn');
+          _updateLastSync();
+        }
+        return;
+      }
+      throw new Error('No trades');
+    }
 
-    _setRawAPICache(json.trades);       // persist raw for on-the-fly re-normalization
-    const parsed = json.trades.map((t, i) => {
+    _setRawAPICache(json.trades, requestSource);       // persist raw for on-the-fly re-normalization
+    const tradesToNormalize = _applyMappedFieldAliases(json.trades, requestSource);
+    const parsed = tradesToNormalize.map((t, i) => {
       try {
-        return _normalizeAPITrade(t, i);
+        return _normalizeAPITrade(t, i, requestSource);
       } catch (e) {
         console.warn('[normalize API trade]', `index=${i}`, e.message);
         return null;
       }
     }).filter(Boolean);
-    setCachedAPIData(parsed);           // persist normalized cache
-    _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
-    appState.settings.dataSource.pendingRestoreState = null;
+    setCachedAPIData(parsed, requestSource);           // persist normalized cache
+    if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
+      _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+      appState.settings.dataSource.pendingRestoreState = null;
 
-    setSourceIndicator('live');
-      if (loading) setVisible(loading, false);
-      if (badge)   setVisible(badge, true);
+      setSourceIndicator('live');
+        if (loading) setVisible(loading, false);
+        if (badge)   setVisible(badge, true);
 
-    showDataStatus(_getAPICacheStatusLabel(), 'live');
-    _updateLastSync();
-    debugDataSource('loadFromAPI:success', { count: appState.trades.items.length });
+      showDataStatus(_getAPICacheStatusLabel(requestSource), 'live');
+      _updateLastSync();
+      debugDataSource('loadFromAPI:success', { count: appState.trades.items.length, source: requestSource });
+    } else {
+      debugDataSource('loadFromAPI:success-stale-source', { count: parsed.length, source: requestSource, currentSource: _getCurrentHTFSource() });
+    }
 
   } catch (err) {
     console.error('[DS] API fetch failed:', err.name, err.message);
@@ -3540,15 +5833,21 @@ async function loadFromAPI(options = {}) {
     _showAPIError(reason);
 
     // Fallback logic
-    const cached = getCachedAPIData();
-    if (cached && cached.length) {
-      setSourceIndicator('cache');
-      _injectTrades(cached, 'Cache', appState.settings.dataSource.pendingRestoreState);
-      appState.settings.dataSource.pendingRestoreState = null;
-      showDataStatus('Offline — cached data', 'warn');
-      _updateLastSync();
-      debugDataSource('loadFromAPI:fallback-cache', { count: cached.length });
+    const fallbackCache = existingCache || getCachedAPIData(requestSource);
+    if (fallbackCache && fallbackCache.length) {
+      if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
+        setSourceIndicator('cache');
+        _injectTrades(fallbackCache, 'Cache', appState.settings.dataSource.pendingRestoreState);
+        appState.settings.dataSource.pendingRestoreState = null;
+        showDataStatus('Offline — cached data', 'warn');
+        _updateLastSync();
+      }
+      debugDataSource('loadFromAPI:fallback-cache', { count: fallbackCache.length, source: requestSource });
     } else {
+      if (localStorage.getItem(DS_KEY) !== 'api' || _getCurrentHTFSource() !== requestSource) {
+        debugDataSource('loadFromAPI:fallback-ignored-stale-source', { source: requestSource, currentSource: _getCurrentHTFSource() });
+        return;
+      }
       localStorage.setItem(DS_KEY, 'demo');
       debugDataSource('loadFromAPI:fallback-demo');
       loadBuiltinCSV();
@@ -4049,6 +6348,13 @@ function refreshAPISource() {
 function switchToAPI() {
   debugDataSource('switchToAPI:refresh-cache-only');
 
+  // Notion profiles never touch the legacy /api/trades endpoint.
+  const _switchProfile = getActiveJournalProfile();
+  if (_switchProfile?.connectionType === 'notion') {
+    loadFromAPI({ force: true });
+    return;
+  }
+
   // Show "API LOADING" badge on the tab while the fetch runs.
   const loading = getByIdSafe('tab-api-loading');
   const badge   = getByIdSafe('tab-api-badge');
@@ -4075,37 +6381,56 @@ let _lastAPIFetchError = null;
 async function _fetchAPICacheSilently(options = {}) {
   const { force = false } = options;
   if (appState.settings.dataSource.loading) return;
+  if (getActiveJournalProfile()?.connectionType === 'notion') return;
+  const requestSource = _getCurrentHTFSource();
+  const requestURL = getAPIURL();
+  const existingCache = getCachedAPIData(requestSource);
 
   // Respect the cache if not forcing
   if (!force) {
-    const cached = getCachedAPIData();
-    if (cached && cached.length) return;
+    if (existingCache && existingCache.length) return;
   }
 
   appState.settings.dataSource.loading = true;
   _lastAPIFetchError = null;
-  debugDataSource('fetchAPICacheSilently:start', { force });
+  debugDataSource('fetchAPICacheSilently:start', { force, source: requestSource, url: requestURL });
 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new DOMException('Timeout 45s', 'AbortError')), 45000);
-    const resp  = await fetch(getAPIURL(), { signal: controller.signal });
+    const resp  = await fetch(requestURL, { signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const json = await resp.json();
-    if (!json.trades || !json.trades.length) throw new Error('No trades');
+    if (!json.trades || !json.trades.length) {
+      debugDataSource('fetchAPICacheSilently:empty-response-keep-cache', {
+        source: requestSource,
+        cachedCount: existingCache?.length || 0,
+      });
+      if (existingCache && existingCache.length && localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
+        const savedState = appState.settings.dataSource.pendingRestoreState
+                         ?? (typeof _saveFilterState === 'function' ? _saveFilterState() : null);
+        _injectTrades(existingCache, 'Cache', savedState);
+        appState.settings.dataSource.pendingRestoreState = null;
+        setSourceIndicator('cache');
+        showDataStatus('API returned no trades — kept cached data', 'warn');
+        _updateLastSync();
+      }
+      return;
+    }
 
-    _setRawAPICache(json.trades);
-    const parsed = json.trades.map((t, i) => {
+    _setRawAPICache(json.trades, requestSource);
+    const tradesToNormalize = _applyMappedFieldAliases(json.trades, requestSource);
+    const parsed = tradesToNormalize.map((t, i) => {
       try {
-        return _normalizeAPITrade(t, i);
+        return _normalizeAPITrade(t, i, requestSource);
       } catch (e) {
         console.warn('[normalize API trade]', `index=${i}`, e.message);
         return null;
       }
     }).filter(Boolean);
-    setCachedAPIData(parsed);
-    if (localStorage.getItem(DS_KEY) === 'api') {
+    setCachedAPIData(parsed, requestSource);
+    if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
       // Preserve filter state across the silent refresh: when
       // pendingRestoreState is null (the standalone "Notion Live" reload
       // path), capture the current state before injection so _injectTrades
@@ -4116,20 +6441,161 @@ async function _fetchAPICacheSilently(options = {}) {
       _injectTrades(parsed, 'Notion Live', savedState);
       appState.settings.dataSource.pendingRestoreState = null;
       setSourceIndicator('live');
-      showDataStatus(_getAPICacheStatusLabel(), 'live');
+      showDataStatus(_getAPICacheStatusLabel(requestSource), 'live');
       _updateLastSync();
     } else {
       _updateLastSync();
     }
-    debugDataSource('fetchAPICacheSilently:success', { count: parsed.length });
+    debugDataSource('fetchAPICacheSilently:success', { count: parsed.length, source: requestSource, currentSource: _getCurrentHTFSource() });
   } catch (err) {
     _lastAPIFetchError = err?.message || err?.name || 'fetch failed';
     console.warn('[DS] Background API cache refresh failed:', err.name, err.message);
-    debugDataSource('fetchAPICacheSilently:error', { name: err.name, message: err.message });
+    debugDataSource('fetchAPICacheSilently:error', { name: err.name, message: err.message, source: requestSource });
   } finally {
     appState.settings.dataSource.loading = false;
     // If the Journal panel is open, re-render so "loading fields…" can resolve
     // to the real field count (or stay put on failure without going stale).
+    if (typeof dataHubOpen !== 'undefined' && dataHubOpen) {
+      try { updateJournalPanel(); } catch (e) {}
+    }
+  }
+}
+
+// ── Notion direct database load ───────────────────────────────────────────────
+// Called when the active journal profile is connectionType==='notion' AND has a
+// notionDatabaseId. Fetches all pages from the Notion database via the backend
+// proxy (/api/notion/query), flattens them, runs _normalizeAPITrade, and injects
+// the result exactly as loadFromAPI does for the legacy /api/trades endpoint.
+async function _loadNotionTrades(profile, options = {}) {
+  const { silent = false, force = false } = options;
+
+  const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
+  if (!user?.id) {
+    showDataStatus('Sign in to load Notion data.', 'warn');
+    return;
+  }
+
+  const source = (String(profile.type || '').toLowerCase() === 'h4') ? 'h4' : 'm15';
+
+  // ── Ensure we are in api mode and on the right HTF source ─────────────────
+  // Notion profiles must always operate in 'api' mode. If the user was in demo
+  // or csv mode, switch silently — the UI source buttons follow from DS_KEY.
+  if (localStorage.getItem(DS_KEY) !== 'api') {
+    localStorage.setItem(DS_KEY, 'api');
+    if (typeof updateSourceUI === 'function') updateSourceUI('api');
+  }
+  // Align HTF source so cache keys and injection gates are consistent
+  if (_getCurrentHTFSource() !== source) {
+    try { localStorage.setItem(HTF_SOURCE_KEY, source); } catch (e) {}
+  }
+
+  _migrateFieldOverridesToProfileScope();
+  console.log('[Mapping] overrides loaded:', JSON.stringify(_getAPIFieldOverrides()).slice(0, 200));
+  console.log('[Mapping] fieldNames loaded:', _listAPIKeys([]).slice(0, 10));
+  console.log('[ProfileSwitch] active profile: id/name/database', {
+    id: profile.id,
+    name: profile.name,
+    database: profile.notionDatabaseId,
+  });
+  console.log('[NotionLoad] start — db:', profile.notionDatabaseId, 'source:', source,
+              'DS_KEY:', localStorage.getItem(DS_KEY), 'HTF:', _getCurrentHTFSource());
+
+  // ── Cache hit ──────────────────────────────────────────────────────────────
+  if (!force) {
+    const cached = getCachedAPIData(source);
+    if (cached && cached.length) {
+      console.log('[NotionLoad] cache hit —', cached.length, 'trades');
+      _injectTrades(cached, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+      appState.settings.dataSource.pendingRestoreState = null;
+      setSourceIndicator('live');
+      showDataStatus(_getAPICacheStatusLabel(source), 'live');
+      _updateLastSync();
+      return;
+    }
+  }
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+  appState.settings.dataSource.loading = true;
+  if (!silent) showDataStatus('Loading Notion data…', 'warn');
+  setSourceIndicator('loading');
+
+  const btn = typeof getByIdSafe === 'function' ? getByIdSafe('ds-refresh-btn') : null;
+  if (btn) btn.classList.add('spinning');
+
+  try {
+    const url = `${NOTION_OAUTH_BACKEND}/api/notion/query`
+      + `?user_id=${encodeURIComponent(user.id)}`
+      + `&database_id=${encodeURIComponent(profile.notionDatabaseId)}`;
+
+    console.log('[NotionLoad] fetching:', url);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new DOMException('Timeout 90s', 'AbortError')), 90000);
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+
+    console.log('[NotionLoad] response — count:', json.count, 'trades:', json.trades?.length);
+    if (json.trades?.length) {
+      console.log('[NotionLoad] trade[0] keys:', Object.keys(json.trades[0]));
+    }
+
+    if (!json.trades || !json.trades.length) {
+      showDataStatus('Notion database returned no trades.', 'warn');
+      setSourceIndicator('pending');
+      return;
+    }
+
+    _setRawAPICache(json.trades, source);
+
+    // Pre-inject user-mapped outcome, then auto-map unmapped Notion fields to
+    // the aliases expected by _normalizeAPITrade (without touching that function).
+    const tradesToNormalize = _applyOutcomeOverride(json.trades, source);
+    const autoMapped = _applyNotionAutoMap(tradesToNormalize, source);
+
+    const parsed = autoMapped.map((t, i) => {
+      try { return _normalizeAPITrade(t, i, source); }
+      catch (e) {
+        console.warn('[NotionLoad] normalize error index=' + i, e.message);
+        return null;
+      }
+    }).filter(Boolean);
+
+    console.log('[NotionLoad] normalized:', parsed.length, '/', json.trades.length);
+    if (parsed.length) {
+      console.log('[NotionLoad] normalized[0]:', JSON.stringify(parsed[0]).slice(0, 400));
+    } else {
+      console.warn('[NotionLoad] 0 trades after automap — outcome field values may not match _OUTCOME_MAP');
+      if (autoMapped.length) {
+        const sample = autoMapped[0];
+        console.warn('[NotionLoad] positionResult value in trade[0]:', sample.positionResult);
+      }
+    }
+
+    if (!parsed.length) {
+      showDataStatus('Notion data loaded but no valid trades — check field mapping.', 'warn');
+      setSourceIndicator('pending');
+      return;
+    }
+
+    setCachedAPIData(parsed, source);
+
+    // Inject unconditionally — we already set DS_KEY and HTFSource above
+    _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+    appState.settings.dataSource.pendingRestoreState = null;
+    setSourceIndicator('live');
+    showDataStatus(`Notion · ${parsed.length} trades`, 'live');
+    _updateLastSync();
+
+    console.log('[NotionLoad] success — injected', parsed.length, 'trades');
+  } catch (err) {
+    console.error('[NotionLoad]', err.name, err.message);
+    showDataStatus('Notion load failed: ' + (err.message || err.name), 'warn');
+    setSourceIndicator('pending');
+  } finally {
+    appState.settings.dataSource.loading = false;
+    if (btn) btn.classList.remove('spinning');
     if (typeof dataHubOpen !== 'undefined' && dataHubOpen) {
       try { updateJournalPanel(); } catch (e) {}
     }
@@ -4143,12 +6609,13 @@ async function _fetchAPICacheSilently(options = {}) {
 let _otherSourceFetching = false;
 async function _fetchOtherSourceBackground() {
   if (_otherSourceFetching) return;
+  if (getActiveJournalProfile()?.connectionType === 'notion') return;
   const current = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
   const other   = current === 'm15' ? 'h4' : 'm15';
   // Respect cooldown for the other source independently
-  const otherTimeKey = `apiTradesCacheTime_v2_rrmax_${other}`;
+  const otherTimeKey = _cacheTimeKeyFor(other);
   try {
-    const ts = parseInt(localStorage.getItem(otherTimeKey) || '0', 10);
+    const ts = parseInt(_readFirstLocalStorageValue(`apiTradesCacheTime_v2_rrmax_${other}`) || '0', 10);
     if (ts && (Date.now() - ts) < API_REFRESH_COOLDOWN_MS) return;
   } catch {}
   _otherSourceFetching = true;
@@ -4178,13 +6645,14 @@ async function _fetchOtherSourceBackground() {
     }
 
     // Store in per-source memory caches (never touches appState.settings.dataSource.cachedTrades)
-    _rawAPICacheMemory[other]    = json.trades;
-    _parsedAPICacheMemory[other] = parsed;
+    const otherSlot = _getProfileScopedSourceSlot(other);
+    _rawAPICacheMemory[otherSlot]    = json.trades;
+    _parsedAPICacheMemory[otherSlot] = parsed;
 
     // Always stamp the fetch time first (tiny 13-byte write, rarely fails)
     try { localStorage.setItem(otherTimeKey, Date.now().toString()); } catch {}
     // Persist data to LS under the other source's key (best-effort, may fail on quota)
-    const otherCacheKey = `apiTradesCache_v2_rrmax_${other}`;
+    const otherCacheKey = _cacheKeyFor(other);
     try {
       localStorage.setItem(otherCacheKey, JSON.stringify(_serializeTradesForStorage(parsed, 'full')));
     } catch {
@@ -6448,6 +8916,123 @@ const _SORT_CHARTS_WITH_ALPHA     = ['setup', 'pair', 'obs', 'h4obs'];
 const _SORT_CHARTS_WITH_CANONICAL = ['session', 'day'];
 const _ALL_BAR_CHARTS = ['setup', 'session', 'pair', 'obs', 'h4obs', 'day'];
 
+function _getCustomBarChartDef(chartId) {
+  if (!chartId || !String(chartId).startsWith('w-cust-')) return null;
+  return _loadCustomWidgetDefs().find(d => d.id === chartId && d.type === 'bars') || null;
+}
+
+function _getBarSortFamily(chartId) {
+  if (_SORT_CHARTS_WITH_CANONICAL.includes(chartId)) return 'canonical';
+  if (_SORT_CHARTS_WITH_ALPHA.includes(chartId)) return 'alpha';
+  const def = _getCustomBarChartDef(chartId);
+  if (!def) return 'alpha';
+  const key = String(def.propertyKey || def.field || '').trim().toLowerCase();
+  if (key === 'session' || key === 'day' || key === 'hour') return 'canonical';
+  return 'alpha';
+}
+
+function _getAllLinkedBarChartIds() {
+  const customIds = _loadCustomWidgetDefs()
+    .filter(d => d.type === 'bars')
+    .map(d => d.id);
+  return [..._ALL_BAR_CHARTS, ...customIds];
+}
+
+function _getInitialBarSortMode(chartId) {
+  const family = _getBarSortFamily(chartId);
+  if (!_sortSyncEnabled) return family === 'canonical' ? 'canonical' : 'desc';
+  const sourceId = family === 'canonical'
+    ? (_ALL_BAR_CHARTS.find(id => _getBarSortFamily(id) === 'canonical') || 'session')
+    : (_ALL_BAR_CHARTS.find(id => _getBarSortFamily(id) === 'alpha') || 'setup');
+  return barSortState[sourceId] || (family === 'canonical' ? 'canonical' : 'desc');
+}
+
+function _renderCustomBarSortToolbarHTML(chartId) {
+  const family = _getBarSortFamily(chartId);
+  const firstMode = family === 'canonical' ? 'canonical' : 'alpha';
+  const activeMode = barSortState[chartId] || _getInitialBarSortMode(chartId);
+  return `
+    <div class="bar-sort-row" id="sort-${_escapeAttr(chartId)}">
+      <button class="bar-sort-btn sort-sync-btn${_sortSyncEnabled ? ' active' : ''}" data-action="toggle-sort-sync" title="Sync sort across all widgets">⛓</button>
+      <button class="bar-sort-btn${activeMode === firstMode ? ' active' : ''}" data-action="set-bar-sort" data-chart="${_escapeAttr(chartId)}" data-sort="${firstMode}">A → Z</button>
+      <button class="bar-sort-btn${activeMode === 'desc' ? ' active' : ''}" data-action="set-bar-sort" data-chart="${_escapeAttr(chartId)}" data-sort="desc">Best → Worst</button>
+      <button class="bar-sort-btn${activeMode === 'asc' ? ' active' : ''}" data-action="set-bar-sort" data-chart="${_escapeAttr(chartId)}" data-sort="asc">Worst → Best</button>
+      <button class="bar-sort-btn${activeMode === 'volume' ? ' active' : ''}" data-action="set-bar-sort" data-chart="${_escapeAttr(chartId)}" data-sort="volume">Volume</button>
+    </div>`;
+}
+
+function _renderBarChartById(chartId, trades = getFiltered()) {
+  const filtered = Array.isArray(trades) ? trades : [];
+  const absMax = 1.8;
+  if (chartId === 'setup')   { renderBars('bars-setup',   groupByEV(filtered, t => setupDetailMode ? (t.setupDetail||t.setup) : t.setup, k => k), absMax, false, 'setup'); return true; }
+  if (chartId === 'session') { renderBars('bars-session', groupByEV(filtered, t => t.session, k => SESSION_SHORT[k] || k), absMax, false, 'session'); return true; }
+  if (chartId === 'pair')    { renderBars('bars-pair',    groupByEV(filtered, t => t.pair), absMax, false, 'pair'); return true; }
+  if (chartId === 'obs')     { renderObsBars(filtered); return true; }
+  if (chartId === 'h4obs')   { renderH4ObsBars(filtered); return true; }
+  if (chartId === 'day')     { renderDayBars(filtered); return true; }
+  const cwDef = _getCustomBarChartDef(chartId);
+  if (cwDef) {
+    renderCustomBars(cwDef, filtered);
+    return true;
+  }
+  return false;
+}
+
+function _getTradesForBarChartSelection(chartId, rawKey, trades = getFiltered()) {
+  const filtered = Array.isArray(trades) ? trades : [];
+  if (!rawKey) return [];
+  switch (chartId) {
+    case 'setup':
+      return filtered.filter(t => (setupDetailMode ? (t.setupDetail||t.setup) : t.setup) === rawKey);
+    case 'session':
+      return filtered.filter(t => t.session === rawKey);
+    case 'pair':
+      return filtered.filter(t => t.pair === rawKey);
+    case 'day':
+      return filtered.filter(t => t.day === rawKey);
+    case 'obs':
+      return filtered.filter(t => Array.isArray(t.obstacles) && t.obstacles.includes(rawKey));
+    case 'h4obs':
+      return filtered.filter(t => Array.isArray(t.h4) && t.h4.includes(rawKey));
+    case 'hour': {
+      const h = parseInt(rawKey, 10);
+      return Number.isNaN(h) ? [] : filtered.filter(t => t.hour === h);
+    }
+    default: {
+      const def = _getCustomBarChartDef(chartId);
+      if (!def) return [];
+      return filtered.filter(t => {
+        const vals = _cwExpandFieldValues(
+          _cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource),
+          def.inferredType
+        );
+        return vals.includes(rawKey);
+      });
+    }
+  }
+}
+
+function _getBarChartIdFromContainerId(containerId) {
+  const map = {
+    'bars-setup': 'setup',
+    'bars-session': 'session',
+    'bars-pair': 'pair',
+    'bars-day': 'day',
+    'bars-obs': 'obs',
+    'bars-h4obs': 'h4obs',
+    'bars-hour': 'hour',
+  };
+  if (map[containerId]) return map[containerId];
+  if (String(containerId || '').startsWith('bars-w-cust-')) return String(containerId).slice(5);
+  return '';
+}
+
+function _buildCustomWidgetDeleteButtonHTML(id) {
+  return `<button type="button" class="gs-delete-btn" title="Delete this widget" data-action="layout-delete-widget-confirm" data-cw-id="${_escapeAttr(id)}" aria-label="Delete this widget">
+    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+  </button>`;
+}
+
 function toggleSortSync() {
   _sortSyncEnabled = !_sortSyncEnabled;
   document.querySelectorAll('.sort-sync-btn').forEach(b => b.classList.toggle('active', _sortSyncEnabled));
@@ -6474,26 +9059,15 @@ function setBarSort(chart, mode) {
   }
   // Re-render with current data
   const filtered = getFiltered();
-  const absMax   = 1.8;
-  if (chart === 'setup')   renderBars('bars-setup',   groupByEV(filtered, t => setupDetailMode ? (t.setupDetail||t.setup) : t.setup, k => k), absMax, false, 'setup');
-  if (chart === 'session') renderBars('bars-session', groupByEV(filtered, t => t.session, k => SESSION_SHORT[k] || k), absMax, false, 'session');
-  if (chart === 'pair')    renderBars('bars-pair',    groupByEV(filtered, t => t.pair), absMax, false, 'pair');
-  if (chart === 'obs')     renderObsBars(filtered);
-  if (chart === 'h4obs')   renderH4ObsBars(filtered);
-  if (chart === 'day')     renderDayBars(filtered);
-  // Custom bar chart sort
-  if (chart.startsWith('w-cust-')) {
-    const cwDef = _loadCustomWidgetDefs().find(d => d.id === chart);
-    if (cwDef && cwDef.type === 'bars') renderCustomBars(cwDef, filtered);
-  }
+  _renderBarChartById(chart, filtered);
 
   // Propagate to all other charts if sync is enabled
   if (_sortSyncEnabled && !_sortSyncGuard) {
     _sortSyncGuard = true;
     const mapped = _syncedSort(mode);
-    _ALL_BAR_CHARTS.forEach(c => {
+    _getAllLinkedBarChartIds().forEach(c => {
       if (c === chart) return;
-      const m = _SORT_CHARTS_WITH_CANONICAL.includes(c) ? mapped.canonical : mapped.alpha;
+      const m = _getBarSortFamily(c) === 'canonical' ? mapped.canonical : mapped.alpha;
       setBarSort(c, m);
     });
     // Also sync hour widget
@@ -7035,19 +9609,65 @@ function _isLowVolume(n) {
 // ══════════════════════════════════════════════════════
 
 // Read a field value from a trade: top-level first, then .extras
-function _cwGetFieldValue(t, fieldKey) {
+function _cwGetFieldValue(t, fieldKey, def = null, sourceOverride = '') {
   if (t[fieldKey] !== undefined && t[fieldKey] !== null) return t[fieldKey];
   if (t.extras && t.extras[fieldKey] !== undefined) return t.extras[fieldKey];
+  const mode = localStorage.getItem(DS_KEY) || 'demo';
+  const source = sourceOverride || def?.propertySource || '';
+  if (source && source === mode && (mode === 'csv' || mode === 'api')) {
+    const raw = _getRawForTrade(t, mode);
+    if (raw && Object.prototype.hasOwnProperty.call(raw, fieldKey)) return raw[fieldKey];
+  }
   return null;
+}
+
+function _cwExpandFieldValues(raw, inferredType = '') {
+  if (raw === null || raw === undefined) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map(v => String(v ?? '').trim())
+      .filter(Boolean);
+  }
+  const str = typeof raw === 'object' ? _flattenApiWidgetValue(raw) : String(raw).trim();
+  if (!str) return [];
+  if (inferredType === 'multi-select' && (str.includes(', ') || str.includes('|'))) {
+    return str.split(/, |\|/).map(v => v.trim()).filter(Boolean);
+  }
+  return [str];
 }
 
 function renderCustomBars(def, trades) {
   const containerId = `bars-${def.id}`;
   if (!trades.length) { renderWidgetEmptyState(containerId); return; }
-  const data = groupByEV(trades, t => {
-    const v = _cwGetFieldValue(t, def.field);
-    return (v !== null && v !== undefined && String(v).trim()) ? String(v) : null;
+  const tpConfig = appState.ui.tpConfig;
+  const groups = {};
+  trades.forEach(t => {
+    const vals = _cwExpandFieldValues(_cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource), def.inferredType);
+    if (!vals.length) return;
+    const r = computeEffectiveRR(t, tpConfig);
+    vals.forEach(val => {
+      if (!groups[val]) groups[val] = { rs: [], rawKey: val, _oc: { TP: [], 'BE-TP': [], 'BE-SL': [], SL: [] } };
+      groups[val].rs.push(r);
+      const arr = groups[val]._oc[t.outcome];
+      if (arr) arr.push(r);
+    });
   });
+  const data = Object.entries(groups).map(([k, { rs, rawKey, _oc }]) => {
+    const sum = a => a.reduce((s, r) => s + r, 0);
+    return {
+      label: k,
+      _rawKey: rawKey,
+      n: rs.length,
+      ev: sum(rs) / rs.length,
+      totalR: sum(rs),
+      oc: {
+        tp:   { r: sum(_oc.TP),         n: _oc.TP.length },
+        betp: { r: sum(_oc['BE-TP']),   n: _oc['BE-TP'].length },
+        besl: { r: sum(_oc['BE-SL']),   n: _oc['BE-SL'].length },
+        sl:   { r: sum(_oc.SL),         n: _oc.SL.length },
+      },
+    };
+  }).filter(d => d.n >= 1);
   if (!data.length) { renderWidgetEmptyState(containerId); return; }
   renderBars(containerId, data, 1.8, false, def.id);
 }
@@ -7056,74 +9676,41 @@ function renderCustomHeatmap(def, trades) {
   const containerId = `heatmap-${def.id}`;
   const container = document.getElementById(containerId);
   if (!container) return;
-  if (!trades.length) { renderWidgetEmptyState(containerId); return; }
-
-  const rowSet = new Set(), colSet = new Set();
-  trades.forEach(t => {
-    const r = _cwGetFieldValue(t, def.field);
-    const c = _cwGetFieldValue(t, def.field2);
-    if (r && String(r).trim() && c && String(c).trim()) {
-      rowSet.add(String(r)); colSet.add(String(c));
-    }
+  const runtime = _getCustomHeatmapRuntimeState(def);
+  const metric = barMode === 'wr' ? 'wr' : barMode === 'n' ? 'n' : runtime.metricMode;
+  _renderSharedHeatmapGrid({
+    container,
+    containerId,
+    trades,
+    rowKey: def.field,
+    colKey: def.field2,
+    metric,
+    threshold: runtime.threshold,
+    hardMode: runtime.hardMode,
+    getRowValues: t => _cwExpandFieldValues(
+      _cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource),
+      def.inferredType
+    ),
+    getColValues: t => _cwExpandFieldValues(
+      _cwGetFieldValue(t, def.field2, def, def.field2Source || def.propertySource),
+      ''
+    ),
+    getRowLabel: v => _formatHeatmapAxisLabel(v, def.field, true),
+    getColLabel: v => _formatHeatmapAxisLabel(v, def.field2, true),
+    getCellTitle: (rowVal, colVal) => `${_formatHeatmapAxisLabel(rowVal, def.field, true)} × ${_formatHeatmapAxisLabel(colVal, def.field2, true)}`,
+    getCellTrades: (rowVal, colVal) => trades.filter(t => {
+      const rowVals = _cwExpandFieldValues(
+        _cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource),
+        def.inferredType
+      );
+      const colVals = _cwExpandFieldValues(
+        _cwGetFieldValue(t, def.field2, def, def.field2Source || def.propertySource),
+        ''
+      );
+      return rowVals.includes(rowVal) && colVals.includes(colVal);
+    }),
+    rowLabelWidth: 72,
   });
-  if (!rowSet.size || !colSet.size) { renderWidgetEmptyState(containerId); return; }
-
-  const rows = [...rowSet].sort();
-  const cols = [...colSet].sort();
-
-  const tpCfg = appState.ui.tpConfig;
-  const cells = {};
-  trades.forEach(t => {
-    const r = _cwGetFieldValue(t, def.field);
-    const c = _cwGetFieldValue(t, def.field2);
-    if (!r || !c || !String(r).trim() || !String(c).trim()) return;
-    const key = `${r}\x00${c}`;
-    if (!cells[key]) cells[key] = { sum: 0, n: 0, wins: 0 };
-    const eff = computeEffectiveRR(t, tpCfg);
-    cells[key].sum += eff;
-    cells[key].n++;
-    if (isWinner(t, tpCfg)) cells[key].wins++;
-  });
-
-  let globalMax = 0;
-  Object.values(cells).forEach(cell => {
-    if (cell.n) {
-      const abs = Math.abs(cell.sum / cell.n);
-      if (abs > globalMax) globalMax = abs;
-    }
-  });
-  if (!globalMax) globalMax = 1;
-
-  const ROW_LBL = 72;
-  const cellH = Math.max(22, Math.floor(Math.max(0, container.clientHeight - 28) / rows.length));
-  const fs = Math.max(8, Math.min(12, Math.floor(cellH * 0.38)));
-
-  let html = `<div class="cw-hm" style="display:grid;grid-template-columns:${ROW_LBL}px repeat(${cols.length},1fr);font-size:${fs}px;">`;
-  html += `<div class="cw-hm-corner"></div>`;
-  cols.forEach(c => {
-    html += `<div class="cw-hm-col-hdr" title="${_escapeHtml(c)}">${_escapeHtml(c.substring(0,10))}</div>`;
-  });
-  rows.forEach(r => {
-    html += `<div class="cw-hm-row-hdr" title="${_escapeHtml(r)}">${_escapeHtml(r.substring(0,10))}</div>`;
-    cols.forEach(c => {
-      const key = `${r}\x00${c}`;
-      const cell = cells[key];
-      if (!cell || !cell.n) { html += `<div class="cw-hm-cell cw-hm-empty" style="height:${cellH}px">—</div>`; return; }
-      const ev = cell.sum / cell.n;
-      const intensity = Math.min(1, Math.abs(ev) / globalMax);
-      const alpha = 0.15 + intensity * 0.55;
-      const bg = ev > 0
-        ? `rgba(0,210,96,${alpha.toFixed(2)})`
-        : `rgba(255,82,82,${alpha.toFixed(2)})`;
-      const wr = (cell.wins / cell.n * 100).toFixed(0);
-      const val = (ev > 0 ? '+' : '') + ev.toFixed(2);
-      html += `<div class="cw-hm-cell" style="background:${bg};height:${cellH}px" title="${cell.n} trades · WR ${wr}% · Avg R ${val}">
-        <span class="cw-hm-val">${val}</span><span class="cw-hm-n">${cell.n}</span>
-      </div>`;
-    });
-  });
-  html += '</div>';
-  container.innerHTML = html;
 }
 
 function renderAllCustomWidgets(trades) {
@@ -9636,105 +12223,179 @@ function drawMonthly(trades) {
 // ══════════════════════════════════════════════════════
 // HEATMAP: SESSION × DAY
 // ══════════════════════════════════════════════════════
-function renderHeatmap(trades) {
-  const container = document.getElementById('heatmap-container');
+function _heatmapAxisKind(key = '') {
+  const norm = String(key || '').trim().toLowerCase();
+  if (['session', 'sessionutc', 'sessionformule'].includes(norm)) return 'session';
+  if (['day', 'jour', 'jourformule'].includes(norm)) return 'day';
+  if (norm === 'pair') return 'pair';
+  return norm;
+}
+
+function _orderHeatmapAxisValues(values, axisKey = '') {
+  const kind = _heatmapAxisKind(axisKey);
+  const list = [...new Set((values || []).filter(Boolean))];
+  if (kind === 'session') {
+    return SESSION_ORDER.filter(v => list.includes(v))
+      .concat(list.filter(v => !SESSION_ORDER.includes(v)).sort());
+  }
+  if (kind === 'day') {
+    return DAY_ORDER.filter(v => list.includes(v))
+      .concat(list.filter(v => !DAY_ORDER.includes(v)).sort());
+  }
+  return list.sort();
+}
+
+function _formatHeatmapAxisLabel(value, axisKey = '', short = false) {
+  const kind = _heatmapAxisKind(axisKey);
+  if (kind === 'session') return (short ? SESSION_SHORT[value] : null) || value;
+  if (kind === 'day') return (short ? DAY_EN[value] : DAY_FULL[value]) || value;
+  return value;
+}
+
+function _renderSharedHeatmapGrid({
+  container,
+  containerId = '',
+  trades = [],
+  rowKey = '',
+  colKey = '',
+  metric = 'ev',
+  threshold = 0,
+  hardMode = false,
+  getRowValues,
+  getColValues,
+  getRowLabel,
+  getColLabel,
+  getCellTitle,
+  getCellTrades,
+  onCellContextMenu,
+  rowLabelWidth = 72,
+}) {
   if (!container) return;
-  if (!trades.length) { renderWidgetEmptyState('heatmap-container'); return; }
-  // Sessions from actual data, canonical order
-  const _suSet = new Set(trades.map(t => t.sessionUtc || t.session).filter(Boolean));
-  const sessions = SESSION_ORDER.filter(s => _suSet.has(s))
-                   .concat([..._suSet].filter(s => !SESSION_ORDER.includes(s)).sort());
-  // Days from actual data, canonical Mon→Sun first, then any non-canonical
-  // keys (alphabetical) so a remapped Day column still surfaces all values.
-  const _daySet = new Set(trades.map(t => t.day).filter(Boolean));
-  const days = DAY_ORDER.filter(d => _daySet.has(d))
-                .concat([..._daySet].filter(d => !DAY_ORDER.includes(d)).sort());
-  const useTotal = barMode === 'total';
-  const metric = barMode === 'wr' ? 'wr' : barMode === 'n' ? 'n' : _sdMetric;
-  const tpConfig = appState.ui.tpConfig;
+  if (!trades.length) {
+    if (containerId) renderWidgetEmptyState(containerId);
+    else container.innerHTML = '';
+    return;
+  }
+
+  const rowSet = new Set();
+  const colSet = new Set();
   const data = {};
+  const tpConfig = appState.ui.tpConfig;
+  const useTotal = barMode === 'total';
+
   trades.forEach(t => {
-    const k = (t.sessionUtc || t.session)+'|'+t.day;
-    if(!data[k]) data[k]={r:0,n:0,wins:0,tpR:0,slR:0,betpR:0,beslR:0};
+    const rows = (getRowValues ? getRowValues(t) : []).filter(Boolean);
+    const cols = (getColValues ? getColValues(t) : []).filter(Boolean);
+    if (!rows.length || !cols.length) return;
     const r = computeEffectiveRR(t, tpConfig);
-    data[k].r+=r; data[k].n++;
-    if(isWinner(t, tpConfig)) data[k].wins++;
-    if(t.outcome==='TP')    data[k].tpR+=r;
-    else if(t.outcome==='SL')    data[k].slR+=r;
-    else if(t.outcome==='BE-TP') data[k].betpR+=r;
-    else if(t.outcome==='BE-SL') data[k].beslR+=r;
+    rows.forEach(rowVal => {
+      rowSet.add(rowVal);
+      cols.forEach(colVal => {
+        colSet.add(colVal);
+        const k = `${rowVal}|${colVal}`;
+        if (!data[k]) data[k] = { r: 0, n: 0, wins: 0, tpR: 0, slR: 0, betpR: 0, beslR: 0 };
+        data[k].r += r;
+        data[k].n++;
+        if (isWinner(t, tpConfig)) data[k].wins++;
+        if (t.outcome === 'TP') data[k].tpR += r;
+        else if (t.outcome === 'SL') data[k].slR += r;
+        else if (t.outcome === 'BE-TP') data[k].betpR += r;
+        else if (t.outcome === 'BE-SL') data[k].beslR += r;
+      });
+    });
   });
-  const valFn = v => metric === 'ev' ? (useTotal ? v.r : v.r/v.n)
-                   : metric === 'wr' ? v.wins/v.n*100
-                   : v.n;
-  const fmtFn = v => metric === 'ev' ? (v>=0?'+':'')+v.toFixed(useTotal?1:2)+'R'
-                   : metric === 'wr' ? v.toFixed(0)+'%'
-                   : String(v);
-  let mn=Infinity, mx=-Infinity;
-  sessions.forEach(ss=>days.forEach(d=>{
-    const v=data[ss+'|'+d];
-    if(v&&v.n>=2){const val=valFn(v);mn=Math.min(mn,val);mx=Math.max(mx,val);}
+
+  const rows = _orderHeatmapAxisValues([...rowSet], rowKey);
+  const cols = _orderHeatmapAxisValues([...colSet], colKey);
+  if (!rows.length || !cols.length) {
+    if (containerId) renderWidgetEmptyState(containerId);
+    else container.innerHTML = '';
+    return;
+  }
+
+  const valFn = v => metric === 'ev' ? (useTotal ? v.r : v.r / v.n)
+    : metric === 'wr' ? v.wins / v.n * 100
+    : v.n;
+  const fmtFn = v => metric === 'ev' ? (v >= 0 ? '+' : '') + v.toFixed(useTotal ? 1 : 2) + 'R'
+    : metric === 'wr' ? v.toFixed(0) + '%'
+    : String(v);
+
+  let mn = Infinity, mx = -Infinity;
+  rows.forEach(rowVal => cols.forEach(colVal => {
+    const v = data[`${rowVal}|${colVal}`];
+    if (v && v.n >= 2) {
+      const val = valFn(v);
+      mn = Math.min(mn, val);
+      mx = Math.max(mx, val);
+    }
   }));
-  if(mn===Infinity){mn=0;mx=1;}
-  const range=Math.max(mx,Math.abs(mn))||1;
+  if (mn === Infinity) { mn = 0; mx = 1; }
+  const range = Math.max(mx, Math.abs(mn)) || 1;
 
-  // ── Dynamic sizing (same approach as Pair×Session) ──
-  const ROW_LABEL_W = 72;
-  const GAP = 3, PAD = 4;
+  const GAP = 3;
+  const PAD = 4;
   const availH = container.clientHeight || 200;
-  const nRows = sessions.length + 1;
+  const nRows = rows.length + 1;
   const rawCellH = Math.floor((availH - GAP * (nRows - 1) - PAD * 2) / nRows);
-  const cellH    = Math.max(rawCellH, 22);
-  const headerH  = Math.max(Math.floor(cellH * 0.7), 18);
+  const cellH = Math.max(rawCellH, 22);
+  const headerH = Math.max(Math.floor(cellH * 0.7), 18);
   const fontSize = Math.max(7, Math.min(12, Math.floor(cellH * 0.32)));
-  const lblFontSz= Math.max(8, Math.min(12, Math.floor(cellH * 0.32)));
+  const lblFontSz = Math.max(8, Math.min(12, Math.floor(cellH * 0.32)));
+  const rowLabels = rows.map(rowVal => String(getRowLabel ? getRowLabel(rowVal) : rowVal || ''));
+  const colLabels = cols.map(colVal => String(getColLabel ? getColLabel(colVal) : colVal || ''));
+  const longestRowLabelLen = rowLabels.reduce((max, label) => Math.max(max, label.length), 0);
+  const estimatedRowLabelWidth = Math.ceil(longestRowLabelLen * lblFontSz * 0.62) + 18;
+  const resolvedRowLabelWidth = Math.max(
+    rowLabelWidth,
+    Math.min(Math.max(estimatedRowLabelWidth, 120), 280)
+  );
 
-  const toRgbStr = h => { const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r?`${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}`:'180,180,180'; };
-  const cG   = tc('--g');
-  const cR   = tc('--r');
+  const toRgbStr = h => {
+    const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);
+    return r ? `${parseInt(r[1], 16)},${parseInt(r[2], 16)},${parseInt(r[3], 16)}` : '180,180,180';
+  };
+  const cG = tc('--g');
+  const cR = tc('--r');
   const cBg1 = tc('--bg1');
 
+  container.classList.add('heatmap-grid');
   container.style.cssText = `
     display:grid;
-    grid-template-columns:${ROW_LABEL_W}px repeat(${days.length},1fr);
-    grid-template-rows:${headerH}px repeat(${sessions.length},1fr);
+    grid-template-columns:minmax(${rowLabelWidth}px, ${resolvedRowLabelWidth}px) repeat(${cols.length}, minmax(${Math.max(cellH, 42)}px, 1fr));
+    grid-template-rows:minmax(${headerH}px, auto) repeat(${rows.length}, minmax(${cellH}px, auto));
     gap:${GAP}px;padding:${PAD}px;
-    height:100%;overflow:hidden;min-width:0;box-sizing:border-box;
+    height:100%;overflow:auto;min-width:0;box-sizing:border-box;
   `;
   container.innerHTML = '';
 
-  // Blank corner
   container.appendChild(document.createElement('div'));
 
-  // Day headers
-  days.forEach(d => {
+  cols.forEach((colVal, idx) => {
     const el = document.createElement('div');
-    el.style.cssText = `display:flex;align-items:flex-end;justify-content:center;font-family:'DM Mono',monospace;font-size:${lblFontSz}px;color:var(--dim);padding:0 2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center`;
-    el.textContent = DAY_EN[d] || d;
+    el.style.cssText = `display:flex;align-items:flex-end;justify-content:center;font-family:'DM Mono',monospace;font-size:${lblFontSz}px;color:var(--dim);padding:0 2px 3px;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;line-height:1.2;text-align:center;min-width:${Math.max(cellH, 42)}px`;
+    el.textContent = colLabels[idx];
     container.appendChild(el);
   });
 
-  sessions.forEach(ss => {
+  rows.forEach((rowVal, idx) => {
     const rowLabel = document.createElement('div');
-    rowLabel.style.cssText = `display:flex;align-items:center;font-family:'DM Mono',monospace;font-size:${lblFontSz}px;font-weight:600;color:var(--body);padding-right:6px;white-space:nowrap`;
-    rowLabel.textContent = SESSION_SHORT[ss] || ss;
+    rowLabel.style.cssText = `display:flex;align-items:center;justify-content:flex-end;font-family:'DM Mono',monospace;font-size:${lblFontSz}px;font-weight:600;color:var(--body);padding-right:6px;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;line-height:1.2;text-align:right;min-height:${cellH}px`;
+    rowLabel.textContent = rowLabels[idx];
     container.appendChild(rowLabel);
 
-    days.forEach(d => {
-      const k = ss + '|' + d;
-      const v = data[k];
+    cols.forEach(colVal => {
+      const v = data[`${rowVal}|${colVal}`];
       const cell = document.createElement('div');
-      cell.style.cssText = `border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:${fontSize}px;font-weight:600;cursor:default;overflow:hidden;line-height:1.2`;
-
+      cell.style.cssText = `border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:${fontSize}px;font-weight:600;cursor:default;overflow:hidden;line-height:1.2;min-height:${cellH}px`;
       cell.classList.add('hm-cell');
-      if (_heatmapThreshold > 0 && v && v.n < _heatmapThreshold) {
-        cell.classList.add('cell-low-n');
-      }
+
+      if (threshold > 0 && v && v.n < threshold) cell.classList.add('cell-low-n');
+
       if (v && v.n >= 2) {
-        const val  = valFn(v);
+        const val = valFn(v);
         let alpha, pos;
         if (metric === 'wr') {
-          if (!_hmHardMode) {
+          if (!hardMode) {
             pos = true;
             const span = (mx - mn) || 1;
             alpha = Math.min(((val - mn) / span) * 0.75 + 0.18, 0.95);
@@ -9753,11 +12414,13 @@ function renderHeatmap(trades) {
         cell.style.background = `rgba(${toRgbStr(hexCol)},${alpha})`;
         cell.style.color = alpha > 0.55 ? cBg1 : (pos ? cG : cR);
         cell.textContent = fmtFn(val);
-        const avgR = v.r/v.n;
-        const wrPct = (v.wins/v.n*100).toFixed(0);
+
+        const avgR = v.r / v.n;
+        const wrPct = (v.wins / v.n * 100).toFixed(0);
         const netTP = v.tpR + v.betpR;
         const netSL = v.slR + v.beslR;
-        const netRows = `<span class="utip-label">Net TP</span><span></span><span class="utip-value utip-value-pos utip-align-right">${netTP>=0?'+':''}${netTP.toFixed(1)}R</span>
+        const title = getCellTitle ? getCellTitle(rowVal, colVal) : `${rowVal} × ${colVal}`;
+        const netRows = `<span class="utip-label">Net TP</span><span></span><span class="utip-value utip-value-pos utip-align-right">${netTP >= 0 ? '+' : ''}${netTP.toFixed(1)}R</span>
              <span class="utip-label">Net SL</span><span></span><span class="utip-value utip-value-neg utip-align-right">${netSL.toFixed(1)}R</span>`;
         const valueColorAttr = metric === 'wr'
           ? ` style="color:${_kpiTooltipColor(val, 'wr')}"`
@@ -9767,31 +12430,32 @@ function renderHeatmap(trades) {
         const valueClass = (metric === 'wr' || (metric === 'ev' && !useTotal))
           ? _utipNeutralClass()
           : _utipValueClass(pos);
-        const tipHtml = `<div class="utip-header">${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]||d}</div>
+        const tipHtml = `<div class="utip-header">${_escapeHtml(title)}</div>
           <div class="utip-grid">
             <span class="utip-label">Value</span><span></span><span class="${valueClass}"${valueColorAttr}>${fmtFn(val)}</span>
             <span class="utip-label">Trades</span><span></span><span class="${_utipNeutralClass()}">×${v.n}</span>
             <span class="utip-label">Win Rate</span><span></span><span class="${_utipNeutralClass()}" style="color:${_kpiTooltipColor(+wrPct, 'wr')}">${wrPct}%</span>
-            <span class="utip-label">Avg R</span><span></span><span class="${_utipNeutralClass()}" style="color:${_kpiTooltipColor(avgR, 'avgr')}">${(avgR>=0?'+':'')+avgR.toFixed(3)}R</span>
-            <span class="utip-label">Total R</span><span></span><span class="${_utipNeutralClass()}">${(v.r>=0?'+':'')+v.r.toFixed(1)}R</span>
+            <span class="utip-label">Avg R</span><span></span><span class="${_utipNeutralClass()}" style="color:${_kpiTooltipColor(avgR, 'avgr')}">${(avgR >= 0 ? '+' : '') + avgR.toFixed(3)}R</span>
+            <span class="utip-label">Total R</span><span></span><span class="${_utipNeutralClass()}">${(v.r >= 0 ? '+' : '') + v.r.toFixed(1)}R</span>
             ${netRows}
           </div>`;
         bindManagedEvent(cell, '_managedMouseEnter', 'mouseenter', e => showUtip(e, tipHtml));
         bindManagedEvent(cell, '_managedMouseMove', 'mousemove', e => _posUtip(e.clientX, e.clientY));
         bindManagedEvent(cell, '_managedMouseLeave', 'mouseleave', hideUtip);
-        // Click: open shared drawer
         cell.style.cursor = 'pointer';
         bindManagedEvent(cell, '_managedClick', 'click', () => {
-          const cellTrades = trades.filter(t => (t.sessionUtc||t.session) === ss && t.day === d);
+          const cellTrades = getCellTrades ? getCellTrades(rowVal, colVal) : [];
           if (!cellTrades.length) return;
-          document.querySelectorAll('#heatmap-container .wd-cell-active').forEach(el => el.classList.remove('wd-cell-active'));
+          document.querySelectorAll(`#${CSS.escape(container.id)} .wd-cell-active`).forEach(el => el.classList.remove('wd-cell-active'));
           cell.classList.add('wd-cell-active');
-          openWidgetDrawer(`${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]||d}`, `${v.n} trades`, cellTrades);
+          openWidgetDrawer(title, `${v.n} trades`, cellTrades);
         });
-        bindManagedEvent(cell, '_managedCtxMenu', 'contextmenu', e => {
-          e.preventDefault();
-          _showCellComboContextMenu('sessionDay', `${ss}|${d}`, `${SESSION_SHORT[ss]||ss} × ${DAY_EN[d]||d}`, e);
-        });
+        if (typeof onCellContextMenu === 'function') {
+          bindManagedEvent(cell, '_managedCtxMenu', 'contextmenu', e => {
+            e.preventDefault();
+            onCellContextMenu(e, rowVal, colVal, title);
+          });
+        }
       } else {
         cell.style.background = 'var(--bg3)';
         cell.textContent = '—';
@@ -9803,6 +12467,30 @@ function renderHeatmap(trades) {
       }
       container.appendChild(cell);
     });
+  });
+}
+
+function renderHeatmap(trades) {
+  const container = document.getElementById('heatmap-container');
+  if (!container) return;
+  const metric = barMode === 'wr' ? 'wr' : barMode === 'n' ? 'n' : _sdMetric;
+  _renderSharedHeatmapGrid({
+    container,
+    containerId: 'heatmap-container',
+    trades,
+    rowKey: 'session',
+    colKey: 'day',
+    metric,
+    threshold: _heatmapThreshold,
+    hardMode: _hmHardMode,
+    getRowValues: t => [(t.sessionUtc || t.session || '')].filter(Boolean),
+    getColValues: t => [t.day].filter(Boolean),
+    getRowLabel: v => _formatHeatmapAxisLabel(v, 'session', true),
+    getColLabel: v => _formatHeatmapAxisLabel(v, 'day', true),
+    getCellTitle: (rowVal, colVal) => `${_formatHeatmapAxisLabel(rowVal, 'session', true)} × ${_formatHeatmapAxisLabel(colVal, 'day', true)}`,
+    getCellTrades: (rowVal, colVal) => trades.filter(t => (t.sessionUtc || t.session) === rowVal && t.day === colVal),
+    onCellContextMenu: (e, rowVal, colVal, title) => _showCellComboContextMenu('sessionDay', `${rowVal}|${colVal}`, title, e),
+    rowLabelWidth: 72,
   });
 }
 
@@ -10948,8 +13636,8 @@ function setHourSort(mode) {
   if (_sortSyncEnabled && !_sortSyncGuard) {
     _sortSyncGuard = true;
     const mapped = _syncedSort(mode);
-    _ALL_BAR_CHARTS.forEach(c => {
-      const m = _SORT_CHARTS_WITH_CANONICAL.includes(c) ? mapped.canonical : mapped.alpha;
+    _getAllLinkedBarChartIds().forEach(c => {
+      const m = _getBarSortFamily(c) === 'canonical' ? mapped.canonical : mapped.alpha;
       setBarSort(c, m);
     });
     _sortSyncGuard = false;
@@ -12721,10 +15409,112 @@ let _hmHardMode        = false;
 // ── Heatmap sync: link both heatmaps together ──
 let _heatmapSyncEnabled = false;
 let _heatmapSyncGuard   = false;
+let _heatmapLinkedMasterWidgetId = null;
 
-function toggleHeatmapSync() {
-  _heatmapSyncEnabled = !_heatmapSyncEnabled;
+function _getHeatmapMasterSettings({ cwId = '', scope = 'sd' } = {}) {
+  if (cwId) {
+    const def = _loadCustomWidgetDefs().find(d => d.id === cwId && d.type === 'heatmap');
+    if (def) {
+      const settings = def.settings || {};
+      return {
+        metricMode: settings.metricMode === 'n' ? 'n' : 'ev',
+        threshold: _parseHmThreshold(settings.threshold),
+        hardMode: settings.hardMode === true,
+      };
+    }
+  }
+  if (scope === 'ps') {
+    return {
+      metricMode: _pairSessionMetric,
+      threshold: _hourHeatmapThreshold,
+      hardMode: _hmHardMode,
+    };
+  }
+  return {
+    metricMode: _sdMetric,
+    threshold: _heatmapThreshold,
+    hardMode: _hmHardMode,
+  };
+}
+
+function _applyLinkedHeatmapSettings(settings) {
+  const nextMetric = settings?.metricMode === 'n' ? 'n' : 'ev';
+  const nextThreshold = _parseHmThreshold(settings?.threshold);
+  const nextHardMode = settings?.hardMode === true;
+  _sdMetric = nextMetric;
+  _pairSessionMetric = nextMetric;
+  _heatmapThreshold = nextThreshold;
+  _hourHeatmapThreshold = nextThreshold;
+  _hmHardMode = nextHardMode;
+  localStorage.setItem(_HM_THRESHOLD_KEY, String(_heatmapThreshold));
+  localStorage.setItem(_PS_THRESHOLD_KEY, String(_hourHeatmapThreshold));
+  document.querySelectorAll('#sd-metric-btns .cc-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.metric === _sdMetric);
+  });
+  document.querySelectorAll('#ps-metric-btns .cc-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.metric === _pairSessionMetric);
+  });
+  document.querySelectorAll('#sd-threshold-btns .cc-tab').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.threshold, 10) === _heatmapThreshold);
+  });
+  document.querySelectorAll('#ps-threshold-btns .cc-tab').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.threshold, 10) === _hourHeatmapThreshold);
+  });
+  document.querySelectorAll('.hm-hardmode-btn:not([data-cw-id])').forEach(b => b.classList.toggle('active', _hmHardMode));
+}
+
+function _commitLinkedSettingsToAllCustomHeatmaps() {
+  const defs = _loadCustomWidgetDefs();
+  let changed = false;
+  defs.forEach(def => {
+    if (def.type !== 'heatmap') return;
+    changed = true;
+    def.settings = {
+      ...(def.settings || {}),
+      metricMode: _sdMetric,
+      threshold: _heatmapThreshold,
+      hardMode: _hmHardMode,
+    };
+  });
+  if (changed) _saveCustomWidgetDefs(defs);
+}
+
+function toggleHeatmapSync(cwId = '', scope = 'sd') {
+  if (!_heatmapSyncEnabled) {
+    const masterSettings = _getHeatmapMasterSettings({ cwId, scope });
+    _heatmapSyncEnabled = true;
+    _heatmapLinkedMasterWidgetId = cwId || `native:${scope || 'sd'}`;
+    _applyLinkedHeatmapSettings(masterSettings);
+  } else {
+    _commitLinkedSettingsToAllCustomHeatmaps();
+    _heatmapSyncEnabled = false;
+    _heatmapLinkedMasterWidgetId = null;
+  }
   document.querySelectorAll('.hm-sync-btn').forEach(b => b.classList.toggle('active', _heatmapSyncEnabled));
+  renderHeatmap(getFiltered());
+  renderPairSession(getFiltered());
+  renderAllCustomWidgets(getFiltered());
+  _refreshAllCustomHeatmapToolbars();
+}
+
+function _rerenderCustomHeatmapById(cwId) {
+  const def = _loadCustomWidgetDefs().find(d => d.id === cwId);
+  if (!def || def.type !== 'heatmap') return;
+  renderCustomHeatmap(def, getFiltered());
+  const widget = document.querySelector(`.gs-widget[data-cw-id="${CSS.escape(cwId)}"]`);
+  if (!widget) return;
+  const head = widget.querySelector('.cc-head');
+  const title = head?.querySelector('.cc-title');
+  const existingControls = head?.querySelector('.cc-head-controls');
+  if (existingControls) existingControls.remove();
+  if (head && title) {
+    title.insertAdjacentHTML('afterend', _renderSharedHeatmapToolbarHTML('sd', def));
+  }
+}
+
+function _refreshAllCustomHeatmapToolbars() {
+  const defs = _loadCustomWidgetDefs().filter(d => d.type === 'heatmap');
+  defs.forEach(def => _rerenderCustomHeatmapById(def.id));
 }
 
 // ── Heatmap confidence threshold (hachures on low-n cells) ──
@@ -12738,17 +15528,33 @@ function _parseHmThreshold(raw) {
 let _heatmapThreshold     = _parseHmThreshold(localStorage.getItem(_HM_THRESHOLD_KEY));
 let _hourHeatmapThreshold = _parseHmThreshold(localStorage.getItem(_PS_THRESHOLD_KEY));
 
-function setHeatmapThreshold(n) {
+function setHeatmapThreshold(n, cwId = '') {
+  if (cwId && !_heatmapSyncEnabled) {
+    const next = _updateCustomWidgetDef(cwId, def => ({
+      ...def,
+      settings: {
+        ...(def.settings || {}),
+        threshold: _parseHmThreshold(n),
+      },
+    }));
+    if (next) _rerenderCustomHeatmapById(cwId);
+    return;
+  }
   _heatmapThreshold = _parseHmThreshold(n);
   localStorage.setItem(_HM_THRESHOLD_KEY, String(_heatmapThreshold));
   document.querySelectorAll('#sd-threshold-btns .cc-tab').forEach(b => {
     b.classList.toggle('active', parseInt(b.dataset.threshold, 10) === _heatmapThreshold);
   });
   renderHeatmap(getFiltered());
+  renderAllCustomWidgets(getFiltered());
+  _refreshAllCustomHeatmapToolbars();
   if (_heatmapSyncEnabled && !_heatmapSyncGuard) {
+    _heatmapLinkedMasterWidgetId = cwId || 'native:sd';
     _heatmapSyncGuard = true;
     setPairSessionThreshold(n);
     _heatmapSyncGuard = false;
+  } else if (_heatmapSyncEnabled) {
+    _commitLinkedSettingsToAllCustomHeatmaps();
   }
 }
 
@@ -12759,18 +15565,36 @@ function setPairSessionThreshold(n) {
     b.classList.toggle('active', parseInt(b.dataset.threshold, 10) === _hourHeatmapThreshold);
   });
   renderPairSession(getFiltered());
+  _refreshAllCustomHeatmapToolbars();
   if (_heatmapSyncEnabled && !_heatmapSyncGuard) {
+    _heatmapLinkedMasterWidgetId = 'native:ps';
     _heatmapSyncGuard = true;
     setHeatmapThreshold(n);
     _heatmapSyncGuard = false;
+  } else if (_heatmapSyncEnabled) {
+    _commitLinkedSettingsToAllCustomHeatmaps();
   }
 }
 
-function toggleHardMode() {
+function toggleHardMode(cwId = '') {
+  if (cwId && !_heatmapSyncEnabled) {
+    const next = _updateCustomWidgetDef(cwId, def => ({
+      ...def,
+      settings: {
+        ...(def.settings || {}),
+        hardMode: !(def.settings?.hardMode === true),
+      },
+    }));
+    if (next) _rerenderCustomHeatmapById(cwId);
+    return;
+  }
   _hmHardMode = !_hmHardMode;
-  document.querySelectorAll('.hm-hardmode-btn').forEach(b => b.classList.toggle('active', _hmHardMode));
+  document.querySelectorAll('.hm-hardmode-btn:not([data-cw-id])').forEach(b => b.classList.toggle('active', _hmHardMode));
   renderHeatmap(getFiltered());
   renderPairSession(getFiltered());
+  renderAllCustomWidgets(getFiltered());
+  _refreshAllCustomHeatmapToolbars();
+  if (_heatmapSyncEnabled) _commitLinkedSettingsToAllCustomHeatmaps();
 }
 
 function _syncHardModeBtn() {
@@ -12787,22 +15611,39 @@ function setPairSessionMetric(metric) {
   });
   renderPairSession(getFiltered());
   if (_heatmapSyncEnabled && !_heatmapSyncGuard) {
+    _heatmapLinkedMasterWidgetId = 'native:ps';
     _heatmapSyncGuard = true;
     setHeatmapMetric(metric);
     _heatmapSyncGuard = false;
   }
 }
 
-function setHeatmapMetric(metric) {
+function setHeatmapMetric(metric, cwId = '') {
+  if (cwId && !_heatmapSyncEnabled) {
+    const next = _updateCustomWidgetDef(cwId, def => ({
+      ...def,
+      settings: {
+        ...(def.settings || {}),
+        metricMode: metric === 'n' ? 'n' : 'ev',
+      },
+    }));
+    if (next) _rerenderCustomHeatmapById(cwId);
+    return;
+  }
   _sdMetric = metric;
   document.querySelectorAll('#sd-metric-btns .cc-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.metric === metric);
   });
   renderHeatmap(getFiltered());
+  renderAllCustomWidgets(getFiltered());
+  _refreshAllCustomHeatmapToolbars();
   if (_heatmapSyncEnabled && !_heatmapSyncGuard) {
+    _heatmapLinkedMasterWidgetId = cwId || 'native:sd';
     _heatmapSyncGuard = true;
     setPairSessionMetric(metric);
     _heatmapSyncGuard = false;
+  } else if (_heatmapSyncEnabled) {
+    _commitLinkedSettingsToAllCustomHeatmaps();
   }
 }
 
@@ -19387,12 +22228,14 @@ function _isDimDefaultNoMappedInCurrentContext(dimKey) {
   return dimKey === 'obstacles' || dimKey === 'img_m15';
 }
 
-function _getEffectiveApiOverride(dimKey) {
-  const overrides = _getAPIFieldOverrides();
+function _getEffectiveApiOverride(dimKey, source = null) {
+  const overrides = _getAPIFieldOverrides(source);
   const explicit = overrides[dimKey];
   if (_isNoMappingValue(explicit)) return NO_MAPPING_VALUE;
   if (explicit) return explicit;
-  if (_isDimDefaultNoMappedInCurrentContext(dimKey)) return NO_MAPPING_VALUE;
+  if ((source || _getCurrentHTFSource()) === 'h4' && (dimKey === 'obstacles' || dimKey === 'img_m15')) {
+    return NO_MAPPING_VALUE;
+  }
   return '';
 }
 
@@ -19442,6 +22285,7 @@ function closeCsvOverlay() {
 // Drag events
 document.addEventListener('DOMContentLoaded', () => {
   _SW.init();
+  _handleNotionOAuthReturn();
   /* Silent cleanup of retired Partials Planner localStorage keys. */
   try {
     localStorage.removeItem('pp-custom-presets');
@@ -20553,35 +23397,9 @@ function _openDrawerFromBarRow(containerId, row) {
   if (!rawKey) return;
   const label    = row.dataset.barLabel || rawKey;
   const filtered = getFiltered();
-  let trades;
-  switch (containerId) {
-    case 'bars-setup':
-      // Respect setupDetailMode: raw key is the actual grouped value
-      trades = filtered.filter(t => (setupDetailMode ? (t.setupDetail||t.setup) : t.setup) === rawKey);
-      break;
-    case 'bars-session':
-      trades = filtered.filter(t => t.session === rawKey);
-      break;
-    case 'bars-pair':
-      trades = filtered.filter(t => t.pair === rawKey);
-      break;
-    case 'bars-day':
-      trades = filtered.filter(t => t.day === rawKey);
-      break;
-    case 'bars-obs':
-      trades = filtered.filter(t => Array.isArray(t.obstacles) && t.obstacles.includes(rawKey));
-      break;
-    case 'bars-h4obs':
-      trades = filtered.filter(t => Array.isArray(t.h4) && t.h4.includes(rawKey));
-      break;
-    case 'bars-hour': {
-      const h = parseInt(rawKey, 10);
-      trades = isNaN(h) ? [] : filtered.filter(t => t.hour === h);
-      break;
-    }
-    default:
-      return;
-  }
+  const chartId = _getBarChartIdFromContainerId(containerId);
+  if (!chartId) return;
+  const trades = _getTradesForBarChartSelection(chartId, rawKey, filtered);
   if (!trades || !trades.length) return;
 
   // Highlight the clicked bar-row with a gold border
@@ -21843,6 +24661,315 @@ function applyPresetTheme(i) {
 }
 
 // ── Settings panel ──
+let accountPanelOpen = false;
+let _accountPanelEscHandler = null;
+let _accountPanelClickOutsideHandler = null;
+let _accountRecoveryMode = false;
+let _accountView = 'signed_out';
+
+function _getDefaultAccountView() {
+  if (_accountRecoveryMode) return 'reset_password';
+  return window._SW?.getUser?.() ? 'signed_in' : 'signed_out';
+}
+
+function _setAccountAlert(text = '', tone = 'muted') {
+  const alertEl = document.getElementById('account-alert');
+  const textEl = document.getElementById('account-alert-text');
+  if (!alertEl || !textEl) return;
+  if (!text) {
+    alertEl.setAttribute('hidden', '');
+    alertEl.removeAttribute('data-tone');
+    textEl.textContent = '';
+    return;
+  }
+  alertEl.removeAttribute('hidden');
+  alertEl.dataset.tone = tone;
+  textEl.textContent = text;
+}
+
+function _clearAccountForms() {
+  [
+    'sw-email-input',
+    'sw-password-input',
+    'sw-forgot-email-input',
+    'sw-currentpassword-input',
+    'sw-newpassword-input',
+    'sw-confirmpassword-input',
+    'sw-recovery-newpassword-input',
+    'sw-recovery-confirmpassword-input',
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+function _togglePasswordVisibility(toggleEl) {
+  const targetId = toggleEl?.dataset?.target;
+  const input = targetId ? document.getElementById(targetId) : null;
+  if (!input) return;
+  const isHidden = input.type === 'password';
+  input.type = isHidden ? 'text' : 'password';
+  toggleEl.setAttribute('aria-pressed', isHidden ? 'true' : 'false');
+  toggleEl.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+}
+
+function _setAccountStatus(text, tone = 'muted') {
+  const summaryEl = document.getElementById('account-section-summary');
+  if (summaryEl) summaryEl.textContent = `● ${text}`;
+  if (summaryEl) summaryEl.dataset.tone = tone;
+}
+
+function _renderLocalModeBadge() {
+  const badge = document.getElementById('local-mode-badge');
+  if (!badge) return;
+  const hasUser = !!window._SW?.getUser?.();
+  if (hasUser) {
+    badge.classList.remove('is-visible');
+    badge.setAttribute('hidden', '');
+    return;
+  }
+  badge.removeAttribute('hidden');
+  requestAnimationFrame(() => badge.classList.add('is-visible'));
+}
+
+function _setAccountView(nextView, options = {}) {
+  const { preserveAlert = false, clearForms = false } = options;
+  _accountView = nextView;
+  if (!preserveAlert) _setAccountAlert();
+  if (clearForms) _clearAccountForms();
+  _renderAccountPanelAuthState();
+}
+
+async function _verifyAccountPassword(email, password) {
+  if (!window.supabase) return { error: { message: 'Supabase not loaded' } };
+  const verifier = window.supabase.createClient(_SB_URL, _SB_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const result = await verifier.auth.signInWithPassword({ email, password });
+  try { await verifier.auth.signOut(); } catch (_) {}
+  return result;
+}
+
+function _renderAccountPanelAuthState() {
+  const user = window._SW?.getUser?.() ?? null;
+  _renderLocalModeBadge();
+  const resolvedView = _accountRecoveryMode ? 'reset_password' : _accountView;
+  let activeView = resolvedView;
+  if (!user) {
+    if (_accountRecoveryMode) activeView = 'reset_password';
+    else if (resolvedView === 'forgot_password') activeView = 'forgot_password';
+    else activeView = 'signed_out';
+  } else if (user && (resolvedView === 'signed_out' || resolvedView === 'forgot_password')) {
+    activeView = 'signed_in';
+  }
+
+  _accountView = activeView;
+
+  const viewIds = {
+    signed_out: 'account-view-signed-out',
+    signed_in: 'account-view-signed-in',
+    forgot_password: 'account-view-forgot-password',
+    reset_password: 'account-view-reset-password',
+    change_password: 'account-view-change-password',
+  };
+
+  Object.entries(viewIds).forEach(([view, id]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (view === activeView) el.removeAttribute('hidden');
+    else el.setAttribute('hidden', '');
+  });
+
+  const identityEmail = document.getElementById('account-identity-email');
+  if (identityEmail) identityEmail.textContent = user?.email || '—';
+
+  if (activeView === 'signed_in' || activeView === 'change_password') {
+    _setAccountStatus('Connected', 'success');
+  } else if (activeView === 'reset_password') {
+    _setAccountStatus('Password recovery', 'warning');
+  } else {
+    _setAccountStatus('Local only', 'muted');
+  }
+  _syncJournalProfileUI();
+}
+
+function toggleAccountPanel() {
+  accountPanelOpen = !accountPanelOpen;
+  const panel = document.getElementById('account-panel');
+  const btn = document.getElementById('account-toggle-btn');
+  panel?.classList.toggle('open', accountPanelOpen);
+  btn?.classList.toggle('open', accountPanelOpen);
+  if (accountPanelOpen) {
+    _accountView = _getDefaultAccountView();
+    _journalProfileManagerOpen = false;
+    _journalProfileEditorOpen = false;
+    _journalProfileEditorMode = 'create';
+    _journalProfileEditingId = '';
+    _journalProfileRowMenuOpenId = '';
+    _journalProfileSwitcherOpen = false;
+    _renderAccountPanelAuthState();
+    setTimeout(() => {
+      _accountPanelClickOutsideHandler = (e) => {
+        if (!accountPanelOpen) return;
+        const path = (e.composedPath && e.composedPath()) || [];
+        const panel = document.getElementById('account-panel');
+        const toggle = document.getElementById('account-toggle-btn');
+        if (panel && path.includes(panel)) return;
+        if (toggle && path.includes(toggle)) return;
+        toggleAccountPanel();
+      };
+      _accountPanelEscHandler = (e) => {
+        if (e.key === 'Escape' && accountPanelOpen) toggleAccountPanel();
+      };
+      document.addEventListener('click', _accountPanelClickOutsideHandler);
+      document.addEventListener('keydown', _accountPanelEscHandler);
+    }, 0);
+  } else {
+    _journalProfileManagerOpen = false;
+    _journalProfileEditorOpen = false;
+    _journalProfileEditorMode = 'create';
+    _journalProfileEditingId = '';
+    _journalProfileRowMenuOpenId = '';
+    _journalProfileSwitcherOpen = false;
+    if (_accountPanelClickOutsideHandler) {
+      document.removeEventListener('click', _accountPanelClickOutsideHandler);
+      _accountPanelClickOutsideHandler = null;
+    }
+    if (_accountPanelEscHandler) {
+      document.removeEventListener('keydown', _accountPanelEscHandler);
+      _accountPanelEscHandler = null;
+    }
+  }
+}
+document.addEventListener('click', e => {
+  if (!_journalProfileSwitcherOpen) return;
+  if (!_journalProfileRowMenuOpenId) return;
+  if (e.target.closest('.journal-profile-row-menu')) return;
+  if (e.target.closest('[data-action="journal-profile-row-menu-toggle"]')) return;
+  _journalProfileRowMenuOpenId = '';
+  _syncJournalProfileUI();
+});
+
+async function _handleAccountLogin() {
+  const email = document.getElementById('sw-email-input')?.value.trim();
+  const password = document.getElementById('sw-password-input')?.value || '';
+  if (!email || !password) {
+    _setAccountAlert('Enter your email and password.', 'danger');
+    return;
+  }
+  _setAccountAlert('Logging in…', 'warning');
+  const { error } = await _SW.signIn(email, password);
+  if (error) {
+    _setAccountAlert(
+      error.message.includes('Invalid login') ? 'Invalid email or password.' : error.message,
+      'danger'
+    );
+  }
+}
+
+async function _handleAccountSignup() {
+  const email = document.getElementById('sw-email-input')?.value.trim();
+  const password = document.getElementById('sw-password-input')?.value || '';
+  if (!email || !password) {
+    _setAccountAlert('Enter your email and password.', 'danger');
+    return;
+  }
+  _setAccountAlert('Creating account…', 'warning');
+  const { error } = await _SW.signUp(email, password);
+  if (error) {
+    _setAccountAlert(error.message, 'danger');
+  } else {
+    _setAccountAlert('Check your email to confirm your account.', 'success');
+  }
+}
+
+async function _handleAccountSendResetLink() {
+  const email = document.getElementById('sw-forgot-email-input')?.value.trim();
+  if (!email) {
+    _setAccountAlert('Enter your email first.', 'danger');
+    return;
+  }
+  _setAccountAlert('Sending reset link…', 'warning');
+  const { error } = await _SW.resetPassword(email);
+  _setAccountAlert(error ? error.message : 'Reset link sent. Check your inbox.', error ? 'danger' : 'success');
+}
+
+async function _handleAccountUpdatePassword() {
+  if (_accountView === 'reset_password') {
+    const pwd = document.getElementById('sw-recovery-newpassword-input')?.value || '';
+    const confirmPwd = document.getElementById('sw-recovery-confirmpassword-input')?.value || '';
+    if (!pwd || pwd.length < 6) {
+      _setAccountAlert('Password must be at least 6 characters.', 'danger');
+      return;
+    }
+    if (pwd !== confirmPwd) {
+      _setAccountAlert('New password and confirmation must match.', 'danger');
+      return;
+    }
+    _setAccountAlert('Saving new password…', 'warning');
+    const { error } = await _SW.updatePassword(pwd);
+    if (error) {
+      _setAccountAlert(error.message, 'danger');
+      return;
+    }
+    _accountRecoveryMode = false;
+    _setAccountAlert('Password updated. You can now sign in.', 'success');
+    _setAccountView(_getDefaultAccountView(), { preserveAlert: true, clearForms: true });
+    return;
+  }
+
+  const user = _SW.getUser();
+  const currentPwd = document.getElementById('sw-currentpassword-input')?.value || '';
+  const newPwd = document.getElementById('sw-newpassword-input')?.value || '';
+  const confirmPwd = document.getElementById('sw-confirmpassword-input')?.value || '';
+  if (!user?.email) {
+    _setAccountView('signed_out', { clearForms: true });
+    return;
+  }
+  if (!currentPwd) {
+    _setAccountAlert('Enter your current password first.', 'danger');
+    return;
+  }
+  if (!newPwd || newPwd.length < 6) {
+    _setAccountAlert('New password must be at least 6 characters.', 'danger');
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    _setAccountAlert('New password and confirmation must match.', 'danger');
+    return;
+  }
+  _setAccountAlert('Verifying current password…', 'warning');
+  const { error: signInError } = await _verifyAccountPassword(user.email, currentPwd);
+  if (signInError) {
+    _setAccountAlert('Current password is incorrect.', 'danger');
+    return;
+  }
+  _setAccountAlert('Saving new password…', 'warning');
+  let { error } = await _SW.updatePassword(newPwd);
+  if (error?.message && /Auth session missing/i.test(error.message)) {
+    _setAccountAlert('Refreshing your session…', 'warning');
+    const { error: refreshError } = await _SW.refreshSession(user.email, currentPwd);
+    if (refreshError) {
+      _setAccountAlert(refreshError.message, 'danger');
+      return;
+    }
+    ({ error } = await _SW.updatePassword(newPwd));
+  }
+  if (error) {
+    _setAccountAlert(error.message, 'danger');
+    return;
+  }
+  _setAccountAlert('Password updated.', 'success');
+  _setAccountView('signed_in', { preserveAlert: true, clearForms: true });
+}
+
+async function _handleAccountLogout() {
+  _setAccountAlert('Logging out…', 'warning');
+  await _SW.signOut();
+  _accountRecoveryMode = false;
+  _setAccountView('signed_out', { clearForms: true });
+}
+
 let settingsPanelOpen = false;
 function toggleSettingsPanel() {
   settingsPanelOpen = !settingsPanelOpen;
@@ -22337,6 +25464,28 @@ function _closeGuidePanel() {
 const DATA_HUB_ONBOARDED_KEY = 'fm_dh_onboarded_v1';
 let dataHubOpen = false;
 let dataHubActiveTab = 'health';
+let _cwCreateFlowEscHandler = null;
+let _cwCreateFlowState = {
+  open: false,
+  type: null,
+  selectedId: '',
+  selectedLabel: '',
+  xSelectedId: '',
+  ySelectedId: '',
+  searchQuery: '',
+  sourceFilter: 'all',
+};
+
+function _syncCreateWidgetTypeButtons() {
+  document.querySelectorAll('.np-widget-creator-btn[data-cw-type]').forEach(btn => {
+    const type = btn.getAttribute('data-cw-type');
+    const isActive = !!_cwCreateFlowState.open && _cwCreateFlowState.type === type;
+    const label = type === 'heatmap' ? 'Heatmap' : 'Bar Chart';
+    btn.classList.toggle('is-active', isActive);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    btn.textContent = `${isActive ? '✓' : '+'} ${label}`;
+  });
+}
 
 function toggleDataHub(forceTab = null) {
   const btn = document.getElementById('data-hub-btn');
@@ -22350,19 +25499,6 @@ function toggleDataHub(forceTab = null) {
   if (dataHubOpen) {
     switchDataHubTab(forceTab || 'health');
     btn.classList.remove('is-first-import');
-    // Kick the silent API fetch FIRST so dataSource.loading flips to true
-    // before the initial updateJournalPanel() render. Without this the first
-    // render sees loading=false and the picker empty-state shows "Load fields"
-    // as clickable during the in-flight window — confusing when a fetch is
-    // actually already in progress.
-    if (localStorage.getItem(DS_KEY) === 'api') {
-      const rawCache = _getRawAPICache();
-      if (!rawCache || !rawCache.length) {
-        _fetchAPICacheSilently({ force: true }).finally(() => {
-          if (dataHubOpen) updateJournalPanel();
-        });
-      }
-    }
     try { updateAttentionButton(getHiddenWidgetsList()); } catch (e) {}
     try { updateJournalPanel(); } catch (e) {}
     try { _renderNotionPropsPanel(); } catch (e) {}
@@ -22370,12 +25506,13 @@ function toggleDataHub(forceTab = null) {
     _closeAllRemapPickers();
     _closeGuidePanel();
     _closePropertyForm();
+    _closeCreateWidgetBuilder();
     if (_npPendingDeleteId !== null) { _npPendingDeleteId = null; _renderCustomPropsList(); }
   }
 }
 
 function switchDataHubTab(tabName) {
-  if (!['health', 'mapping', 'custom'].includes(tabName)) return;
+  if (!['health', 'mapping', 'custom', 'create-widget'].includes(tabName)) return;
   dataHubActiveTab = tabName;
   document.querySelectorAll('.dhp-tab').forEach(t => {
     const isActive = t.dataset.tab === tabName;
@@ -22481,7 +25618,15 @@ document.addEventListener('mousedown', e => {
     _closeAllRemapPickers();
     _closeGuidePanel();
     _closePropertyForm();
+    _closeCreateWidgetBuilder();
   }
+});
+
+document.addEventListener('input', e => {
+  const searchEl = e.target.closest?.('#cw-create-search');
+  if (!searchEl) return;
+  _cwCreateFlowState.searchQuery = searchEl.value || '';
+  _renderCreateWidgetBuilder();
 });
 
 // Per-dim extractor used by the API/Demo "inspection" view. Each function
@@ -22647,7 +25792,13 @@ function updateJournalPanel() {
     }
   }
 
-  if (!items.length) {
+  // ── No trades: show remap UI when we have raw API data, otherwise empty ─────
+  // When Notion trades are fetched but 0 survive _normalizeAPITrade (field name
+  // mismatch), items is empty but rawCache has the real data. In this case we
+  // MUST still render the remap pickers — that is the only way the user can fix
+  // the mapping. After they set an override, _reapplyAPIOverrides re-normalizes
+  // from the raw cache automatically. Do NOT return early.
+  if (!items.length && !(isAPI && rawReady)) {
     if (subEl) subEl.textContent = 'Which field feeds each widget dimension.';
     list.innerHTML = '<li class="csv-remap-empty">No data loaded.</li>';
     fmtEl.innerHTML = '';
@@ -22665,12 +25816,15 @@ function updateJournalPanel() {
   const isFetching = !!appState.settings?.dataSource?.loading;
   const fieldCount = isAPI
     ? (rawReady
-        ? ` · ${_listAPIKeys(rawCache).length} fields`
+        ? ` · ${_listAPIKeys(rawCache).length} fields available`
         : (isFetching
             ? ' · <em style="opacity:.65">loading fields…</em>'
             : ' · <em style="opacity:.65">fields unavailable — click Notion Live</em>'))
     : '';
-  fmtEl.innerHTML = `Source · <strong>${_escapeHtml(sourceLabel)}</strong> · ${items.length} trades${fieldCount}`;
+  const tradeCountLabel = items.length
+    ? `${items.length} trades`
+    : `<span style="color:var(--r);font-weight:600">0 trades matched</span> — map fields below`;
+  fmtEl.innerHTML = `Source · <strong>${_escapeHtml(sourceLabel)}</strong> · ${tradeCountLabel}${fieldCount}`;
 
   list.innerHTML = JOURNAL_DIMS.map(dim => {
     const isOverrideOnly = dim.overrideOnly === true;
@@ -22690,12 +25844,12 @@ function updateJournalPanel() {
       status    = override ? 'is-remapped' : 'is-missing';
       statusTxt = override ? 'remapped' : 'not mapped';
       shown     = sample || '— not mapped —';
-      coverage  = ok ? `${populated}/${items.length} trades` : 'awaiting mapping';
+      coverage  = items.length ? (ok ? `${populated}/${items.length} trades` : 'awaiting mapping') : 'awaiting mapping';
     } else {
       status    = override ? 'is-remapped' : (ok ? 'is-ok' : 'is-missing');
       statusTxt = override ? 'remapped' : (ok ? 'found' : 'missing');
       shown     = sample || '—';
-      coverage  = ok ? `${populated}/${items.length} trades` : 'no values detected';
+      coverage  = items.length ? (ok ? `${populated}/${items.length} trades` : 'no values detected') : 'no trades yet';
     }
     const overrideNote = (override && !_isNoMappingValue(override))
       ? ` <span style="opacity:.6">(field: <span class="ljp-field-name">${_escapeHtml(override)}</span>)</span>`
@@ -22786,6 +25940,629 @@ function _cwAllAxes(trades, excludeKey) {
     seen.add(a.key);
     return true;
   });
+}
+
+function _getTradeFieldValueForWidgetProp(trade, key) {
+  if (!trade) return null;
+  if (key === 'hour') {
+    return (trade.hour != null && Number.isFinite(Number(trade.hour))) ? `${trade.hour}h` : '';
+  }
+  const raw = (trade?.extras && Object.prototype.hasOwnProperty.call(trade.extras, key))
+    ? trade.extras[key]
+    : trade[key];
+  if (Array.isArray(raw)) return raw.filter(v => v != null && String(v).trim() !== '').join(', ');
+  return raw;
+}
+
+function _sampleAndCoverageFromTrades(key) {
+  const items = Array.isArray(appState.trades?.items) ? appState.trades.items : [];
+  let sampleValue = '';
+  let coverageCount = 0;
+  for (const t of items) {
+    const raw = _getTradeFieldValueForWidgetProp(t, key);
+    const str = raw == null ? '' : String(raw).trim();
+    if (!str) continue;
+    coverageCount++;
+    if (!sampleValue) sampleValue = str.substring(0, 80);
+  }
+  return { sampleValue: sampleValue || '—', coverageCount, totalCount: items.length };
+}
+
+function _inferWidgetPropertyType(values, headerName = '') {
+  const vals = (values || [])
+    .map(v => (v == null ? '' : String(v).trim()))
+    .filter(Boolean);
+  if (!vals.length) return 'unknown';
+
+  const header = String(headerName || '').trim().toLowerCase();
+  const urlishHeader = /(url|link|screenshot|image|photo|file|media|attachment|notion)/i.test(header);
+  const noteishHeader = /(note|notes|comment|comments|journal|description|desc|summary|analysis|review)/i.test(header);
+  const dateishHeader = /(date|day|time|created|updated|month|year)/i.test(header);
+
+  const isUrlLike = v => /^(https?:\/\/|www\.)/i.test(v)
+    || /\.(png|jpe?g|gif|webp|svg|pdf|heic|mp4|mov)(\?.*)?$/i.test(v);
+  if (urlishHeader || vals.every(isUrlLike)) return 'url/file';
+
+  const isDateLike = v => {
+    if (dateishHeader && /^\d{1,2}h$/.test(v.toLowerCase())) return false;
+    return !Number.isNaN(Date.parse(v));
+  };
+  if (vals.every(isDateLike)) return 'date';
+
+  const isNumberLike = v => {
+    const n = Number(v.replace(',', '.'));
+    return Number.isFinite(n) && v !== '';
+  };
+  if (vals.every(isNumberLike)) return 'number';
+
+  const boolish = new Set(['true','false','1','0','yes','no','oui','non','x','✓']);
+  if (vals.every(v => boolish.has(v.toLowerCase()))) return 'boolean';
+
+  const inferred = _detectColumnType(vals);
+  if (inferred === 'multi-select') return 'multi-select';
+  if (inferred === 'date') return 'date';
+  if (inferred === 'number') return 'number';
+  if (noteishHeader) return 'text';
+  return 'text';
+}
+
+function _isRecommendedWidgetProperty(headerName, inferredType, sampleValue = '') {
+  const header = String(headerName || '').trim().toLowerCase();
+  const sample = String(sampleValue || '').trim();
+  if (inferredType === 'url/file') return false;
+  if (/(screenshot|image|photo|file|media|attachment|url|link)/i.test(header)) return false;
+  if (/(note|notes|comment|comments|description|summary|analysis|review)/i.test(header)) return false;
+  if (sample.length > 120) return false;
+  return true;
+}
+
+function _humanizeWidgetPropertyLabel(rawKey) {
+  const key = String(rawKey || '').trim();
+  if (!key) return '';
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function _flattenApiWidgetValue(raw) {
+  if (raw === null || raw === undefined) return '';
+  if (Array.isArray(raw)) {
+    return raw.map(_flattenApiWidgetValue).filter(Boolean).join(', ');
+  }
+  if (typeof raw === 'object') {
+    if ('name' in raw) return _flattenApiWidgetValue(raw.name);
+    if ('plain_text' in raw) return _flattenApiWidgetValue(raw.plain_text);
+    if ('text' in raw) return _flattenApiWidgetValue(raw.text);
+    if ('value' in raw) return _flattenApiWidgetValue(raw.value);
+    if (typeof raw.start === 'string') return raw.start;
+    if (typeof raw.url === 'string') return raw.url;
+    return '';
+  }
+  return String(raw).trim();
+}
+
+function _findApiKey(rawRows, ...candidates) {
+  if (!Array.isArray(rawRows) || !rawRows.length) return null;
+  const wanted = candidates.map(c => String(c || '').trim().toLowerCase()).filter(Boolean);
+  if (!wanted.length) return null;
+  const available = new Map();
+  for (const row of rawRows.slice(0, 50)) {
+    if (!row || typeof row !== 'object') continue;
+    Object.keys(row).forEach(k => {
+      const norm = String(k).trim().toLowerCase();
+      if (!available.has(norm)) available.set(norm, k);
+    });
+  }
+  for (const cand of wanted) {
+    if (available.has(cand)) return available.get(cand);
+  }
+  return null;
+}
+
+const _WIDGET_API_DIM_CANDIDATES = {
+  pair: ['pair', 'Pair', 'paire', 'Paire'],
+  setup: ['M15 Confirmation / Continuation', 'M15 Confirmation / Continu', 'confirmation', 'Confirmation / Continunation', 'm15Type', 'M15 Type'],
+  setupDetail: ['m15TypeDetail', 'M15 Type Detailed', 'm15TypeDetails', 'm15TypeDétail'],
+  session: ['session', 'Session', 'sessionFormule', 'Session Formula'],
+  day: ['jour', 'Jour'],
+  obstacles: ['obstaclesM15', 'M15 Obstacles'],
+  h4: ['obstaclesH4', 'H4 Obstacles'],
+  beManagement: ['beManagement', 'BE Management'],
+  outcome: ['positionResult', 'resultatTp1', 'resultatTP1', 'Position Result'],
+  r: ['rrTp1', 'RR TP 1'],
+  rrMax: ['rrMax', 'rrMaxAtteint', 'RR Max', 'RR Max ', 'RR max atteint'],
+  direction: ['order', 'Order'],
+  positionType: ['positionType', 'Position Type', 'tradeType'],
+  badFeeling: ['badFeeling'],
+  notionUrl: ['notionUrl', 'notionURL', 'pageUrl', 'pageURL', 'id'],
+  hour: ['timeUtc1', 'timeUtcPlus1', 'Hour', 'Time (UTC+1)', 'Hour +1'],
+  img_m15: ['imgM15', 'm15Before', 'm15Image', 'imageM15'],
+  img_h4_before: ['imgH4Before', 'h4Before', 'h4Image', 'imageH4'],
+  img_m15_after: ['imgM15After', 'm15After', 'm15AfterImage', 'imgH4After', 'h4After'],
+  tp1_rr: ['rrTp1'],
+  tp2_rr: ['rrTpMinus27', 'rrTp2'],
+  tp3_rr: ['rrTpH4_0', 'rrTp3', 'rrTrailing'],
+};
+
+function _resolvedSourceFieldForDim(dimKey, ctx) {
+  if (!ctx) return null;
+  if (ctx.mode === 'csv') return _resolvedHeaderFor(dimKey);
+  if (ctx.mode === 'api') {
+    const override = _getEffectiveApiOverride(dimKey);
+    if (_isNoMappingValue(override)) return null;
+    if (override) return override;
+    const candidates = _WIDGET_API_DIM_CANDIDATES[dimKey] || [dimKey];
+    return _findApiKey(ctx.rawRows, ...candidates);
+  }
+  if (ctx.mode === 'demo') return dimKey;
+  return null;
+}
+
+function getActiveDataSourceContext() {
+  const mode = localStorage.getItem(DS_KEY) || 'demo';
+  if (mode === 'csv') {
+    return {
+      mode: 'csv',
+      label: 'CSV',
+      customSectionTitle: 'CSV / Custom Fields',
+      rawRows: Array.isArray(_lastCsvRows) ? _lastCsvRows : [],
+      availableColumns: (Array.isArray(_lastCsvHeaders) ? _lastCsvHeaders : []).filter(Boolean).map(h => ({
+        key: h,
+        label: h,
+      })),
+    };
+  }
+  if (mode === 'api') {
+    const rawRows = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : [];
+    const keys = typeof _listAPIKeys === 'function' ? _listAPIKeys(rawRows) : [];
+    return {
+      mode: 'api',
+      label: 'API',
+      customSectionTitle: 'API / Notion Fields',
+      rawRows,
+      availableColumns: keys.map(k => ({
+        key: k,
+        label: k,
+      })),
+    };
+  }
+  const rawRows = Array.isArray(appState?.trades?.items) ? appState.trades.items : [];
+  const seen = new Set();
+  const availableColumns = [];
+  rawRows.slice(0, 50).forEach(row => {
+    if (!row || typeof row !== 'object') return;
+    Object.keys(row).forEach(k => {
+      if (k === 'extras' || k === '_rawRowIndex') return;
+      if (seen.has(k)) return;
+      seen.add(k);
+      availableColumns.push({ key: k, label: _humanizeWidgetPropertyLabel(k) });
+    });
+    if (row.extras && typeof row.extras === 'object') {
+      Object.keys(row.extras).forEach(k => {
+        if (seen.has(k)) return;
+        seen.add(k);
+        availableColumns.push({ key: k, label: _humanizeWidgetPropertyLabel(k) });
+      });
+    }
+  });
+  return {
+    mode: 'demo',
+    label: 'DEMO',
+    customSectionTitle: 'Demo Fields',
+    rawRows,
+    availableColumns,
+  };
+}
+
+function _getSourceColumnStats(ctx, colKey, headerLabel = '') {
+  const rows = Array.isArray(ctx?.rawRows) ? ctx.rawRows : [];
+  const totalCount = rows.length;
+  const values = [];
+  let sampleValue = '';
+  let coverageCount = 0;
+  for (const row of rows) {
+    let raw;
+    if (ctx.mode === 'csv') raw = row?.[colKey];
+    else if (ctx.mode === 'api') raw = row?.[colKey];
+    else raw = _getTradeFieldValueForWidgetProp(row, colKey);
+    const str = ctx.mode === 'api' ? _flattenApiWidgetValue(raw) : (raw == null ? '' : String(raw).trim());
+    if (!str) continue;
+    coverageCount++;
+    values.push(str);
+    if (!sampleValue) sampleValue = str.substring(0, 80);
+  }
+  let inferredType = _inferWidgetPropertyType(values, headerLabel || colKey);
+  if (ctx.mode === 'api' && rows.length) {
+    const sampleRaw = rows.find(r => r && r[colKey] != null)?.[colKey];
+    if (Array.isArray(sampleRaw)) inferredType = 'multi-select';
+    else if (typeof sampleRaw === 'boolean') inferredType = 'boolean';
+    else if (sampleRaw && typeof sampleRaw === 'object' && typeof sampleRaw.start === 'string') inferredType = 'date';
+    else if (sampleRaw && typeof sampleRaw === 'object' && typeof sampleRaw.url === 'string') inferredType = 'url/file';
+  }
+  return {
+    sampleValue: sampleValue || '—',
+    coverageCount,
+    totalCount,
+    inferredType,
+    isRecommended: _isRecommendedWidgetProperty(headerLabel || colKey, inferredType, sampleValue),
+  };
+}
+
+function getApiAvailableProperties(apiTrades) {
+  const ctx = {
+    mode: 'api',
+    label: 'API',
+    customSectionTitle: 'API / Notion Fields',
+    rawRows: Array.isArray(apiTrades) ? apiTrades : [],
+    availableColumns: (typeof _listAPIKeys === 'function' ? _listAPIKeys(apiTrades) : []).map(k => ({
+      key: k,
+      label: k,
+    })),
+  };
+  return (ctx.availableColumns || []).map(column => {
+    const stats = _getSourceColumnStats(ctx, column.key, column.label);
+    return {
+      id: `api:${column.key}`,
+      key: column.key,
+      label: column.label,
+      source: 'api',
+      csvColumnName: column.key,
+      mappedFieldKey: null,
+      sampleValue: stats.sampleValue,
+      coverageCount: stats.coverageCount,
+      totalCount: stats.totalCount,
+      inferredType: stats.inferredType,
+      isRecommended: stats.isRecommended,
+      sourceBadge: 'API',
+    };
+  }).filter(prop => prop.coverageCount > 0);
+}
+
+function getAvailableWidgetProperties() {
+  const ctx = getActiveDataSourceContext();
+  const items = Array.isArray(appState.trades?.items) ? appState.trades.items : [];
+  const mapped = [];
+  const claimedSourceKeys = new Set();
+  for (const dim of JOURNAL_DIMS) {
+    const resolvedSourceField = _resolvedSourceFieldForDim(dim.key, ctx);
+    const tradeStats = _sampleAndCoverageFromTrades(dim.key);
+    const sourceStats = resolvedSourceField ? _getSourceColumnStats(ctx, resolvedSourceField, _getJournalDimLabel(dim)) : null;
+    const coverageCount = Math.max(tradeStats.coverageCount, sourceStats?.coverageCount || 0);
+    const totalCount = Math.max(tradeStats.totalCount, sourceStats?.totalCount || items.length);
+    if (!coverageCount && !resolvedSourceField) continue;
+    if (resolvedSourceField) claimedSourceKeys.add(String(resolvedSourceField).trim().toLowerCase());
+    const sampleValue = (tradeStats.sampleValue && tradeStats.sampleValue !== '—')
+      ? tradeStats.sampleValue
+      : (sourceStats?.sampleValue || '—');
+    const inferredType = sourceStats?.inferredType || _inferWidgetPropertyType(
+      sampleValue && sampleValue !== '—' ? [sampleValue] : [],
+      resolvedSourceField || dim.label
+    );
+    mapped.push({
+      id: `mapped:${dim.key}`,
+      key: dim.key,
+      label: _getJournalDimLabel(dim),
+      source: 'mapped',
+      csvColumnName: resolvedSourceField || null,
+      mappedFieldKey: dim.key,
+      sampleValue,
+      coverageCount,
+      totalCount,
+      inferredType,
+      isRecommended: _isRecommendedWidgetProperty(resolvedSourceField || dim.label, inferredType, sampleValue),
+      sourceBadge: 'MAPPED',
+    });
+  }
+
+  const sourceFields = (ctx.mode === 'api')
+    ? getApiAvailableProperties(ctx.rawRows)
+    : (ctx.availableColumns || []).map(column => {
+        const stats = _getSourceColumnStats(ctx, column.key, column.label);
+        return {
+          id: `${ctx.mode}:${column.key}`,
+          key: column.key,
+          label: column.label,
+          source: ctx.mode,
+          csvColumnName: column.key,
+          mappedFieldKey: null,
+          sampleValue: stats.sampleValue,
+          coverageCount: stats.coverageCount,
+          totalCount: stats.totalCount,
+          inferredType: stats.inferredType,
+          isRecommended: stats.isRecommended,
+          sourceBadge: ctx.label,
+        };
+      }).filter(prop => prop.coverageCount > 0);
+
+  const filteredSourceFields = sourceFields.filter(prop => {
+    const normalized = String(prop.key || '').trim().toLowerCase();
+    return normalized && !claimedSourceKeys.has(normalized);
+  });
+
+  return {
+    context: ctx,
+    totalCount: Array.isArray(ctx.rawRows) && ctx.rawRows.length ? ctx.rawRows.length : items.length,
+    mappedFields: mapped.sort((a, b) => a.label.localeCompare(b.label)),
+    sourceFields: filteredSourceFields.sort((a, b) => {
+      if (a.isRecommended !== b.isRecommended) return a.isRecommended ? -1 : 1;
+      return a.label.localeCompare(b.label);
+    }),
+  };
+}
+
+function _renderCreateWidgetBuilder() {
+  const host = document.getElementById('cw-inline-builder-host');
+  if (!host) return;
+  _syncCreateWidgetTypeButtons();
+  if (!_cwCreateFlowState.open || !['bars', 'heatmap'].includes(_cwCreateFlowState.type)) {
+    host.innerHTML = '';
+    return;
+  }
+  const { context, mappedFields, sourceFields } = getAvailableWidgetProperties();
+  const isHeatmap = _cwCreateFlowState.type === 'heatmap';
+  const query = String(_cwCreateFlowState.searchQuery || '').trim().toLowerCase();
+  const filter = _cwCreateFlowState.sourceFilter || 'all';
+
+  const applyFilter = (items) => items.filter(opt => {
+    if (filter === 'mapped' && opt.source !== 'mapped') return false;
+    if (filter === 'source' && opt.source !== context.mode) return false;
+    if (!query) return true;
+    const hay = [
+      opt.label,
+      opt.sampleValue,
+      opt.csvColumnName,
+      opt.mappedFieldKey,
+      opt.inferredType,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(query);
+  });
+  const filteredMapped = applyFilter(mappedFields);
+  const filteredSource = applyFilter(sourceFields);
+  const hasResults = filteredMapped.length || filteredSource.length;
+  const allOptions = [...mappedFields, ...sourceFields];
+  const xSelected = allOptions.find(opt => opt.id === _cwCreateFlowState.xSelectedId) || null;
+  const ySelected = allOptions.find(opt => opt.id === _cwCreateFlowState.ySelectedId) || null;
+  const canAddHeatmap = !!(xSelected && ySelected && xSelected.id !== ySelected.id);
+
+  if (!mappedFields.length && !sourceFields.length) {
+    host.innerHTML = `
+      <div class="cw-inline-builder is-open">
+        <div class="cw-create-empty">
+          <span class="cw-create-empty-title">No mapped or detected fields yet</span>
+          <span class="cw-create-empty-copy">Import data or configure mappings first to unlock widget creation.</span>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const sections = [
+    { label: 'Mapped Fields', items: filteredMapped },
+    { label: context.customSectionTitle, items: filteredSource },
+  ].filter(section => section.items.length);
+
+  const filterBtn = (value, label) => `
+    <button type="button"
+            class="cw-inline-filter${filter === value ? ' is-active' : ''}"
+            data-action="cw-create-set-filter"
+            data-cw-filter="${value}">${label}</button>`;
+
+  const content = hasResults
+    ? sections.map(section => `
+        <section class="cw-inline-section">
+          <div class="cw-inline-section-title">${_escapeHtml(section.label)}</div>
+          <div class="cw-inline-list" role="list">
+            ${section.items.map(opt => {
+              const isSelected = _cwCreateFlowState.selectedId === opt.id;
+              const isX = _cwCreateFlowState.xSelectedId === opt.id;
+              const isY = _cwCreateFlowState.ySelectedId === opt.id;
+              const rowStateClass = isHeatmap
+                ? `${isX ? ' is-selected-x' : ''}${isY ? ' is-selected-y' : ''}${isX && isY ? ' is-selected-both' : ''}`
+                : `${isSelected ? ' is-selected' : ''}`;
+              const badge = opt.isRecommended
+                ? `<span class="cw-inline-badge">${_escapeHtml(opt.sourceBadge || (opt.source === 'mapped' ? 'MAPPED' : context.label))}</span>`
+                : `<span class="cw-inline-badge cw-inline-badge--muted">Not recommended</span>`;
+              const actionButtons = isHeatmap
+                ? `
+                    <button type="button"
+                            class="cw-inline-axis-btn${isX ? ' is-active' : ''}"
+                            data-action="cw-create-set-x"
+                            data-cw-id="${_escapeAttr(opt.id)}">${isX ? 'X Axis' : 'Set X'}</button>
+                    <button type="button"
+                            class="cw-inline-axis-btn${isY ? ' is-active' : ''}"
+                            data-action="cw-create-set-y"
+                            data-cw-id="${_escapeAttr(opt.id)}">${isY ? 'Y Axis' : 'Set Y'}</button>`
+                : (isSelected
+                    ? `<button type="button"
+                               class="cw-inline-continue"
+                               data-action="cw-create-continue-inline"
+                               data-cw-id="${_escapeAttr(opt.id)}">Add +</button>`
+                    : '');
+              return `
+                <div class="cw-inline-row${rowStateClass}">
+                  <button type="button"
+                          class="cw-inline-row-mainbtn"
+                          data-action="cw-create-select-field"
+                          data-cw-id="${_escapeAttr(opt.id)}"
+                          aria-pressed="${isHeatmap ? (isX || isY ? 'true' : 'false') : (isSelected ? 'true' : 'false')}">
+                    <span class="cw-inline-row-main">
+                      <span class="cw-inline-row-label">${_escapeHtml(opt.label)}</span>
+                      <span class="cw-inline-row-meta">
+                        <span>${_escapeHtml(String(opt.sampleValue || '—'))}</span>
+                        <span class="cw-inline-row-sep">·</span>
+                        <span>${opt.coverageCount}/${opt.totalCount} trades</span>
+                        <span class="cw-inline-row-sep">·</span>
+                        <span>${_escapeHtml(opt.inferredType)}</span>
+                      </span>
+                    </span>
+                  </button>
+                  <div class="cw-inline-row-side">
+                    ${badge}
+                    ${actionButtons}
+                  </div>
+                </div>`;
+            }).join('')}
+          </div>
+        </section>`).join('')
+    : `
+      <div class="cw-create-empty">
+        <span class="cw-create-empty-title">No properties match this search</span>
+        <span class="cw-create-empty-copy">Try another keyword or switch the field filter.</span>
+      </div>`;
+
+  host.innerHTML = `
+    <div class="cw-inline-builder is-open">
+      <div class="cw-inline-head">
+        <div class="cw-inline-head-copy">
+          <span class="cw-inline-title">${isHeatmap ? 'Heatmap Setup' : 'Bar Chart Setup'}</span>
+          <span class="cw-inline-subtitle">${isHeatmap ? 'Select X and Y axes' : 'Select property'}</span>
+        </div>
+      </div>
+      <div class="cw-inline-toolbar">
+        <label class="cw-inline-search-wrap">
+          <input type="text"
+                 id="cw-create-search"
+                 class="cw-inline-search"
+                 value="${_escapeAttr(_cwCreateFlowState.searchQuery || '')}"
+                 placeholder="Search property..."
+                 autocomplete="off"
+                 spellcheck="false">
+        </label>
+        <div class="cw-inline-filters" role="tablist" aria-label="Property source filter">
+          ${filterBtn('all', 'All')}
+          ${filterBtn('mapped', 'Mapped')}
+          ${filterBtn('source', context.label)}
+        </div>
+      </div>
+      ${isHeatmap ? `
+      <div class="cw-inline-heatmap-summary">
+        <div class="cw-inline-heatmap-summary-copy">
+          <span class="cw-inline-heatmap-summary-title">Heatmap preview config</span>
+          <span class="cw-inline-heatmap-summary-meta">
+            <span class="cw-inline-axis-chip">X: ${_escapeHtml(xSelected?.label || 'Not selected')}</span>
+            <span class="cw-inline-axis-chip">Y: ${_escapeHtml(ySelected?.label || 'Not selected')}</span>
+          </span>
+        </div>
+        ${canAddHeatmap ? `<button type="button" class="cw-inline-continue" data-action="cw-create-continue">Add +</button>` : ''}
+      </div>` : ''}
+      <div class="cw-inline-body">${content}</div>
+      <div class="cw-inline-actions">
+        <div class="cw-inline-actions-hint">${isHeatmap
+          ? (canAddHeatmap ? 'Add + is ready for the selected X/Y axes.' : 'Choose both X Axis and Y Axis to continue.')
+          : (_cwCreateFlowState.selectedId ? 'Add + is available on the selected property.' : 'Select a property to continue.')}</div>
+        <button type="button" class="cw-create-secondary" data-action="cw-create-close">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function _openCreateWidgetModal(type) {
+  if (!['bars', 'heatmap'].includes(type)) return;
+  _cwCreateFlowState.open = true;
+  _cwCreateFlowState.type = type;
+  _cwCreateFlowState.selectedId = '';
+  _cwCreateFlowState.selectedLabel = '';
+  _cwCreateFlowState.xSelectedId = '';
+  _cwCreateFlowState.ySelectedId = '';
+  _cwCreateFlowState.searchQuery = '';
+  _cwCreateFlowState.sourceFilter = 'all';
+  _renderCreateWidgetBuilder();
+  if (_cwCreateFlowEscHandler) document.removeEventListener('keydown', _cwCreateFlowEscHandler);
+  _cwCreateFlowEscHandler = (e) => { if (e.key === 'Escape') _closeCreateWidgetBuilder(); };
+  document.addEventListener('keydown', _cwCreateFlowEscHandler);
+  requestAnimationFrame(() => {
+    document.getElementById('cw-create-search')?.focus();
+  });
+}
+
+function _closeCreateWidgetBuilder() {
+  _cwCreateFlowState.open = false;
+  _cwCreateFlowState.type = null;
+  _cwCreateFlowState.selectedId = '';
+  _cwCreateFlowState.selectedLabel = '';
+  _cwCreateFlowState.xSelectedId = '';
+  _cwCreateFlowState.ySelectedId = '';
+  _cwCreateFlowState.searchQuery = '';
+  _cwCreateFlowState.sourceFilter = 'all';
+  _renderCreateWidgetBuilder();
+  if (_cwCreateFlowEscHandler) {
+    document.removeEventListener('keydown', _cwCreateFlowEscHandler);
+    _cwCreateFlowEscHandler = null;
+  }
+}
+
+function _selectCreateWidgetField(optionId) {
+  if (!_cwCreateFlowState.open || !optionId) return;
+  if (_cwCreateFlowState.type === 'heatmap') return;
+  const { mappedFields, sourceFields } = getAvailableWidgetProperties();
+  const match = [...mappedFields, ...sourceFields].find(opt => opt.id === optionId);
+  if (!match) return;
+  _cwCreateFlowState.selectedId = match.id;
+  _cwCreateFlowState.selectedLabel = match.label;
+  _renderCreateWidgetBuilder();
+}
+
+function _getCreateWidgetSelectionById(optionId) {
+  if (!optionId) return null;
+  const { mappedFields, sourceFields } = getAvailableWidgetProperties();
+  return [...mappedFields, ...sourceFields].find(opt => opt.id === optionId) || null;
+}
+
+function _setCreateWidgetHeatmapAxis(axis, optionId) {
+  if (!_cwCreateFlowState.open || _cwCreateFlowState.type !== 'heatmap' || !['x', 'y'].includes(axis)) return;
+  const match = _getCreateWidgetSelectionById(optionId);
+  if (!match) return;
+  if (axis === 'x') {
+    _cwCreateFlowState.xSelectedId = match.id;
+    if (_cwCreateFlowState.ySelectedId === match.id) _cwCreateFlowState.ySelectedId = '';
+  } else {
+    _cwCreateFlowState.ySelectedId = match.id;
+    if (_cwCreateFlowState.xSelectedId === match.id) _cwCreateFlowState.xSelectedId = '';
+  }
+  _renderCreateWidgetBuilder();
+}
+
+function _setCreateWidgetSourceFilter(value) {
+  if (!['all', 'mapped', 'source'].includes(value)) return;
+  _cwCreateFlowState.sourceFilter = value;
+  _renderCreateWidgetBuilder();
+}
+
+function _getCreateWidgetSelection() {
+  return _getCreateWidgetSelectionById(_cwCreateFlowState.selectedId);
+}
+
+function _handleCreateWidgetContinue() {
+  if (_cwCreateFlowState.type === 'bars') {
+    if (!_cwCreateFlowState.selectedId) return;
+    const selected = _getCreateWidgetSelection();
+    if (!selected) return;
+    _createCustomBarsWidget({
+      field: selected.key,
+      label: selected.label,
+      propertySource: selected.source,
+      inferredType: selected.inferredType,
+      createdFrom: 'widget-builder',
+    });
+  } else if (_cwCreateFlowState.type === 'heatmap') {
+    const xSelected = _getCreateWidgetSelectionById(_cwCreateFlowState.xSelectedId);
+    const ySelected = _getCreateWidgetSelectionById(_cwCreateFlowState.ySelectedId);
+    if (!xSelected || !ySelected || xSelected.id === ySelected.id) return;
+    _createCustomHeatmapWidget({
+      field: xSelected.key,
+      field2: ySelected.key,
+      label: `${xSelected.label} × ${ySelected.label}`,
+      fieldLabel: xSelected.label,
+      field2Label: ySelected.label,
+      fieldSource: xSelected.source,
+      field2Source: ySelected.source,
+      propertySource: xSelected.source === ySelected.source ? xSelected.source : 'mixed',
+      inferredType: xSelected.inferredType,
+      createdFrom: 'widget-builder',
+    });
+  }
+  _closeCreateWidgetBuilder();
 }
 
 // Render the "Custom Fields → Widgets" section at the bottom of the mapping list.
@@ -23008,9 +26785,13 @@ function _refreshAPIFieldsFromPicker(btnEl) {
   if (!btnEl) return;
   if (appState.settings?.dataSource?.loading) return;
   const dimKey = btnEl.getAttribute('data-dim-key');
-  // Kick off fetch (returns a promise but we don't await — the .finally in
-  // _fetchAPICacheSilently handles the re-render).
-  _fetchAPICacheSilently({ force: true });
+  // Kick off fetch. Notion profiles route through loadFromAPI → _loadNotionTrades;
+  // legacy API profiles use _fetchAPICacheSilently directly.
+  if (getActiveJournalProfile()?.connectionType === 'notion') {
+    loadFromAPI({ force: true });
+  } else {
+    _fetchAPICacheSilently({ force: true });
+  }
   // Immediate feedback: re-render the picker right now so the button flips
   // to the disabled "Loading…" state without waiting for the fetch tick.
   const existingHost = btnEl.closest('.lap-item, .ljp-item');
@@ -27102,8 +30883,18 @@ function _applySectionFilter(section, { skipSync = false } = {}) {
     visible.forEach(item => {
       item.style.display = '';
       const id = item.getAttribute('gs-id');
-      const d = layout[id];
-      if (!d) return; // widget has data-section but no entry in its section layout
+      let d = layout[id];
+      if (!d) {
+        if (!String(id || '').startsWith('w-cust-')) return;
+        // Custom widget with no layout entry — place it at the bottom of the grid.
+        let maxY = 0;
+        Object.values(layout).forEach(pos => {
+          const bot = (pos.y || 0) + (pos.h || 0);
+          if (bot > maxY) maxY = bot;
+        });
+        d = { x: 0, y: maxY, w: 6, h: 39, minW: 2, minH: 14 };
+        layout[id] = d;
+      }
       if (!item.gridstackNode) {
         item.setAttribute('gs-x', d.x);
         item.setAttribute('gs-y', d.y);
@@ -27117,7 +30908,12 @@ function _applySectionFilter(section, { skipSync = false } = {}) {
     visible.forEach(item => {
       const id = item.getAttribute('gs-id');
       const d = layout[id];
-      if (d) _grid.update(item, { x: d.x, y: d.y, w: d.w, h: d.h });
+      if (d) {
+        if (String(id || '').startsWith('w-cust-')) {
+          console.log('[layout-restore] applying grid position for', id, d);
+        }
+        _grid.update(item, { x: d.x, y: d.y, w: d.w, h: d.h });
+      }
     });
   } finally {
     _grid.commit();
@@ -27328,8 +31124,9 @@ function _syncContextStripBtnLabel(strip) {
 //  LAYOUT MANAGER  —  Gridstack-based drag/resize/presets
 // ════════════════════════════════════════════════════════
 
-const LS_KEY_ACTIVE  = 'gs_active_preset';
-const LS_KEY_PREFIX  = 'gs_layout_';
+const LS_KEY_ACTIVE       = 'gs_active_preset';
+const LS_KEY_PREFIX       = 'gs_layout_';
+const LS_KEY_CKPT_PREFIX  = 'gs_layout_ckpt_'; // manual-save checkpoints (used by Reset)
 const COLUMN_COUNT   = 12;
 const ROW_HEIGHT_PX  = 10;   // 1 grid unit = 10px
 const SV_LS_KEY_ACTIVE = 'sv_gs_layout_active';
@@ -27732,6 +31529,7 @@ function _renderHidePopoverList() {
 // upward the popup slides UNDER the header instead of overlapping it.
 function _openHideConfirm(id, anchorEl) {
   if (!id) return;
+  _closeDeleteConfirm();
   _closeHideConfirm();
   if (!anchorEl) return;
   const pop = document.createElement('div');
@@ -27745,19 +31543,7 @@ function _openHideConfirm(id, anchorEl) {
     </div>
   `;
   document.body.appendChild(pop);
-
-  // Anchor 6px below the eye-off button in DOCUMENT coordinates (clientRect
-  // viewport coords + scrollY). Once placed, position:absolute makes the
-  // popup scroll with the page as a normal block — staying glued to the
-  // widget without a scroll listener.
-  const r = anchorEl.getBoundingClientRect();
-  const sx = window.scrollX || window.pageXOffset || 0;
-  const sy = window.scrollY || window.pageYOffset || 0;
-  const topPx  = Math.round(r.bottom + 6 + sy);
-  const leftPx = Math.round(Math.min(Math.max(8, r.right - 160), window.innerWidth - 168) + sx);
-  pop.style.position = 'absolute';
-  pop.style.top  = `${topPx}px`;
-  pop.style.left = `${leftPx}px`;
+  _positionWidgetConfirmPopup(anchorEl, pop, 6);
 
   setTimeout(() => document.addEventListener('click', _onHideConfirmOutsideClick, true), 0);
 }
@@ -27774,6 +31560,69 @@ function _onHideConfirmOutsideClick(e) {
   if (pop.contains(e.target)) return;
   if (e.target.closest && e.target.closest('[data-action="layout-hide-widget-confirm"]')) return;
   _closeHideConfirm();
+}
+
+function _openDeleteConfirm(cwId, anchorEl) {
+  if (!cwId) return;
+  _closeHideConfirm();
+  _closeDeleteConfirm();
+  if (!anchorEl) return;
+  const pop = document.createElement('div');
+  pop.id = 'gs-delete-confirm-popup';
+  pop.className = 'gs-hide-confirm-popup gs-delete-confirm-popup';
+  pop.innerHTML = `
+    <div class="gs-hide-confirm-msg">Delete widget?</div>
+    <div class="gs-hide-confirm-actions">
+      <button class="gs-hide-confirm-btn gs-hide-confirm-cancel" data-action="layout-delete-cancel">Cancel</button>
+      <button class="gs-hide-confirm-btn gs-hide-confirm-ok gs-delete-confirm-ok" data-action="layout-delete-confirm" data-cw-id="${_escapeAttr(cwId)}">Delete widget</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+  _positionWidgetConfirmPopup(anchorEl, pop, 6);
+
+  setTimeout(() => document.addEventListener('click', _onDeleteConfirmOutsideClick, true), 0);
+}
+
+function _closeDeleteConfirm() {
+  const pop = document.getElementById('gs-delete-confirm-popup');
+  if (pop) pop.remove();
+  document.removeEventListener('click', _onDeleteConfirmOutsideClick, true);
+}
+
+function _onDeleteConfirmOutsideClick(e) {
+  const pop = document.getElementById('gs-delete-confirm-popup');
+  if (!pop) { document.removeEventListener('click', _onDeleteConfirmOutsideClick, true); return; }
+  if (pop.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('[data-action="layout-delete-widget-confirm"]')) return;
+  _closeDeleteConfirm();
+}
+
+function _positionWidgetConfirmPopup(anchorEl, pop, gap = 6) {
+  if (!anchorEl || !pop) return;
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const popupRect = pop.getBoundingClientRect();
+  const sx = window.scrollX || window.pageXOffset || 0;
+  const sy = window.scrollY || window.pageYOffset || 0;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const margin = 8;
+
+  const canPlaceRight = anchorRect.right + gap + popupRect.width <= vw - margin;
+  const canPlaceBelow = anchorRect.bottom + gap + popupRect.height <= vh - margin;
+
+  let left = canPlaceRight
+    ? anchorRect.right + gap
+    : anchorRect.left - popupRect.width - gap;
+  let top = canPlaceBelow
+    ? anchorRect.bottom + gap
+    : anchorRect.top - popupRect.height - gap;
+
+  left = Math.min(Math.max(margin, left), vw - popupRect.width - margin);
+  top = Math.min(Math.max(margin, top), vh - popupRect.height - margin);
+
+  pop.style.position = 'absolute';
+  pop.style.left = `${Math.round(left + sx)}px`;
+  pop.style.top = `${Math.round(top + sy)}px`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -28429,6 +32278,49 @@ function _migrateLegacySlot(flat) {
   return out;
 }
 
+// Snapshot current custom-widget (w-cust-*) positions from the live grid
+// and _liveSectionLayouts.global. Called before overwriting _liveSectionLayouts
+// so custom widgets survive a reset or "load default" operation.
+function _snapshotCustomLayouts() {
+  const customs = {};
+  const cur = _liveSectionLayouts?.global || {};
+  Object.entries(cur).forEach(([id, d]) => {
+    if (String(id).startsWith('w-cust-')) customs[id] = { ...d };
+  });
+  if (_grid) {
+    const gsContainer = document.getElementById('gs-container');
+    gsContainer?.querySelectorAll('.grid-stack-item').forEach(item => {
+      const n  = item.gridstackNode;
+      const id = item.getAttribute('gs-id');
+      if (n && id && String(id).startsWith('w-cust-')) {
+        customs[id] = {
+          x: n.x, y: n.y, w: n.w, h: n.h,
+          minW: n.minW ?? customs[id]?.minW ?? 2,
+          minH: n.minH ?? customs[id]?.minH ?? 14,
+        };
+      }
+    });
+  }
+  return customs;
+}
+
+// Compute factory-default positions for all custom widgets (w-cust-*), stacked
+// vertically below the native global layout in creation order.
+// Used by layoutReset() so custom widgets are also reset to a sensible default.
+function _defaultCustomWidgetLayouts() {
+  const defs = _loadCustomWidgetDefs();
+  const result = {};
+  let startY = 0;
+  Object.values(GLOBAL_OVERVIEW_LAYOUT).forEach(pos => {
+    const bot = (pos.y || 0) + (pos.h || 0);
+    if (bot > startY) startY = bot;
+  });
+  defs.forEach((def, i) => {
+    result[def.id] = { x: 0, y: startY + i * 39, w: 6, h: 39, minW: 2, minH: 14 };
+  });
+  return result;
+}
+
 // Flush the current GridStack node positions into _liveSectionLayouts
 // for the active section. This captures ALL widgets (not just the one
 // the user dragged) so that compaction side-effects are persisted too.
@@ -28444,7 +32336,93 @@ function _syncGridToLive() {
     const id = item.getAttribute('gs-id');
     if (n && id && live[id]) {
       live[id] = { ...live[id], x: n.x, y: n.y, w: n.w, h: n.h };
+    } else if (n && id && String(id).startsWith('w-cust-')) {
+      live[id] = { x: n.x, y: n.y, w: n.w, h: n.h, minW: n.minW ?? 2, minH: n.minH ?? 14 };
     }
+  });
+}
+
+function _getSavedDynamicWidgetGrid(id) {
+  if (!id) return null;
+  const liveItem = document.querySelector(`#gs-container .grid-stack-item[gs-id="${CSS.escape(id)}"]`);
+  const node = liveItem?.gridstackNode;
+  if (node) {
+    return {
+      x: node.x, y: node.y, w: node.w, h: node.h,
+      minW: node.minW ?? (_liveSectionLayouts?.global?.[id]?.minW) ?? 2,
+      minH: node.minH ?? (_liveSectionLayouts?.global?.[id]?.minH) ?? 14,
+    };
+  }
+  const live = _liveSectionLayouts?.global?.[id];
+  if (!live) return null;
+  return {
+    x: live.x, y: live.y, w: live.w, h: live.h,
+    minW: live.minW ?? 2,
+    minH: live.minH ?? 14,
+  };
+}
+
+function _serializeDynamicWidgets() {
+  return _loadCustomWidgetDefs().map(rawDef => {
+    const def = _normalizeCustomWidgetDef(rawDef);
+    const grid = _getSavedDynamicWidgetGrid(def.id);
+    const isHeatmap = def.type === 'heatmap';
+    return {
+      id: def.id,
+      type: isHeatmap ? 'heatmap' : 'bar',
+      createdFrom: def.createdFrom || 'widget-builder',
+      label: def.label || def.propertyLabel || '',
+      propertySource: def.propertySource || def.fieldSource || 'mapped',
+      propertyKey: def.propertyKey || def.field || '',
+      propertyLabel: def.propertyLabel || def.fieldLabel || def.label || '',
+      xPropertyKey: isHeatmap ? (def.field || '') : null,
+      xPropertyLabel: isHeatmap ? (def.fieldLabel || def.propertyLabel || def.label || def.field || '') : null,
+      yPropertyKey: isHeatmap ? (def.field2 || '') : null,
+      yPropertyLabel: isHeatmap ? (def.field2Label || def.field2 || '') : null,
+      settings: def.settings ? JSON.parse(JSON.stringify(def.settings)) : null,
+      hidden: _isWidgetHidden(def.id),
+      grid,
+      definition: JSON.parse(JSON.stringify(def)),
+    };
+  });
+}
+
+function _restoreDynamicWidgetDefFromPayload(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (entry.definition && typeof entry.definition === 'object') {
+    return _normalizeCustomWidgetDef(entry.definition);
+  }
+  const rawType = String(entry.type || '').trim().toLowerCase();
+  if (rawType === 'heatmap') {
+    return _normalizeCustomWidgetDef({
+      id: entry.id,
+      type: 'heatmap',
+      field: entry.xPropertyKey || entry.field || '',
+      field2: entry.yPropertyKey || entry.field2 || '',
+      label: entry.label || `${entry.xPropertyLabel || entry.xPropertyKey || entry.field || ''} × ${entry.yPropertyLabel || entry.yPropertyKey || entry.field2 || ''}`.trim(),
+      fieldLabel: entry.xPropertyLabel || entry.fieldLabel || entry.propertyLabel || entry.xPropertyKey || entry.field || '',
+      field2Label: entry.yPropertyLabel || entry.field2Label || entry.yPropertyKey || entry.field2 || '',
+      propertyKey: entry.propertyKey || entry.xPropertyKey || entry.field || '',
+      propertyLabel: entry.propertyLabel || entry.xPropertyLabel || entry.label || '',
+      fieldSource: entry.fieldSource || entry.propertySource || 'mapped',
+      field2Source: entry.field2Source || entry.propertySource || 'mapped',
+      propertySource: entry.propertySource || 'mapped',
+      inferredType: entry.inferredType || 'text',
+      createdFrom: entry.createdFrom || 'widget-builder',
+      settings: entry.settings || {},
+    });
+  }
+  return _normalizeCustomWidgetDef({
+    id: entry.id,
+    type: 'bars',
+    field: entry.propertyKey || entry.field || '',
+    label: entry.label || entry.propertyLabel || entry.propertyKey || entry.field || '',
+    propertyKey: entry.propertyKey || entry.field || '',
+    propertyLabel: entry.propertyLabel || entry.label || entry.propertyKey || entry.field || '',
+    fieldSource: entry.fieldSource || entry.propertySource || 'mapped',
+    propertySource: entry.propertySource || 'mapped',
+    inferredType: entry.inferredType || 'text',
+    createdFrom: entry.createdFrom || 'widget-builder',
   });
 }
 
@@ -28454,22 +32432,39 @@ function _serializeSectionLayouts() {
     global:       { ..._liveSectionLayouts.global },
     'optimal-rr': { ..._liveSectionLayouts['optimal-rr'] },
     partials:     { ..._liveSectionLayouts.partials },
+    hiddenWidgets: { ...(_hiddenWidgets || {}) },
+    dynamicWidgets: _serializeDynamicWidgets(),
   };
 }
 
 // Save the live layouts to a named slot (or 'active' for the autosave).
-function _saveSectionSlot(key) {
+// Pass skipSync:true when _liveSectionLayouts was just set programmatically
+// and is already correct — avoids _syncGridToLive overwriting it with
+// stale grid-node positions that haven't been applied to the DOM yet.
+function _saveSectionSlot(key, { skipSync = false } = {}) {
+  if (!skipSync) _syncGridToLive();
   const payload = _serializeSectionLayouts();
+  const savedItems = {
+    global: payload.global,
+    'optimal-rr': payload['optimal-rr'],
+    partials: payload.partials,
+    hiddenWidgets: payload.hiddenWidgets,
+  };
+  console.log('[layout-save] items', savedItems);
+  console.log('[layout-save] dynamic widgets', payload.dynamicWidgets);
   localStorage.setItem(_htfKey(LS_KEY_PREFIX + key), JSON.stringify(payload));
   if (key !== 'active') localStorage.setItem(_htfKey(LS_KEY_ACTIVE), key);
 }
 
-// Autosave the active slot (called after every drag/resize).
+// Autosave the active slot + named preset slot (called after every drag/resize).
+// The checkpoint slot (LS_KEY_CKPT_PREFIX) is only written on explicit Save — Reset uses it.
 function _saveActiveSlotLive() {
   _saveSectionSlot('active');
   const name = _activePresetName;
-  if (name && name !== 'default') {
-    _saveSectionSlot(name);
+  if (name) _saveSectionSlot(name); // preserve live state per-preset across switches
+  if (!_suppressDirty) {
+    _dirtyPresets[name] = true;
+    _updatePresetButtons();
   }
 }
 
@@ -28479,6 +32474,41 @@ function _loadSectionSlot(raw) {
   try { parsed = JSON.parse(raw); } catch { return false; }
   if (!parsed) return false;
   const data = _isLegacySlot(parsed) ? _migrateLegacySlot(parsed) : parsed;
+  console.log('[layout-restore] saved layout', data);
+  console.log('[layout-restore] dynamic widgets before create', data.dynamicWidgets || []);
+  const globalData = { ...GLOBAL_OVERVIEW_LAYOUT, ...(data.global || {}) };
+  if (Array.isArray(data.dynamicWidgets)) {
+    const restoredDefs = data.dynamicWidgets
+      .map(_restoreDynamicWidgetDefFromPayload)
+      .filter(Boolean);
+    // Merge with current defs: update defs that exist in the saved layout, keep those
+    // that were created after the layout was saved. This prevents new custom widgets
+    // from disappearing when switching to an older preset.
+    const currentDefs = _loadCustomWidgetDefs();
+    const restoredById = Object.fromEntries(restoredDefs.map(d => [d.id, d]));
+    const merged = currentDefs.map(d => restoredById[d.id] ?? d);
+    restoredDefs.forEach(d => { if (!merged.find(m => m.id === d.id)) merged.push(d); });
+    _saveCustomWidgetDefs(merged);
+    data.dynamicWidgets.forEach(entry => {
+      const grid = entry?.grid;
+      const id = entry?.id;
+      if (!id || !grid || typeof grid !== 'object') return;
+      console.log('[layout-restore] applying grid position for', id, grid);
+      globalData[id] = {
+        ...(globalData[id] || {}),
+        x: grid.x ?? globalData[id]?.x ?? 0,
+        y: grid.y ?? globalData[id]?.y ?? 0,
+        w: grid.w ?? globalData[id]?.w ?? 6,
+        h: grid.h ?? globalData[id]?.h ?? 39,
+        minW: grid.minW ?? globalData[id]?.minW ?? 2,
+        minH: grid.minH ?? globalData[id]?.minH ?? 14,
+      };
+    });
+  }
+  if (data.hiddenWidgets && typeof data.hiddenWidgets === 'object' && !Array.isArray(data.hiddenWidgets)) {
+    _hiddenWidgets = { ...data.hiddenWidgets };
+    _saveHiddenWidgets();
+  }
 
   // Silent migration: strip the retired Partials Planner widget from any
   // saved partials-section payload so the orphan id can't reach GridStack.
@@ -28486,7 +32516,7 @@ function _loadSectionSlot(raw) {
   delete partialsData['w-partials-planner'];
 
   _liveSectionLayouts = {
-    global:       { ...GLOBAL_OVERVIEW_LAYOUT,      ...(data.global       || {}) },
+    global:       globalData,
     'optimal-rr': { ...OPTIMAL_RR_LAYOUT,           ...(data['optimal-rr'] || {}) },
     partials:     { ...PARTIAL_PLANNERS_LAYOUT,     ...partialsData },
   };
@@ -28506,6 +32536,8 @@ let _grid = null;
 let _svGrid = null;
 let _editMode = false;
 let _activePresetName = 'default';
+let _dirtyPresets  = {};     // per-preset dirty flags: { 'Layout 1': true, ... }
+let _suppressDirty = false; // true during programmatic layout ops — prevents auto-dirty
 // Guard: true once GridStack has finished moving widgets into its containers.
 // render() calls during _buildGridDOM() can crash because elements are mid-move.
 var _gsReady = false;
@@ -28536,20 +32568,14 @@ function _injectCustomWidgetHTML() {
       widget.innerHTML = `
         <div class="cc-head">
           <span class="cc-title">${_escapeHtml(def.label)}</span>
-          <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
         </div>
-        <div class="bar-sort-row" id="sort-${_escapeAttr(def.id)}">
-          <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="alpha">A → Z</button>
-          <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="desc">Best → Worst</button>
-          <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="asc">Worst → Best</button>
-          <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="volume">Volume</button>
-        </div>
+        ${_renderCustomBarSortToolbarHTML(def.id)}
         <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
     } else {
       widget.innerHTML = `
         <div class="cc-head">
           <span class="cc-title">${_escapeHtml(def.label)}</span>
-          <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
+          ${_renderSharedHeatmapToolbarHTML('sd', def)}
         </div>
         <div id="heatmap-${_escapeAttr(def.id)}" class="cw-hm-wrap"></div>`;
     }
@@ -28575,20 +32601,14 @@ function _injectNewCustomWidget(def) {
     widget.innerHTML = `
       <div class="cc-head">
         <span class="cc-title">${_escapeHtml(def.label)}</span>
-        <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
       </div>
-      <div class="bar-sort-row" id="sort-${_escapeAttr(def.id)}">
-        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="alpha">A → Z</button>
-        <button class="bar-sort-btn active" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="desc">Best → Worst</button>
-        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="asc">Worst → Best</button>
-        <button class="bar-sort-btn" data-action="set-bar-sort" data-chart="${_escapeAttr(def.id)}" data-sort="volume">Volume</button>
-      </div>
+      ${_renderCustomBarSortToolbarHTML(def.id)}
       <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
   } else {
     widget.innerHTML = `
       <div class="cc-head">
         <span class="cc-title">${_escapeHtml(def.label)}</span>
-        <button class="cw-remove-inline-btn" data-action="cw-remove" data-cw-id="${_escapeAttr(def.id)}" title="Remove custom widget">✕</button>
+        ${_renderSharedHeatmapToolbarHTML('sd', def)}
       </div>
       <div id="heatmap-${_escapeAttr(def.id)}" class="cw-hm-wrap"></div>`;
   }
@@ -28612,9 +32632,12 @@ function _injectNewCustomWidget(def) {
   hideBtn.setAttribute('data-action', 'layout-hide-widget-confirm');
   hideBtn.setAttribute('data-gs-id', def.id);
   hideBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  const deleteBtn = document.createElement('div');
+  deleteBtn.innerHTML = _buildCustomWidgetDeleteButtonHTML(def.id);
 
   content.appendChild(handle);
   content.appendChild(hideBtn);
+  content.appendChild(deleteBtn.firstElementChild);
   content.appendChild(widget);
   item.appendChild(content);
   gsContainer.appendChild(item);
@@ -28666,6 +32689,9 @@ function _injectNewCustomWidget(def) {
 
 // Remove a custom widget from DOM, grid, layout, and defs storage.
 function _destroyCustomWidget(id) {
+  _closeDeleteConfirm();
+  _closeHideConfirm();
+  delete barSortState[id];
   // Remove from defs
   _removeCustomWidgetDef(id);
 
@@ -28740,6 +32766,12 @@ function _buildGridDOM() {
 
     content.appendChild(handle);
     content.appendChild(hideBtn);
+    if (el.matches('.cw-widget[data-cw-id]')) {
+      const cwId = el.getAttribute('data-cw-id');
+      const deleteWrap = document.createElement('div');
+      deleteWrap.innerHTML = _buildCustomWidgetDeleteButtonHTML(cwId);
+      content.appendChild(deleteWrap.firstElementChild);
+    }
     content.appendChild(el);  // move the actual widget inside
     item.appendChild(content);
     gsDiv.appendChild(item);
@@ -28814,6 +32846,19 @@ function initGridstack() {
   // (called below) reads _isWidgetHidden(id) to skip these from the visible
   // grid on first paint — no flash of "all visible".
   _loadHiddenWidgets();
+  const saved = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'active'));
+  const name  = localStorage.getItem(_htfKey(LS_KEY_ACTIVE)) || 'default';
+  if (saved) {
+    if (_loadSectionSlot(saved)) {
+      _activePresetName = name;
+    }
+  } else if (!_liveSectionLayouts) {
+    _liveSectionLayouts = {
+      global:       { ...GLOBAL_OVERVIEW_LAYOUT },
+      'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
+      partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+    };
+  }
   _injectCustomWidgetHTML(); // inject user-created widgets before DOM is wrapped
   _buildGridDOM();
 
@@ -28830,14 +32875,6 @@ function initGridstack() {
     oneColumnModePossible: false,
   }, '#gs-container');
 
-  // Load saved layout if present
-  const saved = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'active'));
-  const name  = localStorage.getItem(_htfKey(LS_KEY_ACTIVE)) || 'default';
-  if (saved) {
-    if (_loadSectionSlot(saved)) {
-      _activePresetName = name;
-    }
-  }
   _updatePresetButtons();
 
   // After any drag/resize, flush layout then redraw charts.
@@ -28968,6 +33005,7 @@ function toggleEditMode() {
   // Update dot color via active class (icon-only button)
 
   if (_editMode) {
+    _suppressDirty = true;
     _grid.enableMove(true);
     _grid.enableResize(true);
     _svGrid?.enableMove(true);
@@ -28976,19 +33014,24 @@ function toggleEditMode() {
     _mc2InitSectionLayoutEdit();
     _poInternalApplyLayout();
     _poInternalInitEdit();
+    // Release after 2 rAFs — matches the resizestop/dragstop double-rAF window so
+    // any GridStack events fired by enableMove/enableResize don't set dirty.
+    requestAnimationFrame(() => requestAnimationFrame(() => { _suppressDirty = false; }));
     _showToast(currentView === 'share'
       ? 'Share layout edit ON — drag ⠿ to move · corner to resize'
       : 'Edit mode ON — drag ⠿ to move · corner to resize');
   } else {
+    _suppressDirty = true;
     _grid.enableMove(false);
     _grid.enableResize(false);
     _svGrid?.enableMove(false);
     _svGrid?.enableResize(false);
     _mc2ApplySectionLayout();
     _poInternalApplyLayout();
-    _saveCurrentLayout('active');
+    _saveSectionSlot('active');
     _saveCurrentShareLayout();
-    _showToast(currentView === 'share' ? 'Share layout saved' : 'Layout saved');
+    requestAnimationFrame(() => requestAnimationFrame(() => { _suppressDirty = false; }));
+    _showToast(currentView === 'share' ? 'Share layout saved' : 'Edit mode OFF');
     // Full render after edit mode disables so all widgets are up to date
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (currentView === 'share') renderShareView();
@@ -29322,6 +33365,8 @@ function _applySerializedLayout(data) {
 // ── Save layout to localStorage ──
 function _saveCurrentLayout(key) {
   const layout = _serializeLayout();
+  console.log('[layout-save] items', layout);
+  console.log('[layout-save] dynamic widgets', _serializeDynamicWidgets());
   localStorage.setItem(_htfKey(LS_KEY_PREFIX + key), JSON.stringify(layout));
   if (key !== 'active') localStorage.setItem(_htfKey(LS_KEY_ACTIVE), key);
 }
@@ -29333,29 +33378,40 @@ function _saveCurrentShareLayout() {
 
 // ── Load a preset (default or custom slot) ──
 function layoutLoadPreset(name) {
-  if (name === 'default') {
-    _activePresetName = 'default';
-    _liveSectionLayouts = {
-      global:       { ...GLOBAL_OVERVIEW_LAYOUT },
-      'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-      partials:     { ...PARTIAL_PLANNERS_LAYOUT },
-    };
-    _saveSectionSlot('active');
-    localStorage.setItem(_htfKey(LS_KEY_ACTIVE), 'default');
-    _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
-    _updatePresetButtons();
-    _showToast('Layout: default');
-    return;
+  _suppressDirty = true;
+  try {
+    if (name === 'default') {
+      _activePresetName = 'default';
+      localStorage.setItem(_htfKey(LS_KEY_ACTIVE), 'default');
+      const savedDefault = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'default'));
+      if (savedDefault && _loadSectionSlot(savedDefault)) {
+        // Loaded user's saved default.
+      } else {
+        const customLayouts = _defaultCustomWidgetLayouts();
+        _liveSectionLayouts = {
+          global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
+          'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
+          partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+        };
+      }
+      _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+      _saveSectionSlot('active');
+    } else {
+      const raw = localStorage.getItem(_htfKey(LS_KEY_PREFIX + name));
+      if (!raw) { _showToast(`No layout: "${name}"`, 'warn'); return; }
+      if (!_loadSectionSlot(raw)) { _showToast('Corrupt layout data', 'warn'); return; }
+      _activePresetName = name;
+      localStorage.setItem(_htfKey(LS_KEY_ACTIVE), name);
+      _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+      _saveSectionSlot('active');
+    }
+  } finally {
+    _suppressDirty = false;
   }
-  const raw = localStorage.getItem(_htfKey(LS_KEY_PREFIX + name));
-  if (!raw) { _showToast(`No layout: "${name}"`, 'warn'); return; }
-  if (!_loadSectionSlot(raw)) { _showToast('Corrupt layout data', 'warn'); return; }
-  _activePresetName = name;
-  _saveSectionSlot('active');
-  localStorage.setItem(_htfKey(LS_KEY_ACTIVE), name);
-  _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+  // Dirty state is per-preset — _dirtyPresets is NOT cleared here.
+  // Each preset remembers its own unsaved state across switches.
   _updatePresetButtons();
-  _showToast(`Layout: ${name}`);
+  _showToast(name === 'default' ? 'Layout: default' : `Layout: ${name}`);
 }
 
 // ── Create a new layout slot with an auto-generated name ──
@@ -29380,18 +33436,40 @@ function layoutNew() {
   const res = _addCustomSlot(name);
   if (!res.ok) { _showToast(`Max ${LAYOUT_SLOTS_MAX} layouts`, 'warn'); return; }
 
-  // Snapshot current live layouts into the new slot
-  _syncGridToLive();
-  _saveSectionSlot(name);
-  _activePresetName = name;
-  localStorage.setItem(_htfKey(LS_KEY_ACTIVE), name);
+  // New layout starts as a copy of the default layout (factory defaults + current custom widgets).
+  _suppressDirty = true;
+  try {
+    const customLayouts = _defaultCustomWidgetLayouts();
+    _liveSectionLayouts = {
+      global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
+      'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
+      partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+    };
+    _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+    _saveSectionSlot(name, { skipSync: true });
+    // Write initial checkpoint so Reset has a target from day one.
+    const payload = localStorage.getItem(_htfKey(LS_KEY_PREFIX + name));
+    if (payload) localStorage.setItem(_htfKey(LS_KEY_CKPT_PREFIX + name), payload);
+    _activePresetName = name;
+    localStorage.setItem(_htfKey(LS_KEY_ACTIVE), name);
+    delete _dirtyPresets[name];
+  } finally {
+    _suppressDirty = false;
+  }
   _rebuildLayoutToolbar();
+  // Double-rAF: clears any dirty that a pending async GridStack event may have set.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    delete _dirtyPresets[name];
+    _updatePresetButtons();
+  }));
   _showToast(`Created: "${name}"`);
 }
 
 // ── Delete a custom slot (called after confirm) ──
 function layoutDeleteSlot(name) {
   _removeCustomSlot(name);
+  delete _dirtyPresets[name];
+  localStorage.removeItem(_htfKey(LS_KEY_CKPT_PREFIX + name));
   if (_activePresetName === name) {
     _activePresetName = 'default';
     localStorage.setItem(_htfKey(LS_KEY_ACTIVE), 'default');
@@ -29418,6 +33496,16 @@ function layoutRenameSlot(oldName, newName) {
   }
   slots[idx] = newName;
   _setCustomSlots(slots);
+  // Migrate checkpoint and dirty flag to the new name.
+  const ckpt = localStorage.getItem(_htfKey(LS_KEY_CKPT_PREFIX + oldName));
+  if (ckpt) {
+    localStorage.setItem(_htfKey(LS_KEY_CKPT_PREFIX + newName), ckpt);
+    localStorage.removeItem(_htfKey(LS_KEY_CKPT_PREFIX + oldName));
+  }
+  if (_dirtyPresets[oldName]) {
+    _dirtyPresets[newName] = true;
+    delete _dirtyPresets[oldName];
+  }
   if (_activePresetName === oldName) {
     _activePresetName = newName;
     localStorage.setItem(_htfKey(LS_KEY_ACTIVE), newName);
@@ -29431,8 +33519,15 @@ function layoutSave() {
   _syncGridToLive();
   _saveSectionSlot('active');
   const name = _activePresetName;
+  if (name) {
+    _saveSectionSlot(name);
+    // Write the checkpoint — this is what Reset will restore to.
+    const payload = localStorage.getItem(_htfKey(LS_KEY_PREFIX + name));
+    if (payload) localStorage.setItem(_htfKey(LS_KEY_CKPT_PREFIX + name), payload);
+  }
+  delete _dirtyPresets[name];
+  _updatePresetButtons();
   const label = (name && name !== 'default') ? `Saved: "${name}"` : 'Saved';
-  if (name && name !== 'default') _saveSectionSlot(name);
   _flashSaveBadge(label);
 }
 
@@ -29456,30 +33551,62 @@ function _flashSaveBadge(text = 'Saved') {
   _saveBadgeTimer = setTimeout(() => badge.classList.remove('is-visible'), 1800);
 }
 
-// ── Reset the active layout to defaults ──
+// ── Reset the active layout to the last manually saved state ──
+// If the preset has no unsaved changes (no dirty badge), Reset does nothing.
+// If the preset has a manual save, restores it; otherwise falls back to factory defaults.
 function layoutReset() {
-  _liveSectionLayouts = {
-    global:       { ...GLOBAL_OVERVIEW_LAYOUT },
-    'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-    partials:     { ...PARTIAL_PLANNERS_LAYOUT },
-  };
-  _saveSectionSlot('active');
   const name = _activePresetName;
-  if (name && name !== 'default') {
-    _saveSectionSlot(name);
-    _showToast(`Reset: "${name}"`);
-  } else {
-    _showToast('Reset to default');
+  if (!_dirtyPresets[name]) {
+    _showToast('Nothing to reset — layout is already saved');
+    return;
   }
-  _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+  _suppressDirty = true;
+  try {
+    // "default" always resets to factory defaults — no checkpoint.
+    // Named presets restore from their checkpoint (last manual Save); fall back to factory defaults.
+    const isDefault = !name || name === 'default';
+    const ckptRaw = !isDefault ? localStorage.getItem(_htfKey(LS_KEY_CKPT_PREFIX + name)) : null;
+    let restored = false;
+    if (ckptRaw) {
+      try {
+        const parsed = JSON.parse(ckptRaw);
+        const data = _isLegacySlot(parsed) ? _migrateLegacySlot(parsed) : parsed;
+        _liveSectionLayouts = {
+          global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...(data.global       || {}) },
+          'optimal-rr': { ...OPTIMAL_RR_LAYOUT,      ...(data['optimal-rr'] || {}) },
+          partials:     { ...PARTIAL_PLANNERS_LAYOUT, ...(data.partials     || {}) },
+        };
+        restored = true;
+      } catch { /* corrupt checkpoint — fall through to factory defaults */ }
+    }
+    if (!restored) {
+      const customLayouts = isDefault ? _defaultCustomWidgetLayouts() : _defaultCustomWidgetLayouts();
+      _liveSectionLayouts = {
+        global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
+        'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
+        partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+      };
+    }
+    _saveSectionSlot('active', { skipSync: true });
+    if (name) _saveSectionSlot(name, { skipSync: true });
+    _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+    delete _dirtyPresets[name];
+  } finally {
+    _suppressDirty = false;
+  }
+  _showToast(name && name !== 'default' ? `Reset: "${name}"` : 'Reset to default');
   _updatePresetButtons();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    delete _dirtyPresets[name];
+    _updatePresetButtons();
+  }));
 }
 
 // ── Export current layout as a downloadable JSON file ──
 function layoutExportJSON() {
   const layout = _serializeSectionLayouts();
   const name   = (_activePresetName || 'layout').replace(/\s+/g, '_');
-  const payload = JSON.stringify({ name, layout, schema: 'sections-v1' }, null, 2);
+  const payload = JSON.stringify({ name, layout, schema: 'sections-v2' }, null, 2);
   const blob    = new Blob([payload], { type: 'application/json' });
   const url     = URL.createObjectURL(blob);
   const a       = document.createElement('a');
@@ -29508,9 +33635,11 @@ function layoutImportJSON(input) {
       if (!_loadSectionSlot(JSON.stringify(layout))) {
         _showToast('Could not load layout', 'warn'); return;
       }
-      _saveSectionSlot('active');
       _activePresetName = name;
+      // Apply layout to grid BEFORE saving — same ordering fix as layoutLoadPreset.
       _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+      _saveSectionSlot('active');
+      delete _dirtyPresets[name];
       _updatePresetButtons();
       _showToast(`Imported: "${name}"`);
     } catch(err) {
@@ -29661,13 +33790,25 @@ const BACKUP_EXCLUDE_KEYS = new Set([
   'apiFieldNames_v1_m15',
   'apiFieldNames_v1_h4',
 ]);
+const BACKUP_EXCLUDE_PREFIXES = [
+  'apiTradesCache_v2_rrmax_',
+  'apiTradesCacheTime_v2_rrmax_',
+  'apiTradesMedia_v1_',
+  'apiTradesSessionCache_v1_',
+  'apiTradesRaw_session_v2_',
+  'apiFieldNames_v1_',
+];
+function _isBackupExcludedKey(key) {
+  return BACKUP_EXCLUDE_KEYS.has(key)
+    || BACKUP_EXCLUDE_PREFIXES.some(prefix => key.startsWith(prefix));
+}
 
 function backupExportJSON() {
   const data = {};
   let count = 0;
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (!key || BACKUP_EXCLUDE_KEYS.has(key)) continue;
+    if (!key || _isBackupExcludedKey(key)) continue;
     const raw = localStorage.getItem(key);
     if (raw == null) continue;
     // Try to JSON.parse so objects/arrays/numbers/booleans live as proper JSON
@@ -29756,8 +33897,17 @@ function backupImportJSON(input) {
 // ── Highlight active preset button ──
 function _updatePresetButtons() {
   document.querySelectorAll('.lt-preset-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.name === _activePresetName);
+    const isActive = btn.dataset.name === _activePresetName;
+    btn.classList.toggle('active', isActive);
+    btn.classList.toggle('lt-modified', !!_dirtyPresets[btn.dataset.name]);
   });
+  // Reset button is only useful when the active preset has unsaved changes.
+  const resetBtn = document.querySelector('#layout-toolbar .lt-btn.lt-reset');
+  if (resetBtn) {
+    resetBtn.disabled = !_dirtyPresets[_activePresetName];
+    const isDefault = !_activePresetName || _activePresetName === 'default';
+    resetBtn.textContent = isDefault ? '↺ Factory' : '↺ Reset';
+  }
 }
 
 // ── Rebuild toolbar HTML (called when slots change) ──

@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=125">
+<link rel="stylesheet" href="dashboard.css?v=126">
 </head>
 <body class="is-booting">
 
@@ -940,8 +940,8 @@
       <button class="ds-toggle-btn" id="ds-btn-csv" data-action="set-data-source" data-source="csv">⬡<span class="ds-btn-label"> CSV</span></button>
       <button class="ds-toggle-btn" id="ds-btn-api" data-action="set-data-source" data-source="api">◉<span class="ds-btn-label"> API Live</span><span class="ds-btn-age" id="ds-btn-age"></span></button>
     </div>
-    <!-- ── HTF Timeframe Toggle (API mode only) ── -->
-    <div class="htf-toggle-group is-hidden" id="htf-toggle-group" title="Switch timeframe">
+    <!-- ── HTF Timeframe Toggle — hidden; profiles determine M15/H4 internally ── -->
+    <div class="htf-toggle-group is-hidden" id="htf-toggle-group" style="display:none" title="Switch timeframe">
       <button class="htf-toggle-btn active" id="htf-btn-m15" onclick="setHTFSource('m15')">M15</button>
       <button class="htf-toggle-btn" id="htf-btn-h4" onclick="setHTFSource('h4')">H4</button>
     </div>
@@ -959,6 +959,7 @@
     <div class="topbar-more-wrap">
       <button class="topbar-more-btn" data-action="toggle-more-menu" title="More options">⋯</button>
       <div class="topbar-more-menu" id="topbar-more-menu">
+        <button class="settings-btn" id="account-toggle-btn" data-action="toggle-account-panel" title="View your login and sync options">👤 Account</button>
         <button class="settings-btn" id="settings-toggle-btn" data-action="toggle-settings-panel" title="Display settings">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -974,108 +975,6 @@
   </div>
 </header>
 
-<div id="sw-auth-bar" style="
-  position:fixed;bottom:1rem;right:1rem;z-index:9999;
-  display:flex;gap:0.5rem;align-items:center;
-  background:#1a1f2e;border:1px solid #2a3050;
-  border-radius:8px;padding:0.5rem 1rem;
-  font-family:monospace;font-size:12px;color:#8892b0;">
-  <span id="sw-auth-status">⬤ local only</span>
-  <div id="sw-auth-form" style="display:none;gap:0.4rem;align-items:center;flex-wrap:wrap;max-width:320px;">
-    <input id="sw-email-input" type="email" placeholder="email"
-      style="padding:0.25rem 0.5rem;background:#0d1117;border:1px solid #2a3050;
-             border-radius:4px;color:#c9d1d9;font-size:12px;width:150px;" />
-    <input id="sw-password-input" type="password" placeholder="password"
-      style="padding:0.25rem 0.5rem;background:#0d1117;border:1px solid #2a3050;
-             border-radius:4px;color:#c9d1d9;font-size:12px;width:100px;" />
-    <button onclick="(async()=>{
-      const email=document.getElementById('sw-email-input').value;
-      const password=document.getElementById('sw-password-input').value;
-      if(!email||!password)return;
-      const status=document.getElementById('sw-auth-status');
-      status.textContent='…';
-      const {error}=await _SW.signIn(email,password);
-      if(error){
-        if(error.message.includes('Invalid login')){
-          status.textContent='✗ Invalid email or password';
-        } else {
-          status.textContent='✗ '+error.message;
-        }
-      }
-    })()"
-      style="padding:0.25rem 0.5rem;background:#2962ff;border:none;
-             border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">Login</button>
-    <button onclick="(async()=>{
-      const email=document.getElementById('sw-email-input').value;
-      const password=document.getElementById('sw-password-input').value;
-      if(!email||!password)return;
-      const status=document.getElementById('sw-auth-status');
-      status.textContent='…';
-      const {error}=await _SW.signUp(email,password);
-      if(error){
-        status.textContent='✗ '+error.message;
-      } else {
-        status.textContent='✉ Check your email to confirm';
-      }
-    })()"
-      style="padding:0.25rem 0.5rem;background:#1a3a1a;border:1px solid #2a5a2a;
-             border-radius:4px;color:#6ee0b4;cursor:pointer;font-size:12px;">Sign up</button>
-    <button onclick="(async()=>{
-      const email=document.getElementById('sw-email-input').value;
-      if(!email)return;
-      const status=document.getElementById('sw-auth-status');
-      const {error}=await _SW.resetPassword(email);
-      status.textContent=error?'✗ '+error.message:'✉ Reset email sent';
-    })()"
-      style="padding:0.25rem 0.5rem;background:none;border:none;
-             color:#8892b0;cursor:pointer;font-size:11px;text-decoration:underline;">
-      Forgot password?</button>
-  </div>
-  <div id="sw-reset-form" style="display:none;gap:0.4rem;align-items:center;">
-    <input id="sw-newpassword-input" type="password"
-      placeholder="new password"
-      style="padding:0.25rem 0.5rem;background:#0d1117;border:1px solid #2a3050;
-             border-radius:4px;color:#c9d1d9;font-size:12px;width:160px;" />
-    <button onclick="(async()=>{
-      const pwd=document.getElementById('sw-newpassword-input').value;
-      if(!pwd||pwd.length<6)return;
-      const status=document.getElementById('sw-auth-status');
-      status.textContent='…';
-      const {error}=await _SW.updatePassword(pwd);
-      if(error){
-        status.textContent='✗ '+error.message;
-      } else {
-        status.textContent='● '+(_SW.getUser()?.email??'');
-        status.style.color='#6ee0b4';
-        document.getElementById('sw-reset-form').style.display='none';
-        document.getElementById('sw-toggle-btn').textContent='Logout';
-      }
-    })()"
-      style="padding:0.25rem 0.5rem;background:#2962ff;border:none;
-             border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">
-      Confirm</button>
-  </div>
-  <button id="sw-toggle-btn"
-    onclick="(()=>{
-      const user=_SW.getUser();
-      if(user){
-        _SW.signOut().then(()=>{
-          document.getElementById('sw-auth-status').textContent='⬤ local only';
-          document.getElementById('sw-auth-status').style.color='#8892b0';
-          document.getElementById('sw-toggle-btn').textContent='Login';
-          const form=document.getElementById('sw-auth-form');
-          form.style.display='none';
-        });
-      } else {
-        const form=document.getElementById('sw-auth-form');
-        const visible=form.style.display==='flex';
-        form.style.display=visible?'none':'flex';
-      }
-    })()"
-    style="padding:0.25rem 0.5rem;background:#2a3050;border:none;
-           border-radius:4px;color:#c9d1d9;cursor:pointer;font-size:12px;">Login</button>
-</div>
-
 <!-- ══ ONBOARDING BANNER (demo-mode first-visit hint) ══ -->
 <div class="onboard-banner is-hidden" id="onboard-banner">
   <div class="onboard-banner-content">
@@ -1087,6 +986,222 @@
     </div>
   </div>
   <button class="onboard-banner-close" data-action="dismiss-onboard" title="Dismiss">✕</button>
+</div>
+
+<!-- ══ ACCOUNT PANEL ══ -->
+<div class="account-panel" id="account-panel" role="dialog" aria-labelledby="account-title">
+  <div class="account-header">
+    <span class="account-title" id="account-title">Account</span>
+    <button class="account-close" data-action="toggle-account-panel" aria-label="Close">✕</button>
+  </div>
+  <div class="account-body">
+    <div class="account-alert" id="account-alert" hidden>
+      <span class="account-alert-text" id="account-alert-text"></span>
+    </div>
+
+    <section class="account-card account-section" id="account-section">
+      <button class="account-section-trigger" type="button" data-action="toggle-account-section" aria-expanded="false">
+        <span class="account-section-copy">
+          <span class="account-card-label">Account</span>
+          <span class="account-section-summary" id="account-section-summary">● Connected</span>
+        </span>
+        <span class="account-section-chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="account-section-body" id="account-section-body" hidden>
+        <div class="account-compact-block" id="account-view-signed-in" hidden>
+          <div class="account-compact-label">Connected as</div>
+          <div class="account-compact-value" id="account-identity-email">—</div>
+          <div class="account-compact-subtitle">Security</div>
+          <div class="account-compact-actions">
+            <button class="account-secondary-btn" data-action="auth-show-change-password">Change password</button>
+            <button class="account-secondary-btn account-danger-btn" data-action="sw-logout">Log out</button>
+          </div>
+        </div>
+
+        <div class="account-card account-card--form" id="account-view-signed-out" hidden>
+          <div class="account-form-head">
+            <div class="account-form-title">Sign in</div>
+            <div class="account-form-copy">Use your account to sync supported dashboard preferences across devices.</div>
+          </div>
+          <label class="account-field">
+            <span class="account-field-label">Email</span>
+            <input class="account-input" id="sw-email-input" type="email" placeholder="name@example.com" autocomplete="email" />
+          </label>
+          <label class="account-field">
+            <span class="account-field-label">Password</span>
+            <div class="account-password-wrap">
+              <input class="account-input" id="sw-password-input" type="password" placeholder="Your password" autocomplete="current-password" />
+              <button class="account-password-toggle" type="button" data-action="toggle-password-visibility" data-target="sw-password-input" aria-label="Show password" aria-pressed="false">
+                <svg class="account-password-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path class="eye-open" d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z"/>
+                  <circle class="eye-open" cx="12" cy="12" r="3"/>
+                  <path class="eye-closed" d="M4 4l16 16"/>
+                  <path class="eye-closed" d="M9.9 5.2A10.7 10.7 0 0 1 12 5c5.9 0 9.5 7 9.5 7a16.9 16.9 0 0 1-3.2 3.9"/>
+                  <path class="eye-closed" d="M14.1 18.8A10.7 10.7 0 0 1 12 19c-5.9 0-9.5-7-9.5-7a16.9 16.9 0 0 1 3.2-3.9"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <div class="account-btn-row">
+            <button class="account-primary-btn" data-action="sw-login">Login</button>
+            <button class="account-secondary-btn" data-action="sw-signup">Sign up</button>
+          </div>
+          <button class="account-link-btn" data-action="auth-show-forgot-password">Forgot password?</button>
+          <div class="account-local-note">
+            Local only — preferences are stored on this device.
+          </div>
+        </div>
+
+        <div class="account-card account-card--form" id="account-view-forgot-password" hidden>
+          <div class="account-form-head">
+            <div class="account-form-title">Forgot password</div>
+            <div class="account-form-copy">Enter your email and we’ll send you a reset link.</div>
+          </div>
+          <label class="account-field">
+            <span class="account-field-label">Email</span>
+            <input class="account-input" id="sw-forgot-email-input" type="email" placeholder="name@example.com" autocomplete="email" />
+          </label>
+          <div class="account-btn-row">
+            <button class="account-primary-btn" data-action="sw-send-reset-link">Send reset link</button>
+            <button class="account-secondary-btn" data-action="auth-back-to-sign-in">Back to sign in</button>
+          </div>
+        </div>
+
+        <div class="account-card account-card--form" id="account-view-reset-password" hidden>
+          <div class="account-form-head">
+            <div class="account-form-title">Reset password</div>
+            <div class="account-form-copy">Finish the recovery flow by choosing a new password.</div>
+          </div>
+          <label class="account-field">
+            <span class="account-field-label">New password</span>
+            <div class="account-password-wrap">
+              <input class="account-input" id="sw-recovery-newpassword-input" type="password" placeholder="At least 6 characters" autocomplete="new-password" />
+              <button class="account-password-toggle" type="button" data-action="toggle-password-visibility" data-target="sw-recovery-newpassword-input" aria-label="Show password" aria-pressed="false">
+                <svg class="account-password-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path class="eye-open" d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z"/>
+                  <circle class="eye-open" cx="12" cy="12" r="3"/>
+                  <path class="eye-closed" d="M4 4l16 16"/>
+                  <path class="eye-closed" d="M9.9 5.2A10.7 10.7 0 0 1 12 5c5.9 0 9.5 7 9.5 7a16.9 16.9 0 0 1-3.2 3.9"/>
+                  <path class="eye-closed" d="M14.1 18.8A10.7 10.7 0 0 1 12 19c-5.9 0-9.5-7-9.5-7a16.9 16.9 0 0 1 3.2-3.9"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label class="account-field">
+            <span class="account-field-label">Confirm new password</span>
+            <div class="account-password-wrap">
+              <input class="account-input" id="sw-recovery-confirmpassword-input" type="password" placeholder="Repeat your new password" autocomplete="new-password" />
+              <button class="account-password-toggle" type="button" data-action="toggle-password-visibility" data-target="sw-recovery-confirmpassword-input" aria-label="Show password" aria-pressed="false">
+                <svg class="account-password-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path class="eye-open" d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z"/>
+                  <circle class="eye-open" cx="12" cy="12" r="3"/>
+                  <path class="eye-closed" d="M4 4l16 16"/>
+                  <path class="eye-closed" d="M9.9 5.2A10.7 10.7 0 0 1 12 5c5.9 0 9.5 7 9.5 7a16.9 16.9 0 0 1-3.2 3.9"/>
+                  <path class="eye-closed" d="M14.1 18.8A10.7 10.7 0 0 1 12 19c-5.9 0-9.5-7-9.5-7a16.9 16.9 0 0 1 3.2-3.9"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <div class="account-btn-row">
+            <button class="account-primary-btn" data-action="sw-update-password">Confirm</button>
+            <button class="account-secondary-btn" data-action="auth-cancel-recovery">Back</button>
+          </div>
+        </div>
+
+        <div class="account-card account-card--form" id="account-view-change-password" hidden>
+          <div class="account-form-head">
+            <div class="account-form-title">Change password</div>
+            <div class="account-form-copy">Confirm your current password before saving a new one.</div>
+          </div>
+          <label class="account-field">
+            <span class="account-field-label">Current password</span>
+            <div class="account-password-wrap">
+              <input class="account-input" id="sw-currentpassword-input" type="password" placeholder="Your current password" autocomplete="current-password" />
+              <button class="account-password-toggle" type="button" data-action="toggle-password-visibility" data-target="sw-currentpassword-input" aria-label="Show password" aria-pressed="false">
+                <svg class="account-password-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path class="eye-open" d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z"/>
+                  <circle class="eye-open" cx="12" cy="12" r="3"/>
+                  <path class="eye-closed" d="M4 4l16 16"/>
+                  <path class="eye-closed" d="M9.9 5.2A10.7 10.7 0 0 1 12 5c5.9 0 9.5 7 9.5 7a16.9 16.9 0 0 1-3.2 3.9"/>
+                  <path class="eye-closed" d="M14.1 18.8A10.7 10.7 0 0 1 12 19c-5.9 0-9.5-7-9.5-7a16.9 16.9 0 0 1 3.2-3.9"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label class="account-field">
+            <span class="account-field-label">New password</span>
+            <div class="account-password-wrap">
+              <input class="account-input" id="sw-newpassword-input" type="password" placeholder="At least 6 characters" autocomplete="new-password" />
+              <button class="account-password-toggle" type="button" data-action="toggle-password-visibility" data-target="sw-newpassword-input" aria-label="Show password" aria-pressed="false">
+                <svg class="account-password-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path class="eye-open" d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z"/>
+                  <circle class="eye-open" cx="12" cy="12" r="3"/>
+                  <path class="eye-closed" d="M4 4l16 16"/>
+                  <path class="eye-closed" d="M9.9 5.2A10.7 10.7 0 0 1 12 5c5.9 0 9.5 7 9.5 7a16.9 16.9 0 0 1-3.2 3.9"/>
+                  <path class="eye-closed" d="M14.1 18.8A10.7 10.7 0 0 1 12 19c-5.9 0-9.5-7-9.5-7a16.9 16.9 0 0 1 3.2-3.9"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <label class="account-field">
+            <span class="account-field-label">Confirm new password</span>
+            <div class="account-password-wrap">
+              <input class="account-input" id="sw-confirmpassword-input" type="password" placeholder="Repeat your new password" autocomplete="new-password" />
+              <button class="account-password-toggle" type="button" data-action="toggle-password-visibility" data-target="sw-confirmpassword-input" aria-label="Show password" aria-pressed="false">
+                <svg class="account-password-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path class="eye-open" d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z"/>
+                  <circle class="eye-open" cx="12" cy="12" r="3"/>
+                  <path class="eye-closed" d="M4 4l16 16"/>
+                  <path class="eye-closed" d="M9.9 5.2A10.7 10.7 0 0 1 12 5c5.9 0 9.5 7 9.5 7a16.9 16.9 0 0 1-3.2 3.9"/>
+                  <path class="eye-closed" d="M14.1 18.8A10.7 10.7 0 0 1 12 19c-5.9 0-9.5-7-9.5-7a16.9 16.9 0 0 1 3.2-3.9"/>
+                </svg>
+              </button>
+            </div>
+          </label>
+          <div class="account-btn-row">
+            <button class="account-primary-btn" data-action="sw-update-password">Confirm</button>
+            <button class="account-secondary-btn" data-action="auth-cancel-change-password">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="account-card account-section" id="integrations-section">
+      <button class="account-section-trigger" type="button" data-action="toggle-integrations-section" aria-expanded="false">
+        <span class="account-section-copy">
+          <span class="account-card-label">Integrations</span>
+          <span class="account-section-summary" id="integrations-section-status">—</span>
+        </span>
+        <span class="account-section-chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="account-section-body" id="integrations-section-body" hidden></div>
+    </section>
+
+    <section class="account-card account-section" id="data-sources-section">
+      <button class="account-section-trigger" type="button" data-action="toggle-data-sources-section" aria-expanded="false">
+        <span class="account-section-copy">
+          <span class="account-card-label">Data Sources</span>
+          <span class="account-section-summary" id="data-sources-section-status">● Notion API connected</span>
+          <span class="account-section-detail" id="data-sources-section-summary">—</span>
+        </span>
+        <span class="account-section-chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="account-section-body" id="data-sources-section-body" hidden>
+        <div class="account-compact-block" id="journal-profile-default-pane">
+          <div class="journal-profile-manage-content">
+            <div class="journal-profile-switch-list" id="journal-profile-switch-list"></div>
+            <button class="account-secondary-btn journal-profile-add-btn" type="button" id="journal-profile-add-btn" data-action="journal-profile-add-source">+ Add source</button>
+            <div class="journal-profile-editor-slot" id="journal-profile-editor-slot"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="local-mode-badge" id="local-mode-badge" hidden aria-live="polite">
+  <span class="local-mode-badge-dot" aria-hidden="true"></span>
+  <span class="local-mode-badge-text">Local mode</span>
 </div>
 
 <!-- ══ SETTINGS PANEL ══ -->
@@ -1207,6 +1322,15 @@
       <span class="dhp-tab-label">Custom fields</span>
       <span class="dhp-tab-badge" id="dhp-tab-custom-badge"></span>
     </button>
+    <button class="dhp-tab"
+            data-action="switch-dh-tab"
+            data-tab="create-widget"
+            role="tab"
+            aria-selected="false"
+            id="dhp-tab-create-widget">
+      <span class="dhp-tab-icon" aria-hidden="true">▦</span>
+      <span class="dhp-tab-label">Create Widget</span>
+    </button>
   </div>
 
   <!-- TAB 1: HEALTH -->
@@ -1260,6 +1384,30 @@
         <button class="np-add-btn" id="np-add-btn" data-action="notion-prop-show-add-form">+ Add property</button>
       </div>
       <div id="np-counter" class="np-counter"></div>
+    </div>
+  </div>
+
+  <!-- TAB 4: CREATE WIDGET -->
+  <div class="dhp-tab-panel"
+       id="dhp-panel-create-widget"
+       role="tabpanel"
+       aria-labelledby="dhp-tab-create-widget">
+    <div class="dhp-section-intro">
+      <span class="dhp-intro-label">What's this?</span>
+      <span class="dhp-intro-text">Centralize widget creation here before choosing the field and reusing the current widget renderers.</span>
+    </div>
+    <div class="dhp-create-widget-body">
+      <section class="np-widget-creator" aria-labelledby="np-widget-creator-title">
+        <div class="np-widget-creator-head">
+          <span class="np-widget-creator-title" id="np-widget-creator-title">Create Widget</span>
+          <span class="np-widget-creator-text">Create a visualization from any mapped or detected field.</span>
+        </div>
+        <div class="np-widget-creator-actions" aria-label="Widget creation shortcuts">
+          <button type="button" class="np-widget-creator-btn" data-action="cw-open-create-modal" data-cw-type="bars">+ Bar Chart</button>
+          <button type="button" class="np-widget-creator-btn np-widget-creator-btn--heatmap" data-action="cw-open-create-modal" data-cw-type="heatmap">+ Heatmap</button>
+        </div>
+        <div class="cw-inline-builder-host" id="cw-inline-builder-host"></div>
+      </section>
     </div>
   </div>
 </div>
@@ -2041,7 +2189,7 @@
       <div class="cc-head">
         <span class="cc-title">Session × Day Heatmap</span>
         <div class="cc-head-controls cc-head-controls-sm">
-          <button class="bar-sort-btn hm-sync-btn" data-action="toggle-heatmap-sync" title="Sync both heatmaps together">⛓</button>
+          <button class="bar-sort-btn hm-sync-btn" data-action="toggle-heatmap-sync" data-hm-scope="sd" title="Sync both heatmaps together">⛓</button>
           <button class="cc-tab hm-hardmode-btn" data-action="toggle-hard-mode" title="Hardmode: red/green around 40%">Hardmode</button>
           <div class="cc-tabs" id="sd-metric-btns">
             <button class="cc-tab active" data-action="set-heatmap-metric" data-metric="ev">Avg R</button>
@@ -2144,7 +2292,7 @@
       <div class="cc-head">
         <span class="cc-title">Pair × Session</span>
         <div class="cc-head-controls cc-head-controls-sm">
-          <button class="bar-sort-btn hm-sync-btn" data-action="toggle-heatmap-sync" title="Sync both heatmaps together">⛓</button>
+          <button class="bar-sort-btn hm-sync-btn" data-action="toggle-heatmap-sync" data-hm-scope="ps" title="Sync both heatmaps together">⛓</button>
           <button class="cc-tab hm-hardmode-btn" data-action="toggle-hard-mode" title="Hardmode: red/green around 40%">Hardmode</button>
           <div class="cc-tabs" id="ps-metric-btns">
             <button class="cc-tab active" data-action="set-pair-session-metric" data-metric="ev">Avg R</button>
@@ -2649,6 +2797,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=147"></script>
+<script src="dashboard.js?v=157"></script>
 </body>
 </html>
