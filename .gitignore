@@ -28,8 +28,7 @@ node_modules/
 secrets.json
 
 # Claude Code local
-.claude/settings.local.json
-.claude/launch.json
+.claude/
 
 # Spike / POC (local only, never committed)
 spike/

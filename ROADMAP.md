@@ -53,6 +53,10 @@ _(none)_
 
 - [ ] **Yellow border highlighting on clicked cells** — P&L Calendar, Pair × Session, Monthly P&L in Hover mode.
 
+- [ ] **Add LICENSE file (MIT recommended)** — currently the public repo has no license, so legally all rights reserved by default. Not urgent since users don't access GitHub directly, but worth adding for legal clarity.
+
+- [ ] **Add README.md** — public-facing landing page on GitHub. Low priority since users access the dashboard via GitHub Pages link, not the repo itself. Would matter if/when the repo becomes a public-facing project (contributions, forks, etc.).
+
 ---
 
 ## Done — Last 10
