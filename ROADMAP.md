@@ -61,6 +61,7 @@ _(none)_
 
 ## Done — Last 10
 
+- [x] **Local hook automation: cache-bust + JS syntax validation** (2026-05-18) — `.claude/hooks/post-edit.ps1` (gitignored, Windows-only for now) fires on every `Edit/Write/MultiEdit` of `dashboard.js` or `dashboard.css`. Bumps `?v=N` in `index.html` automatically and runs `node -c dashboard.js` after JS edits (exit 2 on syntax error blocks the turn). Registered as `PostToolUse` hook in `.claude/settings.local.json`. Per-machine — recreate on Mac with "install hooks here". Setup documented in `CLAUDE.md` §12 / `AGENTS.md` §12.
 - [x] **Per-profile isolation: layout, presets, filters, hidden widgets** (2026-05-18) — `_htfKey()` now wraps `getProfileScopedKey()` so every layout/preset/snapshot/live-filter/hidden-widget key carries the active profile id. Demo gets a fixed `__demo` slot via `_getJournalProfileCacheContext`. One-shot boot migration (`_runProfileScopeMigrationV3` + flag `flipping_profile_scope_migration_v3`) wipes legacy global keys. New helper `_reloadProfileScopedState()` reused by `setHTFSource`, `setDataSource`, `_applyActiveJournalProfile`.
 - [x] **Active preset persisted per profile + auto-apply RAW Baseline** (2026-05-18) — New LS key `flipping_active_filter_preset_id` (profile-scoped). `setActivePreset` persists, `_restoreActivePresetForCurrentSlot` restores at boot / switch with fallback to P0 RAW Baseline. `_clearActivePreset` routed through `setActivePreset(null)` so explicit clears survive a round-trip.
 - [x] **Profile switch flicker fix** (2026-05-18) — `_applyActiveJournalProfile` pins `_journalProfileCacheContextOverride` for the whole switch flow (try/finally) so reads/writes don't drift if DS_KEY hasn't been flipped to `api` yet. Double restore (before + after `await _reloadJournalProfileSelection`) eliminates the preset-deselect flash during async data fetch.
@@ -70,7 +71,6 @@ _(none)_
 - [x] **Notion sync race-fix on profile switch** (2026-05-17) — `_loadNotionTrades` captures `profileId` at start; after `await fetch` pins `_journalProfileCacheContextOverride = profileId` so all scoped cache writes (raw cache, parsed cache, sync cursor) target the captured profile's slot even if the user switched active profile mid-sync. All UI side-effects (`_injectTrades`, `setSourceIndicator`, `showDataStatus`, `_updateLastSync`) gated by `stillActive()` helper.
 - [x] **`_injectTrades` pair filter removed** (2026-05-17) — `dashboard.js:6749` no longer drops trades without `pair`. Surfaces ~5 hidden trades (case-by-case Notion data quality issue). Downstream widgets are defensive (`t.pair || ''`).
 - [x] **CLAUDE.md + ROADMAP.md + AGENTS.md + DECISIONS.md created** (2026-05-17) — repo-level agent memory files replacing ad-hoc context.
-- [x] **ROBUST-11 — `importTheme` CSS injection hardening** (2026-05-15) — `_isSafeCssValue` blacklist + unicode escape normalization. PR #22.
 
 ---
 

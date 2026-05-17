@@ -228,3 +228,17 @@ A preset = a named filter configuration the user saves and switches between.
   2. Append `DECISIONS.md` if a non-trivial architectural decision was made
   3. Commit with a clear imperative message: `verb: what changed`
 - **Push only when explicitly asked by the user.**
+
+---
+
+## 12. Local Automation (per-machine, gitignored)
+
+Claude Code hooks live under `.claude/` (gitignored) — they do NOT sync across machines via git.
+
+**Windows (installed 2026-05-18):**
+- `.claude/hooks/post-edit.ps1` — fires on `Edit/Write/MultiEdit` of `dashboard.js` or `dashboard.css`:
+  - Auto-bumps `?v=N` in `index.html` (cache-bust)
+  - Runs `node -c dashboard.js` after JS edits; blocks the turn on syntax errors (exit 2)
+- Registered via `PostToolUse` hook in `.claude/settings.local.json`.
+
+**On a fresh machine:** user can say "install hooks here" — agent recreates the equivalent (bash + `node -c` on macOS, PowerShell on Windows). No git-tracked source of truth needed — logic is small enough to regenerate from this note.
