@@ -853,6 +853,11 @@ function _renderSharedHeatmapToolbarHTML(scope = 'sd', def = null) {
     </div>`;
 }
 const PRESET_LS_KEY = 'flipping_presets';
+// Persists the currently-active filter preset id per profile (via _htfKey).
+// Distinct from gs_active_preset which tracks the active LAYOUT preset name.
+// Storage value: JSON-encoded — either a numeric preset id (0..n) or the
+// literal null when the user explicitly cleared the active preset.
+const ACTIVE_FILTER_PRESET_LS_KEY = 'flipping_active_filter_preset_id';
 
 const CUSTOM_PROPS_MAX  = 20;
 const CUSTOM_PROPS_WARN = 15;
@@ -1662,6 +1667,36 @@ function setRawMode(showRawAll) {
 
 function setActivePreset(presetId) {
   appState.presets.activeId = presetId;
+  // Persist the choice in the current profile's scoped slot so switching
+  // profiles restores each one to its last-active preset. Null is a valid
+  // value (= user explicitly cleared the preset) and round-trips via JSON.
+  try {
+    localStorage.setItem(_htfKey(ACTIVE_FILTER_PRESET_LS_KEY), JSON.stringify(presetId));
+  } catch (e) {}
+}
+
+// Restore the previously-active preset for the current profile slot.
+//   - If a persisted id exists and is still a valid preset → applyPreset(it)
+//   - If a persisted value of `null` exists (user explicitly cleared) → respect it
+//   - If nothing is persisted (fresh profile, never visited) → default to P0
+function _restoreActivePresetForCurrentSlot() {
+  let raw = null;
+  try { raw = localStorage.getItem(_htfKey(ACTIVE_FILTER_PRESET_LS_KEY)); } catch (e) {}
+  if (raw !== null) {
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch (e) { raw = null; }
+    if (raw !== null) {
+      if (parsed === null || PRESETS.some(p => p.id === parsed)) {
+        try { applyPreset(parsed); } catch (e) { console.warn('[restore-preset] applyPreset failed:', e?.message); }
+        return;
+      }
+      // Stale (preset id no longer exists in this slot's PRESETS) — fall through.
+    }
+  }
+  // No persisted state for this profile yet → default to RAW Baseline (P0).
+  if (PRESETS.some(p => p.id === 0)) {
+    try { applyPreset(0); } catch (e) { console.warn('[restore-preset] applyPreset(0) failed:', e?.message); }
+  }
 }
 
 function setTemporalRange(from, to) {
@@ -3635,7 +3670,21 @@ function _isDefaultJournalProfile(profile) {
 }
 function _getJournalProfileCacheContext() {
   const active = getActiveJournalProfile();
-  const profileId = String(_journalProfileCacheContextOverride || active?.id || '').trim();
+  // Resolution order:
+  //   1. Explicit override (sync race-fix pinning during async fetches)
+  //   2. Demo mode → fixed '__demo' slot so layout/preset/filters stay
+  //      independent from any saved API profile.
+  //   3. Active journal profile id (saved profiles in Data & Integrations)
+  let profileId = String(_journalProfileCacheContextOverride || '').trim();
+  if (!profileId) {
+    let dsMode = '';
+    try { dsMode = localStorage.getItem(DS_KEY) || ''; } catch (e) {}
+    if (dsMode === 'demo') {
+      profileId = '__demo';
+    } else {
+      profileId = String(active?.id || '').trim();
+    }
+  }
   debugLog('[JournalProfile] Active profile:', profileId || '(legacy)');
   return { active, profileId, profiles: getJournalProfiles() };
 }
@@ -5188,12 +5237,38 @@ async function _reloadJournalProfileSelection(options = {}) {
 }
 async function _applyActiveJournalProfile(profile, options = {}) {
   if (!profile) return;
-  const preferredSource = _getJournalProfilePreferredSource(profile);
-  _clearProfileRuntimeStateForSwitch();
-  if (preferredSource && (localStorage.getItem(HTF_SOURCE_KEY) || 'm15') !== preferredSource) {
-    setHTFSource(preferredSource);
+  // Pin the cache-context override to THIS profile for the entire switch flow.
+  // Without this, _reloadProfileScopedState reads from the wrong slot because
+  // DS_KEY hasn't yet been flipped from 'demo' to 'api' (that flip happens
+  // inside _reloadJournalProfileSelection, downstream of our state reload).
+  // The override forces _getJournalProfileCacheContext to use profile.id
+  // regardless of DS_KEY's current value, keeping every read/write coherent.
+  const previousOverride = _journalProfileCacheContextOverride;
+  _journalProfileCacheContextOverride = String(profile.id || '').trim();
+  try {
+    const preferredSource = _getJournalProfilePreferredSource(profile);
+    _clearProfileRuntimeStateForSwitch();
+    if (preferredSource && (localStorage.getItem(HTF_SOURCE_KEY) || 'm15') !== preferredSource) {
+      // setHTFSource() internally calls _reloadProfileScopedState() so the new
+      // profile's layout/presets/filters get loaded from the correct slot.
+      setHTFSource(preferredSource);
+    } else {
+      _reloadProfileScopedState();
+    }
+    // Restore the preset BEFORE awaiting the data fetch so the user sees the
+    // correct preset highlighted during loading — without this, the preset
+    // chip flashes "deselected" during the async window between clearing and
+    // the post-fetch restore.
+    _restoreActivePresetForCurrentSlot();
+    await _reloadJournalProfileSelection(options);
+    // Restore AGAIN after the await — _injectTrades / loadBuiltinCSV reset
+    // appState.presets.activeId synchronously on the first-load branch (line
+    // 6884 / 24800), which would otherwise leave the user staring at a
+    // deselected preset right after the fetch resolves.
+    _restoreActivePresetForCurrentSlot();
+  } finally {
+    _journalProfileCacheContextOverride = previousOverride;
   }
-  await _reloadJournalProfileSelection(options);
 }
 async function _handleJournalProfileSelectChange(id) {
   const active = setActiveJournalProfile(id);
@@ -5378,11 +5453,17 @@ function _readFirstSessionStorageValue(baseKey) {
 function _getProfileScopedSourceSlot(source = null) {
   return getProfileScopedKey(source || (localStorage.getItem(HTF_SOURCE_KEY) || 'm15'));
 }
-// Returns the HTF-namespaced localStorage key.
-// M15 uses no suffix (backward-compatible with existing data).
-// H4 gets '_h4' suffix — starts fresh on first use.
+// Returns the profile-scoped, HTF-namespaced localStorage key.
+//   - HTF suffix: M15 has no suffix, H4 appends '_h4'
+//   - Profile suffix: appended via getProfileScopedKey so each data-source
+//     row (Notion profile or Demo) holds its own layout / presets / filters
+// Final shape (m15): `<base>_<profileId>`
+// Final shape (h4):  `<base>_<profileId>_h4`
+// When no profile context is active (legacy / boot), falls back to the raw
+// base key for backward compatibility with v2 storage.
 function _htfKey(base) {
-  return (localStorage.getItem('htfSource') || 'm15') === 'h4' ? `${base}_h4` : base;
+  const htfSuffixed = (localStorage.getItem('htfSource') || 'm15') === 'h4' ? `${base}_h4` : base;
+  return getProfileScopedKey(htfSuffixed);
 }
 const CSV_CACHE_KEY  = 'flipping_csv_cache_v1'; // raw CSV text + filename + format for restart restore
 // Per-source cache keys — switching M15↔H4 uses separate localStorage slots
@@ -6704,16 +6785,17 @@ function _syncHTFToggleUI() {
   if (btnH4)  btnH4.classList.toggle('active',  htf === 'h4');
 }
 
-function setHTFSource(source) {
-  if (source !== 'm15' && source !== 'h4') return;
-  if ((localStorage.getItem(HTF_SOURCE_KEY) || 'm15') === source) return; // no-op
-  localStorage.setItem(HTF_SOURCE_KEY, source);
-  _syncHTFToggleUI();
-
-  // ── 1. Reset + reload all preset in-memory state for the new source ──
+// Reload all profile-scoped state (presets, snapshots, live filters, layout,
+// hidden widgets) from localStorage. Called whenever the active profile or
+// HTF source changes — both inputs feed _htfKey() / getProfileScopedKey(),
+// so this re-reads from the correct slot for the current (profile × htf) pair.
+//   - Idempotent: safe to call multiple times in a row.
+//   - Does NOT touch trade data: callers handle data injection separately.
+function _reloadProfileScopedState() {
+  // ── 1. Reset + reload all preset in-memory state for the new slot ──
   Object.keys(presetOverrides).forEach(k => delete presetOverrides[k]);
-  // Reset PRESETS to defaults first so that if the new source has no saved
-  // presets, the old source's list doesn't bleed through (loadPresetsList
+  // Reset PRESETS to defaults first so that if the new slot has no saved
+  // presets, the previous slot's list doesn't bleed through (loadPresetsList
   // returns early without clearing PRESETS when there's no LS data).
   PRESETS = DEFAULT_PRESETS.map(p => ({ ...p }));
   loadPresetsList();
@@ -6724,7 +6806,7 @@ function setHTFSource(source) {
   loadPresetLiveFilters();
   _ensureLiveSlotsInitialized();
 
-  // ── 2. Load the new source's layout ──
+  // ── 2. Load this slot's layout ──
   const savedLayout = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'active'));
   const savedName   = localStorage.getItem(_htfKey(LS_KEY_ACTIVE)) || 'default';
   if (savedLayout && _loadSectionSlot(savedLayout)) {
@@ -6738,10 +6820,15 @@ function setHTFSource(source) {
     };
   }
 
-  // ── 3. Re-apply hidden widgets for the new source ──
-  // First un-hide everything currently hidden so no stale widget stays invisible.
-  _unhideAllWidgets();
-  // Then load the new source's hidden set; _applySectionFilter below will handle
+  // ── 3. Re-apply hidden widgets for the new slot ──
+  // Visual-only reset first — restores display:'' on every currently-hidden
+  // item so _applySectionFilter (step 4) can re-evaluate visibility against
+  // the new scope. We MUST NOT use _unhideAllWidgets here: that helper calls
+  // _unhideWidget per id, which invokes _saveHiddenWidgets / _saveActiveSlotLive
+  // and would clobber the new scope's persisted state (writing {} on top of
+  // whatever the new profile/HTF had legitimately hidden).
+  _visuallyUnhideAllWidgets();
+  // Then load the new slot's hidden set; _applySectionFilter below will handle
   // removing those from the live grid automatically (reads _isWidgetHidden).
   _loadHiddenWidgets();
 
@@ -6755,7 +6842,23 @@ function setHTFSource(source) {
   if (typeof renderPresetList === 'function') renderPresetList();
   syncPresetSelectionState(null);
 
-  // ── 6. Inject data from the new source's cache (if any) ──
+  // Note: the active preset restore (_restoreActivePresetForCurrentSlot) is
+  // intentionally NOT called here — _injectTrades resets appState.presets.activeId
+  // synchronously inside the data-injection branch (line 6884) which would
+  // immediately undo our restore. Callers must invoke the restore AFTER their
+  // data-injection step (see setHTFSource / setDataSource / _applyActiveJournalProfile).
+}
+
+function setHTFSource(source) {
+  if (source !== 'm15' && source !== 'h4') return;
+  if ((localStorage.getItem(HTF_SOURCE_KEY) || 'm15') === source) return; // no-op
+  localStorage.setItem(HTF_SOURCE_KEY, source);
+  _syncHTFToggleUI();
+
+  // Reload preset / layout state from the new HTF slot
+  _reloadProfileScopedState();
+
+  // Inject data from the new source's cache (if any)
   const cached = getCachedAPIData();
   if (cached && cached.length) {
     _injectTrades(cached, 'Notion Live', null);
@@ -6776,6 +6879,10 @@ function setHTFSource(source) {
     setSourceIndicator('pending');
     showDataStatus('API standby — no data for this source yet', 'warn');
   }
+  // Restore preset AFTER data injection — _injectTrades resets activeId
+  // on its first-load branch, so a restore from inside _reloadProfileScopedState
+  // would be undone here.
+  _restoreActivePresetForCurrentSlot();
 }
 
 // ── Update source UI (toggle buttons + refresh btn) ──
@@ -7296,11 +7403,18 @@ function _restoreFilterState(saved) {
 
 function setDataSource(mode) {
   if (mode !== 'csv' && mode !== 'api' && mode !== 'demo') return;
+  const prevMode = localStorage.getItem(DS_KEY) || 'demo';
   debugDataSource('setDataSource:requested', {
-    from: localStorage.getItem(DS_KEY) || 'demo',
+    from: prevMode,
     to: mode,
     currentTrades: appState.trades.items.length,
   });
+
+  // Profile slot toggles when we enter or leave Demo mode — Demo uses the
+  // '__demo' scope, API/CSV use the active journal profile id. When the slot
+  // changes, the new slot has its own layout/preset/filter state and we must
+  // NOT carry the previous slot's filter chips into it.
+  const profileSlotChanged = (mode === 'demo') !== (prevMode === 'demo');
 
   // Dismiss the onboarding banner as soon as the user connects a real source.
   if (mode === 'csv' || mode === 'api') {
@@ -7308,12 +7422,19 @@ function setDataSource(mode) {
     try { localStorage.setItem('onboard_dismissed', '1'); } catch (e) {}
   }
 
-  // Save current filter state to restore after the source switch
-  const savedState = _saveFilterState();
+  // Save current filter state to restore after the source switch. Skip when
+  // the profile slot changed — the new slot owns its own filter state.
+  const savedState = profileSlotChanged ? null : _saveFilterState();
   const isFirstLoad = (appState.trades.items.length === 0);
 
   localStorage.setItem(DS_KEY, mode);
   updateSourceUI(mode);
+
+  // Reload presets / layout / hidden widgets from the new profile slot before
+  // injecting data, so widgets render in the new slot's layout right away.
+  if (profileSlotChanged) {
+    _reloadProfileScopedState();
+  }
 
   // Drop the persisted CSV blob when leaving CSV mode so a stale cache
   // doesn't come back on next reload. The user explicitly switched away.
@@ -7363,6 +7484,12 @@ function setDataSource(mode) {
       showEmptyState();
     }
   }
+  // Restore the slot's last-active preset AFTER data injection (which wipes
+  // activeId to null on first-load via _injectTrades / loadBuiltinCSV). Always
+  // called — when the slot didn't change this is an idempotent re-apply of
+  // what's already in localStorage; when it did, this puts the right preset
+  // back without relying on profileSlotChanged being detected correctly.
+  _restoreActivePresetForCurrentSlot();
 }
 
 // ── Load built-in demo dataset on startup ──
@@ -31120,7 +31247,59 @@ function showThemeToast(msg, isErr=false) {
   _toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2200);
 }
 
+// ── Profile-scope migration (v3) ──
+// Pre-v3: layout / presets / hidden widgets / filter snapshots were stored
+// under global localStorage keys (e.g. `flipping_presets`, `gs_layout_default`).
+// All data sources (Demo + each Notion profile) shared the same slot, so
+// switching profiles never gave the user independent layouts/presets.
+//
+// v3: _htfKey() now wraps getProfileScopedKey(), producing per-profile keys
+// like `flipping_presets_<profileId>` or `gs_layout_default_<profileId>_h4`.
+// The legacy keys are unreachable through normal app flow but still take
+// localStorage space; this one-shot pass wipes them so they don't:
+//   - confuse manual debugging (orphaned keys)
+//   - eat quota for users near 5MB ceiling
+// Reset behaviour is intentional — agreed with user (see ROADMAP / DECISIONS).
+function _runProfileScopeMigrationV3() {
+  const FLAG = 'flipping_profile_scope_migration_v3';
+  try {
+    if (localStorage.getItem(FLAG)) return;
+  } catch (e) { return; }
+  // Prefixes that uniquely identify the pre-v3 (global) keys. Post-v3 keys
+  // also start with these prefixes BUT only run after this migration sets
+  // the flag, so the wipe runs exactly once before any scoped key exists.
+  const prefixes = [
+    'gs_layout_',
+    'gs_active_preset',
+    'gs_hidden_widgets',
+    'gs_custom_slots',
+    'flipping_presets',
+    'flipping_preset_snapshots_v2',
+    'presetLiveFilters_v1',
+    'flipping_preset_overrides',
+  ];
+  const toDelete = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (prefixes.some(p => key === p || key.startsWith(p))) {
+        toDelete.push(key);
+      }
+    }
+    toDelete.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+    localStorage.setItem(FLAG, '1');
+    console.log('[profile-scope-migration-v3] wiped', toDelete.length, 'legacy keys');
+  } catch (e) {
+    console.warn('[profile-scope-migration-v3] failed:', e?.message);
+  }
+}
+
 window.addEventListener('load', () => {
+  // One-shot migration MUST run before any preset / layout load so the new
+  // per-profile scoping reads from clean slots.
+  _runProfileScopeMigrationV3();
+
   // Load custom presets BEFORE static chrome rendering so the preset list
   // reflects user-created presets (and respects deletes/renames).
   loadPresetsList();
@@ -31162,6 +31341,12 @@ window.addEventListener('load', () => {
   }
   refreshPresetCompareDropdowns();  // sync compare tool to current PRESETS list
   initDataSource();
+  // Restore the previously-active preset for this profile slot. Must run
+  // after initDataSource because _injectTrades resets activeId to null on
+  // first load (line 6884). Falls back to RAW Baseline (P0) when nothing
+  // is persisted yet — fresh profiles (Demo / new Notion / post-v3 migration)
+  // therefore land on a named preset right away.
+  _restoreActivePresetForCurrentSlot();
   // Seed the Data Hub button tooltip from the initial badge state so the
   // icon-only variant (<=1280px) is immediately informative, before the
   // user ever opens the Data Hub panel.
@@ -33388,6 +33573,22 @@ function _unhideAllWidgets() {
   ids.forEach(id => _unhideWidget(id));
 }
 
+// Visual-only counterpart for profile/HTF switching. Resets display:'' on
+// every currently-hidden grid item so _applySectionFilter can re-evaluate
+// visibility against the NEW scope's _hiddenWidgets (which the caller is
+// about to load). Does NOT call _unhideWidget per id because that path
+// invokes _saveHiddenWidgets / _saveActiveSlotLive, which would clobber the
+// new scope's persisted state. Use _unhideAllWidgets for user-driven
+// "Show all" actions; use this helper for cross-scope resets.
+function _visuallyUnhideAllWidgets() {
+  if (!_grid) return;
+  const container = document.getElementById('gs-container');
+  if (!container) return;
+  container.querySelectorAll('.grid-stack-item').forEach(item => {
+    if (item.style.display === 'none') item.style.display = '';
+  });
+}
+
 // ── Hide popover (anchored below the toolbar Hide button) ──
 function _toggleHidePopover() {
   const existing = document.getElementById('layout-hide-popover');
@@ -34529,10 +34730,14 @@ function _loadSectionSlot(raw) {
       };
     });
   }
-  if (data.hiddenWidgets && typeof data.hiddenWidgets === 'object' && !Array.isArray(data.hiddenWidgets)) {
-    _hiddenWidgets = { ...data.hiddenWidgets };
-    _saveHiddenWidgets();
-  }
+  // Note: data.hiddenWidgets is intentionally IGNORED here. Hidden widgets
+  // live in their own profile-scoped key (gs_hidden_widgets via _htfKey),
+  // which is the single source of truth. The embedded copy in the layout
+  // payload was historically a redundant snapshot; reading it back caused a
+  // destructive overwrite on profile/HTF switches (the layout's stale snapshot
+  // would clobber the dedicated key, hiding the user's actual hidden-widget
+  // state). _reloadProfileScopedState calls _loadHiddenWidgets right after
+  // _loadSectionSlot, which loads the correct per-profile state directly.
 
   // Silent migration: strip the retired Partials Planner widget from any
   // saved partials-section payload so the orphan id can't reach GridStack.
@@ -36996,7 +37201,10 @@ function _clearActivePreset() {
   appState.filters.exclusions.h4Exclude      = [];
   appState.filters.exclusions.sessionExclude = [...BASE_SESSION_EXCLUDE];
   appState.filters.exclusions.dayExclude     = [];
-  appState.presets.activeId = null;
+  // Use setActivePreset(null) instead of a direct assignment so the cleared
+  // state persists in the profile-scoped slot — otherwise switching profiles
+  // and switching back would restore the previously-active preset.
+  setActivePreset(null);
   syncPresetSelectionState(null);
 }
 

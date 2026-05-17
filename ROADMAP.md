@@ -57,16 +57,16 @@ _(none)_
 
 ## Done — Last 10
 
+- [x] **Per-profile isolation: layout, presets, filters, hidden widgets** (2026-05-18) — `_htfKey()` now wraps `getProfileScopedKey()` so every layout/preset/snapshot/live-filter/hidden-widget key carries the active profile id. Demo gets a fixed `__demo` slot via `_getJournalProfileCacheContext`. One-shot boot migration (`_runProfileScopeMigrationV3` + flag `flipping_profile_scope_migration_v3`) wipes legacy global keys. New helper `_reloadProfileScopedState()` reused by `setHTFSource`, `setDataSource`, `_applyActiveJournalProfile`.
+- [x] **Active preset persisted per profile + auto-apply RAW Baseline** (2026-05-18) — New LS key `flipping_active_filter_preset_id` (profile-scoped). `setActivePreset` persists, `_restoreActivePresetForCurrentSlot` restores at boot / switch with fallback to P0 RAW Baseline. `_clearActivePreset` routed through `setActivePreset(null)` so explicit clears survive a round-trip.
+- [x] **Profile switch flicker fix** (2026-05-18) — `_applyActiveJournalProfile` pins `_journalProfileCacheContextOverride` for the whole switch flow (try/finally) so reads/writes don't drift if DS_KEY hasn't been flipped to `api` yet. Double restore (before + after `await _reloadJournalProfileSelection`) eliminates the preset-deselect flash during async data fetch.
+- [x] **Hidden widgets cross-profile clobber fix** (2026-05-18) — `_loadSectionSlot` no longer overwrites `_hiddenWidgets` from the layout payload (stale snapshot would clobber the dedicated profile-scoped key). New `_visuallyUnhideAllWidgets()` replaces `_unhideAllWidgets()` inside `_reloadProfileScopedState`: visual-only reset, no `_saveHiddenWidgets` / `_saveActiveSlotLive` calls — the new profile's persisted hidden state survives the switch.
 - [x] **Demo as first Data source + topbar cleanup** (2026-05-17) — Demo virtual row inserted at top of `_renderJournalProfileSwitchList`. 3 Demo/CSV/API topbar toggle buttons removed (`ds-toggle-group`). `ds-status-bar` removed — status now lives per-profile in Data & Integrations.
 - [x] **Notion integration check auto-resolve** (2026-05-17) — fires on `INITIAL_SESSION` / `SIGNED_IN` auth events and on panel open when Data tab is active. Fixed the "stuck on ⏳ Checking…" after page refresh that required a manual Account→Data tab switch to unblock.
 - [x] **Notion sync race-fix on profile switch** (2026-05-17) — `_loadNotionTrades` captures `profileId` at start; after `await fetch` pins `_journalProfileCacheContextOverride = profileId` so all scoped cache writes (raw cache, parsed cache, sync cursor) target the captured profile's slot even if the user switched active profile mid-sync. All UI side-effects (`_injectTrades`, `setSourceIndicator`, `showDataStatus`, `_updateLastSync`) gated by `stillActive()` helper.
 - [x] **`_injectTrades` pair filter removed** (2026-05-17) — `dashboard.js:6749` no longer drops trades without `pair`. Surfaces ~5 hidden trades (case-by-case Notion data quality issue). Downstream widgets are defensive (`t.pair || ''`).
 - [x] **CLAUDE.md + ROADMAP.md + AGENTS.md + DECISIONS.md created** (2026-05-17) — repo-level agent memory files replacing ad-hoc context.
 - [x] **ROBUST-11 — `importTheme` CSS injection hardening** (2026-05-15) — `_isSafeCssValue` blacklist + unicode escape normalization. PR #22.
-- [x] **Mini grid sidebar Phase 1+2** (2026-05-06) — drag/resize, parking "Hidden", Preview/Apply/Cancel, magnet snap, bidirectional drag.
-- [x] **Hide widgets feature** (2026-05-06) — `gs_hidden_widgets` global store, `👁 Hide` toolbar button, per-widget eye button, `_layoutOrderCmp` sort.
-- [x] **Share view sprint** (2026-05-05/06) — canonical 2400×1032 PNG, bottom-alignment hard rule, `--sv-fs-*` independent typography tokens.
-- [x] **Trade Log + drawer overhaul** (2026-05-06) — 9-column sort, `_sortTradesForTradeLog`, adaptive separators, monthly empty-month grid.
 
 ---
 
