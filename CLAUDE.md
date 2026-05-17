@@ -50,7 +50,6 @@
 
 - `node -c dashboard.js` (syntax check)
 - Comptage `{` vs `}` cohérent (la balance doit être à 0)
-- **Backup local optionnel** avant gros refactors : `dashboard.js.backup-pre-{label}-{YYYY-MM-DD}` (le repo git est la source de vérité, mais un backup local facilite les rollbacks rapides sans `git stash`)
 
 ### Workflow git (Mac ⇄ Windows)
 
@@ -79,7 +78,7 @@ git push
 
 ### Workflow code
 
-- **Approche par PRs mentales** : un fix = un commit clair, pas de scope creep.
+- **Commits directs sur main** : pas de branches dédiées. Un fix = un commit clair, pas de scope creep.
 - **Token efficiency** : pas de re-print de fichiers, diffs ciblés uniquement.
 - **Confidence ≥ 95%** avant tout changement de code (voir Confidence rule plus haut).
 
