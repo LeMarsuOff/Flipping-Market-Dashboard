@@ -238,12 +238,31 @@ A preset = a named filter configuration the user saves and switches between.
 
 ## 12. Local Automation (per-machine, gitignored)
 
-Claude Code hooks live under `.claude/` (gitignored) — they do NOT sync across machines via git.
+Everything under `.claude/` is gitignored — local config does NOT sync across machines via git. On a fresh machine, the user says **"install hooks and commands here"** and the agent recreates everything from the specs below.
 
-**Windows (installed 2026-05-18):**
-- `.claude/hooks/post-edit.ps1` — fires on `Edit/Write/MultiEdit` of `dashboard.js` or `dashboard.css`:
-  - Auto-bumps `?v=N` in `index.html` (cache-bust)
-  - Runs `node -c dashboard.js` after JS edits; blocks the turn on syntax errors (exit 2)
-- Registered via `PostToolUse` hook in `.claude/settings.local.json`.
+### 12.1 PostToolUse hook — cache-bust + JS validation
 
-**On a fresh machine:** user can say "install hooks here" — agent recreates the equivalent (bash + `node -c` on macOS, PowerShell on Windows). No git-tracked source of truth needed — logic is small enough to regenerate from this note.
+**File:** `.claude/hooks/post-edit.ps1` (Windows) / `.claude/hooks/post-edit.sh` (macOS)
+**Registered in:** `.claude/settings.local.json` under `hooks.PostToolUse` with matcher `Edit|Write|MultiEdit`
+
+**Behavior** — fires on every `Edit`/`Write`/`MultiEdit`:
+- If the edited file is `dashboard.css` → bump `?v=N` in `index.html` for the CSS tag.
+- If the edited file is `dashboard.js` → bump `?v=N` in `index.html` for the JS tag, then run `node -c dashboard.js`. On syntax error: exit 2 (blocks the agent turn with the error message). Otherwise: exit 0.
+- For any other file: exit 0 silently.
+
+Hook input is JSON on stdin (Claude Code PostToolUse payload); extract `tool_input.file_path`. Use `$env:CLAUDE_PROJECT_DIR` (or `$CLAUDE_PROJECT_DIR` in bash) for the project root.
+
+### 12.2 Slash commands (per-session shortcuts)
+
+Stored as one `.md` file per command in `.claude/commands/`. Each file has a `description:` frontmatter and a prompt body.
+
+| Command | Purpose |
+|---|---|
+| `/start` | Pull latest, re-read CLAUDE.md + ROADMAP.md, report branch + clean state + top 3 Active TODOs. |
+| `/end` | Update ROADMAP.md (move Done, keep last 10), `git add -A`, commit with imperative message, push, report. |
+| `/localhost` | Use `mcp__Claude_Preview__preview_list` first; if no server, call `mcp__Claude_Preview__preview_start` on the project root; report the localhost URL. |
+| `/status` | `git status --short` + unpushed commits + top 3 Active TODOs + preview URL if running. Under 10 lines. |
+| `/undo` | Show `git log -1 --stat`, ask explicit confirmation, then `git revert HEAD --no-edit` (never `git reset --hard`). Offer to push the revert if the original was already pushed. |
+| `/push` | Mid-session safety push: `git status`, stage relevant changes, commit (imperative), push. No ROADMAP update (that's `/end` only). |
+
+The commands listed above are the canonical set; the user expects them on every machine.
