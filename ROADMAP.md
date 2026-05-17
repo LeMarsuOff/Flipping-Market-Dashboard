@@ -29,6 +29,12 @@ _(none)_
 
 - [ ] **Bloc 11: mini grid sidebar polish + guide update** — retours d'usage Max attendus before closing. Code: `_msState`, `_msInitGrid`, `_msPreview`, `_msApplyChanges`, `_applyMagnetSnap`.
 
+- [ ] **CSV access path after topbar cleanup** — CSV mode is now only reachable via the "⬆ Import CSV" overlay (empty state CTA + mobile button). Consider adding CSV as a virtual data source row in Data & Integrations, similar to the Demo row added on 2026-05-17.
+
+- [ ] **Dead `ds-refresh-btn` topbar button** — `index.html:943` `↺ Refresh` button is always hidden (`updateSourceUI` calls `setVisible(btnRef, false)`, no `setVisible(_, true)` anywhere). Sync now lives per-profile in Data & Integrations. Clean up the button + its spinning-class handlers at `dashboard.js:6922, 8051`.
+
+- [ ] **Concurrent Notion sync mutex** — if the user clicks Sync on profile B while profile A's sync is in flight, both run concurrently with no mutex. Cache writes are profile-scoped so no data loss, but wasted bandwidth. Low priority — defer.
+
 ---
 
 ## TODO — Deferred
@@ -51,16 +57,16 @@ _(none)_
 
 ## Done — Last 10
 
+- [x] **Demo as first Data source + topbar cleanup** (2026-05-17) — Demo virtual row inserted at top of `_renderJournalProfileSwitchList`. 3 Demo/CSV/API topbar toggle buttons removed (`ds-toggle-group`). `ds-status-bar` removed — status now lives per-profile in Data & Integrations.
+- [x] **Notion integration check auto-resolve** (2026-05-17) — fires on `INITIAL_SESSION` / `SIGNED_IN` auth events and on panel open when Data tab is active. Fixed the "stuck on ⏳ Checking…" after page refresh that required a manual Account→Data tab switch to unblock.
+- [x] **Notion sync race-fix on profile switch** (2026-05-17) — `_loadNotionTrades` captures `profileId` at start; after `await fetch` pins `_journalProfileCacheContextOverride = profileId` so all scoped cache writes (raw cache, parsed cache, sync cursor) target the captured profile's slot even if the user switched active profile mid-sync. All UI side-effects (`_injectTrades`, `setSourceIndicator`, `showDataStatus`, `_updateLastSync`) gated by `stillActive()` helper.
+- [x] **`_injectTrades` pair filter removed** (2026-05-17) — `dashboard.js:6749` no longer drops trades without `pair`. Surfaces ~5 hidden trades (case-by-case Notion data quality issue). Downstream widgets are defensive (`t.pair || ''`).
 - [x] **CLAUDE.md + ROADMAP.md + AGENTS.md + DECISIONS.md created** (2026-05-17) — repo-level agent memory files replacing ad-hoc context.
 - [x] **ROBUST-11 — `importTheme` CSS injection hardening** (2026-05-15) — `_isSafeCssValue` blacklist + unicode escape normalization. PR #22.
 - [x] **Mini grid sidebar Phase 1+2** (2026-05-06) — drag/resize, parking "Hidden", Preview/Apply/Cancel, magnet snap, bidirectional drag.
 - [x] **Hide widgets feature** (2026-05-06) — `gs_hidden_widgets` global store, `👁 Hide` toolbar button, per-widget eye button, `_layoutOrderCmp` sort.
 - [x] **Share view sprint** (2026-05-05/06) — canonical 2400×1032 PNG, bottom-alignment hard rule, `--sv-fs-*` independent typography tokens.
 - [x] **Trade Log + drawer overhaul** (2026-05-06) — 9-column sort, `_sortTradesForTradeLog`, adaptive separators, monthly empty-month grid.
-- [x] **KPI threshold colors** (2026-05-05) — `_kpiTooltipColor` helper, 6-tier WR/Avg-R palettes applied to all bar + KPI widgets.
-- [x] **BE Trades fixes (Share View)** (2026-05-05) — `_getBeOutcomeExcludedTrades`, `beCountOverride` param, "BE not included" sub-label.
-- [x] **`_rrFilterBubbleClick`** — ORR bubble click filters full dashboard on `rrMax >= value`. Toggle on re-click. Persisted per preset. `dashboard.js:14174`.
-- [x] **Mode `no-be` retired** — PR `feat/kill-no-be-mode`. Boot migration to `be-fallback`. 2 active BE modes remain.
 
 ---
 

@@ -934,22 +934,14 @@
     <button class="tpm-active-preset-topbar-btn" id="tpm-active-preset-topbar-btn"
             onclick="_tpmDeactivateActivePreset()">
     </button>
-    <!-- ── Data Source Toggle ── -->
-    <div class="ds-toggle-group" title="Switch data source">
-      <button class="ds-toggle-btn" id="ds-btn-demo" data-action="set-data-source" data-source="demo">◎<span class="ds-btn-label"> Demo</span></button>
-      <button class="ds-toggle-btn" id="ds-btn-csv" data-action="set-data-source" data-source="csv">⬡<span class="ds-btn-label"> CSV</span></button>
-      <button class="ds-toggle-btn" id="ds-btn-api" data-action="set-data-source" data-source="api">◉<span class="ds-btn-label"> API Live</span><span class="ds-btn-age" id="ds-btn-age"></span></button>
-    </div>
+    <!-- ── Data Source switching has moved to Settings → Data & Integrations ── -->
     <!-- ── HTF Timeframe Toggle — hidden; profiles determine M15/H4 internally ── -->
     <div class="htf-toggle-group is-hidden" id="htf-toggle-group" style="display:none" title="Switch timeframe">
       <button class="htf-toggle-btn active" id="htf-btn-m15" onclick="setHTFSource('m15')">M15</button>
       <button class="htf-toggle-btn" id="htf-btn-h4" onclick="setHTFSource('h4')">H4</button>
     </div>
     <button class="ds-refresh-btn" id="ds-refresh-btn" data-action="refresh-api-source" title="Refresh API data">↺ Refresh</button>
-    <div class="ds-status-bar" id="ds-status-bar">
-      <div class="ds-status-dot csv" id="ds-status-dot"></div>
-      <span id="ds-status-text">CSV mode</span>
-    </div>
+    <!-- ── Data source status moved to Settings → Data & Integrations (per-profile "Synced X ago") ── -->
     <div class="tpm-badge-wrap">
       <span class="dhb-badge" id="tpm-badge" data-state="idle" data-action="toggle-tpm-dropdown" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" title="Switch TP Management mode">
         <span class="dhb-badge-text" id="tpm-badge-text">TP: Single</span>
@@ -2811,6 +2803,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=157"></script>
+<script src="dashboard.js?v=162"></script>
 </body>
 </html>

@@ -260,10 +260,18 @@ const _SW = (() => {
               debugLog('[DashboardDebug]');
               if (typeof _signedInHook === 'function') _signedInHook(merged || 0);
             });
+            // Resolve the Notion integration badge as soon as auth is ready —
+            // covers the case where the user logs in with Data & Integrations
+            // already visible (badge would otherwise sit on "Checking…").
+            try { if (typeof _checkNotionIntegrationStatus === 'function') _checkNotionIntegrationStatus(); } catch (e) {}
           }
         if (event === 'INITIAL_SESSION' && session?.user) {
             debugLog('[DashboardDebug]');
             if (typeof _signedInHook === 'function') _signedInHook(0);
+            // Page refresh path: a stored Supabase session is restored. Fire
+            // the integration check immediately so the badge resolves without
+            // waiting for the user to toggle tabs.
+            try { if (typeof _checkNotionIntegrationStatus === 'function') _checkNotionIntegrationStatus(); } catch (e) {}
           }
       });
       _client.auth.getSession().then(({ data }) => {
@@ -2025,6 +2033,7 @@ function handleActionClick(event) {
     case 'journal-profile-test-connection': _testJournalProfileEditorConnection(); break;
     case 'journal-profile-connect-notion': _handleNotionConnectClick(); break;
     case 'journal-profile-row-switch': _handleJournalProfileSelectChange(actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-row-switch-demo': setDataSource('demo'); _syncJournalProfileUI(); break;
     case 'journal-profile-row-menu-toggle': event.stopPropagation(); _toggleJournalProfileRowMenu(actionEl); break;
     case 'journal-profile-row-edit': event.stopPropagation(); _openJournalProfileEditor('edit', actionEl.dataset.profileId || ''); break;
     case 'journal-profile-row-rename': event.stopPropagation(); _openJournalProfileEditor('rename', actionEl.dataset.profileId || ''); break;
@@ -3761,15 +3770,42 @@ function _handleNotionIntegrationViewPermissions() {
   showThemeToast('Permissions view coming soon.');
   _syncJournalProfileUI();
 }
+// Auth-ready retry plumbing. The integration check is called from boot paths
+// (toggle handlers) that can fire before Supabase has resolved its session.
+// Without a retry, the UI stays on 'unknown' (rendered as "⏳ Checking…")
+// until the user manually toggles the section. Poll up to 5s for auth.
+let _notionStatusAuthRetryHandle = null;
+let _notionStatusAuthRetryAttempts = 0;
+const _NOTION_STATUS_AUTH_RETRY_MAX = 10;
+const _NOTION_STATUS_AUTH_RETRY_MS  = 500;
+function _scheduleNotionStatusAuthRetry() {
+  if (_notionStatusAuthRetryHandle) return;
+  if (_notionStatusAuthRetryAttempts >= _NOTION_STATUS_AUTH_RETRY_MAX) return;
+  _notionStatusAuthRetryHandle = setTimeout(() => {
+    _notionStatusAuthRetryHandle = null;
+    _notionStatusAuthRetryAttempts++;
+    _checkNotionIntegrationStatus();
+  }, _NOTION_STATUS_AUTH_RETRY_MS);
+}
 async function _checkNotionIntegrationStatus() {
   const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
   if (!user?.id) {
-    // Auth not ready yet — stay 'unknown', don't flash "Not connected"
+    // Auth not ready yet — stay 'unknown' (rendered as "⏳ Checking…") and
+    // schedule a retry so the UI doesn't get stuck waiting for the user to
+    // manually toggle the Account/Data tabs to wake the check up.
     if (_notionIntegrationStatus !== 'unknown') {
       _notionIntegrationStatus = 'unknown';
       _syncJournalProfileUI();
     }
+    _scheduleNotionStatusAuthRetry();
     return;
+  }
+  // Auth resolved — reset retry counter so subsequent auth losses (logout)
+  // can re-arm the retry loop afresh.
+  _notionStatusAuthRetryAttempts = 0;
+  if (_notionStatusAuthRetryHandle) {
+    clearTimeout(_notionStatusAuthRetryHandle);
+    _notionStatusAuthRetryHandle = null;
   }
   if (_checkNotionStatusInFlight) return;
   if (_notionIntegrationStatus === 'checking') return;
@@ -4931,15 +4967,33 @@ function _renderJournalProfileSwitchList() {
   if (!list) return;
   const profiles = getJournalProfiles();
   const active = getActiveJournalProfile();
-  debugLog('[JournalProfilesUI] profiles rendered:', profiles.map(p => ({ id: p.id, name: p.name, type: p.type })), 'active:', active?.id);
-  debugLog('[DataIntegrationUI] rendering profile card', { count: profiles.length, activeId: active?.id || '' });
+  const dsMode = localStorage.getItem(DS_KEY) || 'demo';
+  const demoActive = dsMode === 'demo';
+  debugLog('[JournalProfilesUI] profiles rendered:', profiles.map(p => ({ id: p.id, name: p.name, type: p.type })), 'active:', active?.id, 'dsMode:', dsMode);
+  debugLog('[DataIntegrationUI] rendering profile card', { count: profiles.length, activeId: active?.id || '', dsMode });
   const countEl = document.getElementById('data-sources-card-summary');
   if (countEl) {
-    const connected = _getJournalProfilesConnectedCount(profiles);
-    countEl.textContent = `${active ? 1 : 0} active · ${connected} connected`;
+    const connected = _getJournalProfilesConnectedCount(profiles) + 1; // +1 for Demo (always available)
+    const activeCount = demoActive || (dsMode === 'api' && active) ? 1 : 0;
+    countEl.textContent = `${activeCount} active · ${connected} connected`;
   }
-  list.innerHTML = profiles.map(profile => {
-    const isActive = active?.id === profile.id;
+  // ── Demo row — virtual data source, always first, always available ─────
+  const demoRow = `
+    <div class="journal-profile-row${demoActive ? ' is-active' : ''}" data-profile-id="__demo">
+      <div class="journal-profile-row-inner">
+        <button class="journal-profile-row-main journal-profile-row-main--switch" type="button" data-action="journal-profile-row-switch-demo"${demoActive ? ' disabled' : ''}>
+          <span class="journal-profile-row-name">Demo</span>
+          <span class="journal-profile-row-source">Source: Sample data</span>
+          <span class="journal-profile-row-meta">100 trades</span>
+        </button>
+      </div>
+    </div>
+  `;
+  const profileRows = profiles.map(profile => {
+    // When Demo is active, no Notion/API profile is highlighted — the user
+    // is intentionally viewing the demo dataset even if a profile is still
+    // marked active in localStorage.
+    const isActive = !demoActive && active?.id === profile.id;
     const isEditing = _journalProfileEditorOpen && (_journalProfileEditorMode === 'edit' || _journalProfileEditorMode === 'rename') && _journalProfileEditingId === profile.id;
     const name = _escapeHtml(String(profile.name || '').trim() || 'Untitled Journal');
     const pid = _escapeHtml(profile.id);
@@ -4986,6 +5040,7 @@ function _renderJournalProfileSwitchList() {
       </div>
     `;
   }).join('');
+  list.innerHTML = demoRow + profileRows;
   list.tabIndex = -1;
 }
 function _toggleJournalProfileRowMenu(triggerEl) {
@@ -6747,7 +6802,6 @@ function _injectTrades(parsed, totalLabel, savedState) {
   hideEmptyState();
   invalidateFilterCache();
   const valid = parsed
-    .filter(t => t.pair && t.pair.trim())
     .map(t => ({
       ...t,
       hour: t.hour != null ? _parseHourValue(t.hour) : _extractTradeHour(t),
@@ -7896,6 +7950,10 @@ function _enqueueMediaForCachedNotionTrades(trades, userId, source, profileIdOve
 async function _loadNotionTrades(profile, options = {}) {
   const { silent = false, force = false, syncNow = false } = options;
   const profileId = String(profile?.id || '').trim();
+  // Race guard helper: returns true only if the captured profile is still the
+  // active one. Used after every await to skip UI writes (toast, indicator,
+  // _injectTrades) when the user has switched profiles mid-sync.
+  const stillActive = () => !!profileId && String(getActiveJournalProfile()?.id || '') === profileId;
   if (profile?.notionSyncState === 'disconnected' || _notionIntegrationStatus === 'disconnected') {
     showDataStatus('Notion disconnected — reconnect to sync.', 'warn');
     setSourceIndicator('pending');
@@ -8009,6 +8067,15 @@ async function _loadNotionTrades(profile, options = {}) {
     const resp = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
 
+    // ── Race-guard scope override ──────────────────────────────────────────
+    // User may switch active profile during the await. Pin all profile-scoped
+    // cache writes below (raw cache, parsed cache, sync cursor) to the
+    // captured profileId so the response always lands in *this* profile's
+    // slot, regardless of who is currently active.
+    const _prevCacheCtx = _journalProfileCacheContextOverride;
+    _journalProfileCacheContextOverride = profileId;
+    try {
+
     if (!resp.ok) {
       let errJson = null;
       try { errJson = await resp.json(); } catch {}
@@ -8025,7 +8092,7 @@ async function _loadNotionTrades(profile, options = {}) {
           debugLog('[NotionAuth] token expired:', { profileId, status: resp.status });
           debugLog('[NotionAuth] profile updated:', { profileId, notionErrorCode: 'token_expired' });
         }
-        setSourceIndicator('pending');
+        if (stillActive()) setSourceIndicator('pending');
         return;
       }
       // Database inaccessible
@@ -8042,7 +8109,7 @@ async function _loadNotionTrades(profile, options = {}) {
         debugLog('[NotionDatabase] access error:', { profileId, status: resp.status, detail: errMsg });
         debugLog('[NotionDatabase] error code:', 'database_not_accessible');
         debugLog('[NotionDatabase] profile updated:', { profileId, notionErrorCode: 'database_not_accessible' });
-        setSourceIndicator('pending');
+        if (stillActive()) setSourceIndicator('pending');
         return;
       }
       throw new Error('HTTP ' + resp.status);
@@ -8068,11 +8135,15 @@ async function _loadNotionTrades(profile, options = {}) {
           notionTradeCount: existingCache.length,
         });
       }
-      _injectTrades(existingCache, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
-      appState.settings.dataSource.pendingRestoreState = null;
-      setSourceIndicator('live');
-      showDataStatus(`Notion · ${existingCache.length} trades`, 'live');
-      _updateLastSync();
+      if (stillActive()) {
+        _injectTrades(existingCache, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+        appState.settings.dataSource.pendingRestoreState = null;
+        setSourceIndicator('live');
+        showDataStatus(`Notion · ${existingCache.length} trades`, 'live');
+        _updateLastSync();
+      } else {
+        debugLog('[NotionLoad] profile switched mid-sync — skipping UI inject (incremental empty)');
+      }
       return;
     }
 
@@ -8081,8 +8152,10 @@ async function _loadNotionTrades(profile, options = {}) {
         _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
       }
       debugLog('[NotionSync] error:', { profileId, error: 'empty-trades' });
-      showDataStatus('Notion database returned no trades.', 'warn');
-      setSourceIndicator('pending');
+      if (stillActive()) {
+        showDataStatus('Notion database returned no trades.', 'warn');
+        setSourceIndicator('pending');
+      }
       return;
     }
 
@@ -8133,8 +8206,10 @@ async function _loadNotionTrades(profile, options = {}) {
         _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
       }
       debugLog('[NotionSync] error:', { profileId, error: 'no-valid-trades' });
-      showDataStatus('Notion data loaded but no valid trades — check field mapping.', 'warn');
-      setSourceIndicator('pending');
+      if (stillActive()) {
+        showDataStatus('Notion data loaded but no valid trades — check field mapping.', 'warn');
+        setSourceIndicator('pending');
+      }
       return;
     }
 
@@ -8172,26 +8247,37 @@ async function _loadNotionTrades(profile, options = {}) {
     debugLog('[NotionSync] success:', { profileId, database: profile.notionDatabaseId });
     debugLog('[NotionSync] tradeCount:', tradeCount);
 
-    // Inject unconditionally — we already set DS_KEY and HTFSource above
-    _injectTrades(mergedParsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
-    appState.settings.dataSource.pendingRestoreState = null;
-    setSourceIndicator('live');
-    showDataStatus(`Notion · ${mergedParsed.length} trades`, 'live');
-    _updateLastSync();
-
-    debugLog('[NotionLoad] success — injected', mergedParsed.length, 'trades');
+    // Inject only if this profile is still the active one — user may have
+    // switched to another data source while the fetch was in flight.
+    if (stillActive()) {
+      _injectTrades(mergedParsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+      appState.settings.dataSource.pendingRestoreState = null;
+      setSourceIndicator('live');
+      showDataStatus(`Notion · ${mergedParsed.length} trades`, 'live');
+      _updateLastSync();
+      debugLog('[NotionLoad] success — injected', mergedParsed.length, 'trades');
+    } else {
+      debugLog('[NotionLoad] profile switched mid-sync — cache updated, UI skipped');
+    }
 
     // Start background media sync — newest trades first so screenshots for
     // currently visible rows become permanent before older months.
     _mediaQueue.enqueue(parsed, source, user.id, profileId);
+
+    } finally {
+      // Restore cache-scope override regardless of which sub-branch returned.
+      _journalProfileCacheContextOverride = _prevCacheCtx;
+    }
   } catch (err) {
     console.error('[NotionLoad]', err.name, err.message);
     if (profileId) {
       _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
     }
     debugLog('[NotionSync] error:', { profileId, name: err.name, message: err.message });
-    showDataStatus('Notion load failed: ' + (err.message || err.name), 'warn');
-    setSourceIndicator('pending');
+    if (stillActive()) {
+      showDataStatus('Notion load failed: ' + (err.message || err.name), 'warn');
+      setSourceIndicator('pending');
+    }
   } finally {
     appState.settings.dataSource.loading = false;
     if (btn) btn.classList.remove('spinning');
@@ -26481,6 +26567,12 @@ function toggleAccountPanel() {
     _journalProfileRowMenuOpenId = '';
     _journalProfileSwitcherOpen = false;
     _renderAccountPanelAuthState();
+    // Refresh the Notion integration badge when opening the panel on the
+    // Data tab — without this, the tab restored from localStorage shows
+    // "Checking…" until the user manually re-clicks the tab button.
+    if (_settingsActiveTab === 'data') {
+      try { _checkNotionIntegrationStatus(); } catch (e) {}
+    }
     setTimeout(() => {
       _accountPanelClickOutsideHandler = (e) => {
         if (!accountPanelOpen) return;

@@ -93,3 +93,26 @@
 **Decision:** Apply zero fixes during the audit session. Dashboard conserved as-is. All findings documented in `docs/current-roadmap.md` and backlogged in `ROADMAP.md` for prioritization.
 
 **Consequence:** SEV-HIGH findings (XSS at 6 sites, ghost trades) are known but unpatched. SEV-MEDIUM findings (mappings not synced cross-device, orphaned LS keys) are documented. The audit confirmed the calc engine passes (84 test cells, 6 probes, 0 regressions). Future sessions must treat the SEV-HIGH items as priority blockers before any community-facing distribution push.
+
+---
+
+### 2026-05-17 — Race-guard pattern for async profile-scoped writes
+
+**Context:** `_loadNotionTrades` does a multi-second `await fetch` against the Notion proxy. If the user switches the active journal profile while the fetch is in flight, the response landed in the *new* active profile's cache slot (because `getProfileScopedKey()` reads the live active profile at call time) and `_injectTrades` overwrote the dashboard the user was now looking at. Cache pollution + UI pollution.
+
+**Decision:** Adopt a two-part guard inside every async function that touches profile-scoped state:
+1. **Capture the profile context at function entry** — `const profileId = String(profile?.id || '').trim()`.
+2. **Pin the cache scope after the await** — set `_journalProfileCacheContextOverride = profileId` so all subsequent `getProfileScopedKey` resolutions go to *the captured profile* regardless of who is currently active. Restore in a `finally` block.
+3. **Guard UI side-effects with `stillActive()`** — a helper closure that compares the captured `profileId` against `getActiveJournalProfile()?.id`. UI writes (`_injectTrades`, `setSourceIndicator`, `showDataStatus`, `_updateLastSync`, etc.) only fire when the captured profile is still the active one.
+
+**Consequence:** A's cache always lands in A's slot. B's UI is never overwritten by A's response. Profile meta (`notionTradeCount`, `notionSyncState`) was already safe because `_updateJournalProfileSyncMeta(profileId, ...)` takes an explicit ID. **Apply this pattern** to any future async function that mixes profile-scoped storage writes with UI updates (e.g., `_loadFromAPI`, media queue handlers). The mutex against *concurrent* syncs (two profiles syncing at once) is **not** covered by this pattern — that's a separate deferred issue.
+
+---
+
+### 2026-05-17 — Demo as virtual data source row (vs. real journal profile)
+
+**Context:** User asked to move the Demo data source from the topbar's mode toggle into the Settings → Data & Integrations data source list, as the first entry. Two paths considered: (A) introduce a new `connectionType: 'demo'` journal profile that synthesizes 100 sample trades, (B) render a virtual non-persisted row at the top of `_renderJournalProfileSwitchList` with a dedicated `setDataSource('demo')` action.
+
+**Decision:** Path B — Demo is **not** a real profile. It's a virtual row injected at render time with `data-profile-id="__demo"` and `data-action="journal-profile-row-switch-demo"`. Clicking it bypasses `_handleJournalProfileSelectChange` entirely and calls `setDataSource('demo')` directly. The existing `setActiveJournalProfile` state is untouched when Demo is active; the `is-active` highlight is computed from `localStorage.getItem(DS_KEY) === 'demo'` and overrides the per-profile highlight in the list (`!demoActive && active?.id === profile.id`).
+
+**Consequence:** No new persisted state. No migration. No Supabase row. Demo card has no sync button, no menu, no editor (because it's not a profile — those actions don't apply). The 3 topbar mode buttons (Demo/CSV/API) and the `ds-status-bar` were removed in the same session — all data-source switching now flows through this panel. **Caveat:** CSV mode is now only reachable via the "⬆ Import CSV" overlay (empty state CTA + mobile button). Adding CSV as a sibling virtual row is tracked in `ROADMAP.md` under "CSV access path after topbar cleanup".
