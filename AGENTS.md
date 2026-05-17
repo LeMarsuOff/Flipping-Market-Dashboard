@@ -1,3 +1,8 @@
+> This file mirrors CLAUDE.md for Codex compatibility.
+> If conventions change, update BOTH files in the same commit.
+
+---
+
 # CLAUDE.md — Flipping Market Dashboard
 
 > Agent context file. Read this + ROADMAP.md at the start of every session.
