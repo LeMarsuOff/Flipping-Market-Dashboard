@@ -1,5 +1,26 @@
 const DEMO_TRADES = [{"d":"2025-01-07","m":"2025-01","p":"EURUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Contre Order Flow","Volume - 1st Candle"],"h4":[],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":9.4,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-01-09","m":"2025-01","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Asian Box - Fib","Sweep = LQ"],"h4":[],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":8.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2025-02-05","m":"2025-02","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Asian","su":"Asian","w":"Mercredi","o":["Accumula-Sweep","Asian Box - Break","Asian Box - Entry","Contre Order Flow","Faible Sweep"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":2,"tier":"WEAK","flip":"Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-02-26","m":"2025-02","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A + Flip","ss":"Hors Session","su":"New-York","w":"Mercredi","o":["Accumula-Sweep"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Achat","tt":["Invalide"],"bad":false,"inv":true,"h":18,"tier":"WEAK","flip":"Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-02-26","m":"2025-02","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Mercredi","o":["Asian Box - Break","Asian Box - Entry"],"h4":["No-Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":6,"tier":"WEAK","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-04-07","m":"2025-04","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Lundi","o":["Accumula-Sweep","Asian Box - Break","Asian Box - Opposite Sweep","Contre Order Flow"],"h4":["Sweep Accumulation"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2025-05-07","m":"2025-05","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Mercredi","o":["Asian Box - Fib","Range","Setup Geant","Sweep Accumulation"],"h4":["Fib Interne Atteint","Structure - Late"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":21,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-06-02","m":"2025-06","p":"EURUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Accumula-Sweep","Asian Box - Entry","Asian Box - Fib","Setup Geant"],"h4":["No-Sweep","Volume - Mèche"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":2,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-06-19","m":"2025-06","p":"USDCHF","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Asian","su":"Asian","w":"Jeudi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Accumula-Sweep","Asian Box - Break","Asian Box - Entry","Asian Box - Fib","Contre Order Flow","Volume - 1st Candle"],"h4":["Faible Sweep","Sweep = LQ"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":7,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-06-20","m":"2025-06","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Vendredi","o":["Setup Geant"],"h4":["Sweep = LQ"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.5,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-07-09","m":"2025-07","p":"USDCHF","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type B","ss":"New-York","su":"Lunch Time Zone","w":"Mercredi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Volume - Mèche"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":7.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":13,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-08-12","m":"2025-08","p":"USDCHF","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":[],"h4":[],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":8.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"ELITE","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-08-20","m":"2025-08","p":"USDJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Hors Session","su":"No Man's Land","w":"Mercredi","o":["Setup Geant","Volume - Faible"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":22,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-04","m":"2025-09","p":"GBPJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Large Sweep","Setup Geant"],"h4":["Faible Sweep","Range"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.3,"dir":"Vente","tt":["BackTest","Invalide"],"bad":false,"inv":true,"h":10,"tier":"WEAK","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-04","m":"2025-09","p":"EURAUD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Jeudi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Volume - 1st Candle"],"h4":["Structure Geante"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":4.6,"dir":"Achat","tt":["Invalide"],"bad":false,"inv":true,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-09-05","m":"2025-09","p":"USDCHF","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Break"],"h4":["Fib Externe atteint"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-TP","r":2.4,"rm":50.0,"dir":"Vente","tt":["BackTest","Coach"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-09-08","m":"2025-09","p":"EURAUD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Asian Box - Entry","Large Sweep","Setup Geant"],"h4":["Faible Sweep","Fib Interne Atteint","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":3,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-12","m":"2025-09","p":"GBPJPY","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Asian","su":"Asian","w":"Vendredi","o":["Asian Box - Break","Asian Box - Entry","Asian Box - Fib","News","News Entry","Sweep Interne"],"h4":["Range"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":7,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-09-23","m":"2025-09","p":"EURUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Mardi","o":["Large Sweep","Sweep Accumulation","Volume - 1st Candle","Volume - Faible","Volume - Far Away"],"h4":[],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.1,"dir":"Achat","tt":["Coach"],"bad":false,"inv":false,"h":14,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-09-25","m":"2025-09","p":"GBPJPY","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Jeudi","o":[],"h4":["No-Sweep"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":17,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-25","m":"2025-09","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Contre Order Flow","Setup Geant"],"h4":["After Sweep","No-Volume x Good leg"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-09-30","m":"2025-09","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Hors Session","su":"New-York","w":"Mardi","o":["1 Candle Pull-back Break","Range"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":18,"tier":"ELITE","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-30","m":"2025-09","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":["1 Candle Pull-back Sweep","Asian Box - Fib","Setup Geant","Sweep Interne"],"h4":["After Sweep"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-02","m":"2025-10","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Setup Geant","Sweep - Fake Accumulation","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.4,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":9,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-14","m":"2025-10","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Mardi","o":["Accumula-Sweep","Asian Box - Break","Large Sweep","Setup Geant"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":13,"tier":"GOOD","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-14","m":"2025-10","p":"EURAUD","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Mardi","o":["Asian Box - Opposite Sweep","Faible Sweep","Volume - Mèche","Wick Break"],"h4":[],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":2.4,"dir":"Achat","tt":["Invalide"],"bad":true,"inv":true,"h":13,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-10-15","m":"2025-10","p":"EURAUD","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["MNR","Volume - Mèche"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":19.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["H4 Fib -27","H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-16","m":"2025-10","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"Lunch Time Zone","w":"Jeudi","o":["Accumula-Sweep","Volume - Faible"],"h4":["After Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.4,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-10-24","m":"2025-10","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Vendredi","o":["Big Impact News","Large Sweep","News","News Entry","News break"],"h4":["Faible Sweep","No-Volume","Structure Geante","Wick Break","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-10-24","m":"2025-10","p":"XAUUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"Asian","su":"Asian","w":"Vendredi","o":["Asian Box - Break","Asian Box - Entry","Faible Sweep","Range","Volume - 1st Candle","Volume - Faible","Volume - Mèche"],"h4":["No-Sweep","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":3,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Sub","tp":[],"notion":""},{"d":"2025-10-30","m":"2025-10","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Asian","su":"Asian","w":"Jeudi","o":["Asian Box - Break","Asian Box - Fib","Contre Order Flow"],"h4":["Structure Geante"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":5,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-11-04","m":"2025-11","p":"GBPNZD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Hors Session","su":"Hors Session","w":"Mardi","o":["Contre Order Flow","News","News Entry","Volume - 1st Candle"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":22,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-05","m":"2025-11","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["1 Candle Pull-back Break","Asian Box - Fib","Volume - Faible","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","No-Volume","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["PropFirm"],"bad":true,"inv":false,"h":14,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Asian","su":"Asian","w":"Jeudi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Asian Box - Break","Asian Box - Entry","Asian Box - Fib","Contre Order Flow"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":11.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":3,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["H4 Fib -27","H4 Fib 0","H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"GBPUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Jeudi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Contre Order Flow"],"h4":[],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Vente","tt":["BackTest"],"bad":true,"inv":false,"h":18,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Jeudi","o":["Faible Sweep","Questionable Sweep","Sweep Interne"],"h4":["Fib Interne Atteint","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["Invalide","PropFirm"],"bad":true,"inv":true,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["Accumula-Sweep","Contre Order Flow"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":24.7,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Sub","tp":["H4 Fib -27","H4 Fib 0","H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"GBPNZD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Contre Order Flow","Range","Volume - Mèche"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Vente","tt":["BackTest"],"bad":true,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-07","m":"2025-11","p":"GBPJPY","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Fib","Asian Box - Opposite Sweep"],"h4":["Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":11,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-10","m":"2025-11","p":"GBPNZD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"No Man's Land","su":"Asian","w":"Lundi","o":["Asian Box - Entry"],"h4":["After Sweep","No-Volume"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.1,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-10","m":"2025-11","p":"AUDUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Setup Geant"],"h4":["Faible Sweep","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":0,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-12","m":"2025-11","p":"EURAUD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"Hors Session","su":"Hors Session","w":"Mercredi","o":["Sweep Accumulation","Volume - Faible"],"h4":["Fib Externe atteint"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":2.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":19,"tier":"GOOD","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-11-12","m":"2025-11","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Asian","su":"Asian","w":"Mercredi","o":["1 Candle Pull-back Sweep","Large Sweep","Setup Geant","Volume - Faible"],"h4":["No-Sweep","No-Volume","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":4,"tier":"WEAK","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-12","m":"2025-11","p":"GBPJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["Contre Order Flow","Volume - Mèche"],"h4":["After Sweep","Faible Sweep","Fib Externe atteint","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.5,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-14","m":"2025-11","p":"GBPNZD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Vendredi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Contre Order Flow"],"h4":["No-Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":11,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-14","m":"2025-11","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Lunch Time Zone","su":"Lunch Time Zone","w":"Vendredi","o":[],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.1,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":12,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-17","m":"2025-11","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Lundi","o":["Large Sweep","Setup Geant","Sweep - Fake Accumulation","Volume - Mèche"],"h4":["Wick Break"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":17,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-18","m":"2025-11","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":[],"h4":["Fib Interne Atteint","No-Sweep","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-19","m":"2025-11","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type B","ss":"London","su":"London","w":"Mercredi","o":["Asian Box - Break","Contre Order Flow"],"h4":["1 Candle PB Sweep","No-Volume","Wick Break"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":8,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-19","m":"2025-11","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type B","ss":"New-York","su":"New-York","w":"Mercredi","o":[],"h4":["After Sweep","No-Volume"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["Coaching","PropFirm"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-19","m":"2025-11","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type B","ss":"New-York","su":"New-York","w":"Mercredi","o":["Asian Box - Break","Asian Box - Fib","Contre Order Flow"],"h4":["1 Candle PB Sweep","No-Volume","Wick Break"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.8,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-24","m":"2025-11","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Lundi","o":["Contre Order Flow"],"h4":["Fib Externe atteint","Fib Interne Atteint","No-Sweep","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":6.2,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":16,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-11-26","m":"2025-11","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Mercredi","o":["Asian Box - Break","Asian Box - Entry","Contre Order Flow","Sweep - Fake Accumulation"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.6,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":2,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-27","m":"2025-11","p":"AUDUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Jeudi","o":["Asian Box - Fib","Contre Order Flow","Large Sweep"],"h4":["No-Volume","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":22,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-27","m":"2025-11","p":"USDCHF","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":["MNR"],"h4":["Fib Externe atteint","No-Sweep","Structure Geante","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.0,"dir":"Vente","tt":["BackTest"],"bad":true,"inv":false,"h":15,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-12-02","m":"2025-12","p":"EURUSD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Mardi","o":["Asian Box - Opposite Sweep"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-12-08","m":"2025-12","p":"USDCHF","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Volume - Faible"],"h4":["Fib Interne Atteint"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":5.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":7,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-12-11","m":"2025-12","p":"GBPJPY","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":["Asian Box - Fib","Sweep - Fake Accumulation","Sweep = LQ"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-12-12","m":"2025-12","p":"GBPJPY","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Fib","Asian Box - Opposite Sweep","News","News Entry","Volume - Mèche"],"h4":["After Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":2.5,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-17","m":"2025-12","p":"GBPNZD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Mercredi","o":["1 Candle Pull-back Sweep","Asian Box - Fib","Big Impact News","Faible Sweep","News","News break","News to break"],"h4":["Fib Externe atteint","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-19","m":"2025-12","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Vendredi","o":["Asian Box - Entry","Big Impact News","News","News to break"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest","Coaching","vérif"],"bad":false,"inv":false,"h":1,"tier":"SKIP","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-21","m":"2025-12","p":"EURAUD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Dimanche","o":["Asian Box - Entry","Contre Order Flow","Faible Sweep"],"h4":["Fib Interne Atteint","No-Sweep","No-Volume","Structure Geante"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":16.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-12-23","m":"2025-12","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Mardi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Contre Order Flow","Questionable Sweep","Sweep Interne"],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.3,"dir":"Vente","tt":["Invalide"],"bad":false,"inv":true,"h":20,"tier":"GOOD","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-29","m":"2025-12","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"Asian","su":"Asian","w":"Lundi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Asian Box - Entry","Large Sweep","Sweep = LQ","Volume - Mèche"],"h4":["Fib Interne Atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":1,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-30","m":"2025-12","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Asian Box - Fib","Contre Order Flow","Range","Setup Geant","Sweep = LQ","Sweep Accumulation"],"h4":["Fib Interne Atteint"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.1,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":9,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-02","m":"2026-01","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Break","Contre Order Flow","Spread - SL","Sweep = LQ","Sweep Accumulation"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.1,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2026-01-02","m":"2026-01","p":"GBPUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Hors Session","su":"Hors Session","w":"Vendredi","o":["Sweep - Fake Accumulation","Volume - Faible","Volume - Mèche"],"h4":["Fib Interne Atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":19,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-02","m":"2026-01","p":"GBPJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Vendredi","o":["1 Candle Pull-back Sweep","Asian Box - Break","Asian Box - Fib","Asian Box - Opposite Sweep"],"h4":["No-Sweep","Range","Structure - Late","Volume - Mèche"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":8,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-08","m":"2026-01","p":"GBPJPY","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Jeudi","o":["Asian Box - Entry","Contre Order Flow"],"h4":["After Sweep","Sweep = LQ"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":31.2,"dir":"Achat","tt":["BackTest","Coach"],"bad":false,"inv":false,"h":23,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Sub","tp":["H4 Fib -27","H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-14","m":"2026-01","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"No Man's Land","su":"No Man's Land","w":"Mercredi","o":["Asian Box - Entry","Contre Order Flow"],"h4":["No-Sweep"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-TP","r":2.4,"rm":4.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"WEAK","flip":"Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-14","m":"2026-01","p":"AUDUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"London","su":"London","w":"Mercredi","o":["Asian Box - Fib","Asian Box - Opposite Sweep","Contre Order Flow"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":11,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-15","m":"2026-01","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":["Large Sweep","News","News break","Volume - Faible"],"h4":["No-Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.4,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":17,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-19","m":"2026-01","p":"USDJPY","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Lundi","o":["Asian Box - Opposite Sweep","Contre Order Flow"],"h4":["After Sweep"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.3,"dir":"Achat","tt":["BackTest","Coach"],"bad":false,"inv":false,"h":10,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-19","m":"2026-01","p":"USDCHF","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"London","su":"London","w":"Lundi","o":["Contre Order Flow"],"h4":["Fib Externe atteint","No-Volume"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["PropFirm"],"bad":false,"inv":false,"h":11,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2026-01-22","m":"2026-01","p":"GBPUSD","s":"Re-confirmation Y","sd":"Re-confirmation Y - Type A + Flip","ss":"London","su":"London","w":"Jeudi","o":["1 Candle Pull-back Sweep"],"h4":["Fib Externe atteint","No-Volume","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2026-02-09","m":"2026-02","p":"AUDUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Asian Box - Break","Asian Box - Entry","Asian Box - Fib"],"h4":["After Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.4,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":2,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-02-09","m":"2026-02","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"Asian","su":"Asian","w":"Lundi","o":["Accumula-Sweep","Volume - Mèche"],"h4":["Faible Sweep","Fib Interne Atteint"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-TP","r":2.4,"rm":2.8,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":0,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2026-02-17","m":"2026-02","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Lunch Time Zone","su":"Lunch Time Zone","w":"Mardi","o":["Contre Order Flow","Volume - 1st Candle","Volume - Far Away"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":12,"tier":"STRONG","flip":"Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2026-02-18","m":"2026-02","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["Large Sweep","Setup Geant","Sweep Interne"],"h4":["Fib Externe atteint","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Achat","tt":["BackTest","Coaching","PropFirm"],"bad":false,"inv":false,"h":15,"tier":"SKIP","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2026-02-23","m":"2026-02","p":"USDCHF","s":"Continuation Type B","sd":"Continuation Type B","ss":"London","su":"London","w":"Lundi","o":["Asian Box - Break","Questionable Sweep","Sweep Interne"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.1,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":11,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-04","m":"2026-03","p":"GBPJPY","s":"","sd":"Continuation - Type A + Flip","ss":"Asian","su":"Asian","w":"Mercredi","o":["Asian Box - Entry"],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.0,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":5,"tier":"WEAK","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-05","m":"2026-03","p":"USDCHF","s":"","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["Asian Box - Break","Asian Box - Fib","Contre Order Flow","Large Sweep"],"h4":["No-Sweep","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":4.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-05","m":"2026-03","p":"USDJPY","s":"","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["1 Candle Pull-back Sweep","Asian Box - Opposite Sweep"],"h4":["Fib Externe atteint","No-Sweep","No-Volume"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2026-03-05","m":"2026-03","p":"EURUSD","s":"Confirmation Swing","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["Asian Box - Opposite Sweep","Sweep - Fake Accumulation"],"h4":["No mitigation","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2026-03-06","m":"2026-03","p":"AUDUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"New-York","su":"New-York","w":"Vendredi","o":["Large Sweep"],"h4":["Fib Externe atteint","No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.4,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":17,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-17","m":"2026-03","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Mardi","o":["Big Impact News","News","News Candle","News Sweep","News break","News to entry"],"h4":["Faible Sweep","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":6,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-17","m":"2026-03","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Asian Box - Opposite Sweep","M15 Externe= H4","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":8,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-18","m":"2026-03","p":"USDCHF","s":"","sd":"NEM type B","ss":"London","su":"London","w":"Mercredi","o":[],"h4":["Fib Interne Atteint","No-Sweep","Structure - Late","Structure Geante"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":9,"tier":"SKIP","flip":"","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-18","m":"2026-03","p":"USDCHF","s":"","sd":"NEM type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["News","News to entry"],"h4":["Fib Interne Atteint","No-Sweep","Structure - Late","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.6,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"WEAK","flip":"","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-22","m":"2026-03","p":"EURUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Dimanche","o":["Asian Box - Entry","Faible Sweep"],"h4":["Volume - Mèche"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":7.6,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-23","m":"2026-03","p":"USDJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Lunch Time Zone","su":"Lunch Time Zone","w":"Lundi","o":["1 Candle Pull-back Sweep","Asian Box - Fib","Sweep Interne"],"h4":["Fib Interne Atteint","Volume - Mèche"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":12,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-23","m":"2026-03","p":"EURUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A + Flip","ss":"Hors Session","su":"Hors Session","w":"Lundi","o":["Contre Order Flow","Large Sweep"],"h4":["Volume - Mèche"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.5,"dir":"Vente","tt":["BackTest","Coaching","PropFirm"],"bad":false,"inv":false,"h":19,"tier":"SKIP","flip":"Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-24","m":"2026-03","p":"EURUSD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":["Volume - Mèche"],"h4":["Volume - Mèche"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.1,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":15,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2026-03-30","m":"2026-03","p":"GBPNZD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Lundi","o":["Asian Box - Opposite Sweep","M15 Externe= H4","Sweep - Fake Accumulation","Volume - Mèche"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest","Coaching","PropFirm"],"bad":false,"inv":false,"h":14,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-01","m":"2026-04","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Hors Session","su":"Hors Session","w":"Mercredi","o":["Sweep = LQ"],"h4":["No-Sweep","Volume - Mèche"],"be":["BE after long duration","BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":5.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":21,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Sub","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-04-02","m":"2026-04","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":[],"h4":["No-Sweep","Structure - Late","Volume - Mèche"],"be":["BE after long duration"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest","PropFirm"],"bad":false,"inv":false,"h":16,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-03","m":"2026-04","p":"USDCHF","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Vendredi","o":["Contre Order Flow","Large Sweep","News Entry","Sweep Accumulation","Volume - Mèche"],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-06","m":"2026-04","p":"AUDUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Contre Order Flow","Large Sweep","Setup Geant","Spread No-tag"],"h4":["Fib Externe atteint","Fib Interne Atteint","No-Sweep","Volume - Mèche","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":12.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":0,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["H4 Fib -27","H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-04-07","m":"2026-04","p":"AUDUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Contre Order Flow","News","News Sweep","Volume - Mèche"],"h4":["After Sweep","Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"SKIP","flip":"Non Flip","h4s":"Sub","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-07","m":"2026-04","p":"GBPUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"Asian","su":"Asian","w":"Mardi","o":["Asian Box - Entry","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","Volume - 1st Candle","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":3,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""}];
 
+const DEBUG_DASHBOARD = false;
+function isDashboardDebugEnabled() {
+  try {
+    return DEBUG_DASHBOARD === true || localStorage.getItem('debugDashboard') === 'true';
+  } catch {
+    return DEBUG_DASHBOARD === true;
+  }
+}
+function debugLog(namespace, ...args) {
+  if (!isDashboardDebugEnabled()) return;
+  console.log(namespace, ...args);
+}
+const _cacheDebugOnceKeys = new Set();
+function _debugLogOnce(key, namespace, ...args) {
+  if (!isDashboardDebugEnabled()) return;
+  const dedupeKey = String(key || namespace || '');
+  if (_cacheDebugOnceKeys.has(dedupeKey)) return;
+  _cacheDebugOnceKeys.add(dedupeKey);
+  console.log(namespace, ...args);
+}
+
 const appState = {
   trades: {
     items: [],
@@ -178,6 +199,33 @@ const _HTF_KEYS = new Set([
   'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets'
 ]);
 
+const JOURNAL_PROFILE_PENDING_DELETE_LS_KEY = 'journalProfilePendingDeletes_v1';
+const LEGACY_JOURNAL_PROFILE_SYNC_KEYS = new Set(['journalProfiles_v1', 'activeJournalProfileId_v1']);
+function _getPendingDeletedJournalProfileIds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(JOURNAL_PROFILE_PENDING_DELETE_LS_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.map(id => String(id || '').trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+function _markPendingDeletedJournalProfileId(id) {
+  const profileId = String(id || '').trim();
+  if (!profileId) return;
+  const ids = new Set(_getPendingDeletedJournalProfileIds());
+  ids.add(profileId);
+  try { localStorage.setItem(JOURNAL_PROFILE_PENDING_DELETE_LS_KEY, JSON.stringify([...ids])); } catch {}
+}
+function _clearPendingDeletedJournalProfileIds(ids = []) {
+  const remove = new Set((Array.isArray(ids) ? ids : [ids]).map(id => String(id || '').trim()).filter(Boolean));
+  if (!remove.size) return;
+  const kept = _getPendingDeletedJournalProfileIds().filter(id => !remove.has(id));
+  try {
+    if (kept.length) localStorage.setItem(JOURNAL_PROFILE_PENDING_DELETE_LS_KEY, JSON.stringify(kept));
+    else localStorage.removeItem(JOURNAL_PROFILE_PENDING_DELETE_LS_KEY);
+  } catch {}
+}
+
 const _SW = (() => {
   const _lsSet    = localStorage.setItem.bind(localStorage);
   const _lsRemove = localStorage.removeItem.bind(localStorage);
@@ -191,7 +239,7 @@ const _SW = (() => {
       _client = window.supabase.createClient(_SB_URL, _SB_KEY);
       _client.auth.onAuthStateChange((event, session) => {
         _user = session?.user ?? null;
-        console.log('[SW] auth', event, _user?.email ?? 'no user');
+        debugLog('[SW] auth', event, _user?.email ?? 'no user');
         if (event === 'PASSWORD_RECOVERY') {
           _accountRecoveryMode = true;
           _accountView = 'reset_password';
@@ -209,12 +257,12 @@ const _SW = (() => {
             _setAccountAlert();
             _clearAccountForms();
             _SW.syncFromRemote().then(merged => {
-              console.log('[JournalProfilesRemote] SIGNED_IN — calling hook, merged:', merged);
+              debugLog('[DashboardDebug]');
               if (typeof _signedInHook === 'function') _signedInHook(merged || 0);
             });
           }
         if (event === 'INITIAL_SESSION' && session?.user) {
-            console.log('[JournalProfilesRemote] INITIAL_SESSION with user — calling hook');
+            debugLog('[DashboardDebug]');
             if (typeof _signedInHook === 'function') _signedInHook(0);
           }
       });
@@ -297,7 +345,14 @@ const _SW = (() => {
         .eq('user_id', uid);
       if (error) { console.warn('[SW] syncFromRemote error', error.message); return; }
       let merged = 0;
+      const legacyJournalRows = (data || []).filter(row => LEGACY_JOURNAL_PROFILE_SYNC_KEYS.has(row.key));
+      debugLog('[JournalProfilesSource] user_data journalProfiles_v1:', legacyJournalRows);
       for (const row of data ?? []) {
+        if (!_isSync(row.key)) continue;
+        if (LEGACY_JOURNAL_PROFILE_SYNC_KEYS.has(row.key)) {
+          debugLog('[JournalProfilesSource] ignored legacy user_data key:', row.key);
+          continue;
+        }
         const lsKey = row.dashboard_id === 'h4'
           ? row.key + '_h4' : row.key;
         // Remote toujours prioritaire sur local au sync
@@ -309,8 +364,26 @@ const _SW = (() => {
         _lsSet(lsKey, serialized);
         merged++;
       }
-      console.log('[SW] syncFromRemote done —', merged, 'keys merged');
+      debugLog('[SW] syncFromRemote done —', merged, 'keys merged');
       return merged;
+    },
+
+    async clearLegacyJournalProfilesFromRemote() {
+      const c = _getClient();
+      if (!c) return false;
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? _user?.id;
+      if (!uid) return false;
+      const { error } = await c.from('user_data')
+        .delete()
+        .eq('user_id', uid)
+        .in('key', [...LEGACY_JOURNAL_PROFILE_SYNC_KEYS]);
+      if (error) {
+        console.warn('[JournalProfilesSource] legacy user_data cleanup error:', error.message);
+        return false;
+      }
+      debugLog('[JournalProfilesSource] legacy user_data journal profile keys cleared');
+      return true;
     },
 
     async signIn(email, password) {
@@ -364,9 +437,10 @@ const _SW = (() => {
       if (!c) { console.warn('[JournalProfilesRemote] saveJournalProfilesToRemote — no Supabase client'); return; }
       const { data: sd } = await c.auth.getSession();
       const uid = sd?.session?.user?.id ?? _user?.id;
-      console.log('[JournalProfilesRemote] current user:', uid || '(none)');
+      debugLog('[DashboardDebug]');
       if (!uid) { console.warn('[JournalProfilesRemote] saveJournalProfilesToRemote — no authenticated user'); return; }
-      const rows = (Array.isArray(profiles) ? profiles : []).map((p, i) => ({
+      const normalizedProfiles = Array.isArray(profiles) ? profiles : [];
+      const rows = normalizedProfiles.map((p, i) => ({
         id                    : p.id,
         user_id               : uid,
         name                  : p.name || 'Untitled Journal',
@@ -374,15 +448,39 @@ const _SW = (() => {
         api_url               : p.apiUrl || '',
         source                : p.source || 'api',
         notion_database_id    : p.notionDatabaseId    || '',
+        notion_database_title : p.notionDatabaseTitle || '',
         notion_workspace_name : p.notionWorkspaceName || '',
         connection_type       : p.connectionType      || 'api',
+        notion_sync_state     : ['idle', 'syncing', 'synced', 'error', 'disconnected'].includes(p.notionSyncState) ? p.notionSyncState : 'idle',
+        notion_last_sync      : p.notionLastSync || null,
+        notion_trade_count    : Number.isFinite(Number(p.notionTradeCount)) ? Number(p.notionTradeCount) : 0,
         is_active             : p.id === String(activeId || ''),
         sort_order            : i,
         updated_at            : new Date().toISOString()
       }));
-      console.log('[JournalProfilesRemote] saving to Supabase — profiles:', profiles.map(p => ({ id: p.id, name: p.name })), 'activeId:', activeId);
-      console.log('[JournalProfilesRemote] payload:', rows);
-      if (rows.length === 0) { console.warn('[JournalProfilesRemote] empty payload — nothing to upsert'); return; }
+      debugLog('[DashboardDebug]');
+      const { data: existing, error: fetchErr } = await c.from('journal_profiles')
+        .select('id').eq('user_id', uid);
+      if (fetchErr) { console.warn('[JournalProfilesRemote] cleanup fetch error:', fetchErr.message); return; }
+      const existingIds = (existing || []).map(r => r.id).filter(Boolean);
+      const localIds = rows.map(r => r.id).filter(Boolean);
+      const toDelete = existingIds.filter(id => !localIds.includes(id));
+      debugLog('[DashboardDebug]');
+      debugLog('[DashboardDebug]');
+      debugLog('[DashboardDebug]');
+      if (toDelete.length > 0) {
+        const { error: delErr } = await c.from('journal_profiles').delete().eq('user_id', uid).in('id', toDelete);
+        if (delErr) {
+          console.warn('[JournalProfilesRemote] cleanup delete error:', delErr.message);
+          return;
+        }
+        _clearPendingDeletedJournalProfileIds(toDelete);
+      }
+      debugLog('[DashboardDebug]');
+      if (rows.length === 0) {
+        debugLog('[DashboardDebug]');
+        return;
+      }
       const { data: upsertData, error } = await c.from('journal_profiles')
         .upsert(rows, { onConflict: 'user_id,id' })
         .select('id');
@@ -390,18 +488,27 @@ const _SW = (() => {
         console.error('[JournalProfilesRemote] error:', error.message, error);
         return;
       }
-      console.log('[JournalProfilesRemote] success — upserted:', upsertData?.map(r => r.id));
-      // Supprime les profils qui n'existent plus localement
-      const { data: existing, error: fetchErr } = await c.from('journal_profiles')
-        .select('id').eq('user_id', uid);
-      if (fetchErr) { console.warn('[JournalProfilesRemote] cleanup fetch error:', fetchErr.message); return; }
-      const ids = rows.map(r => r.id);
-      const toDelete = (existing || []).map(r => r.id).filter(id => !ids.includes(id));
-      if (toDelete.length > 0) {
-        const { error: delErr } = await c.from('journal_profiles').delete().eq('user_id', uid).in('id', toDelete);
-        if (delErr) console.warn('[JournalProfilesRemote] cleanup delete error:', delErr.message);
-        else console.log('[JournalProfilesRemote] stale profiles deleted:', toDelete);
+      debugLog('[DashboardDebug]');
+      debugLog('[DashboardDebug]');
+    },
+
+    async deleteJournalProfileFromRemote(profileId) {
+      const c = _getClient();
+      if (!c) { console.warn('[JournalProfilesRemote] deleteJournalProfileFromRemote — no Supabase client'); return false; }
+      const { data: sd } = await c.auth.getSession();
+      const uid = sd?.session?.user?.id ?? _user?.id;
+      if (!uid) { console.warn('[JournalProfilesRemote] deleteJournalProfileFromRemote — no authenticated user'); return false; }
+      const id = String(profileId || '').trim();
+      if (!id) return false;
+      debugLog('[DashboardDebug]');
+      const { error } = await c.from('journal_profiles').delete().eq('user_id', uid).eq('id', id);
+      if (error) {
+        console.warn('[JournalProfilesRemote] immediate delete error:', error.message);
+        return false;
       }
+      _clearPendingDeletedJournalProfileIds([id]);
+      debugLog('[DashboardDebug]');
+      return true;
     },
 
     async loadJournalProfilesFromRemote() {
@@ -410,30 +517,51 @@ const _SW = (() => {
       const { data: sd } = await c.auth.getSession();
       const uid = sd?.session?.user?.id ?? _user?.id;
       if (!uid) { console.warn('[JournalProfilesRemote] loadJournalProfilesFromRemote — no authenticated user'); return null; }
+      const { data: legacyRows, error: legacyErr } = await c.from('user_data')
+        .select('dashboard_id, key, value, updated_at')
+        .eq('user_id', uid)
+        .in('key', [...LEGACY_JOURNAL_PROFILE_SYNC_KEYS]);
+      if (legacyErr) console.warn('[JournalProfilesSource] user_data journalProfiles_v1 read error:', legacyErr.message);
+      debugLog('[JournalProfilesSource] user_data journalProfiles_v1:', legacyRows || []);
       const { data, error } = await c.from('journal_profiles')
-        .select('id,name,type,api_url,source,notion_database_id,notion_workspace_name,connection_type,is_active,sort_order')
+        .select('id,name,type,api_url,source,notion_database_id,notion_database_title,notion_workspace_name,connection_type,notion_sync_state,notion_last_sync,notion_trade_count,is_active,sort_order')
         .eq('user_id', uid)
         .order('sort_order', { ascending: true });
       if (error) {
         console.error('[JournalProfilesRemote] load error:', error.message, error);
         return null;
       }
-      console.log('[JournalProfilesRemote] raw rows from DB:', data);
-      if (!data || data.length === 0) return null;
-      const mapped = data.map(r => ({
-        id                  : r.id,
-        name                : r.name,
-        type                : r.type,
-        apiUrl              : r.api_url,
-        source              : r.source,
-        notionDatabaseId    : r.notion_database_id    || '',
-        notionWorkspaceName : r.notion_workspace_name || '',
-        connectionType      : r.connection_type       || 'api',
-      }));
-      console.log('[JournalProfilesRemote] mapped profiles:', mapped);
+      debugLog('[DashboardDebug]');
+      debugLog('[JournalProfilesSource] remote journal_profiles rows:', data || []);
+      if (!data || data.length === 0) return { profiles: [], activeId: '' };
+      const pendingDeleted = _getPendingDeletedJournalProfileIds();
+      if (pendingDeleted.length) {
+        debugLog('[DashboardDebug]');
+      }
+      const filtered = data.filter(r => !pendingDeleted.includes(r.id));
+      const mapped = filtered.map(r => {
+        debugLog('[DashboardDebug]');
+        const profile = {
+          id                  : r.id,
+          name                : r.name,
+          type                : r.type,
+          apiUrl              : r.api_url,
+          source              : r.source,
+          notionDatabaseId    : r.notion_database_id    || '',
+          notionDatabaseTitle : r.notion_database_title || '',
+          notionWorkspaceName : r.notion_workspace_name || '',
+          connectionType      : r.connection_type       || 'api',
+          notionSyncState     : r.notion_sync_state     || 'idle',
+          notionLastSync      : r.notion_last_sync      || 0,
+          notionTradeCount    : r.notion_trade_count    || 0,
+        };
+        debugLog('[DashboardDebug]');
+        return profile;
+      });
+      debugLog('[DashboardDebug]');
       return {
         profiles: mapped,
-        activeId: data.find(r => r.is_active)?.id || data[0].id
+        activeId: filtered.find(r => r.is_active)?.id || filtered[0]?.id || ''
       };
     },
 
@@ -1648,7 +1776,106 @@ const _MONTH_MAP = {
   january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
   july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
 };
-const _OUTCOME_MAP = {'take profit':'TP','stop loss':'SL','be - tp':'BE-TP','be - sl':'BE-SL'};
+const OUTCOME_VALUE_MAPPING_KEY = 'outcomeValueMapping_v1';
+const OUTCOME_VALUE_CATEGORIES = ['Take Profit', 'Stop Loss', 'BE-SL', 'BE-TP', 'Other'];
+const OUTCOME_CATEGORY_TO_INTERNAL = {
+  'Take Profit': 'TP',
+  'Stop Loss': 'SL',
+  'BE-SL': 'BE-SL',
+  'BE-TP': 'BE-TP',
+  'Other': 'Other',
+};
+const OUTCOME_AUTO_MAP_RULES = {
+  'Take Profit': new Set(['take-profit', 'tp', 'win', 'winner', 'won', 'profit', 'target-hit']),
+  'Stop Loss': new Set(['stop-loss', 'sl', 'loss', 'loser', 'lost', 'stopped', 'invalidated']),
+  'BE-SL': new Set(['be-sl']),
+  'BE-TP': new Set(['be-tp']),
+  'Other': new Set(['cancelled', 'canceled', 'invalid', 'no-trade', 'skipped', 'partial', 'other', 'unknown']),
+};
+function _isValidOutcomeCategory(category) {
+  return OUTCOME_VALUE_CATEGORIES.includes(String(category || '').trim());
+}
+function _outcomeValueMappingKey() {
+  return getProfileScopedKey(OUTCOME_VALUE_MAPPING_KEY);
+}
+function _loadOutcomeValueMapping({ log = true } = {}) {
+  try {
+    const raw = localStorage.getItem(_outcomeValueMappingKey()) || '{}';
+    const parsed = JSON.parse(raw);
+    const out = {};
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      Object.entries(parsed).forEach(([value, category]) => {
+        const key = String(value || '').trim();
+        const cat = String(category || '').trim();
+        if (key && _isValidOutcomeCategory(cat)) out[key] = cat;
+      });
+    }
+    if (log) debugLog('[OutcomeValueMapping] loaded mapping:', { ...out });
+    return out;
+  } catch (e) {
+    if (log) debugLog('[OutcomeValueMapping] loaded mapping:', {});
+    return {};
+  }
+}
+function _saveOutcomeValueMapping(mapping) {
+  const clean = {};
+  Object.entries(mapping || {}).forEach(([value, category]) => {
+    const key = String(value || '').trim();
+    const cat = String(category || '').trim();
+    if (key && _isValidOutcomeCategory(cat)) clean[key] = cat;
+  });
+  safeSetLocalStorage(_outcomeValueMappingKey(), JSON.stringify(clean), { kind: 'outcomeValueMapping' });
+  debugLog('[OutcomeValueMapping] loaded mapping:', { ...clean });
+  try { _clearNotionSyncCursor(); } catch (e) {}
+}
+function _internalOutcomeForCategory(category) {
+  return OUTCOME_CATEGORY_TO_INTERNAL[category] || 'Other';
+}
+function _normalizeOutcomeValueForAutoMap(raw) {
+  return String(raw ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[\\/_\s]+/g, '-')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+function _suggestOutcomeCategory(raw) {
+  const normalized = _normalizeOutcomeValueForAutoMap(raw);
+  if (!normalized) return '';
+  for (const [category, values] of Object.entries(OUTCOME_AUTO_MAP_RULES)) {
+    if (values.has(normalized)) return category;
+  }
+  return '';
+}
+function _applyOutcomeAutoMapping(values, mapping = null) {
+  const map = mapping || _loadOutcomeValueMapping();
+  let changed = false;
+  const autoMapped = {};
+  const needsReview = {};
+  (values || []).forEach(raw => {
+    const value = String(raw ?? '').trim();
+    if (!value || Object.prototype.hasOwnProperty.call(map, value)) return;
+    const suggestion = _suggestOutcomeCategory(value);
+    if (suggestion) {
+      map[value] = suggestion;
+      autoMapped[value] = suggestion;
+      changed = true;
+    } else {
+      needsReview[value] = 'Other';
+    }
+  });
+  if (changed) _saveOutcomeValueMapping(map);
+  return { mapping: map, autoMapped, needsReview };
+}
+function _getOutcomeCategoryForRaw(raw, mapping = null) {
+  const value = String(raw ?? '').trim();
+  if (!value) return '';
+  const map = mapping || _applyOutcomeAutoMapping([value], _loadOutcomeValueMapping({ log: false })).mapping;
+  return Object.prototype.hasOwnProperty.call(map, value) ? map[value] : '';
+}
 const _SESSION_MAP = {
   'asian kz':'Asian','asian':'Asian',
   'london kz':'London','london':'London',
@@ -1707,8 +1934,8 @@ function hasChartJs() {
   return typeof Chart !== 'undefined';
 }
 function debugDataSource(message, extra) {
-  if (extra !== undefined) console.debug(`[DataSource] ${message}`, extra);
-  else console.debug(`[DataSource] ${message}`);
+  if (extra !== undefined) debugLog(`[DataSource] ${message}`, extra);
+  else debugLog(`[DataSource] ${message}`);
 }
 let _actionDelegationInstalled = false;
 function installGlobalActionDelegation() {
@@ -1739,22 +1966,74 @@ function handleActionClick(event) {
     case 'toggle-account-section': _toggleAccountSection(); break;
     case 'toggle-data-sources-section': _toggleDataSourcesSection(); break;
     case 'toggle-integrations-section':    _toggleIntegrationsSection(); break;
-    case 'notion-integration-connect':     _handleNotionIntegrationConnect(); break;
-    case 'notion-integration-reconnect':   _handleNotionIntegrationConnect(); break;
-    case 'notion-integration-disconnect':  _handleNotionIntegrationDisconnect(); break;
+    case 'settings-tab-select':
+      event.stopPropagation();
+      _setSettingsActiveTab(actionEl.dataset.settingsTab || 'account');
+      break;
+    case 'settings-more-toggle':
+      event.stopPropagation();
+      _toggleSettingsMore();
+      break;
+    case 'settings-open-theme':
+      event.stopPropagation();
+      debugLog('[Settings] opened theme');
+      toggleThemePanel();
+      document.getElementById('topbar-more-menu')?.classList.remove('open');
+      break;
+    case 'settings-open-advanced':
+      event.stopPropagation();
+      debugLog('[Settings] opened advanced');
+      setTimeout(() => toggleSettingsPanel(), 0);
+      document.getElementById('topbar-more-menu')?.classList.remove('open');
+      break;
+    case 'settings-open-developer-tools':
+      event.stopPropagation();
+      showThemeToast('Developer tools are not exposed in this build.');
+      break;
+    case 'notion-integration-connect':       _handleNotionIntegrationConnect(); break;
+    case 'notion-integration-manage-access': event.stopPropagation(); _handleNotionManageAccess(); break;
+    case 'notion-profile-reconnect':         event.stopPropagation(); _handleNotionProfileReconnect(); break;
+    case 'notion-integration-check':
+      event.stopPropagation();
+      debugLog('[Integrations] check connection clicked:', { status: _notionIntegrationStatus });
+      _notionIntegrationManageOpen = false;
+      _notionIntegrationLastCheck = 0;
+      _checkNotionIntegrationStatus({ force: true });
+      break;
+    case 'notion-integration-reconnect':
+      debugLog('[Integrations] reconnect clicked:', { status: _notionIntegrationStatus });
+      _notionIntegrationManageOpen = false;
+      _handleNotionIntegrationConnect();
+      break;
+    case 'notion-integration-disconnect':
+      debugLog('[Integrations] disconnect clicked:', { status: _notionIntegrationStatus });
+      _notionIntegrationManageOpen = false;
+      _handleNotionIntegrationDisconnect();
+      break;
+    case 'notion-integration-manage-toggle':
+      event.stopPropagation();
+      _toggleNotionIntegrationManageMenu();
+      break;
+    case 'notion-integration-view-permissions':
+      event.stopPropagation();
+      _handleNotionIntegrationViewPermissions();
+      break;
     case 'notion-editor-db-refresh':       _notionDbPickerProfileId = ''; _handleNotionDbPickerOpen('_editor'); break;
-    case 'journal-profile-add-source': console.log('[JournalProfilesUI] add source clicked'); _openJournalProfileEditor('create'); break;
-    case 'journal-profile-save-editor': console.log('[JournalProfilesUI] save source clicked, mode:', _journalProfileEditorMode); _saveJournalProfileEditor(); break;
+    case 'journal-profile-add-source': debugLog('[JournalProfilesUI] add source clicked'); _openJournalProfileEditor('create'); break;
+    case 'journal-profile-save-editor': debugLog('[JournalProfilesUI] save source clicked, mode:', _journalProfileEditorMode); _saveJournalProfileEditor(); break;
     case 'journal-profile-cancel-editor': _closeJournalProfileEditor(); break;
     case 'journal-profile-test-connection': _testJournalProfileEditorConnection(); break;
     case 'journal-profile-connect-notion': _handleNotionConnectClick(); break;
     case 'journal-profile-row-switch': _handleJournalProfileSelectChange(actionEl.dataset.profileId || ''); break;
     case 'journal-profile-row-menu-toggle': event.stopPropagation(); _toggleJournalProfileRowMenu(actionEl); break;
     case 'journal-profile-row-edit': event.stopPropagation(); _openJournalProfileEditor('edit', actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-row-rename': event.stopPropagation(); _openJournalProfileEditor('rename', actionEl.dataset.profileId || ''); break;
     case 'journal-profile-row-delete': event.stopPropagation(); _deleteJournalProfileById(actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-reset-mapping': event.stopPropagation(); _handleJournalProfileResetMapping(actionEl.dataset.profileId || ''); break;
     case 'notion-db-picker-open':    event.stopPropagation(); _handleNotionDbPickerOpen(actionEl.dataset.profileId || ''); break;
     case 'notion-db-picker-close':   event.stopPropagation(); _handleNotionDbPickerClose(); break;
     case 'notion-db-picker-confirm': event.stopPropagation(); _handleNotionDbPickerConfirm(actionEl.dataset.profileId || ''); break;
+    case 'notion-profile-sync-now':  event.stopPropagation(); _handleNotionProfileSyncNow(actionEl.dataset.profileId || ''); break;
     case 'dismiss-onboard': {
       document.getElementById('onboard-banner')?.classList.add('is-hidden');
       try { localStorage.setItem('onboard_dismissed', '1'); } catch(e) {}
@@ -1791,8 +2070,11 @@ function handleActionClick(event) {
     case 'toggle-password-visibility': event.stopPropagation(); _togglePasswordVisibility(actionEl); break;
     case 'auth-show-forgot-password': event.stopPropagation(); _setAccountView('forgot_password', { clearForms: true }); break;
     case 'auth-back-to-sign-in': event.stopPropagation(); _setAccountView('signed_out', { clearForms: true }); break;
+    case 'auth-show-edit-profile': event.stopPropagation(); _setAccountView('edit_profile', { clearForms: true }); break;
+    case 'auth-cancel-edit-profile': event.stopPropagation(); _setAccountView('signed_in', { clearForms: true }); break;
+    case 'auth-delete-account': event.stopPropagation(); _handleDeleteAccount(); break;
     case 'auth-show-change-password': event.stopPropagation(); _setAccountView('change_password', { clearForms: true }); break;
-    case 'auth-cancel-change-password': event.stopPropagation(); _setAccountView('signed_in', { clearForms: true }); break;
+    case 'auth-cancel-change-password': event.stopPropagation(); _setAccountView('edit_profile', { clearForms: true }); break;
     case 'auth-cancel-recovery': event.stopPropagation(); _accountRecoveryMode = false; _setAccountView(_getDefaultAccountView(), { clearForms: true }); break;
     case 'sw-login': event.stopPropagation(); _handleAccountLogin(); break;
     case 'sw-signup': event.stopPropagation(); _handleAccountSignup(); break;
@@ -2247,6 +2529,10 @@ function handleActionKeydown(event) {
   }
 }
 function handleActionChange(event) {
+  if (event.target.matches && event.target.matches('select[data-action="set-outcome-value-mapping"]')) {
+    _setOutcomeValueMapping(event.target.dataset.value || '', event.target.value || 'Other');
+    return;
+  }
   if (event.target.matches && event.target.matches('input[data-action="layout-hide-toggle-row"]')) {
     const id = event.target.dataset.gsId;
     if (id) _toggleHideWidget(id);
@@ -2388,7 +2674,37 @@ function _parseNumeric(raw) {
 }
 const _SYSTEM_TP_R = 2.4;
 const _SYSTEM_SL_R = -1.0;
-function _mapOutcome(raw) { return _OUTCOME_MAP[(raw||'').toLowerCase().trim()]||null; }
+let _outcomeDebugCounts = {};
+function _recordOutcomeDebug(raw, mapped, category = '') {
+  const value = String(raw ?? '').trim();
+  if (!value) return;
+  const appliedCategory = category || 'Other';
+  debugLog('[OutcomeValueMapping] applied:', {
+    raw: value,
+    category: appliedCategory,
+    internal: mapped,
+    mapped: !!category,
+  });
+  if (!category) {
+    _outcomeDebugCounts[value] = (_outcomeDebugCounts[value] || 0) + 1;
+  }
+}
+function _flushOutcomeDebugCounts() {
+  if (Object.keys(_outcomeDebugCounts).length) {
+    debugLog('[OutcomeValueMapping] unmapped values:', { ..._outcomeDebugCounts });
+  }
+}
+function _resetOutcomeDebugCounts() {
+  _outcomeDebugCounts = {};
+}
+function _mapOutcome(raw, { record = true } = {}) {
+  const value = String(raw ?? '').trim();
+  if (!value) return null;
+  const category = _getOutcomeCategoryForRaw(value);
+  const mapped = _internalOutcomeForCategory(category || 'Other');
+  if (record) _recordOutcomeDebug(value, mapped, category);
+  return mapped;
+}
 function _mapR(oc, rrRaw) {
   const parsed = _parseNumeric(rrRaw);
   if (parsed !== null && Number.isFinite(parsed)) return parsed;
@@ -3080,7 +3396,7 @@ function _logLocalStorageAudit(limit = 20) {
   try {
     const { entries } = _getLocalStorageUsageEntries();
     entries.slice(0, limit).forEach(entry => {
-      console.log('[LocalStorageAudit]', entry.key, `${(entry.sizeBytes / 1024).toFixed(1)} KB`);
+      debugLog('[LocalStorageAudit]', entry.key, `${(entry.sizeBytes / 1024).toFixed(1)} KB`);
     });
   } catch (e) {}
 }
@@ -3093,7 +3409,7 @@ function _logCacheInitTelemetry() {
     const fieldsBytes = _storageBytes(localStorage.getItem(_fieldNamesKey()));
     const { totalBytes } = _getLocalStorageUsageEntries();
     const freedKB = kb1(_cacheMigrationStats.freedBytes);
-    console.log(`[Cache] Init complete. Migration: ${_cacheMigrationStats.removedCount} legacy keys removed (freed ${freedKB} KB). Parsed: ${kb1(parsedBytes)} KB, FieldNames: ${kb1(fieldsBytes)} KB, Total LS: ${kb1(totalBytes)} KB.`);
+    debugLog(`[Cache] Init complete. Migration: ${_cacheMigrationStats.removedCount} legacy keys removed (freed ${freedKB} KB). Parsed: ${kb1(parsedBytes)} KB, FieldNames: ${kb1(fieldsBytes)} KB, Total LS: ${kb1(totalBytes)} KB.`);
     _logLocalStorageAudit(20);
   } catch (e) {
     // Telemetry must never block init — swallow any DOM/storage access errors.
@@ -3115,13 +3431,23 @@ const getAPIURL = () => {
   const htf  = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
   const sep  = base.includes('?') ? '&' : '?';
   const finalUrl = `${base}${sep}source=${htf}`;
-  console.debug('[JournalProfile] API URL used:', finalUrl);
+  debugLog('[JournalProfile] API URL used:', finalUrl);
   return finalUrl;
 };
 const JOURNAL_PROFILES_LS_KEY = 'journalProfiles_v1';
 const ACTIVE_JOURNAL_PROFILE_LS_KEY = 'activeJournalProfileId_v1';
 const DS_KEY         = 'dataSource';       // localStorage: "demo" | "csv" | "api"
 const HTF_SOURCE_KEY = 'htfSource';        // localStorage: "m15" | "h4"
+window.clearLegacyJournalProfiles = async function clearLegacyJournalProfiles() {
+  try { localStorage.removeItem(JOURNAL_PROFILES_LS_KEY); } catch {}
+  try { localStorage.removeItem(ACTIVE_JOURNAL_PROFILE_LS_KEY); } catch {}
+  try { localStorage.removeItem(JOURNAL_PROFILE_PENDING_DELETE_LS_KEY); } catch {}
+  if (window._SW?.clearLegacyJournalProfilesFromRemote) {
+    await window._SW.clearLegacyJournalProfilesFromRemote();
+  }
+  debugLog('[JournalProfilesSource] clearLegacyJournalProfiles complete');
+  if (typeof _syncJournalProfileUI === 'function') _syncJournalProfileUI();
+};
 function _makeJournalProfileId() {
   return 'jp_' + Math.random().toString(36).slice(2, 10);
 }
@@ -3135,14 +3461,29 @@ function _normalizeJournalProfile(profile = {}) {
   const notionDatabaseTitle = String(profile.notionDatabaseTitle || '').trim();
   const notionWorkspaceName = String(profile.notionWorkspaceName || '').trim();
   const connectionType      = String(profile.connectionType      || '').trim() || 'api';
-  return { id, name, type, apiUrl, source, notionDatabaseId, notionDatabaseTitle, notionWorkspaceName, connectionType };
+  const rawSyncState        = String(profile.notionSyncState || '').trim();
+  const notionSyncState     = ['idle', 'syncing', 'synced', 'error', 'disconnected'].includes(rawSyncState) ? rawSyncState : 'idle';
+  const notionLastSyncRaw   = Number(profile.notionLastSync || 0);
+  const notionLastSync      = Number.isFinite(notionLastSyncRaw) && notionLastSyncRaw > 0 ? notionLastSyncRaw : 0;
+  const notionTradeCountRaw = Number(profile.notionTradeCount || 0);
+  const notionTradeCount    = Number.isFinite(notionTradeCountRaw) && notionTradeCountRaw >= 0 ? notionTradeCountRaw : 0;
+  const notionErrorCode     = String(profile.notionErrorCode || '').trim();
+  const notionErrorMessage  = String(profile.notionErrorMessage || '').trim();
+  return {
+    id, name, type, apiUrl, source,
+    notionDatabaseId, notionDatabaseTitle, notionWorkspaceName, connectionType,
+    notionSyncState, notionLastSync, notionTradeCount,
+    notionErrorCode, notionErrorMessage,
+  };
 }
 function _getStoredJournalProfilesRaw() {
   try {
     const raw = localStorage.getItem(JOURNAL_PROFILES_LS_KEY);
+    debugLog('[JournalProfilesSource] localStorage journalProfiles_v1:', raw ? JSON.parse(raw) : []);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
+    debugLog('[JournalProfilesSource] localStorage journalProfiles_v1:', '(invalid)');
     return [];
   }
 }
@@ -3157,7 +3498,7 @@ function saveJournalProfiles(profiles) {
     localStorage.setItem(JOURNAL_PROFILES_LS_KEY, JSON.stringify(normalized));
   } catch {}
   const activeId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '');
-  console.log('[JournalProfilesRemote] saveJournalProfiles called — profiles:', normalized.length, 'activeId:', activeId);
+  debugLog('[DashboardDebug]');
   window._SW.saveJournalProfilesToRemote(normalized, activeId).catch(e => console.error('[JournalProfilesRemote] saveJournalProfiles error:', e));
   return normalized;
 }
@@ -3171,10 +3512,14 @@ function setActiveJournalProfile(id) {
   const profiles = getJournalProfiles();
   if (!profiles.length) return null;
   const targetId = String(id || '').trim();
+  const previousId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '').trim();
   const active = profiles.find(p => p.id === targetId) || profiles[0] || null;
   if (!active) return null;
   try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, active.id); } catch {}
-  console.log('[JournalProfilesRemote] setActiveJournalProfile → calling saveJournalProfilesToRemote, activeId:', active.id);
+  if (previousId && previousId !== active.id && active.connectionType === 'notion') {
+    try { _withJournalProfileCacheContext(active.id, () => _clearNotionSyncCursor()); } catch (e) {}
+  }
+  debugLog('[DashboardDebug]');
   window._SW.saveJournalProfilesToRemote(profiles, active.id).catch(e => console.error('[JournalProfilesRemote] setActiveJournalProfile error:', e));
   return active;
 }
@@ -3182,22 +3527,42 @@ function setActiveJournalProfile(id) {
 // Si la table journal_profiles a des données → on les écrit dans localStorage (source de vérité).
 // Sinon → on y pousse les profils locaux (migration initiale).
 async function hydrateJournalProfilesFromRemote(mergedFromSync) {
-  console.log('[JournalProfilesRemote] hydrateJournalProfilesFromRemote called, mergedFromSync:', mergedFromSync);
+  debugLog('[DashboardDebug]');
   let jpMerged = 0;
   const remote = await _SW.loadJournalProfilesFromRemote();
   if (remote) {
-    try { localStorage.setItem(JOURNAL_PROFILES_LS_KEY, JSON.stringify(remote.profiles)); } catch {}
-    try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, remote.activeId); } catch {}
-    jpMerged = remote.profiles.length;
-    console.log('[JournalProfilesRemote] loaded', jpMerged, 'profiles from remote — applied to localStorage');
-    console.log('[JournalProfilesRemote] localStorage now contains:', JSON.parse(localStorage.getItem(JOURNAL_PROFILES_LS_KEY) || '[]').map(p => ({ id: p.id, name: p.name })));
+    if (!remote.profiles.length) {
+      try { localStorage.removeItem(JOURNAL_PROFILES_LS_KEY); } catch {}
+      try { localStorage.removeItem(ACTIVE_JOURNAL_PROFILE_LS_KEY); } catch {}
+      _clearPendingDeletedJournalProfileIds(_getPendingDeletedJournalProfileIds());
+      debugLog('[JournalProfilesSource] final profiles used:', []);
+      debugLog('[DashboardDebug]');
+      if (typeof _syncJournalProfileUI === 'function') _syncJournalProfileUI();
+      return;
+    }
+    const localById = new Map(getJournalProfiles().map(p => [p.id, p]));
+    const mergedProfiles = remote.profiles.map(profile => {
+      const local = localById.get(profile.id);
+      if (!local) return profile;
+      return {
+        ...profile,
+        notionDatabaseTitle: profile.notionDatabaseTitle || local.notionDatabaseTitle || '',
+      };
+    });
+    try { localStorage.setItem(JOURNAL_PROFILES_LS_KEY, JSON.stringify(mergedProfiles)); } catch {}
+    const nextRemoteActiveId = remote.activeId || mergedProfiles[0]?.id || '';
+    if (nextRemoteActiveId) {
+      try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, nextRemoteActiveId); } catch {}
+    }
+    jpMerged = mergedProfiles.length;
+    debugLog('[JournalProfilesSource] final profiles used:', mergedProfiles);
+    debugLog('[DashboardDebug]');
+    debugLog('[DashboardDebug]');
   } else {
     const localProfiles = getJournalProfiles();
     const localActiveId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '');
-    console.log('[JournalProfilesRemote] remote empty — migrating', localProfiles.length, 'local profiles');
-    if (localProfiles.length > 0) {
-      await _SW.saveJournalProfilesToRemote(localProfiles, localActiveId);
-    }
+    debugLog('[JournalProfilesSource] final profiles used:', localProfiles);
+    debugLog('[DashboardDebug]');
   }
   const totalMerged = (mergedFromSync || 0) + jpMerged;
   if (totalMerged > 0 && !sessionStorage.getItem('_sw_synced')) {
@@ -3205,12 +3570,12 @@ async function hydrateJournalProfilesFromRemote(mergedFromSync) {
     window.location.reload();
   } else if (jpMerged > 0) {
     // Pas de reload (session déjà synced), mais l'UI doit refléter les profils remote
-    console.log('[JournalProfilesRemote] no reload needed — refreshing UI with remote profiles');
+    debugLog('[DashboardDebug]');
     if (typeof _syncJournalProfileUI === 'function') _syncJournalProfileUI();
   }
 }
 _SW.setSignedInHook(hydrateJournalProfilesFromRemote);
-console.log('[JournalProfilesRemote] hook registered');
+debugLog('[DashboardDebug]');
 
 function ensureDefaultJournalProfile() {
   let profiles = getJournalProfiles();
@@ -3261,9 +3626,19 @@ function _isDefaultJournalProfile(profile) {
 }
 function _getJournalProfileCacheContext() {
   const active = getActiveJournalProfile();
-  const profileId = String(active?.id || '').trim();
-  console.debug('[JournalProfile] Active profile:', profileId || '(legacy)');
+  const profileId = String(_journalProfileCacheContextOverride || active?.id || '').trim();
+  debugLog('[JournalProfile] Active profile:', profileId || '(legacy)');
   return { active, profileId, profiles: getJournalProfiles() };
+}
+let _journalProfileCacheContextOverride = '';
+function _withJournalProfileCacheContext(profileId, fn) {
+  const previous = _journalProfileCacheContextOverride;
+  _journalProfileCacheContextOverride = String(profileId || '').trim();
+  try {
+    return fn();
+  } finally {
+    _journalProfileCacheContextOverride = previous;
+  }
 }
 function _getJournalProfilePreferredSource(profile = null) {
   const preferred = String(profile?.type || '').trim().toLowerCase();
@@ -3277,6 +3652,7 @@ function _getJournalProfileDisplayName(profile = null) {
 }
 const ACCOUNT_SECTION_OPEN_LS_KEY = 'accountSectionOpen_v1';
 const DATA_SOURCES_SECTION_OPEN_LS_KEY = 'dataSourcesSectionOpen_v1';
+const SETTINGS_ACTIVE_TAB_LS_KEY = 'settingsActiveTab_v1';
 let _journalProfileManagerOpen = false;
 let _journalProfileEditorOpen = false;
 let _journalProfileEditorMode = 'create';
@@ -3296,6 +3672,8 @@ let _notionIntegrationStatus   = 'unknown'; // 'unknown'|'connected'|'disconnect
 let _notionIntegrationWorkspace = '';
 let _notionIntegrationLastCheck = 0;
 let _checkNotionStatusInFlight  = false;
+let _notionIntegrationManageOpen = false;
+let _settingsMoreOpen = false;
 const INTEGRATIONS_SECTION_LS_KEY = 'integrationsSectionOpen_v1';
 let _integrationsSectionOpen = (() => {
   try { return localStorage.getItem(INTEGRATIONS_SECTION_LS_KEY) === '1'; } catch { return false; }
@@ -3305,6 +3683,12 @@ let _accountSectionOpen = (() => {
 })();
 let _dataSourcesSectionOpen = (() => {
   try { return localStorage.getItem(DATA_SOURCES_SECTION_OPEN_LS_KEY) === '1'; } catch { return false; }
+})();
+let _settingsActiveTab = (() => {
+  try {
+    const saved = localStorage.getItem(SETTINGS_ACTIVE_TAB_LS_KEY);
+    return ['account', 'data'].includes(saved) ? saved : 'data';
+  } catch { return 'data'; }
 })();
 function _closeAccountPanel() {
   if (accountPanelOpen) toggleAccountPanel();
@@ -3323,10 +3707,58 @@ function _toggleDataSourcesSection(force = null) {
   if (_dataSourcesSectionOpen) _checkNotionIntegrationStatus();
   _syncJournalProfileUI();
 }
+function _setSettingsActiveTab(tab) {
+  const next = ['account', 'data'].includes(tab) ? tab : 'account';
+  _settingsActiveTab = next;
+  try { localStorage.setItem(SETTINGS_ACTIVE_TAB_LS_KEY, next); } catch {}
+  if (next === 'data') {
+    _dataSourcesSectionOpen = true;
+    _integrationsSectionOpen = true;
+    _persistAccountSectionState(DATA_SOURCES_SECTION_OPEN_LS_KEY, true);
+    _persistAccountSectionState(INTEGRATIONS_SECTION_LS_KEY, true);
+    _checkNotionIntegrationStatus();
+  }
+  _syncJournalProfileUI();
+}
+function _toggleSettingsMore(force = null) {
+  _settingsMoreOpen = typeof force === 'boolean' ? force : !_settingsMoreOpen;
+  debugLog('[Settings] opened more settings', { open: _settingsMoreOpen });
+  _syncJournalProfileUI();
+}
 function _toggleIntegrationsSection(force = null) {
   _integrationsSectionOpen = typeof force === 'boolean' ? force : !_integrationsSectionOpen;
   _persistAccountSectionState(INTEGRATIONS_SECTION_LS_KEY, _integrationsSectionOpen);
   if (_integrationsSectionOpen) _checkNotionIntegrationStatus();
+  _syncJournalProfileUI();
+}
+function _getNotionProfileSyncErrorNames() {
+  try {
+    return getJournalProfiles()
+      .filter(p => p?.connectionType === 'notion' && p?.notionSyncState === 'error')
+      .map(p => String(p.notionDatabaseTitle || p.name || '').trim())
+      .filter(Boolean);
+  } catch { return []; }
+}
+function _hasNotionProfileSyncError() {
+  try {
+    return getJournalProfiles().some(profile =>
+      profile?.connectionType === 'notion' && profile?.notionSyncState === 'error'
+    );
+  } catch {
+    return false;
+  }
+}
+function _toggleNotionIntegrationManageMenu() {
+  _notionIntegrationManageOpen = !_notionIntegrationManageOpen;
+  debugLog('[Integrations] manage menu opened:', {
+    open: _notionIntegrationManageOpen,
+    status: _notionIntegrationStatus
+  });
+  _syncJournalProfileUI();
+}
+function _handleNotionIntegrationViewPermissions() {
+  _notionIntegrationManageOpen = false;
+  showThemeToast('Permissions view coming soon.');
   _syncJournalProfileUI();
 }
 async function _checkNotionIntegrationStatus() {
@@ -3349,8 +3781,8 @@ async function _checkNotionIntegrationStatus() {
   _syncJournalProfileUI();
 
   const endpoint = `${NOTION_OAUTH_BACKEND}/api/notion/connection-status?user_id=${encodeURIComponent(user.id)}`;
-  console.log('[Integrations] check start userId:', user.id);
-  console.log('[Integrations] endpoint:', endpoint);
+  debugLog('[Integrations] check start userId:', user.id);
+  debugLog('[Integrations] endpoint:', endpoint);
 
   const ctrl = new AbortController();
   const timeoutId = setTimeout(() => ctrl.abort(), 10000);
@@ -3358,20 +3790,22 @@ async function _checkNotionIntegrationStatus() {
   try {
     const resp = await fetch(endpoint, { signal: ctrl.signal });
     clearTimeout(timeoutId);
-    console.log('[Integrations] response status:', resp.status);
+    debugLog('[Integrations] response status:', resp.status);
 
     if (resp.ok) {
       const data = await resp.json();
-      console.log('[Integrations] response json:', JSON.stringify(data));
+      debugLog('[Integrations] response json:', JSON.stringify(data));
       if (data.connected) {
         _notionIntegrationStatus   = 'connected';
         _notionIntegrationWorkspace = data.workspace_name || '';
         _notionIntegrationLastCheck = Date.now();
-        console.log('[Integrations] set status: connected — workspace:', _notionIntegrationWorkspace);
+        _restoreNotionProfilesAfterReconnect();
+        debugLog('[Integrations] set status: connected — workspace:', _notionIntegrationWorkspace);
       } else {
         _notionIntegrationStatus   = 'disconnected';
         _notionIntegrationWorkspace = '';
-        console.log('[Integrations] set status: disconnected');
+        _markNotionProfilesDisconnected();
+        debugLog('[Integrations] set status: disconnected');
       }
       // Auto-load databases if the editor is open with Notion type and picker not already active
       if (_notionIntegrationStatus === 'connected'
@@ -3379,7 +3813,7 @@ async function _checkNotionIntegrationStatus() {
           && _journalProfileEditorConnectionType === 'notion'
           && _notionDbPickerState === 'idle'
           && _notionDbPickerProfileId !== '_editor') {
-        console.log('[DataSource] loading databases');
+        debugLog('[DataSource] loading databases');
         _handleNotionDbPickerOpen('_editor');
       }
     } else {
@@ -3400,39 +3834,89 @@ async function _checkNotionIntegrationStatus() {
   _syncJournalProfileUI();
 }
 function _renderIntegrationsSection() {
+  debugLog('[DataIntegrationUI] rendering notion card');
   const st = _notionIntegrationStatus;
   const ws = _escapeHtml(_notionIntegrationWorkspace || '');
-  let badge, badgeClass, actions;
-  if (st === 'connected') {
-    badge = '● Connected'; badgeClass = 'int-badge--connected';
-    actions = `
-      <button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-reconnect">Reconnect</button>
-      <button class="account-secondary-btn int-btn int-btn--danger" type="button" data-action="notion-integration-disconnect">Disconnect</button>`;
+  const hasTokenExpired = _hasTokenExpiredProfiles();
+  const hasSyncError = _hasNotionProfileSyncError();
+  const isError = st === 'error' || (hasSyncError && !hasTokenExpired);
+  let headerRight, footerRight;
+  if (hasTokenExpired) {
+    headerRight = '<span class="int-badge int-badge--disconnected">🔴 Connection expired</span>';
+    footerRight = `<button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-reconnect">Reconnect</button>`;
+  } else if (st === 'connected' && !isError) {
+    headerRight = '<span class="int-badge int-badge--connected">🟢 Connected</span>';
+    footerRight = `<div class="int-manage-wrap">
+        <button class="int-ellipsis-btn" type="button" data-action="notion-integration-manage-toggle" aria-expanded="${_notionIntegrationManageOpen ? 'true' : 'false'}" aria-label="More options">⋯</button>
+        ${_notionIntegrationManageOpen ? `
+          <div class="int-manage-menu" role="menu">
+            <button class="int-manage-item" type="button" role="menuitem" data-action="notion-integration-manage-access">Manage page access</button>
+            <button class="int-manage-item int-manage-item--danger" type="button" role="menuitem" data-action="notion-integration-disconnect">Disconnect</button>
+          </div>` : ''}
+      </div>`;
+  } else if (isError) {
+    headerRight = '<span class="int-badge int-badge--disconnected">🔴 Connection issue</span>';
+    footerRight = `<button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-reconnect">Reconnect</button>`;
   } else if (st === 'checking' || st === 'unknown') {
-    badge = '● Checking…'; badgeClass = 'int-badge--checking';
-    actions = '';
-  } else if (st === 'error') {
-    badge = '○ Error'; badgeClass = 'int-badge--disconnected';
-    actions = `<button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-connect">Connect with Notion</button>`;
+    headerRight = '<span class="int-badge int-badge--checking">⏳ Checking…</span>';
+    footerRight = '';
   } else {
-    badge = '○ Not connected'; badgeClass = 'int-badge--disconnected';
-    actions = `<button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-connect">Connect with Notion</button>`;
+    headerRight = `<button class="account-secondary-btn int-btn" type="button" data-action="notion-integration-connect">Connect with Notion</button>`;
+    footerRight = '';
   }
+  debugLog('[Integrations] render state:', {
+    status: st,
+    workspace: _notionIntegrationWorkspace || '',
+    hasSyncError,
+    manageOpen: _notionIntegrationManageOpen
+  });
+  const hasFooter = !!(ws || footerRight);
+  const errorNames = isError ? _getNotionProfileSyncErrorNames() : [];
   return `<div class="int-list">
-    <div class="int-row">
-      <div class="int-row-top">
-        <span class="int-name">Notion</span>
-        <span class="int-badge ${badgeClass}">${badge}</span>
+    <div class="int-row notion-integration-card">
+      <div class="int-compact-header">
+        <span class="int-name"><span class="int-icon" aria-hidden="true">N</span> Notion</span>
+        ${headerRight}
       </div>
-      ${ws ? `<div class="int-workspace">${ws}</div>` : ''}
-      <div class="int-actions">${actions}</div>
+      ${hasFooter ? `<div class="int-compact-footer">
+        <span class="int-workspace-inline">${ws ? `Workspace: ${ws}` : ''}</span>
+        ${footerRight}
+      </div>` : ''}
+      ${errorNames.length ? `<div class="int-error-dbs">
+        ${errorNames.map(n => `<span class="int-error-db-item"><span class="int-error-db-dot" aria-hidden="true">⚠</span>${_escapeHtml(n)}</span>`).join('')}
+      </div>` : ''}
     </div>
   </div>`;
 }
-async function _handleNotionIntegrationConnect() {
+function _handleNotionManageAccess() {
+  debugLog('[Integrations] manage page access clicked:', { workspace: _notionIntegrationWorkspace || '' });
+  _notionIntegrationManageOpen = false;
   _notionConnectState = 'loading';
   _syncJournalProfileUI();
-  startNotionOAuth('').catch(err => {
+  debugLog('[Integrations] oauth access flow started:');
+  startNotionOAuth('', { persistDraft: false }).then(() => {
+    debugLog('[Integrations] access updated:');
+  }).catch(err => {
+    console.error('[Integrations] manage access failed:', err);
+    _notionConnectState = 'idle';
+    _syncJournalProfileUI();
+  });
+}
+function _handleNotionProfileReconnect() {
+  debugLog('[NotionAuth] reconnect requested:', { source: 'profile-card' });
+  _notionConnectState = 'loading';
+  _syncJournalProfileUI();
+  startNotionOAuth('', { persistDraft: false }).catch(err => {
+    console.error('[NotionAuth] reconnect failed:', err);
+    _notionConnectState = 'idle';
+    _syncJournalProfileUI();
+  });
+}
+async function _handleNotionIntegrationConnect() {
+  debugLog('[NotionReconnect] OAuth started:', { source: 'integration' });
+  _notionConnectState = 'loading';
+  _syncJournalProfileUI();
+  startNotionOAuth('', { persistDraft: false }).catch(err => {
     console.error('[Integrations] OAuth error:', err);
     _notionConnectState = 'idle';
     _syncJournalProfileUI();
@@ -3443,6 +3927,7 @@ async function _handleNotionIntegrationDisconnect() {
   const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
   if (!user?.id) return;
   try {
+    debugLog('[NotionDisconnect] deleting connection:', { userId: user.id });
     const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/notion/disconnect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3452,10 +3937,50 @@ async function _handleNotionIntegrationDisconnect() {
       _notionIntegrationStatus = 'disconnected';
       _notionIntegrationWorkspace = '';
       _notionIntegrationLastCheck = 0;
-      console.log('[Integrations] Notion disconnected');
+      _markNotionProfilesDisconnected();
+      debugLog('[Integrations] Notion disconnected');
       _syncJournalProfileUI();
     }
   } catch (e) { console.warn('[Integrations] disconnect failed:', e.message); }
+}
+function _markNotionProfilesDisconnected() {
+  const profiles = getJournalProfiles();
+  let changed = false;
+  const next = profiles.map(profile => {
+    if (profile.connectionType !== 'notion') return profile;
+    changed = true;
+    return _normalizeJournalProfile({ ...profile, notionSyncState: 'disconnected' });
+  });
+  if (!changed) return;
+  saveJournalProfiles(next);
+  debugLog('[NotionDisconnect] profiles updated:', next.filter(p => p.connectionType === 'notion').map(p => ({
+    id: p.id,
+    name: p.name,
+    notionSyncState: p.notionSyncState,
+  })));
+}
+function _restoreNotionProfilesAfterReconnect() {
+  const profiles = getJournalProfiles();
+  let changed = false;
+  const next = profiles.map(profile => {
+    if (profile.connectionType !== 'notion') return profile;
+    const needsRestore = profile.notionSyncState === 'disconnected' || profile.notionErrorCode === 'token_expired';
+    if (!needsRestore) return profile;
+    changed = true;
+    return _normalizeJournalProfile({
+      ...profile,
+      notionSyncState: (profile.notionLastSync || profile.notionTradeCount) ? 'synced' : 'idle',
+      notionErrorCode: '',
+      notionErrorMessage: '',
+    });
+  });
+  if (!changed) return;
+  saveJournalProfiles(next);
+  debugLog('[NotionReconnect] connection restored:', next.filter(p => p.connectionType === 'notion').map(p => ({
+    id: p.id,
+    name: p.name,
+    notionSyncState: p.notionSyncState,
+  })));
 }
 function _getJournalProfileById(id) {
   const targetId = String(id || '').trim();
@@ -3485,7 +4010,7 @@ function _prefillJournalProfileForm(profile = null, options = {}) {
   _toggleJournalProfileConnectionSections(_journalProfileEditorConnectionType);
 }
 function _toggleJournalProfileConnectionSections(type) {
-  console.log('[DataSource] connectionType:', type, '| notionIntegrationStatus:', _notionIntegrationStatus);
+  debugLog('[DataSource] connectionType:', type, '| notionIntegrationStatus:', _notionIntegrationStatus);
   if (_togglingConnSections) {
     // Re-entrant call from _prefillJournalProfileForm inside _syncJournalProfileUI —
     // _syncJournalProfileUI is already re-rendering everything, just sync DOM classes
@@ -3519,7 +4044,7 @@ function _toggleJournalProfileConnectionSections(type) {
     if (_notionIntegrationStatus === 'connected') {
       // Status already known — auto-load databases if picker not already active
       if (_notionDbPickerState === 'idle') {
-        console.log('[DataSource] loading databases');
+        debugLog('[DataSource] loading databases');
         _handleNotionDbPickerOpen('_editor');
       }
     } else {
@@ -3535,21 +4060,21 @@ function _openJournalProfileEditor(mode = 'create', id = '') {
     return;
   }
   _journalProfileEditorOpen = true;
-  _journalProfileEditorMode = mode === 'edit' ? 'edit' : 'create';
-  _journalProfileEditingId = _journalProfileEditorMode === 'edit' ? String(id || '').trim() : '';
+  _journalProfileEditorMode = mode === 'edit' ? 'edit' : mode === 'rename' ? 'rename' : 'create';
+  _journalProfileEditingId = (_journalProfileEditorMode === 'edit' || _journalProfileEditorMode === 'rename') ? String(id || '').trim() : '';
   _journalProfileRowMenuOpenId = '';
-  if (_journalProfileEditorMode === 'edit') {
+  if (_journalProfileEditorMode === 'edit' || _journalProfileEditorMode === 'rename') {
     const p = _getJournalProfileById(_journalProfileEditingId);
     _journalProfileEditorConnectionType = String(p?.connectionType || '').trim() || 'api';
   } else {
     _journalProfileEditorConnectionType = 'api';
   }
   _syncJournalProfileUI();
-  const profile = _journalProfileEditorMode === 'edit' ? _getJournalProfileById(_journalProfileEditingId) : null;
-  _prefillJournalProfileForm(profile, { blankName: _journalProfileEditorMode !== 'edit' });
+  const profile = (_journalProfileEditorMode === 'edit' || _journalProfileEditorMode === 'rename') ? _getJournalProfileById(_journalProfileEditingId) : null;
+  _prefillJournalProfileForm(profile, { blankName: _journalProfileEditorMode !== 'edit' && _journalProfileEditorMode !== 'rename' });
   requestAnimationFrame(() => document.getElementById('journal-profile-name-input')?.focus());
   // For Notion profiles, check integration status and pre-load databases
-  if (_journalProfileEditorConnectionType === 'notion') {
+  if (_journalProfileEditorConnectionType === 'notion' && _journalProfileEditorMode !== 'rename') {
     _checkNotionIntegrationStatus().then(() => {
       if (_notionIntegrationStatus === 'connected') {
         _notionDbPickerProfileId = ''; // prevent toggle guard
@@ -3586,7 +4111,7 @@ function _handleNotionOAuthReturn() {
 
   // Clean URL immediately — prevents re-trigger on refresh
   history.replaceState(null, '', window.location.pathname);
-  console.log('[NotionOAuth] url cleaned');
+  debugLog('[NotionOAuth] url cleaned');
 
   // Read and clear pending draft
   let pending = null;
@@ -3595,7 +4120,7 @@ function _handleNotionOAuthReturn() {
     if (raw) {
       pending = JSON.parse(raw);
       sessionStorage.removeItem('notion_oauth_pending');
-      console.log('[NotionOAuth] pending draft read, mode:', pending.mode);
+      debugLog('[NotionOAuth] pending draft read, mode:', pending.mode);
     }
   } catch (e) {
     console.warn('[NotionOAuth] could not read pending draft:', e);
@@ -3613,9 +4138,11 @@ function _handleNotionOAuthReturn() {
   _notionIntegrationStatus   = 'connected';
   _notionIntegrationWorkspace = workspaceName;
   _notionIntegrationLastCheck = Date.now();
-  console.log('[Integrations] Notion connected via OAuth — workspace:', workspaceName);
+  _restoreNotionProfilesAfterReconnect();
+  debugLog('[Integrations] Notion connected via OAuth — workspace:', workspaceName);
+  debugLog('[NotionReconnect] connection restored:', { workspaceName: workspaceName || '' });
 
-  console.log('[NotionOAuth] return detected — profileId:', profileId || '(none)', 'workspace:', workspaceName || '(none)');
+  debugLog('[NotionOAuth] return detected — profileId:', profileId || '(none)', 'workspace:', workspaceName || '(none)');
 
   const profiles = getJournalProfiles();
 
@@ -3628,7 +4155,7 @@ function _handleNotionOAuthReturn() {
         profiles[idx].notionWorkspaceName = workspaceName;
       }
       saveJournalProfiles(profiles);
-      console.log('[NotionOAuth] profile updated (edit) — connectionType=notion for:', profileId);
+      debugLog('[NotionOAuth] profile updated (edit) — connectionType=notion for:', profileId);
     } else {
       console.warn('[NotionOAuth] edit profileId not found locally:', profileId);
     }
@@ -3636,7 +4163,7 @@ function _handleNotionOAuthReturn() {
     _dataSourcesSectionOpen   = true;
     _persistAccountSectionState(DATA_SOURCES_SECTION_OPEN_LS_KEY, true);
     _syncJournalProfileUI();
-    console.log('[NotionOAuth] auto-created profile rendered:', profileId);
+    debugLog('[NotionOAuth] auto-created profile rendered:', profileId);
     showThemeToast('Notion connected!');
     return;
   }
@@ -3656,7 +4183,7 @@ function _handleNotionOAuthReturn() {
     const profiles = getJournalProfiles();
     profiles.push(newProfile);
     saveJournalProfiles(profiles);
-    console.log('[NotionOAuth] auto-created profile:', newProfile.id, 'name:', newProfile.name);
+    debugLog('[NotionOAuth] auto-created profile:', newProfile.id, 'name:', newProfile.name);
     _journalProfileEditorOpen = true;
     _journalProfileEditorMode = 'edit';
     _journalProfileEditingId  = newProfile.id;
@@ -3668,7 +4195,7 @@ function _handleNotionOAuthReturn() {
     _notionDbPickerProfileId = '';
     _handleNotionDbPickerOpen('_editor');
     showThemeToast('Notion connected — select a database for this source');
-    console.log('[DataSource] editor opened for DB selection, profileId:', newProfile.id);
+    debugLog('[DataSource] editor opened for DB selection, profileId:', newProfile.id);
     return;
   }
 
@@ -3677,10 +4204,10 @@ function _handleNotionOAuthReturn() {
 }
 
 function _handleNotionConnectClick() {
-  console.log('[NotionOAuth] button clicked');
+  debugLog('[NotionOAuth] button clicked');
   if (_notionConnectState === 'loading') return;
   const profileId = _journalProfileEditorMode === 'edit' ? _journalProfileEditingId : '';
-  console.log('[NotionOAuth] startNotionOAuth called profileId:', profileId || '(none)');
+  debugLog('[NotionOAuth] startNotionOAuth called profileId:', profileId || '(none)');
   _notionConnectState = 'loading';
   _syncJournalProfileUI();
   startNotionOAuth(profileId).catch(err => {
@@ -3690,9 +4217,10 @@ function _handleNotionConnectClick() {
   });
 }
 
-async function startNotionOAuth(profileId) {
+async function startNotionOAuth(profileId, options = {}) {
+  const { persistDraft = true } = options;
   const user = _SW.getUser();
-  console.log('[NotionOAuth] current user:', user?.id || null);
+  debugLog('[NotionOAuth] current user:', user?.id || null);
 
   if (!user?.id) {
     _notionConnectState = 'idle';
@@ -3706,13 +4234,13 @@ async function startNotionOAuth(profileId) {
   let clientId, redirectUri;
   try {
     const startUrl = `${NOTION_OAUTH_BACKEND}/api/notion/oauth/start`;
-    console.log('[NotionOAuth] fetching start endpoint:', startUrl);
+    debugLog('[NotionOAuth] fetching start endpoint:', startUrl);
     const res = await fetch(startUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     clientId    = data.client_id;
     redirectUri = data.redirect_uri;
-    console.log('[NotionOAuth] start endpoint result: client_id=', clientId, 'redirect_uri=', redirectUri);
+    debugLog('[NotionOAuth] start endpoint result: client_id=', clientId, 'redirect_uri=', redirectUri);
   } catch (err) {
     console.error('[NotionOAuth] Failed to fetch OAuth params:', err);
     _notionConnectState = 'idle';
@@ -3720,18 +4248,22 @@ async function startNotionOAuth(profileId) {
     return;
   }
 
-  // Persist editor draft so _handleNotionOAuthReturn can auto-save after reload
-  try {
-    const draft = _getJournalProfileEditorDraft();
-    const pending = {
-      mode     : _journalProfileEditorMode,   // 'create' | 'edit'
-      profileId: profileId || '',
-      draft,
-    };
-    sessionStorage.setItem('notion_oauth_pending', JSON.stringify(pending));
-    console.log('[NotionOAuth] pending draft saved to sessionStorage, mode:', pending.mode);
-  } catch (e) {
-    console.warn('[NotionOAuth] could not persist draft:', e);
+  if (persistDraft) {
+    // Persist editor draft so _handleNotionOAuthReturn can auto-save after reload
+    try {
+      const draft = _getJournalProfileEditorDraft();
+      const pending = {
+        mode     : _journalProfileEditorMode,   // 'create' | 'edit'
+        profileId: profileId || '',
+        draft,
+      };
+      sessionStorage.setItem('notion_oauth_pending', JSON.stringify(pending));
+      debugLog('[NotionOAuth] pending draft saved to sessionStorage, mode:', pending.mode);
+    } catch (e) {
+      console.warn('[NotionOAuth] could not persist draft:', e);
+    }
+  } else {
+    try { sessionStorage.removeItem('notion_oauth_pending'); } catch (e) {}
   }
 
   const state    = encodeURIComponent(user.id + '::' + (profileId || ''));
@@ -3742,12 +4274,17 @@ async function startNotionOAuth(profileId) {
     + `&redirect_uri=${encodeURIComponent(redirectUri)}`
     + `&state=${state}`;
 
-  console.log('[NotionOAuth] redirecting to:', oauthUrl);
+  debugLog('[NotionOAuth] redirecting to:', oauthUrl);
   window.location.href = oauthUrl;
 }
 
 // ── Notion database picker handlers ──────────────────────────────────────────
 async function _handleNotionDbPickerOpen(profileId) {
+  const profile = _getJournalProfileById(profileId);
+  if (profile?.notionSyncState === 'disconnected') {
+    showThemeToast('Reconnect Notion to change databases.', true);
+    return;
+  }
   // Toggle off if clicking same profile that already has picker open
   if (_notionDbPickerProfileId === profileId && _notionDbPickerState !== 'idle') {
     _handleNotionDbPickerClose();
@@ -3763,7 +4300,7 @@ async function _handleNotionDbPickerOpen(profileId) {
   _notionDbPickerProfileId = profileId;
   _notionDbPickerState     = 'loading';
   _notionDbPickerDatabases = [];
-  console.log('[DataSource] loading databases — profileId:', profileId);
+  debugLog('[DataSource] loading databases — profileId:', profileId);
   _syncJournalProfileUI();
 
   try {
@@ -3773,8 +4310,8 @@ async function _handleNotionDbPickerOpen(profileId) {
     const data = await res.json();
     _notionDbPickerDatabases = Array.isArray(data.databases) ? data.databases : [];
     _notionDbPickerState = 'loaded';
-    console.log('[DataSource] databases loaded:', _notionDbPickerDatabases.length, _notionDbPickerDatabases.map(d => d.title));
-    console.log('[DataSource] rendering database selector');
+    debugLog('[DataSource] databases loaded:', _notionDbPickerDatabases.length, _notionDbPickerDatabases.map(d => d.title));
+    debugLog('[DataSource] rendering database selector');
   } catch (err) {
     console.error('[DataSource] databases error:', err.message);
     _notionDbPickerState = 'error';
@@ -3804,24 +4341,142 @@ function _handleNotionDbPickerConfirm(profileId) {
   const profiles = getJournalProfiles();
   const idx = profiles.findIndex(p => p.id === profileId);
   if (idx === -1) return;
+  const profile = profiles[idx];
+  if (profile.notionDatabaseId === selectedId) {
+    _notionDbPickerProfileId = '';
+    _notionDbPickerState     = 'idle';
+    _notionDbPickerDatabases = [];
+    _syncJournalProfileUI();
+    return;
+  }
+  if (profile.notionDatabaseId && profile.notionDatabaseId !== selectedId) {
+    _openDatabaseChangeConfirm({
+      profileId,
+      selectedId,
+      selectedTitle,
+      oldDatabaseId: profile.notionDatabaseId,
+      oldDatabaseTitle: profile.notionDatabaseTitle || profile.notionDatabaseId,
+    });
+    return;
+  }
 
-  profiles[idx].notionDatabaseId    = selectedId;
-  profiles[idx].notionDatabaseTitle = selectedTitle;
-  saveJournalProfiles(profiles);
+  _commitNotionDatabaseChange({ profileId, selectedId, selectedTitle, resetMappings: false });
+}
 
-  // Close picker
+function _openDatabaseChangeConfirm({ profileId, selectedId, selectedTitle, oldDatabaseId, oldDatabaseTitle }) {
+  document.getElementById('database-change-confirm-backdrop')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.id = 'database-change-confirm-backdrop';
+  backdrop.className = 'layout-confirm-backdrop database-change-confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="layout-confirm-modal database-change-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="database-change-confirm-title">
+      <div class="layout-confirm-head">
+        <span class="layout-confirm-icon">⚠</span>
+        <span class="layout-confirm-title" id="database-change-confirm-title">Change database?</span>
+      </div>
+      <div class="layout-confirm-body">
+        <div class="layout-confirm-sub">Changing the database will:</div>
+        <ul class="database-change-confirm-list">
+          <li>reset field mappings</li>
+          <li>refresh trades</li>
+        </ul>
+        <div class="database-change-confirm-db">
+          <span>${_escapeHtml(oldDatabaseTitle || oldDatabaseId || 'Current database')}</span>
+          <span>→</span>
+          <span>${_escapeHtml(selectedTitle || selectedId || 'New database')}</span>
+        </div>
+      </div>
+      <div class="layout-confirm-actions">
+        <button class="lt-btn layout-confirm-cancel" type="button">Cancel</button>
+        <button class="lt-btn lt-reset layout-confirm-ok database-change-confirm-ok" type="button">Change database</button>
+      </div>
+    </div>`;
+  const close = () => backdrop.remove();
+  backdrop.addEventListener('click', event => {
+    if (event.target === backdrop) close();
+  });
+  backdrop.querySelector('.layout-confirm-cancel')?.addEventListener('click', close);
+  backdrop.querySelector('.layout-confirm-ok')?.addEventListener('click', async () => {
+    close();
+    await _commitNotionDatabaseChange({ profileId, selectedId, selectedTitle, resetMappings: true, oldDatabaseId, oldDatabaseTitle });
+  });
+  document.body.appendChild(backdrop);
+}
+
+function _clearNotionProfileMappings(profileId) {
+  const id = String(profileId || '').trim();
+  if (!id) return [];
+  const keys = [
+    `apiFieldOverrides_v1_${id}`,
+    `apiFieldNames_v1_${id}`,
+    `apiFieldOverrides_v1_${id}_m15`,
+    `apiFieldOverrides_v1_${id}_h4`,
+    `apiFieldNames_v1_${id}_m15`,
+    `apiFieldNames_v1_${id}_h4`,
+  ];
+  keys.forEach(key => {
+    try { localStorage.removeItem(key); } catch {}
+  });
+  debugLog('[DatabaseChange] cleared mappings:', keys);
+  return keys;
+}
+
+async function _commitNotionDatabaseChange({ profileId, selectedId, selectedTitle, resetMappings = true, oldDatabaseId = '', oldDatabaseTitle = '' }) {
+  const profiles = getJournalProfiles();
+  const idx = profiles.findIndex(p => p.id === profileId);
+  if (idx === -1) return;
+  const current = profiles[idx];
+  debugLog('[DatabaseChange] old:', {
+    profileId: current.id,
+    profileName: current.name,
+    databaseId: oldDatabaseId || current.notionDatabaseId || '',
+    databaseTitle: oldDatabaseTitle || current.notionDatabaseTitle || '',
+  });
+  debugLog('[DatabaseChange] new:', {
+    profileId: current.id,
+    profileName: current.name,
+    databaseId: selectedId,
+    databaseTitle: selectedTitle,
+  });
+
+  const nextProfile = _normalizeJournalProfile({
+    ...current,
+    id: current.id,
+    name: current.name,
+    notionWorkspaceName: current.notionWorkspaceName,
+    notionDatabaseId: selectedId,
+    notionDatabaseTitle: selectedTitle,
+    notionSyncState: 'idle',
+    notionLastSync: 0,
+    notionTradeCount: 0,
+    notionErrorCode: '',
+    notionErrorMessage: '',
+  });
+  debugLog('[NotionDatabase] replacement selected:', { profileId, newDatabaseId: selectedId, newDatabaseTitle: selectedTitle });
+  delete nextProfile.fieldNames;
+  delete nextProfile.overrides;
+  profiles[idx] = nextProfile;
+
+  if (resetMappings) _clearNotionProfileMappings(nextProfile.id);
+  const saved = saveJournalProfiles(profiles);
+  const savedProfile = saved.find(p => p.id === nextProfile.id) || nextProfile;
+  try { _withJournalProfileCacheContext(savedProfile.id, () => _clearNotionSyncCursor()); } catch (e) {}
+  if (getActiveJournalProfile()?.id !== savedProfile.id) {
+    setActiveJournalProfile(savedProfile.id);
+  }
+
   _notionDbPickerProfileId = '';
   _notionDbPickerState     = 'idle';
   _notionDbPickerDatabases = [];
   _syncJournalProfileUI();
 
   showThemeToast(`Database selected — loading trades…`);
-
-  // If this is the active profile, immediately trigger a Notion load
-  const active = getActiveJournalProfile();
-  if (active?.id === profileId) {
-    loadFromAPI({ force: true });
-  }
+  await _loadNotionTrades(getActiveJournalProfile() || savedProfile, { force: true });
+  debugLog('[DatabaseChange] reload complete:', {
+    profileId: savedProfile.id,
+    databaseId: selectedId,
+    databaseTitle: selectedTitle,
+  });
 }
 
 function _getJournalProfileEditorDraft() {
@@ -3871,6 +4526,18 @@ function _renderNotionEditorDbSection() {
   return '';
 }
 function _renderJournalProfileEditorMarkup(mode = 'create') {
+  if (mode === 'rename') {
+    return `<div class="journal-profile-editor-inline journal-profile-rename-inline">
+      <label class="account-field">
+        <span class="account-field-label">Name</span>
+        <input class="account-input" id="journal-profile-name-input" type="text" placeholder="Profile name" />
+      </label>
+      <div class="account-actions">
+        <button class="account-secondary-btn" type="button" data-action="journal-profile-save-editor">Save</button>
+        <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
+      </div>
+    </div>`;
+  }
   const isEdit = mode === 'edit';
   const checkLabel = _journalProfileCheckState === 'checking'
     ? 'Checking source...'
@@ -4025,8 +4692,162 @@ function _getJournalProfileCacheCount(profile = null) {
   } catch {}
   return 0;
 }
+function _formatNotionSyncAgo(timestamp) {
+  const ts = Number(timestamp || 0);
+  if (!Number.isFinite(ts) || ts <= 0) return 'Never';
+  const diffMs = Math.max(0, Date.now() - ts);
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return 'now';
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+function _getNotionSyncView(profile = null) {
+  const state = String(profile?.notionSyncState || 'idle');
+  if (state === 'disconnected') return { label: 'Notion disconnected', className: 'disconnected', dot: '●' };
+  if (state === 'syncing') return { label: 'Syncing...', className: 'syncing', dot: '●' };
+  if (state === 'error') return { label: 'Sync failed', className: 'error', dot: '●' };
+  if (state === 'synced') return { label: 'Synced', className: 'synced', dot: '●' };
+  return { label: 'Not synced', className: 'idle', dot: '○' };
+}
+function _updateJournalProfileSyncMeta(profileId, patch = {}) {
+  const id = String(profileId || '').trim();
+  if (!id) return null;
+  const profiles = getJournalProfiles();
+  const idx = profiles.findIndex(p => p.id === id);
+  if (idx === -1) return null;
+  profiles[idx] = _normalizeJournalProfile({ ...profiles[idx], ...patch });
+  const saved = saveJournalProfiles(profiles);
+  const updated = saved.find(p => p.id === id) || profiles[idx];
+  _syncJournalProfileUI();
+  return updated;
+}
+function _renderNotionSyncSection(profile) {
+  if (profile.connectionType !== 'notion' || !profile.notionDatabaseId) return '';
+  const pid = _escapeHtml(profile.id);
+  const view = _getNotionSyncView(profile);
+  if (view.className === 'disconnected') {
+    return `<div class="jp-notion-sync-panel jp-notion-sync-panel--disconnected">
+      <div class="jp-notion-sync-main">
+        <span class="jp-notion-sync-status">
+          <span class="jp-notion-sync-dot" aria-hidden="true">${view.dot}</span>
+          <span>${view.label}</span>
+        </span>
+        <span class="jp-notion-sync-detail">Reconnect to enable syncing</span>
+      </div>
+      <button class="jp-notion-sync-btn" type="button" data-action="notion-integration-reconnect">Reconnect</button>
+    </div>`;
+  }
+  const lastSync = _formatNotionSyncAgo(profile.notionLastSync);
+  const tradeCount = Number(profile.notionTradeCount || 0);
+  const disabled = view.className === 'syncing' ? ' disabled' : '';
+  return `<div class="jp-notion-sync-panel jp-notion-sync-panel--${view.className}">
+    <div class="jp-notion-sync-main">
+      <span class="jp-notion-sync-status">
+        <span class="jp-notion-sync-dot" aria-hidden="true">${view.dot}</span>
+        <span>${view.label}</span>
+      </span>
+      <span class="jp-notion-sync-detail">Last sync: ${_escapeHtml(lastSync)}</span>
+      <span class="jp-notion-sync-detail">Trades: ${_escapeHtml(String(tradeCount))}</span>
+    </div>
+    <button class="jp-notion-sync-btn" type="button" data-action="notion-profile-sync-now" data-profile-id="${pid}"${disabled}>↻ Sync now</button>
+  </div>`;
+}
+async function _handleNotionProfileSyncNow(profileId) {
+  const profile = _getJournalProfileById(profileId);
+  if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
+  if (profile.notionSyncState === 'disconnected') {
+    showThemeToast('Reconnect Notion to enable syncing.', true);
+    return;
+  }
+  if (getActiveJournalProfile()?.id !== profile.id) {
+    setActiveJournalProfile(profile.id);
+    const preferredSource = _getJournalProfilePreferredSource(profile);
+    if (preferredSource && (localStorage.getItem(HTF_SOURCE_KEY) || 'm15') !== preferredSource) {
+      setHTFSource(preferredSource);
+    }
+  }
+  const activeProfile = getActiveJournalProfile() || profile;
+  await _loadNotionTrades(activeProfile, { force: false, syncNow: true });
+}
 function _renderJournalProfileModalList() {
   return;
+}
+
+function _getJournalProfileShortType(profile = null) {
+  const type = String(profile?.type || '').trim().toLowerCase();
+  if (type === 'h4') return 'H4';
+  if (type === 'm15') return 'M15';
+  return 'Source';
+}
+
+function _getJournalProfileSourceTitle(profile = null) {
+  if (!profile) return 'No source selected';
+  if (profile.connectionType === 'notion') {
+    return String(profile.notionDatabaseTitle || profile.notionDatabaseId || 'No database selected').trim();
+  }
+  return String(profile.apiUrl || profile.name || 'API source').trim();
+}
+
+function _getJournalProfileSyncLine(profile = null) {
+  if (!profile || profile.connectionType !== 'notion') return 'Available';
+  if (profile.notionSyncState === 'disconnected') return 'Notion disconnected';
+  if (profile.notionSyncState === 'syncing') return 'Syncing...';
+  if (profile.notionSyncState === 'error') return 'Sync failed';
+  const ago = _formatNotionSyncAgoCompact(profile.notionLastSync);
+  return ago === 'Never' ? 'Not synced yet' : `Synced ${ago}`;
+}
+
+function _formatNotionSyncAgoCompact(timestamp) {
+  const ts = Number(timestamp || 0);
+  if (!Number.isFinite(ts) || ts <= 0) return 'Never';
+  const diffMs = Math.max(0, Date.now() - ts);
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return 'now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
+function _getJournalProfilesConnectedCount(profiles = []) {
+  return profiles.filter(profile => {
+    if (profile.connectionType === 'notion') return !!profile.notionDatabaseId;
+    return !!profile.apiUrl;
+  }).length;
+}
+function _hasTokenExpiredProfiles() {
+  try { return getJournalProfiles().some(p => p?.connectionType === 'notion' && p?.notionErrorCode === 'token_expired'); }
+  catch { return false; }
+}
+function _buildProfileMetaLine(profile) {
+  const trades = Number(profile.notionTradeCount || 0);
+  const tradePart = `${trades} trades`;
+  if (profile.connectionType !== 'notion') return tradePart || 'Available';
+  if (profile.notionErrorCode === 'token_expired') return '🔴 Notion connection expired';
+  if (profile.notionErrorCode === 'database_not_accessible') return '🔴 Database unavailable';
+  const state = profile.notionSyncState;
+  if (state === 'disconnected') return '🔴 Disconnected';
+  if (state === 'syncing') return '🟡 Syncing...';
+  if (state === 'error') return '🔴 Sync failed';
+  const ago = _formatNotionSyncAgoCompact(profile.notionLastSync);
+  const parts = ['🟢 Synced', tradePart];
+  if (ago !== 'Never') parts.push(ago);
+  return parts.join(' · ');
+}
+
+function _handleJournalProfileResetMapping(profileId) {
+  const profile = _getJournalProfileById(profileId);
+  if (!profile) return;
+  _clearNotionProfileMappings(profile.id);
+  delete profile.fieldNames;
+  delete profile.overrides;
+  _journalProfileRowMenuOpenId = '';
+  _syncJournalProfileUI();
+  showThemeToast(`Mappings reset for ${profile.name || 'source'}.`);
 }
 
 // ── Notion database picker section rendered inside each Notion profile row ────
@@ -4035,15 +4856,27 @@ function _renderNotionDbSection(profile) {
   const pid = _escapeHtml(profile.id);
   const isPickerOpen = _notionDbPickerProfileId === profile.id;
   const hasDb = !!profile.notionDatabaseId;
+  const isDisconnected = profile.notionSyncState === 'disconnected';
+  debugLog('[DataSourceRender] notion profile:', {
+    id: profile.id,
+    name: profile.name,
+    connectionType: profile.connectionType,
+  });
+  debugLog('[DataSourceRender] databaseId/title/sync/count:', {
+    databaseId: profile.notionDatabaseId || '',
+    title: profile.notionDatabaseTitle || '',
+    sync: profile.notionSyncState || 'idle',
+    count: profile.notionTradeCount || 0,
+  });
 
   if (!isPickerOpen) {
     if (hasDb) {
       const title = _escapeHtml(profile.notionDatabaseTitle || profile.notionDatabaseId);
       return `<div class="jp-notion-db-section jp-notion-db-section--linked">
-        <span class="jp-notion-db-label">Syncing: <strong>${title}</strong></span>
-        <button class="jp-notion-db-change-btn" type="button"
-          data-action="notion-db-picker-open" data-profile-id="${pid}">Change</button>
-      </div>`;
+        <span class="jp-notion-db-label">${isDisconnected ? 'Database' : 'Syncing'}: <strong>${title}</strong></span>
+        ${isDisconnected ? '' : `<button class="jp-notion-db-change-btn" type="button"
+          data-action="notion-db-picker-open" data-profile-id="${pid}">Change</button>`}
+      </div>${_renderNotionSyncSection(profile)}`;
     }
     return `<div class="jp-notion-db-section jp-notion-db-section--empty">
       <span class="jp-notion-db-hint">No database selected</span>
@@ -4098,32 +4931,58 @@ function _renderJournalProfileSwitchList() {
   if (!list) return;
   const profiles = getJournalProfiles();
   const active = getActiveJournalProfile();
-  console.log('[JournalProfilesUI] profiles rendered:', profiles.map(p => ({ id: p.id, name: p.name, type: p.type })), 'active:', active?.id);
+  debugLog('[JournalProfilesUI] profiles rendered:', profiles.map(p => ({ id: p.id, name: p.name, type: p.type })), 'active:', active?.id);
+  debugLog('[DataIntegrationUI] rendering profile card', { count: profiles.length, activeId: active?.id || '' });
+  const countEl = document.getElementById('data-sources-card-summary');
+  if (countEl) {
+    const connected = _getJournalProfilesConnectedCount(profiles);
+    countEl.textContent = `${active ? 1 : 0} active · ${connected} connected`;
+  }
   list.innerHTML = profiles.map(profile => {
     const isActive = active?.id === profile.id;
-    const isEditing = _journalProfileEditorOpen && _journalProfileEditorMode === 'edit' && _journalProfileEditingId === profile.id;
+    const isEditing = _journalProfileEditorOpen && (_journalProfileEditorMode === 'edit' || _journalProfileEditorMode === 'rename') && _journalProfileEditingId === profile.id;
     const name = _escapeHtml(String(profile.name || '').trim() || 'Untitled Journal');
+    const pid = _escapeHtml(profile.id);
+    const shortType = _escapeHtml(_getJournalProfileShortType(profile));
+    const sourceTitle = _escapeHtml(_getJournalProfileSourceTitle(profile));
+    const metaLine = _escapeHtml(_buildProfileMetaLine(profile));
+    const isDbUnavailable = profile.notionErrorCode === 'database_not_accessible';
+    const isTokenExpired  = profile.notionErrorCode === 'token_expired';
+    const canSync = !isDbUnavailable && !isTokenExpired && profile.connectionType === 'notion' && !!profile.notionDatabaseId && profile.notionSyncState !== 'disconnected';
+    const canChangeDb = profile.connectionType === 'notion' && profile.notionSyncState !== 'disconnected';
     return `
-      <div class="journal-profile-row${isActive ? ' is-active' : ''}${isEditing ? ' is-editing' : ''}" data-profile-id="${_escapeHtml(profile.id)}">
+      <div class="journal-profile-row${isActive ? ' is-active' : ''}${isEditing ? ' is-editing' : ''}" data-profile-id="${pid}">
         <div class="journal-profile-row-inner">
-          <button class="journal-profile-row-main journal-profile-row-main--switch" type="button" data-action="journal-profile-row-switch" data-profile-id="${_escapeHtml(profile.id)}" ${isActive ? 'disabled' : ''}>
-            <span class="journal-profile-row-title-wrap">
-              <span class="journal-profile-switch-radio" aria-hidden="true">${isActive ? '✓' : '○'}</span>
-              <span class="journal-profile-row-title">${name}</span>
-            </span>
+          <button class="journal-profile-row-main journal-profile-row-main--switch" type="button" data-action="journal-profile-row-switch" data-profile-id="${pid}" ${isActive ? 'disabled' : ''}>
+            <span class="journal-profile-row-name">${name}</span>
+            <span class="journal-profile-row-source">Database: ${sourceTitle}</span>
+            <span class="journal-profile-row-meta">${metaLine}</span>
           </button>
           <div class="journal-profile-row-actions${_journalProfileRowMenuOpenId === profile.id ? ' menu-open' : ''}">
+            <button class="journal-profile-icon-btn" type="button" data-action="notion-profile-sync-now" data-profile-id="${pid}" aria-label="Sync source" title="Sync source"${canSync ? '' : ' disabled'}>↻</button>
             <div class="journal-profile-row-menu-wrap">
-              <button class="journal-profile-row-menu-btn" type="button" data-action="journal-profile-row-menu-toggle" data-profile-id="${_escapeHtml(profile.id)}" aria-label="More actions">⋯</button>
-              <div class="journal-profile-row-menu${_journalProfileRowMenuOpenId === profile.id ? '' : ' is-hidden'}" data-profile-id="${_escapeHtml(profile.id)}">
-                <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-edit" data-profile-id="${_escapeHtml(profile.id)}">Edit</button>
-                <button class="journal-profile-row-menu-item journal-profile-row-menu-item--danger" type="button" data-action="journal-profile-row-delete" data-profile-id="${_escapeHtml(profile.id)}">Delete</button>
+              <button class="journal-profile-row-menu-btn" type="button" data-action="journal-profile-row-menu-toggle" data-profile-id="${pid}" aria-label="More actions">⋯</button>
+              <div class="journal-profile-row-menu${_journalProfileRowMenuOpenId === profile.id ? '' : ' is-hidden'}" data-profile-id="${pid}">
+                <button class="journal-profile-row-menu-item" type="button" data-action="notion-db-picker-open" data-profile-id="${pid}"${canChangeDb ? '' : ' disabled'}>Change database</button>
+                <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-rename" data-profile-id="${_escapeHtml(profile.id)}">Rename</button>
+                <button class="journal-profile-row-menu-item journal-profile-row-menu-item--danger" type="button" data-action="journal-profile-row-delete" data-profile-id="${_escapeHtml(profile.id)}">Delete source</button>
               </div>
             </div>
           </div>
         </div>
-        ${isEditing ? `<div class="journal-profile-row-editor">${_renderJournalProfileEditorMarkup('edit')}</div>` : ''}
-        ${_renderNotionDbSection(profile)}
+        ${isEditing ? `<div class="journal-profile-row-editor">${_renderJournalProfileEditorMarkup(_journalProfileEditorMode)}</div>` : ''}
+        ${isTokenExpired && isActive && !isEditing ? `<div class="jp-db-error-block jp-db-error-block--token">
+          <div class="jp-db-error-title">🔴 Notion connection expired</div>
+          <div class="jp-db-error-msg">Reconnect required</div>
+          <button class="account-secondary-btn jp-db-error-btn" type="button" data-action="notion-profile-reconnect">Reconnect</button>
+        </div>` : ''}
+        ${isDbUnavailable && isActive && !isEditing ? `<div class="jp-db-error-block">
+          <div class="jp-db-error-title">🔴 Database unavailable</div>
+          ${profile.notionDatabaseTitle ? `<div class="jp-db-error-db">Database: ${_escapeHtml(profile.notionDatabaseTitle)}</div>` : ''}
+          <div class="jp-db-error-msg">This database is no longer accessible.</div>
+          <button class="account-secondary-btn jp-db-error-btn" type="button" data-action="notion-db-picker-open" data-profile-id="${pid}">Select another database</button>
+        </div>` : ''}
+        ${(_notionDbPickerProfileId === profile.id || (!isDbUnavailable && !profile.notionDatabaseId)) ? _renderNotionDbSection(profile) : ''}
       </div>
     `;
   }).join('');
@@ -4138,12 +4997,13 @@ function _toggleJournalProfileRowMenu(triggerEl) {
     return;
   }
   _journalProfileRowMenuOpenId = profileId;
+  debugLog('[DataIntegrationUI] action menu opened', { profileId });
   _syncJournalProfileUI();
 }
 function _syncJournalProfileUI() {
   const accountBody = document.getElementById('account-section-body');
   const accountTrigger = document.querySelector('[data-action="toggle-account-section"]');
-  const dataBody = document.getElementById('data-sources-section-body');
+  const dataBody = document.getElementById('data-integrations-section-body') || document.getElementById('data-sources-section-body');
   const dataTrigger = document.querySelector('[data-action="toggle-data-sources-section"]');
   const accountSummary = document.getElementById('account-section-summary');
   const dataSummary = document.getElementById('data-sources-section-summary');
@@ -4152,8 +5012,24 @@ function _syncJournalProfileUI() {
   const editorSlot = document.getElementById('journal-profile-editor-slot');
   const active = getActiveJournalProfile();
   const activeProfileName = String(active?.name || '').trim() || 'Untitled Journal';
+  document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+    const isActive = btn.dataset.settingsTab === _settingsActiveTab;
+    btn.classList.toggle('is-active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-settings-tab-panel]').forEach(panel => {
+    const isActive = panel.dataset.settingsTabPanel === _settingsActiveTab;
+    panel.hidden = !isActive;
+  });
+  const moreMenu = document.getElementById('settings-more-menu');
+  const moreTrigger = document.querySelector('[data-action="settings-more-toggle"]');
+  if (moreMenu) {
+    if (_settingsMoreOpen) moreMenu.removeAttribute('hidden');
+    else moreMenu.setAttribute('hidden', '');
+  }
+  if (moreTrigger) moreTrigger.setAttribute('aria-expanded', _settingsMoreOpen ? 'true' : 'false');
   if (accountBody) {
-    if (_accountSectionOpen) accountBody.removeAttribute('hidden');
+    if (_settingsActiveTab === 'account') accountBody.removeAttribute('hidden');
     else accountBody.setAttribute('hidden', '');
   }
   if (accountTrigger) accountTrigger.setAttribute('aria-expanded', _accountSectionOpen ? 'true' : 'false');
@@ -4161,7 +5037,7 @@ function _syncJournalProfileUI() {
   const intTrigger = document.querySelector('[data-action="toggle-integrations-section"]');
   const intStatus  = document.getElementById('integrations-section-status');
   if (intBody) {
-    if (_integrationsSectionOpen) { intBody.removeAttribute('hidden'); intBody.innerHTML = _renderIntegrationsSection(); }
+    if (_settingsActiveTab === 'data') { intBody.removeAttribute('hidden'); intBody.innerHTML = _renderIntegrationsSection(); }
     else intBody.setAttribute('hidden', '');
   }
   if (intTrigger) intTrigger.setAttribute('aria-expanded', _integrationsSectionOpen ? 'true' : 'false');
@@ -4171,7 +5047,7 @@ function _syncJournalProfileUI() {
     else { intStatus.textContent = '○ Not connected'; intStatus.dataset.tone = 'muted'; }
   }
   if (dataBody) {
-    if (_dataSourcesSectionOpen) dataBody.removeAttribute('hidden');
+    if (_settingsActiveTab === 'data') dataBody.removeAttribute('hidden');
     else dataBody.setAttribute('hidden', '');
   }
   if (dataTrigger) dataTrigger.setAttribute('aria-expanded', _dataSourcesSectionOpen ? 'true' : 'false');
@@ -4179,9 +5055,11 @@ function _syncJournalProfileUI() {
   if (accountSummary) {
     accountSummary.textContent = hasUser ? '● Connected' : '● Local only';
   }
-  if (dataSummary) dataSummary.textContent = hasUser ? `${activeProfileName} · Active` : 'No account connected';
+  const profiles = getJournalProfiles();
+  const connectedCount = _getJournalProfilesConnectedCount(profiles);
+  if (dataSummary) dataSummary.textContent = hasUser ? `${activeProfileName} · ${connectedCount} connected` : 'No account connected';
   if (dataSummary) dataSummary.dataset.tone = hasUser ? 'success' : 'muted';
-  if (dataStatus) dataStatus.textContent = hasUser ? '● Notion API connected' : '○ Local only';
+  if (dataStatus) dataStatus.textContent = hasUser ? '● Data & Integrations' : '○ Local only';
   if (dataStatus) dataStatus.dataset.tone = hasUser ? 'success' : 'muted';
   if (addBtn) addBtn.hidden = false;
   _renderJournalProfileSwitchList();
@@ -4215,14 +5093,10 @@ async function _reloadJournalProfileSelection(options = {}) {
   const mode = localStorage.getItem(DS_KEY) || 'demo';
   const activeProfile = getActiveJournalProfile();
   const isNotionWithDb = activeProfile?.connectionType === 'notion' && !!activeProfile?.notionDatabaseId;
-  console.log('[ProfileSwitch] active profile: id/name/database', {
-    id: activeProfile?.id || '',
-    name: activeProfile?.name || '',
-    database: activeProfile?.notionDatabaseId || activeProfile?.apiUrl || '',
-  });
-  console.log('[Mapping] key used:', _fieldOverridesKeyFor());
-  console.log('[Mapping] overrides loaded:', _getAPIFieldOverrides());
-  console.log('[Mapping] fieldNames loaded:', _listAPIKeys([]));
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
 
   // Notion profiles always operate in 'api' mode — don't skip them.
   // Non-Notion profiles in demo/csv mode have nothing to reload here.
@@ -4279,7 +5153,7 @@ async function _testJournalProfileEditorConnection() {
   const draft = _getJournalProfileEditorDraft();
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const timeoutMs = 45000;
-  console.debug('[CheckSource] start');
+  debugLog('[CheckSource] start');
   if (!draft.apiUrl) {
     const elapsed = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
     console.warn(`[CheckSource] failed in ${elapsed}ms reason: empty-url`);
@@ -4304,7 +5178,7 @@ async function _testJournalProfileEditorConnection() {
       || (payload && typeof payload === 'object' && (Array.isArray(payload.rows) || Array.isArray(payload.results) || Object.keys(payload).length > 0));
     if (!isValidPayload) throw new Error('Invalid JSON');
     const elapsed = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
-    console.debug(`[CheckSource] success in ${elapsed}ms`);
+    debugLog(`[CheckSource] success in ${elapsed}ms`);
     _setJournalProfileCheckState('success', { autoReset: true });
   } catch (err) {
     const elapsed = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
@@ -4325,6 +5199,19 @@ function _saveJournalProfileEditor() {
     nameInput?.focus();
     return;
   }
+  if (editorMode === 'rename') {
+    const existing = _getJournalProfileById(_journalProfileEditingId);
+    if (!existing) return;
+    const updated = _normalizeJournalProfile({ ...existing, name: draft.name });
+    saveJournalProfiles(getJournalProfiles().map(p => p.id === updated.id ? updated : p));
+    debugLog('[DataSource] profile renamed:', { id: updated.id, name: updated.name });
+    _journalProfileEditorOpen = false;
+    _journalProfileEditorMode = 'create';
+    _journalProfileEditingId = '';
+    _showJournalProfileToast(`Renamed: ${updated.name}`);
+    _syncJournalProfileUI();
+    return;
+  }
   if (draft.connectionType === 'notion' && _notionIntegrationStatus === 'connected' && !draft.notionDatabaseId) {
     showThemeToast('Please select a database first.', true);
     return;
@@ -4334,15 +5221,25 @@ function _saveJournalProfileEditor() {
     ...draft,
     apiUrl: draft.apiUrl || API_URL_DEFAULT,
   });
+  const previousProfile = _journalProfileEditorMode === 'edit'
+    ? _getJournalProfileById(_journalProfileEditingId)
+    : null;
+  if (previousProfile
+      && previousProfile.connectionType === nextProfile.connectionType
+      && previousProfile.notionDatabaseId === nextProfile.notionDatabaseId) {
+    nextProfile.notionSyncState = previousProfile.notionSyncState;
+    nextProfile.notionLastSync = previousProfile.notionLastSync;
+    nextProfile.notionTradeCount = previousProfile.notionTradeCount;
+  }
   const profiles = _journalProfileEditorMode === 'edit'
     ? saveJournalProfiles(getJournalProfiles().map(profile => profile.id === nextProfile.id ? nextProfile : profile))
     : saveJournalProfiles([...getJournalProfiles(), nextProfile]);
-  console.log('[DataSource] profiles after', _journalProfileEditorMode === 'edit' ? 'edit' : 'add', '—', profiles.length, 'total:', profiles.map(p => ({ id: p.id, name: p.name })));
+  debugLog('[DataSource] profiles after', _journalProfileEditorMode === 'edit' ? 'edit' : 'add', '—', profiles.length, 'total:', profiles.map(p => ({ id: p.id, name: p.name })));
   const created = profiles.find(profile => profile.id === nextProfile.id) || nextProfile;
   if (editorMode === 'edit') {
-    console.log('[DataSource] profile updated:', { id: created.id, name: created.name });
+    debugLog('[DataSource] profile updated:', { id: created.id, name: created.name });
   } else {
-    console.log('[DataSource] profile created:', { id: created.id, name: created.name });
+    debugLog('[DataSource] profile created:', { id: created.id, name: created.name });
   }
   const currentActive = getActiveJournalProfile();
   const shouldActivate = _journalProfileEditorMode !== 'edit' || currentActive?.id === created.id;
@@ -4360,17 +5257,23 @@ function _deleteJournalProfileById(id) {
   const target = _getJournalProfileById(id);
   if (!target) return;
   if (!confirm(`Delete profile "${target.name}"?`)) return;
-  console.log('[JournalProfilesUI] delete source:', { id: target.id, name: target.name });
+  debugLog('[JournalProfilesUI] delete source:', { id: target.id, name: target.name });
   const active = getActiveJournalProfile();
   const remaining = profiles.filter(profile => profile.id !== target.id);
-  console.log('[JournalProfilesUI] profiles after delete —', remaining.length, 'remaining:', remaining.map(p => ({ id: p.id, name: p.name })));
-  const saved = saveJournalProfiles(remaining);
-  const nextActive = saved[0] || null;
-  if (active?.id === target.id && nextActive) setActiveJournalProfile(nextActive.id);
-  _journalProfileRowMenuOpenId = '';
+  debugLog('[JournalProfilesUI] profiles after delete —', remaining.length, 'remaining:', remaining.map(p => ({ id: p.id, name: p.name })));
+  _markPendingDeletedJournalProfileId(target.id);
+  const nextActive = remaining[0] || null;
   if (active?.id === target.id && nextActive) {
-    _showJournalProfileToast(`Profile deleted. Active: ${nextActive.name || 'Untitled Journal'}`);
-    _applyActiveJournalProfile(nextActive);
+    try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, nextActive.id); } catch {}
+  }
+  window._SW.deleteJournalProfileFromRemote(target.id)
+    .catch(e => console.error('[JournalProfilesRemote] immediate delete error:', e));
+  const saved = saveJournalProfiles(remaining);
+  const savedNextActive = saved.find(p => p.id === nextActive?.id) || saved[0] || null;
+  _journalProfileRowMenuOpenId = '';
+  if (active?.id === target.id && savedNextActive) {
+    _showJournalProfileToast(`Profile deleted. Active: ${savedNextActive.name || 'Untitled Journal'}`);
+    _applyActiveJournalProfile(savedNextActive);
   } else {
     _showJournalProfileToast(`Profile deleted: ${target.name || 'Untitled Journal'}`);
     _syncJournalProfileUI();
@@ -4379,19 +5282,19 @@ function _deleteJournalProfileById(id) {
 function getProfileScopedKey(baseKey) {
   const rawBaseKey = String(baseKey || '').trim();
   if (!rawBaseKey) {
-    console.debug('[JournalProfile] Cache key generated:', rawBaseKey);
+    debugLog('[JournalProfile] Cache key generated:', rawBaseKey);
     return rawBaseKey;
   }
   const { profileId } = _getJournalProfileCacheContext();
   if (!profileId) {
-    console.debug('[JournalProfile] Cache key generated:', rawBaseKey);
+    debugLog('[JournalProfile] Cache key generated:', rawBaseKey);
     return rawBaseKey;
   }
   const match = rawBaseKey.match(/^(.*)_(m15|h4)$/);
   const scoped = match
     ? `${match[1]}_${profileId}_${match[2]}`
     : `${rawBaseKey}_${profileId}`;
-  console.debug('[JournalProfile] Cache key generated:', scoped);
+  debugLog('[JournalProfile] Cache key generated:', scoped);
   return scoped;
 }
 function _shouldUseLegacyProfileCacheFallback() {
@@ -4470,6 +5373,64 @@ function _getCurrentHTFSource() {
   return localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
 }
 
+function _notionSyncCursorKey() {
+  return getProfileScopedKey('notionLastSyncCursor');
+}
+function _getNotionSyncCursor() {
+  try { return localStorage.getItem(_notionSyncCursorKey()) || ''; }
+  catch { return ''; }
+}
+function _setNotionSyncCursor(cursor) {
+  const value = String(cursor || '').trim();
+  try {
+    if (value) safeSetLocalStorage(_notionSyncCursorKey(), value, { kind: 'notionLastSyncCursor' });
+    else localStorage.removeItem(_notionSyncCursorKey());
+  } catch (e) {}
+}
+function _clearNotionSyncCursor() {
+  _setNotionSyncCursor('');
+}
+function _maxNotionEditedCursor(rows) {
+  let max = '';
+  for (const row of rows || []) {
+    const value = String(row?._lastEditedTime || '').trim();
+    if (value && (!max || value > max)) max = value;
+  }
+  return max;
+}
+function _mergeTradesByNotionId(existing, changed) {
+  const byId = new Map();
+  const merged = [];
+  let updated = 0;
+  let added = 0;
+
+  for (const trade of existing || []) {
+    const id = String(trade?._notionId || '').trim();
+    if (id && !byId.has(id)) byId.set(id, merged.length);
+    merged.push(trade);
+  }
+  for (const trade of changed || []) {
+    const id = String(trade?._notionId || '').trim();
+    if (!id) {
+      merged.push(trade);
+      added++;
+      continue;
+    }
+    if (byId.has(id)) {
+      merged[byId.get(id)] = trade;
+      updated++;
+    } else {
+      byId.set(id, merged.length);
+      merged.push(trade);
+      added++;
+    }
+  }
+  return { merged, added, updated };
+}
+function _mergeRawNotionRowsById(existing, changed) {
+  return _mergeTradesByNotionId(existing, changed).merged;
+}
+
 function _getRawAPICache(source = null) {
   const src = source || _getCurrentHTFSource();
   const slot = _getProfileScopedSourceSlot(src);
@@ -4492,8 +5453,8 @@ function _setRawAPICache(rawTrades, source = null) {
     // Persist field names for the Mapping-tab picker.
     try {
       const names = _listAPIKeys(rawTrades);
-      console.log('[Mapping] key used:', _fieldNamesKeyFor(src));
-      console.log('[Mapping] fieldNames loaded:', names);
+      debugLog('[DashboardDebug]');
+      debugLog('[DashboardDebug]');
       safeSetLocalStorage(_fieldNamesKeyFor(src), JSON.stringify(names), {
         kind: 'apiFieldNames',
         activeProfileId: getActiveJournalProfile()?.id || '',
@@ -4519,9 +5480,9 @@ function _migrateFieldOverridesToProfileScope() {
   const { profileId } = _getJournalProfileCacheContext();
   if (!profileId) return;
   const newKey = _fieldOverridesKeyFor();
-  console.log('[Mapping] key used:', newKey);
+  debugLog('[DashboardDebug]');
   if (localStorage.getItem(newKey) !== null) {
-    console.log('[Mapping] migration skipped/copied from:', 'skipped-existing', '→', newKey);
+    debugLog('[DashboardDebug]');
     return; // already migrated
   }
   const src = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
@@ -4531,10 +5492,10 @@ function _migrateFieldOverridesToProfileScope() {
   if (candidate) {
     try {
       localStorage.setItem(newKey, candidate);
-      console.log('[Mapping] migration skipped/copied from:', oldScopedKey, '→', newKey);
+      debugLog('[DashboardDebug]');
     } catch (e) { console.warn('[Mapping] migration failed:', e.message); }
   } else {
-    console.log('[Mapping] migration skipped/copied from:', `skipped ${oldBareKey} (not profile-scoped)`);
+    debugLog('[DashboardDebug]');
   }
   // Same for field names
   const newNamesKey = _fieldNamesKeyFor();
@@ -4545,10 +5506,10 @@ function _migrateFieldOverridesToProfileScope() {
     if (namesCandidate) {
       try {
         localStorage.setItem(newNamesKey, namesCandidate);
-        console.log('[Mapping] migration skipped/copied from:', oldScopedNamesKey, '→', newNamesKey);
+        debugLog('[DashboardDebug]');
       } catch (e) { console.warn('[Mapping] migration names failed:', e.message); }
     } else {
-      console.log('[Mapping] migration skipped/copied from:', `skipped ${oldBareNamesKey} (not profile-scoped)`);
+      debugLog('[DashboardDebug]');
     }
   }
 }
@@ -4558,18 +5519,19 @@ function _getAPIFieldOverrides(_source = null) {
   // _source ignored — overrides are per-profile, not per-source
   const { profileId } = _getJournalProfileCacheContext();
   const key = _fieldOverridesKeyFor();
-  console.log('[Mapping] key used:', key);
+  debugLog('[DashboardDebug]');
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || '{}');
-    console.log('[Mapping] overrides loaded:', Object.keys(parsed).length ? parsed : '(none)', '| profile:', profileId || '(legacy)');
+    debugLog('[DashboardDebug]');
     return (parsed && typeof parsed === 'object') ? parsed : {};
   } catch { return {}; }
 }
 function _saveAPIFieldOverrides(obj) {
   const key = _fieldOverridesKey();
-  console.log('[Mapping] key used:', key);
+  debugLog('[DashboardDebug]');
   try { safeSetLocalStorage(key, JSON.stringify(obj || {}), { kind: 'apiFieldOverrides' }); }
   catch (e) { console.warn('[DS] API overrides save failed:', e.message); }
+  try { _clearNotionSyncCursor(); } catch (e) {}
 }
 
 // Collect every top-level key ever observed across the raw trades.
@@ -4598,9 +5560,9 @@ function _listAPIKeys(rawTrades) {
   try {
     const { profileId: _fnProfileId } = _getJournalProfileCacheContext();
     const key = _fieldNamesKeyFor();
-    console.log('[Mapping] key used:', key);
+    debugLog('[DashboardDebug]');
     const parsed = JSON.parse(localStorage.getItem(key) || '[]');
-    console.log('[Mapping] fieldNames loaded:', Array.isArray(parsed) ? parsed.length + ' keys' : '(invalid)', '| profile:', _fnProfileId || '(legacy)');
+    debugLog('[DashboardDebug]');
     return Array.isArray(parsed)
       ? parsed.slice().sort((a, b) => a.localeCompare(b))
       : [];
@@ -4758,11 +5720,11 @@ function _applyNotionAutoMap(trades, source) {
   if ((source || _getCurrentHTFSource()) === 'h4') _applyH4NotionAliases(aliasMap, sample);
 
   if (!Object.keys(aliasMap).length) {
-    console.log('[NotionAutoMap] selected aliases:', '(none)');
+    debugLog('[NotionAutoMap] selected aliases:', '(none)');
     return trades;
   }
 
-  console.log('[NotionAutoMap] selected aliases:', aliasMap);
+  debugLog('[NotionAutoMap] selected aliases:', aliasMap);
 
   return trades.map(t => {
     if (!t || typeof t !== 'object') return t;
@@ -4785,7 +5747,10 @@ function _reapplyAPIOverrides() {
   }
   const processed = _applyOutcomeOverride(raw, _getCurrentHTFSource());
   const autoMapped = _applyNotionAutoMap(processed, _getCurrentHTFSource());
+  _getOutcomeValueReport(autoMapped, _getCurrentHTFSource());
+  _resetOutcomeDebugCounts();
   const parsed = autoMapped.map((t, i) => _normalizeAPITrade(t, i)).filter(Boolean);
+  _flushOutcomeDebugCounts();
   setCachedAPIData(parsed);
   if (localStorage.getItem(DS_KEY) === 'api') {
     const savedState = (typeof _saveFilterState === 'function') ? _saveFilterState() : null;
@@ -4881,9 +5846,10 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     }
     return [];
   };
-  const oc = _mapOutcome(_firstText(
+  const rawOutcome = _firstText(
     t.positionResult ?? t.resultatTp1 ?? t.resultatTP1 ?? t['Position Result']
-  ));  // ex: t.resultatTp1
+  );
+  const oc = _mapOutcome(rawOutcome);  // ex: t.resultatTp1
   if (!oc) return null;
   let dateRaw = (t.date || '').slice(0, 10);
   if (!dateRaw || dateRaw.length < 7) {
@@ -4972,6 +5938,7 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     h4:          _parseField(_pick('h4', t.obstaclesH4 ?? t['H4 Obstacles']), _normObs),
     beManagement: _parseField(_pick('beManagement', t.beManagement ?? t['BE Management']), v => v),
     outcome:     oc,
+    outcomeRaw:  rawOutcome,
     r:           _mapR(oc, t.rrTp1 ?? t['RR TP 1']),
     rrMax:       (() => {
       const n = _parseNumeric(t.rrMax ?? t.rrMaxAtteint ?? t['RR Max'] ?? t['RR Max '] ?? t['RR max atteint']);
@@ -5026,6 +5993,7 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
                (t.id ? `https://www.notion.so/${t.id.replace(/-/g, '')}` : ''),
     extras,
     _rawRowIndex,
+    _lastEditedTime: t._lastEditedTime || '',
   };
 }
 
@@ -5076,13 +6044,18 @@ function getCachedAPIData(source = null) {
 }
 function _extractMediaCache(trades) {
   if (!Array.isArray(trades)) return [];
+  const keepPermanent = url => {
+    const value = String(url || '');
+    return value && !_isNotionFileUrl(value) ? value : '';
+  };
   return trades.map(t => ({
-    imgM15: t.imgM15 || '',
-    imgH4Before: t.imgH4Before || '',
-    imgM15After: t.imgM15After || '',
-    imgM15Orig: t.imgM15Orig || '',
-    imgH4BeforeOrig: t.imgH4BeforeOrig || '',
-    imgM15AfterOrig: t.imgM15AfterOrig || '',
+    _notionId: t._notionId || '',
+    imgM15: keepPermanent(t.imgM15),
+    imgH4Before: keepPermanent(t.imgH4Before),
+    imgM15After: keepPermanent(t.imgM15After),
+    imgM15Orig: keepPermanent(t.imgM15Orig),
+    imgH4BeforeOrig: keepPermanent(t.imgH4BeforeOrig),
+    imgM15AfterOrig: keepPermanent(t.imgM15AfterOrig),
   }));
 }
 function _storageBytes(raw) {
@@ -5094,6 +6067,48 @@ function _storageBytes(raw) {
 }
 function _formatStorageMB(bytes) {
   return (bytes / (1024 * 1024)).toFixed(2);
+}
+const SESSION_CACHE_MAX_BYTES = 1500 * 1024;
+function _persistSessionTradeCache(trades, source = null) {
+  const src = source || _getCurrentHTFSource();
+  const key = _sessionCacheKeyFor(src);
+  const modes = _hasHeavyImageFields(trades)
+    ? ['minimal', 'ultra']
+    : ['compact', 'minimal', 'ultra'];
+
+  for (const mode of modes) {
+    const serialized = _serializeTradesForStorage(trades, mode);
+    const payload = JSON.stringify(serialized);
+    const bytes = _storageBytes(payload);
+    if (bytes > SESSION_CACHE_MAX_BYTES) {
+      _debugLogOnce(`session-skip:${key}:${mode}`, '[DS] Session cache skipped — payload too large', {
+        key,
+        mode,
+        sizeMB: _formatStorageMB(bytes),
+        limitMB: _formatStorageMB(SESSION_CACHE_MAX_BYTES),
+      });
+      continue;
+    }
+    try {
+      sessionStorage.setItem(key, payload);
+      debugLog('[DS] Session cache persisted', {
+        key,
+        mode,
+        sizeMB: _formatStorageMB(bytes),
+      });
+      return true;
+    } catch (e) {
+      _debugLogOnce(`session-failed:${key}:${mode}`, '[DS] Session cache persist failed', {
+        key,
+        mode,
+        sizeMB: _formatStorageMB(bytes),
+        message: e?.message || String(e),
+      });
+      try { sessionStorage.removeItem(key); } catch {}
+    }
+  }
+  _debugLogOnce(`session-disabled:${key}`, '[DS] Session cache disabled for this dataset; using memory/localStorage cache only.', { key });
+  return false;
 }
 function _buildCachePayloadDebugMeta(serialized, trades, mode, key) {
   const payloadKeys = Array.isArray(serialized)
@@ -5155,9 +6170,9 @@ function cleanupAPIStorage({ activeProfileId = '', activeHtfSource = 'm15' } = {
       const value = sessionStorage.getItem(key);
       const sizeBytes = _storageBytes(key) + _storageBytes(value);
       sessionStorage.removeItem(key);
-      console.warn('[CacheCleanup] removed legacy API cache key:', key, 'sizeKB:', (sizeBytes / 1024).toFixed(1), 'reason:', 'api-storage-cleanup');
+      debugLog('[CacheCleanup] removed legacy API cache key:', key, 'sizeKB:', (sizeBytes / 1024).toFixed(1), 'reason:', 'api-storage-cleanup');
     } catch (e) {
-      console.warn('[CacheCleanup] failed to remove session key:', key, e?.message || e);
+      debugLog('[CacheCleanup] failed to remove session key:', key, e?.message || e);
     }
   }
 }
@@ -5172,7 +6187,7 @@ function safeSetLocalStorage(key, value, context = {}) {
   }
   const afterCleanupBytes = _getLocalStorageUsageEntries().totalBytes;
   if (context.kind === 'apiTradesCache' && afterCleanupBytes > (8000 * 1024)) {
-    console.warn('[DS] Skipping localStorage cache write — localStorage still above 8000 KB after API cleanup.', {
+    _debugLogOnce(`localStorage-skip:${key}`, '[DS] Skipping localStorage cache write — localStorage still above 8000 KB after API cleanup.', {
       key,
       totalKB: (afterCleanupBytes / 1024).toFixed(1),
       payloadMB: _formatStorageMB(payloadBytes),
@@ -5184,14 +6199,19 @@ function safeSetLocalStorage(key, value, context = {}) {
     localStorage.setItem(key, value);
     return true;
   } catch (e) {
-    console.warn('[DS] localStorage write failed', {
+    const payload = {
       key,
       kind: context.kind || 'generic',
       mode: context.mode || 'unknown',
       payloadMB: _formatStorageMB(payloadBytes),
       totalKB: (_getLocalStorageUsageEntries().totalBytes / 1024).toFixed(1),
       message: e?.message || String(e),
-    });
+    };
+    if (context.kind === 'apiTradesCache') {
+      _debugLogOnce(`localStorage-failed:${key}:${context.mode || 'unknown'}`, '[DS] localStorage write failed', payload);
+    } else {
+      console.warn('[DS] localStorage write failed', payload);
+    }
     return false;
   }
 }
@@ -5218,33 +6238,49 @@ function _cleanupLegacyUnscopedCacheKeysIfScopedExists(source = null) {
   if (scopedCacheKey !== legacyCacheKey && localStorage.getItem(scopedCacheKey) !== null) {
     if (localStorage.getItem(legacyCacheKey) !== null) {
       localStorage.removeItem(legacyCacheKey);
-      console.debug('[CacheCleanup] removed legacy key:', legacyCacheKey);
+      debugLog('[CacheCleanup] removed legacy key:', legacyCacheKey);
     }
   }
   if (scopedSessionCacheKey !== legacySessionCacheKey && sessionStorage.getItem(scopedSessionCacheKey) !== null) {
     if (sessionStorage.getItem(legacySessionCacheKey) !== null) {
       sessionStorage.removeItem(legacySessionCacheKey);
-      console.debug('[CacheCleanup] removed legacy key:', legacySessionCacheKey);
+      debugLog('[CacheCleanup] removed legacy key:', legacySessionCacheKey);
     }
   }
   if (scopedMediaKey !== legacyMediaKey && sessionStorage.getItem(scopedMediaKey) !== null) {
     if (sessionStorage.getItem(legacyMediaKey) !== null) {
       sessionStorage.removeItem(legacyMediaKey);
-      console.debug('[CacheCleanup] removed legacy key:', legacyMediaKey);
+      debugLog('[CacheCleanup] removed legacy key:', legacyMediaKey);
     }
   }
   if (scopedRawKey !== legacyRawKey && _rawAPICacheMemory[_getProfileScopedSourceSlot(src)]) {
     if (sessionStorage.getItem(legacyRawKey) !== null) {
       sessionStorage.removeItem(legacyRawKey);
-      console.debug('[CacheCleanup] removed legacy key:', legacyRawKey);
+      debugLog('[CacheCleanup] removed legacy key:', legacyRawKey);
     }
   }
 }
 function _persistMediaCache(trades, source = null) {
+  const key = _mediaCacheKeyFor(source);
+  const payload = JSON.stringify(_extractMediaCache(trades));
+  const bytes = _storageBytes(payload);
+  if (bytes > SESSION_CACHE_MAX_BYTES) {
+    _debugLogOnce(`media-cache-skip:${key}`, '[DS] Media session cache skipped — payload too large', {
+      key,
+      sizeMB: _formatStorageMB(bytes),
+      limitMB: _formatStorageMB(SESSION_CACHE_MAX_BYTES),
+    });
+    return false;
+  }
   try {
-    sessionStorage.setItem(_mediaCacheKeyFor(source), JSON.stringify(_extractMediaCache(trades)));
+    sessionStorage.setItem(key, payload);
     return true;
-  } catch {
+  } catch (e) {
+    _debugLogOnce(`media-cache-failed:${key}`, '[DS] Media session cache persist failed', {
+      key,
+      sizeMB: _formatStorageMB(bytes),
+      message: e?.message || String(e),
+    });
     return false;
   }
 }
@@ -5255,8 +6291,12 @@ function _mergeMediaCache(trades, source = null) {
     const raw = _readFirstSessionStorageValue(`apiTradesMedia_v1_${src}`);
     const media = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(media) || !media.length) return trades;
+    const byNotionId = new Map();
+    media.forEach(m => {
+      if (m && m._notionId) byNotionId.set(String(m._notionId), m);
+    });
     return trades.map((t, i) => {
-      const m = media[i] || {};
+      const m = (t?._notionId && byNotionId.get(String(t._notionId))) || media[i] || {};
       return {
         ...t,
         imgM15: t.imgM15 || m.imgM15 || '',
@@ -5271,23 +6311,63 @@ function _mergeMediaCache(trades, source = null) {
     return trades;
   }
 }
+function _debugH4MediaState(label, trades, rawRows = null) {
+  try {
+    const src = _getCurrentHTFSource();
+    const profile = typeof getActiveJournalProfile === 'function' ? getActiveJournalProfile() : null;
+    if (src !== 'h4' && String(profile?.type || '').toLowerCase() !== 'h4') return;
+    const rows = Array.isArray(trades) ? trades : [];
+    const t0 = rows[0] || {};
+    const imageFields = ['imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig','imgM15AfterOrig']
+      .map(k => ({ field: k, value: String(t0[k] || '').slice(0, 100) }));
+    const overrides = (typeof _getAPIFieldOverrides === 'function') ? _getAPIFieldOverrides(src) : {};
+    const mappedImageFields = {
+      img_m15: (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride('img_m15', src) : '',
+      img_h4_before: (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride('img_h4_before', src) : '',
+      img_m15_after: (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride('img_m15_after', src) : '',
+    };
+    const raw = Array.isArray(rawRows) ? rawRows : ((typeof _getRawAPICache === 'function') ? _getRawAPICache(src) : []);
+    const raw0 = raw?.[0] || {};
+    const rawNotionFileFields = Object.keys(raw0)
+      .filter(k => /(image|img|screenshot|photo|file|media|before|after|h4|m15)/i.test(k))
+      .map(k => ({ field: k, value: String(_flattenApiWidgetValue(raw0[k]) || '').slice(0, 100) }))
+      .filter(x => x.value)
+      .slice(0, 20);
+    const detectedValues = {
+      img_m15: (typeof _inspectDimInTrades === 'function') ? _inspectDimInTrades('img_m15') : null,
+      img_h4_before: (typeof _inspectDimInTrades === 'function') ? _inspectDimInTrades('img_h4_before') : null,
+      img_m15_after: (typeof _inspectDimInTrades === 'function') ? _inspectDimInTrades('img_m15_after') : null,
+    };
+    debugLog(`[H4MediaDebug] ${label} keys:`, Object.keys(t0));
+    debugLog(`[H4MediaDebug] ${label} image fields:`, imageFields);
+    debugLog('[H4MediaDebug] mapped image fields:', mappedImageFields);
+    debugLog('[H4MediaDebug] raw Notion file fields:', rawNotionFileFields);
+    debugLog('[H4MediaDebug] mapping state:', { profileId: profile?.id || '', overrides });
+    debugLog('[H4MediaDebug] detected values:', detectedValues);
+  } catch (e) {
+    console.warn('[H4MediaDebug] failed:', e?.message || e);
+  }
+}
 const _STORAGE_COMPACT_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
   'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
   'imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig',
-  'imgM15AfterOrig','notionUrl','extras'
+  'imgM15AfterOrig','notionUrl','extras','_notionId','_lastEditedTime'
 ];
 const _STORAGE_MINIMAL_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
   'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
-  'notionUrl'
+  'imgM15','imgM15Orig','imgH4Before','imgH4BeforeOrig','imgM15After','imgM15AfterOrig',
+  'notionUrl','_notionId','_lastEditedTime'
 ];
 const _STORAGE_ULTRA_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
   'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
-  'tp3_rr','direction','tradeType','badFeeling','invalide','hour','notionUrl'
+  'tp3_rr','direction','tradeType','badFeeling','invalide','hour',
+  'imgM15','imgM15Orig','imgH4Before','imgH4BeforeOrig','imgM15After','imgM15AfterOrig',
+  'notionUrl','_notionId','_lastEditedTime'
 ];
 function _deserializeTradesFromStorage(payload) {
   if (!payload) return null;
@@ -5330,7 +6410,14 @@ function _serializeTradesForStorage(trades, mode = 'full') {
       if (key === 'badFeeling' || key === 'invalide') {
         return !!t[key];
       }
-      return t[key] ?? (key.includes('img') || key === 'notionUrl' || key === 'timeUtc1' ? '' : null);
+      if (key.includes('img')) {
+        const val = t[key];
+        // Never persist Notion S3 pre-signed URLs — they expire in ~1h and inflate the
+        // payload past the 2MB localStorage guard on large datasets (658 trades × 6 img
+        // fields × ~1700 chars ≈ 6.7 MB). Only persist permanent Supabase Storage URLs.
+        return (val && !_isNotionFileUrl(val)) ? val : '';
+      }
+      return t[key] ?? (key === 'notionUrl' || key === 'timeUtc1' || key === '_notionId' ? '' : null);
     })),
   };
 }
@@ -5343,23 +6430,35 @@ function setCachedAPIData(trades, source = null) {
   const src = source || _getCurrentHTFSource();
   const slot = _getProfileScopedSourceSlot(src);
   const cacheKey = _cacheKeyFor(src);
-  const activeProfileId = getActiveJournalProfile()?.id || '';
+  const scopedProfileId = String(_journalProfileCacheContextOverride || '').trim();
+  const currentActiveProfileId = getActiveJournalProfile()?.id || '';
+  const activeProfileId = scopedProfileId || currentActiveProfileId;
   _parsedAPICacheMemory[slot] = Array.isArray(trades) ? trades : null;
-  if (_getCurrentHTFSource() === src) {
+  if (_getCurrentHTFSource() === src && (!scopedProfileId || scopedProfileId === currentActiveProfileId)) {
     appState.settings.dataSource.cachedTrades = Array.isArray(trades) ? trades : null;
   }
-  try {
-    sessionStorage.setItem(_sessionCacheKeyFor(src), JSON.stringify(_serializeTradesForStorage(trades, 'ultra')));
-  } catch (e) {
-    console.warn('[DS] Session cache persist failed:', e.message);
-  }
+  _persistSessionTradeCache(trades, src);
   const mediaPayload = JSON.stringify(_extractMediaCache(trades));
   const mediaBytes = _storageBytes(mediaPayload);
-  try {
-    sessionStorage.setItem(_mediaCacheKeyFor(src), mediaPayload);
-  } catch {
-    // Best-effort only: widgets still work in-memory, and the dashboard can
-    // re-fetch the API later if a reload lands without media cache.
+  const mediaKey = _mediaCacheKeyFor(src);
+  if (mediaBytes > SESSION_CACHE_MAX_BYTES) {
+    _debugLogOnce(`media-session-skip:${mediaKey}`, '[DS] Media session cache skipped — payload too large', {
+      key: mediaKey,
+      sizeMB: _formatStorageMB(mediaBytes),
+      limitMB: _formatStorageMB(SESSION_CACHE_MAX_BYTES),
+    });
+  } else {
+    try {
+      sessionStorage.setItem(mediaKey, mediaPayload);
+    } catch (e) {
+      // Best-effort only: widgets still work in-memory, and the dashboard can
+      // re-fetch the API later if a reload lands without media cache.
+      _debugLogOnce(`media-session-failed:${mediaKey}`, '[DS] Media session cache persist failed', {
+        key: mediaKey,
+        sizeMB: _formatStorageMB(mediaBytes),
+        message: e?.message || String(e),
+      });
+    }
   }
   // Always stamp the fetch time first — it's a tiny 13-byte write.
   // The data serialization below may fail on quota, but the timestamp must
@@ -5373,21 +6472,27 @@ function setCachedAPIData(trades, source = null) {
   const compactPayload = JSON.stringify(_serializeTradesForStorage(trades, 'compact'));
   const normalizedFullBytes = _storageBytes(fullPayload);
   const compactBytes = _storageBytes(compactPayload);
-  console.debug('[CacheSize] normalized full:', `${_formatStorageMB(normalizedFullBytes)} MB`);
-  console.debug('[CacheSize] persisted compact:', `${_formatStorageMB(compactBytes)} MB`);
-  console.debug('[CacheSize] media:', `${_formatStorageMB(mediaBytes)} MB`);
+  debugLog('[CacheSize] normalized full:', `${_formatStorageMB(normalizedFullBytes)} MB`);
+  debugLog('[CacheSize] persisted compact:', `${_formatStorageMB(compactBytes)} MB`);
+  debugLog('[CacheSize] media:', `${_formatStorageMB(mediaBytes)} MB`);
 
   const persistModes = _hasHeavyImageFields(trades)
     ? ['minimal', 'ultra']
     : ['full', 'compact', 'minimal', 'ultra'];
+  debugLog('[DashboardDebug]');
   let persistedMode = null;
   let lastPersistError = null;
   for (const mode of persistModes) {
     const serialized = _serializeTradesForStorage(trades, mode);
+    if (mode === persistModes[0]) {
+      const hasKey = Array.isArray(serialized?.keys) && serialized.keys.includes('_notionId');
+      const firstVal = Array.isArray(serialized?.rows) ? serialized.rows[0]?.[serialized.keys?.indexOf('_notionId')] : '(no rows)';
+      debugLog('[DashboardDebug]');
+    }
     const payload = JSON.stringify(serialized);
     const payloadBytes = _storageBytes(payload);
     const meta = _buildCachePayloadDebugMeta(serialized, trades, mode, cacheKey);
-    console.log('[CacheWriteAttempt]', {
+    debugLog('[CacheWriteAttempt]', {
       key: meta.key,
       mode: meta.mode,
       sizeMB: _formatStorageMB(payloadBytes),
@@ -5395,7 +6500,7 @@ function setCachedAPIData(trades, source = null) {
       ...meta.hasFields,
     });
     if (payloadBytes > (2 * 1024 * 1024)) {
-      console.warn('[DS] Skipping localStorage cache write — payload exceeds 2 MB guard.', {
+      _debugLogOnce(`localStorage-guard:${cacheKey}:${mode}`, '[DS] Skipping localStorage cache write — payload exceeds 2 MB guard.', {
         key: cacheKey,
         mode,
         sizeMB: _formatStorageMB(payloadBytes),
@@ -5421,13 +6526,13 @@ function setCachedAPIData(trades, source = null) {
     }
   }
   if (persistedMode === 'compact') {
-    console.warn('[DS] Cache persisted in compact mode after quota pressure.');
+    debugLog('[DS] Cache persisted in compact mode after quota pressure.');
   } else if (persistedMode === 'minimal') {
-    console.warn('[DS] Cache persisted in minimal mode after quota pressure.');
+    debugLog('[DS] Cache persisted in minimal mode after quota pressure.');
   } else if (persistedMode === 'ultra') {
-    console.warn('[DS] Cache persisted in ultra mode after heavy quota pressure.');
+    debugLog('[DS] Cache persisted in ultra mode after heavy quota pressure.');
   } else if (!persistedMode) {
-    console.warn('[DS] Cache persist failed (quota) — data will re-fetch on next load. Details:', lastPersistError && lastPersistError.message);
+    _debugLogOnce(`localStorage-all-failed:${cacheKey}`, '[DS] Cache persist failed (quota) — data will re-fetch on next load. Details:', lastPersistError && lastPersistError.message);
   }
   _cleanupLegacyUnscopedCacheKeysIfScopedExists(src);
   // Schedule a one-shot refresh exactly at the 60s mark so the status label
@@ -5731,10 +6836,10 @@ async function loadFromAPI(options = {}) {
   const _activeForFetch = getActiveJournalProfile();
   if (_activeForFetch?.connectionType === 'notion') {
     if (_activeForFetch.notionDatabaseId) {
-      console.log('[NotionProfile] loading from Notion database:', _activeForFetch.notionDatabaseId);
+      debugLog('[NotionProfile] loading from Notion database:', _activeForFetch.notionDatabaseId);
       return _loadNotionTrades(_activeForFetch, { silent, force });
     }
-    console.log('[NotionProfile] no database selected yet — showing prompt');
+    debugLog('[NotionProfile] no database selected yet — showing prompt');
     setSourceIndicator('pending');
     showDataStatus('Notion connected — select a database in Data Sources to sync.', 'warn');
     return;
@@ -6461,16 +7566,349 @@ async function _fetchAPICacheSilently(options = {}) {
   }
 }
 
+// ── Notion media — URL detection ──────────────────────────────────────────────
+// Notion-hosted files are signed S3 URLs that expire after ~1 hour.
+// External URLs (imgur, cloudinary, github, CDN) are stable and need no copy.
+function _isNotionFileUrl(url) {
+  return typeof url === 'string' && (
+    url.includes('amazonaws.com') ||
+    url.includes('prod-files-secure') ||
+    url.includes('secure.notion-static.com')
+  );
+}
+
+// ── Background media queue ────────────────────────────────────────────────────
+// Trades are injected into the dashboard immediately after sync. This queue
+// runs in the background, uploading Notion-hosted screenshots to Supabase
+// Storage in batches of 50. Each uploaded URL is patched directly onto the
+// in-memory trade object so the next time the user opens a screenshot it loads
+// from the permanent URL. External URLs are never queued.
+//
+// Priority: newest trades first (sorted by date DESC on enqueue). Call
+// _mediaQueue.bump(notionId) to move a specific trade to the front — useful
+// when the user opens a trade drawer for an older month.
+const _mediaQueue = (() => {
+  const _fieldToSlot = (field, source) => {
+    if (field === 'imgM15') return 'm15_before';
+    if (field === 'imgH4Before') return 'h4_before';
+    if (field === 'imgM15After') return source === 'h4' ? 'h4_after' : 'm15_after';
+    return '';
+  };
+  const MEDIA_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After'];
+  const BATCH_SIZE = 50;
+
+  let _queue = [];       // [{trade, notionId, slot, field, notionUrl, date, source, userId, tradesRef}]
+  let _running = false;
+  const _done = new Set(); // "notionId|slot" already uploaded or queued
+  const _lsPersistTimers = new Map(); // source → debounce timer id
+
+  // ── Public: add trades to the queue ────────────────────────────────────────
+  function enqueue(parsedTrades, source, userId, profileIdOverride = '') {
+    const newItems = [];
+    const src = source || _getCurrentHTFSource();
+    const profileId = String(profileIdOverride || getActiveJournalProfile()?.id || '').trim();
+    let urlsFound = 0;
+    const slotsSeen = new Set();
+    for (const trade of parsedTrades) {
+      if (!trade._notionId) continue;
+      for (const field of MEDIA_FIELDS) {
+        const slot = _fieldToSlot(field, src);
+        if (!slot) continue;
+        const url = trade[field];
+        if (url) {
+          urlsFound++;
+          slotsSeen.add(slot);
+        }
+        const key = `${userId || ''}|${profileId}|${src}|${trade._notionId}|${slot}`;
+        if (url && _isNotionFileUrl(url) && !_done.has(key)) {
+          _done.add(key);
+          debugLog('[MediaQueue] queued:', trade._notionId, slot, 'source:', src);
+          newItems.push({
+            trade,
+            tradesRef: parsedTrades,
+            notionId: trade._notionId,
+            slot,
+            field,
+            notionUrl: url,
+            date: String(trade.date || ''),
+            source: src,
+            profileId,
+            userId,
+          });
+        }
+      }
+    }
+    debugLog('[MediaQueue] enqueue source/profile:', src, profileId || '(none)');
+    debugLog('[MediaQueue] source/profile:', src, profileId || '(none)');
+    debugLog('[MediaQueue] urlsFound count:', urlsFound);
+    debugLog('[MediaQueue] slots:', [...slotsSeen]);
+    if (!newItems.length) return;
+
+    // Sort newest first so visible (recent) trades get permanent URLs first
+    newItems.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
+    _queue.push(...newItems);
+    debugLog('[MediaQueue] queued:', newItems.length, 'new items, total pending:', _queue.length);
+
+    if (!_running) _run();
+  }
+
+  // ── Public: move a set of trades to the front of the queue ────────────────
+  // Call with an array of _notionId strings whenever a group of trades becomes
+  // visible (drawer open, table filter change, calendar month click, etc.).
+  // Items not yet in the queue are silently ignored.
+  // Items currently being processed in the active batch are unaffected — only
+  // the pending _queue is reordered, so the boost takes effect on the next batch.
+  function priorityBoost(notionIds) {
+    if (!notionIds || !notionIds.length || !_queue.length) return;
+    const idSet = new Set(notionIds.filter(Boolean));
+    if (!idSet.size) return;
+    const hi  = _queue.filter(i => idSet.has(i.notionId));
+    if (!hi.length) return;
+    const lo  = _queue.filter(i => !idSet.has(i.notionId));
+    _queue = [...hi, ...lo];
+    debugLog('[MediaQueue] priority boost:', idSet.size, 'trades ->', hi.length, 'items moved to front');
+    debugLog('[MediaQueue] visible trades:', [...idSet].slice(0, 8).join(', ') + (idSet.size > 8 ? '...' : ''));
+    for (const item of hi) {
+      debugLog('[MediaQueue] boosted:', item.notionId, item.slot);
+    }
+  }
+
+  // ── Public: move a single trade to the front (convenience wrapper) ─────────
+  function bump(notionId) {
+    priorityBoost(notionId ? [notionId] : []);
+  }
+
+  // ── Internal: drain the queue in background batches ────────────────────────
+  async function _run() {
+    _running = true;
+    try {
+      while (_queue.length) {
+        const batch = _queue.splice(0, BATCH_SIZE);
+        debugLog('[MediaQueue] processing batch:', batch.length, 'remaining:', _queue.length);
+        await _processBatch(batch);
+        // Yield to the browser between batches — never block the UI thread
+        await new Promise(r => setTimeout(r, 0));
+      }
+    } finally {
+      _running = false;
+      if (!_queue.length) debugLog('[MediaQueue] completed');
+    }
+  }
+
+  async function _processBatch(batch) {
+    // All items in a batch share the same userId (one sync session)
+    const { userId, source } = batch[0];
+    const items = batch.map(({ notionId, slot, notionUrl }) => ({ notionId, slot, notionUrl }));
+
+    let results;
+    try {
+      const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/notion/media-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, items }),
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      results = (await resp.json()).results || [];
+    } catch (err) {
+      console.warn('[MediaQueue] batch fetch failed:', err.message);
+      return;
+    }
+
+    // Build lookup: "notionId|slot" → permanentUrl
+    const lookup = {};
+    for (const r of results) {
+      if (r.permanentUrl) lookup[`${r.notionId}|${r.slot}`] = r.permanentUrl;
+    }
+
+    // Patch trade objects in-place — they are the same references held by
+    // _parsedAPICacheMemory and appState.settings.dataSource.cachedTrades
+    const updatedRefs = new Map(); // profileId|source → { source, profileId, tradesRef }
+    let patchCount = 0;
+    for (const item of batch) {
+      const perm = lookup[`${item.notionId}|${item.slot}`];
+      if (perm && item.trade[item.field] !== perm) {
+        item.trade[item.field] = perm;
+        updatedRefs.set(`${item.profileId || ''}|${item.source}`, {
+          source: item.source,
+          profileId: item.profileId || '',
+          tradesRef: item.tradesRef,
+        });
+        patchCount++;
+        debugLog('[MediaQueue] patched permanent url:', item.notionId, item.slot, perm.slice(0, 60));
+      }
+    }
+    if (patchCount > 0) {
+      debugLog('[MediaQueue] patched permanent urls:', patchCount, 'in this batch');
+      debugLog('[MediaQueue] permanent urls patched:', patchCount);
+    }
+
+    // Persist updated media URLs to session storage (fast, synchronous path)
+    // and schedule a debounced localStorage write so permanent URLs survive
+    // a hard refresh without requiring a new Sync database.
+    for (const { source: src, profileId, tradesRef } of updatedRefs.values()) {
+      try {
+        _withJournalProfileCacheContext(profileId, () => _persistMediaCache(tradesRef, src));
+      } catch {}
+
+      // Debounce localStorage writes: coalesce all batches within 1 s into one write
+      const timerKey = `${profileId || ''}|${src}`;
+      const logScope = profileId ? `${src} / ${profileId}` : src;
+      if (_lsPersistTimers.has(timerKey)) {
+        clearTimeout(_lsPersistTimers.get(timerKey));
+        debugLog('[MediaQueue] persist skipped/debounced:', logScope, '- timer reset');
+      }
+      _lsPersistTimers.set(timerKey, setTimeout(() => {
+        _lsPersistTimers.delete(timerKey);
+        debugLog('[MediaQueue] persisting permanent urls to localStorage:', logScope, tradesRef.length, 'trades');
+        try {
+          _withJournalProfileCacheContext(profileId, () => setCachedAPIData(tradesRef, src));
+          debugLog('[MediaQueue] localStorage updated with permanent media:', logScope);
+        } catch (e) {
+          console.warn('[MediaQueue] localStorage persist failed:', e.message);
+        }
+      }, 1000));
+    }
+  }
+
+  return { enqueue, bump, priorityBoost };
+})();
+
+// ── Media boost deduplication ─────────────────────────────────────────────────
+// Prevents redundant priorityBoost() calls when renderTable / openWidgetDrawer
+// are triggered by resize, hover, or widget re-renders without a real change to
+// the visible trade set.
+let _lastMediaBoostSignature = '';
+
+function _getMediaBoostSignature(trades) {
+  return trades
+    .slice(0, 50)
+    .map(t => t._notionId)
+    .filter(Boolean)
+    .join('|');
+}
+
+function _boostIfChanged(trades) {
+  const sig = _getMediaBoostSignature(trades);
+  if (!sig) return;
+  if (sig === _lastMediaBoostSignature) {
+    debugLog('[MediaQueue] skipped duplicate boost:', sig.slice(0, 60));
+    return;
+  }
+  _lastMediaBoostSignature = sig;
+  _mediaQueue.priorityBoost(trades.map(t => t._notionId).filter(Boolean));
+  debugLog('[MediaQueue] boosted signature:', sig.slice(0, 80));
+}
+
+// ── Media queue restore after cache hit ──────────────────────────────────────
+// After a page refresh the cache-hit path in _loadNotionTrades injects trades
+// directly from localStorage without going through the fetch path — so
+// _mediaQueue.enqueue is never reached. This function restores the queue so
+// Notion-hosted screenshot URLs get uploaded/resolved even on cached loads.
+//
+// _notionId is persisted in _STORAGE_COMPACT_KEYS so it survives localStorage
+// serialization and is always present on the deserialized trade objects.
+
+function _enqueueMediaForCachedNotionTrades(trades, userId, source, profileIdOverride = '') {
+  if (!Array.isArray(trades) || !trades.length || !userId) return;
+
+  debugLog('[MediaQueue] restore from cache:', trades.length, 'trades');
+  const profileId = String(profileIdOverride || getActiveJournalProfile()?.id || '').trim();
+  debugLog('[MediaQueue] boot enqueue profile:', profileId || '(none)', 'source:', source || _getCurrentHTFSource());
+
+  // ── Diagnostic on trade[0] — shows exactly what survived serialization ──
+  const t0 = trades[0];
+  const t0keys = Object.keys(t0);
+  const IMG_CANDIDATES = [
+    'imgM15','imgH4Before','imgM15After',
+    'imgM15Orig','imgH4BeforeOrig','imgM15AfterOrig',
+    'H4 Before','H4 After','M15 Before','M15 After',
+    'H4 Screenshot','M15 Screenshot',
+    'imgH4','imgM15Raw','screenshot',
+    'notionUrl','_notionId',
+  ];
+  const urlsFound = IMG_CANDIDATES
+    .filter(k => t0[k] && String(t0[k]).length > 4)
+    .map(k => ({ field: k, value: String(t0[k]).slice(0, 80) }));
+
+  debugLog('[MediaDebug] after refresh trade keys:', t0keys);
+  debugLog('[MediaDebug] screenshot fields after refresh:', urlsFound);
+  debugLog('[MediaDebug] media candidates:', JSON.stringify({
+    _notionId: t0._notionId || null,
+    keys: t0keys,
+    urlsFound,
+  }));
+
+  const FIELDS = ['imgM15', 'imgH4Before', 'imgM15After'];
+  let needsQueue = 0;
+  let skippedPermanent = 0;
+  let missingId = 0;
+
+  for (const trade of trades) {
+    if (!trade._notionId) {
+      missingId++;
+      debugLog('[MediaQueue] missing notionId:', trade.notionUrl || trade.date || '?');
+      continue;
+    }
+    debugLog('[MediaQueue] cache trade notionId:', trade._notionId);
+
+    for (const field of FIELDS) {
+      const url = trade[field];
+      if (!url) continue;
+      if (_isNotionFileUrl(url)) {
+        needsQueue++;
+      } else {
+        skippedPermanent++;
+        debugLog('[MediaQueue] skipped already permanent:', trade._notionId, field);
+      }
+    }
+  }
+
+  if (missingId > 0) {
+    console.warn('[MediaQueue] missing notionId on', missingId, '/', trades.length, 'trades — check _STORAGE_COMPACT_KEYS');
+  }
+
+  // Collect sample URLs for diagnostics
+  const _urlSample = [];
+  for (const trade of trades.slice(0, 3)) {
+    for (const field of FIELDS) {
+      const url = trade[field];
+      if (url) _urlSample.push({ field, notionId: trade._notionId, url: String(url).slice(0, 80) });
+    }
+  }
+  debugLog('[MediaQueue] urlsFound count:', needsQueue + skippedPermanent, '| needsQueue:', needsQueue, '| alreadyPermanent:', skippedPermanent);
+  debugLog('[MediaQueue] urlsFound sample:', _urlSample);
+
+  if (needsQueue === 0) {
+    debugLog('[MediaQueue] cached trades: all', skippedPermanent, 'screenshots already permanent');
+    return;
+  }
+
+  debugLog('[MediaQueue] cached trades:', needsQueue, 'need upload,', skippedPermanent, 'already permanent');
+  _mediaQueue.enqueue(trades, source, userId, profileId);
+  debugLog('[MediaQueue] enqueue count:', needsQueue);
+}
+
 // ── Notion direct database load ───────────────────────────────────────────────
 // Called when the active journal profile is connectionType==='notion' AND has a
 // notionDatabaseId. Fetches all pages from the Notion database via the backend
 // proxy (/api/notion/query), flattens them, runs _normalizeAPITrade, and injects
 // the result exactly as loadFromAPI does for the legacy /api/trades endpoint.
 async function _loadNotionTrades(profile, options = {}) {
-  const { silent = false, force = false } = options;
+  const { silent = false, force = false, syncNow = false } = options;
+  const profileId = String(profile?.id || '').trim();
+  if (profile?.notionSyncState === 'disconnected' || _notionIntegrationStatus === 'disconnected') {
+    showDataStatus('Notion disconnected — reconnect to sync.', 'warn');
+    setSourceIndicator('pending');
+    console.warn('[NotionLoad] blocked — Notion disconnected for profile:', profileId || '(none)');
+    return;
+  }
 
   const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
   if (!user?.id) {
+    if (profileId) {
+      _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
+      debugLog('[NotionSync] error:', { profileId, error: 'missing-user' });
+    }
     showDataStatus('Sign in to load Notion data.', 'warn');
     return;
   }
@@ -6490,32 +7928,65 @@ async function _loadNotionTrades(profile, options = {}) {
   }
 
   _migrateFieldOverridesToProfileScope();
-  console.log('[Mapping] overrides loaded:', JSON.stringify(_getAPIFieldOverrides()).slice(0, 200));
-  console.log('[Mapping] fieldNames loaded:', _listAPIKeys([]).slice(0, 10));
-  console.log('[ProfileSwitch] active profile: id/name/database', {
-    id: profile.id,
-    name: profile.name,
-    database: profile.notionDatabaseId,
-  });
-  console.log('[NotionLoad] start — db:', profile.notionDatabaseId, 'source:', source,
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
+  debugLog('[DashboardDebug]');
+  debugLog('[NotionLoad] start — db:', profile.notionDatabaseId, 'source:', source,
               'DS_KEY:', localStorage.getItem(DS_KEY), 'HTF:', _getCurrentHTFSource());
 
   // ── Cache hit ──────────────────────────────────────────────────────────────
-  if (!force) {
+  if (!force && !syncNow) {
+    debugLog('[DashboardDebug]');
     const cached = getCachedAPIData(source);
     if (cached && cached.length) {
-      console.log('[NotionLoad] cache hit —', cached.length, 'trades');
+      debugLog('[DashboardDebug]');
+      debugLog('[NotionLoad] cache hit —', cached.length, 'trades');
+      // Diagnostic — compare with [MediaDebug] after sync to identify lost fields
+      if (cached[0]) {
+        const _c0 = cached[0];
+        const _c0imgFields = ['imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig','imgM15AfterOrig','_notionId']
+          .map(k => ({ field: k, value: String(_c0[k] || '').slice(0, 80) }));
+        debugLog('[DashboardDebug]');
+        debugLog('[DashboardDebug]');
+        _debugH4MediaState('after refresh', cached);
+      }
+      if (profileId && profile.notionSyncState !== 'synced') {
+        _updateJournalProfileSyncMeta(profileId, {
+          notionSyncState: 'synced',
+          notionLastSync: profile.notionLastSync || Date.now(),
+          notionTradeCount: profile.notionTradeCount || cached.length,
+        });
+      }
       _injectTrades(cached, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
       setSourceIndicator('live');
       showDataStatus(_getAPICacheStatusLabel(source), 'live');
       _updateLastSync();
+      // Restore the background media queue for cached trades. On page refresh the
+      // fetch path is skipped, so Notion-hosted screenshot URLs would never get
+      // uploaded/resolved without this call. Non-blocking — UI is already live.
+      _enqueueMediaForCachedNotionTrades(cached, user.id, source, profileId);
       return;
     }
   }
 
+  const existingCache = getCachedAPIData(source) || [];
+  const existingRawCache = _getRawAPICache(source) || [];
+  const lastCursor = _getNotionSyncCursor();
+  const fullSync = !!force || !lastCursor || !existingCache.length;
+  debugLog('[IncrementalSync] full sync:', fullSync);
+  debugLog('[IncrementalSync] last cursor:', lastCursor || '(none)');
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
+  debugLog('[DashboardDebug]');
   appState.settings.dataSource.loading = true;
+  if (profileId) {
+    _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'syncing' });
+  }
+  debugLog('[NotionSync] start:', { profileId, database: profile.notionDatabaseId, source });
   if (!silent) showDataStatus('Loading Notion data…', 'warn');
   setSourceIndicator('loading');
 
@@ -6523,50 +7994,134 @@ async function _loadNotionTrades(profile, options = {}) {
   if (btn) btn.classList.add('spinning');
 
   try {
+    const queryStartedAt = new Date().toISOString();
+    const incrementalParam = (!fullSync && lastCursor)
+      ? `&last_edited_after=${encodeURIComponent(lastCursor)}`
+      : '';
     const url = `${NOTION_OAUTH_BACKEND}/api/notion/query`
       + `?user_id=${encodeURIComponent(user.id)}`
-      + `&database_id=${encodeURIComponent(profile.notionDatabaseId)}`;
+      + `&database_id=${encodeURIComponent(profile.notionDatabaseId)}`
+      + incrementalParam;
 
-    console.log('[NotionLoad] fetching:', url);
+    debugLog('[NotionLoad] fetching:', url);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new DOMException('Timeout 90s', 'AbortError')), 90000);
     const resp = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
 
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    if (!resp.ok) {
+      let errJson = null;
+      try { errJson = await resp.json(); } catch {}
+      const notionCode = errJson?.notionError || '';
+      const detail = errJson?.detail || errJson?.error || '';
+      // Token expired / revoked
+      if (notionCode === 'token_expired' || resp.status === 401) {
+        if (profileId) {
+          _updateJournalProfileSyncMeta(profileId, {
+            notionSyncState: 'error',
+            notionErrorCode: 'token_expired',
+            notionErrorMessage: 'Notion connection expired',
+          });
+          debugLog('[NotionAuth] token expired:', { profileId, status: resp.status });
+          debugLog('[NotionAuth] profile updated:', { profileId, notionErrorCode: 'token_expired' });
+        }
+        setSourceIndicator('pending');
+        return;
+      }
+      // Database inaccessible
+      const DB_ACCESS_CODES = ['object_not_found', 'restricted_resource'];
+      const isDbError = resp.status === 403 || resp.status === 404
+        || DB_ACCESS_CODES.some(c => notionCode === c || detail.includes(c));
+      if (isDbError && profileId) {
+        const errMsg = detail || `HTTP ${resp.status}`;
+        _updateJournalProfileSyncMeta(profileId, {
+          notionSyncState: 'error',
+          notionErrorCode: 'database_not_accessible',
+          notionErrorMessage: errMsg,
+        });
+        debugLog('[NotionDatabase] access error:', { profileId, status: resp.status, detail: errMsg });
+        debugLog('[NotionDatabase] error code:', 'database_not_accessible');
+        debugLog('[NotionDatabase] profile updated:', { profileId, notionErrorCode: 'database_not_accessible' });
+        setSourceIndicator('pending');
+        return;
+      }
+      throw new Error('HTTP ' + resp.status);
+    }
     const json = await resp.json();
 
-    console.log('[NotionLoad] response — count:', json.count, 'trades:', json.trades?.length);
+    debugLog('[NotionLoad] response — count:', json.count, 'trades:', json.trades?.length);
     if (json.trades?.length) {
-      console.log('[NotionLoad] trade[0] keys:', Object.keys(json.trades[0]));
+      debugLog('[NotionLoad] trade[0] keys:', Object.keys(json.trades[0]));
+    }
+
+    if ((!json.trades || !json.trades.length) && !fullSync) {
+      _setNotionSyncCursor(queryStartedAt);
+      debugLog('[IncrementalSync] modified trades:', 0);
+      debugLog('[IncrementalSync] new trades:', 0);
+      debugLog('[IncrementalSync] updated trades:', 0);
+      debugLog('[IncrementalSync] merged total:', existingCache.length);
+      debugLog('[IncrementalSync] new cursor:', queryStartedAt);
+      if (profileId) {
+        _updateJournalProfileSyncMeta(profileId, {
+          notionSyncState: 'synced',
+          notionLastSync: Date.now(),
+          notionTradeCount: existingCache.length,
+        });
+      }
+      _injectTrades(existingCache, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+      appState.settings.dataSource.pendingRestoreState = null;
+      setSourceIndicator('live');
+      showDataStatus(`Notion · ${existingCache.length} trades`, 'live');
+      _updateLastSync();
+      return;
     }
 
     if (!json.trades || !json.trades.length) {
+      if (profileId) {
+        _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
+      }
+      debugLog('[NotionSync] error:', { profileId, error: 'empty-trades' });
       showDataStatus('Notion database returned no trades.', 'warn');
       setSourceIndicator('pending');
       return;
     }
 
-    _setRawAPICache(json.trades, source);
+    const fetchedRawTrades = Array.isArray(json.trades) ? json.trades : [];
 
     // Pre-inject user-mapped outcome, then auto-map unmapped Notion fields to
     // the aliases expected by _normalizeAPITrade (without touching that function).
-    const tradesToNormalize = _applyOutcomeOverride(json.trades, source);
+    const tradesToNormalize = _applyOutcomeOverride(fetchedRawTrades, source);
     const autoMapped = _applyNotionAutoMap(tradesToNormalize, source);
+    _getOutcomeValueReport(autoMapped, source);
 
+    _resetOutcomeDebugCounts();
     const parsed = autoMapped.map((t, i) => {
-      try { return _normalizeAPITrade(t, i, source); }
+      try {
+        const norm = _normalizeAPITrade(t, i, source);
+        // Carry _notionId through normalization so the media queue can patch
+        // trade objects in-place after background uploads complete.
+        if (norm && t._notionId) norm._notionId = t._notionId;
+        return norm;
+      }
       catch (e) {
         console.warn('[NotionLoad] normalize error index=' + i, e.message);
         return null;
       }
     }).filter(Boolean);
+    _flushOutcomeDebugCounts();
 
-    console.log('[NotionLoad] normalized:', parsed.length, '/', json.trades.length);
+    debugLog('[NotionLoad] normalized:', parsed.length, '/', fetchedRawTrades.length);
     if (parsed.length) {
-      console.log('[NotionLoad] normalized[0]:', JSON.stringify(parsed[0]).slice(0, 400));
+      debugLog('[NotionLoad] normalized[0]:', JSON.stringify(parsed[0]).slice(0, 400));
+      // Diagnostic — compare these keys against [MediaDebug] after refresh to find what's lost
+      const _p0 = parsed[0];
+      const _p0imgFields = ['imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig','imgM15AfterOrig','_notionId']
+        .map(k => ({ field: k, value: String(_p0[k] || '').slice(0, 80) }));
+      debugLog('[DashboardDebug]');
+      debugLog('[DashboardDebug]');
+      _debugH4MediaState('after sync', parsed, fetchedRawTrades);
     } else {
-      console.warn('[NotionLoad] 0 trades after automap — outcome field values may not match _OUTCOME_MAP');
+      console.warn('[NotionLoad] 0 trades after automap — check Position Result field mapping and dates');
       if (autoMapped.length) {
         const sample = autoMapped[0];
         console.warn('[NotionLoad] positionResult value in trade[0]:', sample.positionResult);
@@ -6574,23 +8129,67 @@ async function _loadNotionTrades(profile, options = {}) {
     }
 
     if (!parsed.length) {
+      if (profileId) {
+        _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
+      }
+      debugLog('[NotionSync] error:', { profileId, error: 'no-valid-trades' });
       showDataStatus('Notion data loaded but no valid trades — check field mapping.', 'warn');
       setSourceIndicator('pending');
       return;
     }
 
-    setCachedAPIData(parsed, source);
+    const parsedMerge = fullSync
+      ? { merged: parsed, added: parsed.length, updated: 0 }
+      : _mergeTradesByNotionId(existingCache, parsed);
+    const mergedParsed = parsedMerge.merged;
+    const mergedRaw = fullSync
+      ? fetchedRawTrades
+      : _mergeRawNotionRowsById(existingRawCache, fetchedRawTrades);
+    const nextCursor = _maxNotionEditedCursor(mergedRaw) || _maxNotionEditedCursor(mergedParsed) || lastCursor;
+
+    _setRawAPICache(mergedRaw.length ? mergedRaw : fetchedRawTrades, source);
+    if (nextCursor) _setNotionSyncCursor(nextCursor);
+
+    debugLog('[IncrementalSync] modified trades:', fetchedRawTrades.length);
+    debugLog('[IncrementalSync] new trades:', parsedMerge.added);
+    debugLog('[IncrementalSync] updated trades:', parsedMerge.updated);
+    debugLog('[IncrementalSync] merged total:', mergedParsed.length);
+    debugLog('[IncrementalSync] new cursor:', nextCursor || '(none)');
+
+    // Inject trades immediately — do not wait for screenshot uploads.
+    // _mediaQueue picks up Notion-hosted file URLs in the background and patches
+    // trade objects in-place as batches complete (50 images / request).
+    debugLog('[DashboardDebug]');
+    setCachedAPIData(mergedParsed, source);
+    const tradeCount = mergedParsed.length;
+    if (profileId) {
+      _updateJournalProfileSyncMeta(profileId, {
+        notionSyncState: 'synced',
+        notionLastSync: Date.now(),
+        notionTradeCount: tradeCount,
+      });
+    }
+    debugLog('[NotionSync] success:', { profileId, database: profile.notionDatabaseId });
+    debugLog('[NotionSync] tradeCount:', tradeCount);
 
     // Inject unconditionally — we already set DS_KEY and HTFSource above
-    _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+    _injectTrades(mergedParsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
     appState.settings.dataSource.pendingRestoreState = null;
     setSourceIndicator('live');
-    showDataStatus(`Notion · ${parsed.length} trades`, 'live');
+    showDataStatus(`Notion · ${mergedParsed.length} trades`, 'live');
     _updateLastSync();
 
-    console.log('[NotionLoad] success — injected', parsed.length, 'trades');
+    debugLog('[NotionLoad] success — injected', mergedParsed.length, 'trades');
+
+    // Start background media sync — newest trades first so screenshots for
+    // currently visible rows become permanent before older months.
+    _mediaQueue.enqueue(parsed, source, user.id, profileId);
   } catch (err) {
     console.error('[NotionLoad]', err.name, err.message);
+    if (profileId) {
+      _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
+    }
+    debugLog('[NotionSync] error:', { profileId, name: err.name, message: err.message });
     showDataStatus('Notion load failed: ' + (err.message || err.name), 'warn');
     setSourceIndicator('pending');
   } finally {
@@ -6671,6 +8270,54 @@ async function _fetchOtherSourceBackground() {
 // API mode and reuse the cache. If the previous session was in API mode but
 // the cache is missing, keep API selected in "pending" state — page refreshes
 // must never trigger a network call. Only the Notion Live button may refresh.
+// ── Boot-time media queue restore for Notion profiles ────────────────────────
+// initDataSource() injects cached trades synchronously via _injectTrades()
+// without ever calling _loadNotionTrades — so the media queue is never started
+// on hard refresh. This function fills that gap.
+//
+// It polls until the Supabase auth session resolves (typically within 1-2 s),
+// then delegates to _enqueueMediaForCachedNotionTrades. Non-blocking — the
+// dashboard is already live before this runs.
+async function _bootNotionMediaRestore(cachedTrades, options = {}) {
+  const MAX_TRIES = 10;
+  const INTERVAL_MS = 500;
+  const expectedProfileId = String(options.profileId || '').trim();
+  const expectedSource = String(options.source || '').trim();
+
+  for (let i = 0; i < MAX_TRIES; i++) {
+    await new Promise(r => setTimeout(r, INTERVAL_MS));
+
+    const user = typeof _SW !== 'undefined' ? _SW.getUser() : null;
+    if (!user?.id) {
+      debugLog('[DashboardDebug]');
+      continue;
+    }
+
+    const profile = expectedProfileId
+      ? (getJournalProfiles().find(p => p.id === expectedProfileId) || getActiveJournalProfile())
+      : getActiveJournalProfile();
+    if (profile?.connectionType !== 'notion') {
+      debugLog('[DashboardDebug]');
+      return;
+    }
+
+    if (!profile.notionDatabaseId) {
+      debugLog('[DashboardDebug]');
+      return;
+    }
+
+    const source = expectedSource || ((String(profile.type || '').toLowerCase() === 'h4') ? 'h4' : 'm15');
+    debugLog('[DashboardDebug]');
+    debugLog('[DashboardDebug]');
+    const _t0 = cachedTrades[0] || {};
+    debugLog('[DashboardDebug]');
+    _enqueueMediaForCachedNotionTrades(cachedTrades, user.id, source, profile.id);
+    return;
+  }
+
+  console.warn('[LoadPath] restore from localhost: user not available after', MAX_TRIES * INTERVAL_MS / 1000, 's — media restore skipped');
+}
+
 async function initDataSource() {
   // Legacy cleanup must run BEFORE any cache read/write so freed space is
   // available for subsequent writes. Idempotent — no-op on repeat loads.
@@ -6678,7 +8325,12 @@ async function initDataSource() {
 
   const prevMode = localStorage.getItem(DS_KEY);
   const prevWasAPI = prevMode === 'api';
-  const cached   = getCachedAPIData();
+  const activeProfile = getActiveJournalProfile();
+  const startupSource = _getJournalProfilePreferredSource(activeProfile) || _getCurrentHTFSource();
+  if (activeProfile?.connectionType === 'notion' && startupSource && _getCurrentHTFSource() !== startupSource) {
+    try { localStorage.setItem(HTF_SOURCE_KEY, startupSource); } catch (e) {}
+  }
+  const cached   = getCachedAPIData(startupSource);
   const hasCache = !!(cached && cached.length);
   const restoreAPI = prevWasAPI && hasCache;
 
@@ -6712,10 +8364,19 @@ async function initDataSource() {
 
   const persistedSidebar = _loadPersistedSidebarState();
   if (restoreAPI) {
+    debugLog('[DashboardDebug]');
     _injectTrades(cached, 'Cache', null);
+    debugLog('[DashboardDebug]');
     setSourceIndicator('live');
-    showDataStatus(_getAPICacheStatusLabel(), 'live');
+    showDataStatus(_getAPICacheStatusLabel(startupSource), 'live');
     _updateLastSync();
+    // Restore the background media queue for Notion profiles. Auth is not yet
+    // resolved at this point — _bootNotionMediaRestore polls and starts the
+    // queue once the session becomes available.
+    _bootNotionMediaRestore(cached, {
+      source: startupSource,
+      profileId: activeProfile?.id || '',
+    });
   } else if (restoreCSV && csvCache) {
     // Re-parse through the normal path with preserveState so sidebar state
     // (filters, presets, BE toggle, temporal range) is re-applied on top of
@@ -12613,6 +14274,10 @@ function renderTable(trades) {
   if (!tbody) return;
   _setText('trade-count', trades.length + ' trades');
 
+  // Boost screenshot priority for the trades now visible in the table.
+  // Skipped if the visible set hasn't changed since the last call.
+  _boostIfChanged(trades);
+
   if (!trades.length) {
     tbody.innerHTML = `<tr><td colspan="10" style="padding:0">
       <div class="widget-empty-state">
@@ -16221,6 +17886,10 @@ function _wdTradeCard(t) {
    Trades are always sorted by date asc → hour asc regardless of widget source. */
 function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts = {}) {
   if (!trades || !trades.length) return;
+
+  // Boost screenshot priority for every trade that just became visible.
+  // Skipped if the drawer is opening on the same set as the last boost.
+  _boostIfChanged(trades);
 
   // Sort:
   //  - opts.preserveOrder=true → caller already pre-sorted (e.g. Trade Log
@@ -21182,7 +22851,7 @@ function _poApplyToDashboard(sel) {
       if (appState.ui.rrMinFilter !== tpFinal && typeof _rrFilterBubbleClick === 'function') {
         _rrFilterBubbleClick(tpFinal);
       }
-      console.log(`[poApply] Full TP ${tpFinal}R → ORR bubble sync`);
+      debugLog(`[poApply] Full TP ${tpFinal}R → ORR bubble sync`);
     } else {
       // Step 2 — Personalised fallback. tp2 is a placeholder > tp1 (0% allocated
       // so the engine never reads it), tp3 is filler to satisfy the validator.
@@ -21195,7 +22864,7 @@ function _poApplyToDashboard(sel) {
         };
       }
       if (typeof _setTpMode === 'function') _setTpMode('personalised');
-      console.log(`[poApply] Full TP ${tpFinal}R → Personalised fallback (no ORR match)`);
+      debugLog(`[poApply] Full TP ${tpFinal}R → Personalised fallback (no ORR match)`);
     }
     _poApplyVisualFeedback();
     return;
@@ -22693,7 +24362,8 @@ function parseFlippingMarketCSV(text) {
     const isInvalide = typeVal.includes('invalide');
     const isBad      = _isBadFeeling(get(iBadFeeling));
 
-    const outcome=_mapOutcome(get(iResultat));
+    const rawOutcome = get(iResultat);
+    const outcome=_mapOutcome(rawOutcome);
     if (!outcome) { skippedOutcome++; continue; }
 
     const date=_parseDate(get(iDate));
@@ -22710,6 +24380,7 @@ function parseFlippingMarketCSV(text) {
       h4:          _parseObs(get(iObsH4)),
       beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
       outcome,
+      outcomeRaw:    rawOutcome,
       r:           _mapR(outcome, get(iRR)),
       rrMax:       iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null,
       tp1_rr:      iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
@@ -22741,7 +24412,7 @@ function parseFlippingMarketCSV(text) {
     });
   }
 
-  if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: unrecognized outcome value`);
+  if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: missing outcome value`);
   if (skippedDate > 0)    warnings.push(`${skippedDate} row${skippedDate > 1 ? 's' : ''} skipped: missing or invalid date`);
   if (partialOk) {
     return { ok: true, trades, warnings, partialOk: true, missingRequired: missing };
@@ -22803,7 +24474,8 @@ function parseProTemplateCSV(text) {
     const cols=splitCsvLine(lines[i],',');
     const get=idx=>(idx<0||idx>=cols.length)?'':cols[idx].trim().replace(/^["']|["']$/g,'');
     const isInvalide = iType>=0 && get(iType).toLowerCase()==='invalid';
-    const outcome=_mapOutcome(get(iResult));
+    const rawOutcome = get(iResult);
+    const outcome=_mapOutcome(rawOutcome);
     if (!outcome) { skippedOutcome++; continue; }
     const date=_parseDate(get(iDate));
     if (!date||date.length<7) { skippedDate++; continue; }
@@ -22817,7 +24489,7 @@ function parseProTemplateCSV(text) {
       obstacles:_parseObs(get(iObsM15)),
       h4:       _parseObs(get(iObsH4)),
       beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
-      outcome,  r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
+      outcome,  outcomeRaw: rawOutcome, r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
       tp1_rr: iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
       tp2_rr: iTp2Rr >= 0 ? _parseNumeric(get(iTp2Rr)) : null,
       tp3_rr: iTp3Rr >= 0 ? _parseNumeric(get(iTp3Rr)) : null,
@@ -22840,7 +24512,7 @@ function parseProTemplateCSV(text) {
       _rawRowIndex: i - 1,
     });
   }
-  if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: unrecognized outcome value`);
+  if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: missing outcome value`);
   if (skippedDate > 0)    warnings.push(`${skippedDate} row${skippedDate > 1 ? 's' : ''} skipped: missing or invalid date`);
   if (partialOk) {
     return { ok: true, trades, warnings, partialOk: true, missingRequired: missing };
@@ -22915,7 +24587,7 @@ function parseBeginnerCSV(text) {
       obstacles:_parseObs(get(iObs)),
       h4:       iObsH4 >= 0 ? _parseObs(get(iObsH4)) : [],
       beManagement: iBE >= 0 ? _parseObs(get(iBE)) : [],
-      outcome, r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
+      outcome, outcomeRaw: rv, r:_mapR(outcome,get(iRR)), rrMax: iRRMax >= 0 ? _parseNumeric(get(iRRMax)) : null, direction:get(iOrder),
       tp1_rr: iTp1Rr >= 0 ? _parseNumeric(get(iTp1Rr)) : null,
       tp2_rr: iTp2Rr >= 0 ? _parseNumeric(get(iTp2Rr)) : null,
       tp3_rr: iTp3Rr >= 0 ? _parseNumeric(get(iTp3Rr)) : null,
@@ -22938,7 +24610,7 @@ function parseBeginnerCSV(text) {
       _rawRowIndex: i - 1,
     });
   }
-  if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: unrecognized outcome value`);
+  if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: missing outcome value`);
   if (skippedDate > 0)    warnings.push(`${skippedDate} row${skippedDate > 1 ? 's' : ''} skipped: missing or invalid date`);
   if (partialOk) {
     return { ok: true, trades, warnings, partialOk: true, missingRequired: missing };
@@ -24768,6 +26440,7 @@ function _renderAccountPanelAuthState() {
   const viewIds = {
     signed_out: 'account-view-signed-out',
     signed_in: 'account-view-signed-in',
+    edit_profile: 'account-view-edit-profile',
     forgot_password: 'account-view-forgot-password',
     reset_password: 'account-view-reset-password',
     change_password: 'account-view-change-password',
@@ -24847,6 +26520,13 @@ document.addEventListener('click', e => {
   if (e.target.closest('.journal-profile-row-menu')) return;
   if (e.target.closest('[data-action="journal-profile-row-menu-toggle"]')) return;
   _journalProfileRowMenuOpenId = '';
+  _syncJournalProfileUI();
+});
+document.addEventListener('click', e => {
+  if (!_notionIntegrationManageOpen) return;
+  if (e.target.closest('.int-manage-wrap')) return;
+  if (e.target.closest('[data-action="notion-integration-manage-toggle"]')) return;
+  _notionIntegrationManageOpen = false;
   _syncJournalProfileUI();
 });
 
@@ -24963,6 +26643,56 @@ async function _handleAccountUpdatePassword() {
   _setAccountView('signed_in', { preserveAlert: true, clearForms: true });
 }
 
+function _handleDeleteAccount() {
+  document.getElementById('account-delete-backdrop')?.remove();
+  const user = _SW.getUser?.();
+  const email = user?.email || '';
+  const backdrop = document.createElement('div');
+  backdrop.id = 'account-delete-backdrop';
+  backdrop.className = 'layout-confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="layout-confirm-modal" role="dialog" aria-modal="true">
+      <div class="layout-confirm-head">
+        <span class="layout-confirm-icon">⚠</span>
+        <span class="layout-confirm-title">Delete account</span>
+      </div>
+      <div class="layout-confirm-body">
+        ${email ? `<div class="layout-confirm-sub"><span class="layout-confirm-name">${_escapeHtml(email)}</span></div>` : ''}
+        <div class="layout-confirm-sub" style="margin-top:4px">This will permanently delete your account and all associated data.</div>
+        <div class="layout-confirm-sub" style="margin-top:4px;opacity:.6">This action cannot be undone.</div>
+      </div>
+      <div class="layout-confirm-actions">
+        <button class="lt-btn layout-confirm-cancel" type="button">Cancel</button>
+        <button class="lt-btn layout-confirm-ok layout-confirm-ok--danger" type="button">Delete account</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+  const commit = async () => {
+    close();
+    if (!user?.id) return;
+    _setAccountAlert('Deleting account…', 'warning');
+    try {
+      const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/account/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    } catch (e) {
+      console.warn('[Account] delete endpoint unavailable, proceeding with local cleanup:', e.message);
+    }
+    await _SW.signOut();
+    _accountRecoveryMode = false;
+    _setAccountView('signed_out', { clearForms: true });
+  };
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('.layout-confirm-cancel').addEventListener('click', close);
+  backdrop.querySelector('.layout-confirm-ok').addEventListener('click', commit);
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+}
 async function _handleAccountLogout() {
   _setAccountAlert('Logging out…', 'warning');
   await _SW.signOut();
@@ -25681,6 +27411,48 @@ function _inspectDimInTrades(dimKey) {
   return { sample, populated };
 }
 
+function _renderOutcomeValueReportHTML(rawCache, source = null) {
+  const report = _getOutcomeValueReport(rawCache, source);
+  if (!report.detected.length) return '';
+  const mapping = report.mapping || {};
+  const autoMapped = report.autoMapped || {};
+  const needsReview = report.needsReview || {};
+  const rows = report.detected
+    .map(([value, count]) => {
+      const category = mapping[value] || 'Other';
+      const options = OUTCOME_VALUE_CATEGORIES.map(cat =>
+        `<option value="${_escapeHtml(cat)}"${cat === category ? ' selected' : ''}>${_escapeHtml(cat)}</option>`
+      ).join('');
+      const isUnmapped = !Object.prototype.hasOwnProperty.call(mapping, value);
+      const suggestion = _suggestOutcomeCategory(value);
+      const statusHtml = (Object.prototype.hasOwnProperty.call(autoMapped, value) || (suggestion && suggestion === category))
+        ? '<span class="outcome-map-status is-auto">Auto-mapped</span>'
+        : (Object.prototype.hasOwnProperty.call(needsReview, value)
+            ? '<span class="outcome-map-status is-review">Needs review</span>'
+            : '');
+      return `<div class="outcome-map-row${isUnmapped ? ' is-unmapped' : ''}">
+                <span class="outcome-map-value" title="${_escapeHtml(value)}">${_escapeHtml(value)}</span>
+                <span class="outcome-map-count">×${count}</span>
+                <span class="outcome-map-arrow">→</span>
+                <select class="outcome-map-select" data-action="set-outcome-value-mapping" data-value="${_escapeHtml(value)}" aria-label="Map ${_escapeHtml(value)} outcome value">
+                  ${options}
+                </select>
+                ${statusHtml}
+              </div>`;
+    }).join('');
+  const unmappedHtml = report.unmapped.length
+    ? `<div class="outcome-map-unmapped">
+        <div class="outcome-map-subtitle">Unmapped values detected</div>
+        <div class="outcome-map-unmapped-list">${report.unmapped.map(([value]) => `<span>${_escapeHtml(value)}</span>`).join('')}</div>
+      </div>`
+    : '';
+  return `<div class="outcome-map-card">
+            <div class="outcome-map-title">Detected Position Result values</div>
+            <div class="outcome-map-list">${rows}</div>
+            ${unmappedHtml}
+          </div>`;
+}
+
 function updateJournalPanel() {
   const panel = document.getElementById('data-hub-panel');
   const list  = document.getElementById('ljp-list');
@@ -25748,12 +27520,16 @@ function updateJournalPanel() {
       }
       const dimLabel = _getJournalDimLabel(dim);
       const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
+      const outcomeValueReport = (dim.key === 'outcome' && Array.isArray(_lastCsvRows) && _lastCsvRows.length)
+        ? _renderOutcomeValueReportHTML(_lastCsvRows, 'csv')
+        : '';
       return `<li class="ljp-item ${status}" data-dim-key="${_escapeHtml(dim.key)}">
                 <div class="ljp-item-row">
                   <span class="ljp-item-label">${_escapeHtml(dimLabel)}${requiredBadge}</span>
                   <span class="ljp-status ${status}">${statusTxt}</span>
                 </div>
                 <div class="ljp-item-col">column · <strong>${_escapeHtml(shown)}</strong>${defaultNote}</div>
+                ${outcomeValueReport}
                 <button class="ljp-pencil-btn" data-action="open-remap-picker" data-dim-key="${_escapeHtml(dim.key)}" data-scope="journal" aria-label="Remap CSV column">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                 </button>
@@ -25854,6 +27630,9 @@ function updateJournalPanel() {
     const overrideNote = (override && !_isNoMappingValue(override))
       ? ` <span style="opacity:.6">(field: <span class="ljp-field-name">${_escapeHtml(override)}</span>)</span>`
       : '';
+    const outcomeValueReport = (isAPI && dim.key === 'outcome' && rawReady)
+      ? _renderOutcomeValueReportHTML(rawCache)
+      : '';
     const pencil = canRemap
       ? `<button class="ljp-pencil-btn" data-action="open-remap-picker" data-dim-key="${_escapeHtml(dim.key)}" data-scope="api-journal" aria-label="Remap API field">
            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -25867,6 +27646,7 @@ function updateJournalPanel() {
                 <span class="ljp-status ${status}">${statusTxt}</span>
               </div>
               <div class="ljp-item-col">sample · <strong>${_escapeHtml(shown)}</strong> <span style="opacity:.55">· ${_escapeHtml(coverage)}</span>${overrideNote}</div>
+              ${outcomeValueReport}
               ${pencil}
             </li>`;
   }).filter(Boolean).join('');
@@ -26042,6 +27822,158 @@ function _flattenApiWidgetValue(raw) {
     return '';
   }
   return String(raw).trim();
+}
+
+function _cleanOutcomeRawValue(raw) {
+  return String(raw ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function _flattenApiWidgetValues(raw) {
+  if (raw === null || raw === undefined) return [];
+  if (Array.isArray(raw)) {
+    return raw.flatMap(_flattenApiWidgetValues).map(_cleanOutcomeRawValue).filter(Boolean);
+  }
+  if (typeof raw === 'object') {
+    if ('name' in raw) return _flattenApiWidgetValues(raw.name);
+    if ('plain_text' in raw) return _flattenApiWidgetValues(raw.plain_text);
+    if ('text' in raw) return _flattenApiWidgetValues(raw.text);
+    if ('value' in raw) return _flattenApiWidgetValues(raw.value);
+    if (typeof raw.start === 'string') return [_cleanOutcomeRawValue(raw.start)].filter(Boolean);
+    if (typeof raw.url === 'string') return [_cleanOutcomeRawValue(raw.url)].filter(Boolean);
+    return [];
+  }
+  const value = _cleanOutcomeRawValue(raw);
+  return value ? [value] : [];
+}
+function _normalizeOutcomeFieldKey(raw) {
+  return String(raw || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+function _findOutcomeRawField(row, source = null) {
+  if (!row || typeof row !== 'object') return '';
+  if (source === 'csv') return _resolvedHeaderFor('outcome') || '';
+  const activeSource = source || _getCurrentHTFSource();
+  const override = (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride('outcome', activeSource) : '';
+  if (override && !_isNoMappingValue(override) && Object.prototype.hasOwnProperty.call(row, override)) return override;
+
+  const candidates = ['positionResult', 'resultatTp1', 'resultatTP1', 'Position Result'];
+  for (const key of candidates) {
+    if (Object.prototype.hasOwnProperty.call(row, key) && _flattenApiWidgetValues(row[key]).length) return key;
+  }
+  const preferred = Object.keys(row).find(key => {
+    const norm = _normalizeOutcomeFieldKey(key);
+    if (!/(position.*result|resultat|result|outcome)/.test(norm)) return false;
+    return _flattenApiWidgetValues(row[key]).length > 0;
+  });
+  return preferred || '';
+}
+function _findOutcomeRawFieldInRows(rows, source = null) {
+  const arr = Array.isArray(rows) ? rows : [];
+  if (source === 'csv') return _resolvedHeaderFor('outcome') || '';
+  const activeSource = source || _getCurrentHTFSource();
+  const override = (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride('outcome', activeSource) : '';
+  if (override && !_isNoMappingValue(override)) return override;
+
+  const candidates = ['positionResult', 'resultatTp1', 'resultatTP1', 'Position Result'];
+  for (const key of candidates) {
+    if (arr.some(row => row && Object.prototype.hasOwnProperty.call(row, key) && _flattenApiWidgetValues(row[key]).length)) return key;
+  }
+  const keyOrder = [];
+  const seen = new Set();
+  arr.slice(0, 50).forEach(row => {
+    if (!row || typeof row !== 'object') return;
+    Object.keys(row).forEach(key => {
+      if (!seen.has(key)) { seen.add(key); keyOrder.push(key); }
+    });
+  });
+  return keyOrder.find(key => {
+    const norm = _normalizeOutcomeFieldKey(key);
+    if (!/(position.*result|resultat|result|outcome)/.test(norm)) return false;
+    return arr.some(row => row && Object.prototype.hasOwnProperty.call(row, key) && _flattenApiWidgetValues(row[key]).length);
+  }) || '';
+}
+function _resolveOutcomeRawValues(row, source = null, resolvedField = '') {
+  if (!row || typeof row !== 'object') return [];
+  if (source === 'csv') {
+    const header = resolvedField || _resolvedHeaderFor('outcome');
+    return header && Object.prototype.hasOwnProperty.call(row, header)
+      ? _flattenApiWidgetValues(row[header])
+      : [];
+  }
+  const field = resolvedField || _findOutcomeRawField(row, source);
+  return field && Object.prototype.hasOwnProperty.call(row, field)
+    ? _flattenApiWidgetValues(row[field])
+    : [];
+}
+
+function _getOutcomeValueReport(rawRows = null, source = null) {
+  const rows = Array.isArray(rawRows) ? rawRows : ((typeof _getRawAPICache === 'function') ? _getRawAPICache(source) : []);
+  const counts = {};
+  const unmappedCounts = {};
+  const mapping = _loadOutcomeValueMapping();
+  let skippedEmpty = 0;
+  const outcomeField = _findOutcomeRawFieldInRows(rows, source);
+  for (const row of rows || []) {
+    const values = _resolveOutcomeRawValues(row, source, outcomeField);
+    if (!values.length) {
+      skippedEmpty++;
+      continue;
+    }
+    values.forEach(value => { counts[value] = (counts[value] || 0) + 1; });
+  }
+  const autoMapState = _applyOutcomeAutoMapping(Object.keys(counts), mapping);
+  const effectiveMapping = autoMapState.mapping;
+  Object.keys(counts).forEach(value => {
+    if (!Object.prototype.hasOwnProperty.call(effectiveMapping, value)) {
+      unmappedCounts[value] = counts[value];
+    }
+  });
+  const normalizedUnique = [...new Set(Object.keys(counts).map(_normalizeOutcomeValueForAutoMap))].filter(Boolean).sort();
+  debugLog('[OutcomeValueMapping] source field:', outcomeField || '(none)');
+  debugLog('[OutcomeValueMapping] raw detected values:', { ...counts });
+  debugLog('[OutcomeValueMapping] normalized unique values:', normalizedUnique);
+  debugLog('[OutcomeValueMapping] skipped empty count:', skippedEmpty);
+  debugLog('[OutcomeValueMapping] detected values:', { ...counts });
+  debugLog('[OutcomeValueMapping] unmapped values:', { ...unmappedCounts });
+  return {
+    detected: Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+    unmapped: Object.entries(unmappedCounts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+    mapping: effectiveMapping,
+    autoMapped: autoMapState.autoMapped,
+    needsReview: autoMapState.needsReview,
+  };
+}
+
+function _setOutcomeValueMapping(rawValue, category) {
+  const value = String(rawValue || '').trim();
+  const cat = _isValidOutcomeCategory(category) ? category : 'Other';
+  if (!value) return;
+  const mapping = _loadOutcomeValueMapping();
+  mapping[value] = cat;
+  _saveOutcomeValueMapping(mapping);
+
+  const mode = localStorage.getItem(DS_KEY) || 'demo';
+  if (mode === 'api') {
+    _reapplyAPIOverrides();
+  } else if (mode === 'csv') {
+    _reparseCsvWithOverrides();
+  } else {
+    appState.trades.items.forEach(t => {
+      const raw = t?.outcomeRaw || t?.outcome;
+      if (String(raw || '').trim() === value) {
+        t.outcome = _internalOutcomeForCategory(cat);
+        t.r = _mapR(t.outcome, t.r);
+      }
+    });
+    rebuildDimensions();
+    render();
+  }
+  updateJournalPanel();
 }
 
 function _findApiKey(rawRows, ...candidates) {
@@ -30910,7 +32842,7 @@ function _applySectionFilter(section, { skipSync = false } = {}) {
       const d = layout[id];
       if (d) {
         if (String(id || '').startsWith('w-cust-')) {
-          console.log('[layout-restore] applying grid position for', id, d);
+          debugLog('[layout-restore] applying grid position for', id, d);
         }
         _grid.update(item, { x: d.x, y: d.y, w: d.w, h: d.h });
       }
@@ -32450,8 +34382,8 @@ function _saveSectionSlot(key, { skipSync = false } = {}) {
     partials: payload.partials,
     hiddenWidgets: payload.hiddenWidgets,
   };
-  console.log('[layout-save] items', savedItems);
-  console.log('[layout-save] dynamic widgets', payload.dynamicWidgets);
+  debugLog('[layout-save] items', savedItems);
+  debugLog('[layout-save] dynamic widgets', payload.dynamicWidgets);
   localStorage.setItem(_htfKey(LS_KEY_PREFIX + key), JSON.stringify(payload));
   if (key !== 'active') localStorage.setItem(_htfKey(LS_KEY_ACTIVE), key);
 }
@@ -32474,8 +34406,8 @@ function _loadSectionSlot(raw) {
   try { parsed = JSON.parse(raw); } catch { return false; }
   if (!parsed) return false;
   const data = _isLegacySlot(parsed) ? _migrateLegacySlot(parsed) : parsed;
-  console.log('[layout-restore] saved layout', data);
-  console.log('[layout-restore] dynamic widgets before create', data.dynamicWidgets || []);
+  debugLog('[layout-restore] saved layout', data);
+  debugLog('[layout-restore] dynamic widgets before create', data.dynamicWidgets || []);
   const globalData = { ...GLOBAL_OVERVIEW_LAYOUT, ...(data.global || {}) };
   if (Array.isArray(data.dynamicWidgets)) {
     const restoredDefs = data.dynamicWidgets
@@ -32493,7 +34425,7 @@ function _loadSectionSlot(raw) {
       const grid = entry?.grid;
       const id = entry?.id;
       if (!id || !grid || typeof grid !== 'object') return;
-      console.log('[layout-restore] applying grid position for', id, grid);
+      debugLog('[layout-restore] applying grid position for', id, grid);
       globalData[id] = {
         ...(globalData[id] || {}),
         x: grid.x ?? globalData[id]?.x ?? 0,
@@ -33365,8 +35297,8 @@ function _applySerializedLayout(data) {
 // ── Save layout to localStorage ──
 function _saveCurrentLayout(key) {
   const layout = _serializeLayout();
-  console.log('[layout-save] items', layout);
-  console.log('[layout-save] dynamic widgets', _serializeDynamicWidgets());
+  debugLog('[layout-save] items', layout);
+  debugLog('[layout-save] dynamic widgets', _serializeDynamicWidgets());
   localStorage.setItem(_htfKey(LS_KEY_PREFIX + key), JSON.stringify(layout));
   if (key !== 'active') localStorage.setItem(_htfKey(LS_KEY_ACTIVE), key);
 }

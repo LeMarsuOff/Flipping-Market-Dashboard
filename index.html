@@ -959,12 +959,12 @@
     <div class="topbar-more-wrap">
       <button class="topbar-more-btn" data-action="toggle-more-menu" title="More options">⋯</button>
       <div class="topbar-more-menu" id="topbar-more-menu">
-        <button class="settings-btn" id="account-toggle-btn" data-action="toggle-account-panel" title="View your login and sync options">👤 Account</button>
+        <button class="settings-btn" id="account-toggle-btn" data-action="toggle-account-panel" title="Open settings">👤 Account</button>
         <button class="settings-btn" id="settings-toggle-btn" data-action="toggle-settings-panel" title="Display settings">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
-          <span>Settings</span>
+          <span>Display</span>
         </button>
         <button class="theme-btn" id="theme-toggle-btn" data-action="toggle-theme-panel" title="Customize colors">🎨 Theme Editor</button>
         <button class="tpm-toggle-btn" id="tpm-toggle-btn" data-action="toggle-tpm-panel" title="Configure how effective RR is computed">🎯 TP Management</button>
@@ -989,9 +989,9 @@
 </div>
 
 <!-- ══ ACCOUNT PANEL ══ -->
-<div class="account-panel" id="account-panel" role="dialog" aria-labelledby="account-title">
+<div class="account-panel account-panel--tabs" id="account-panel" role="dialog" aria-labelledby="account-title">
   <div class="account-header">
-    <span class="account-title" id="account-title">Account</span>
+    <span class="account-title" id="account-title">Settings</span>
     <button class="account-close" data-action="toggle-account-panel" aria-label="Close">✕</button>
   </div>
   <div class="account-body">
@@ -999,7 +999,12 @@
       <span class="account-alert-text" id="account-alert-text"></span>
     </div>
 
-    <section class="account-card account-section" id="account-section">
+    <nav class="settings-tabs" aria-label="Settings sections">
+      <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="account">Account</button>
+      <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="data">Data & Integrations</button>
+    </nav>
+
+    <section class="account-card account-section settings-tab-panel" id="account-section" data-settings-tab-panel="account">
       <button class="account-section-trigger" type="button" data-action="toggle-account-section" aria-expanded="false">
         <span class="account-section-copy">
           <span class="account-card-label">Account</span>
@@ -1013,7 +1018,7 @@
           <div class="account-compact-value" id="account-identity-email">—</div>
           <div class="account-compact-subtitle">Security</div>
           <div class="account-compact-actions">
-            <button class="account-secondary-btn" data-action="auth-show-change-password">Change password</button>
+            <button class="account-secondary-btn" data-action="auth-show-edit-profile">Edit profile</button>
             <button class="account-secondary-btn account-danger-btn" data-action="sw-logout">Log out</button>
           </div>
         </div>
@@ -1108,6 +1113,19 @@
           </div>
         </div>
 
+        <div class="account-card account-card--form" id="account-view-edit-profile" hidden>
+          <div class="account-form-head">
+            <div class="account-form-title">Edit profile</div>
+          </div>
+          <div class="account-compact-actions">
+            <button class="account-secondary-btn" data-action="auth-show-change-password">Change password</button>
+            <button class="account-secondary-btn account-danger-btn" data-action="auth-delete-account">Delete account</button>
+          </div>
+          <div class="account-btn-row" style="margin-top:12px">
+            <button class="account-secondary-btn" data-action="auth-cancel-edit-profile">Cancel</button>
+          </div>
+        </div>
+
         <div class="account-card account-card--form" id="account-view-change-password" hidden>
           <div class="account-form-head">
             <div class="account-form-title">Change password</div>
@@ -1163,32 +1181,27 @@
             <button class="account-secondary-btn" data-action="auth-cancel-change-password">Cancel</button>
           </div>
         </div>
+
       </div>
     </section>
 
-    <section class="account-card account-section" id="integrations-section">
-      <button class="account-section-trigger" type="button" data-action="toggle-integrations-section" aria-expanded="false">
-        <span class="account-section-copy">
-          <span class="account-card-label">Integrations</span>
-          <span class="account-section-summary" id="integrations-section-status">—</span>
-        </span>
-        <span class="account-section-chevron" aria-hidden="true">▸</span>
-      </button>
-      <div class="account-section-body" id="integrations-section-body" hidden></div>
-    </section>
-
-    <section class="account-card account-section" id="data-sources-section">
+    <section class="account-card account-section settings-tab-panel" id="data-integrations-section" data-settings-tab-panel="data">
       <button class="account-section-trigger" type="button" data-action="toggle-data-sources-section" aria-expanded="false">
         <span class="account-section-copy">
-          <span class="account-card-label">Data Sources</span>
+          <span class="account-card-label">Data & Integrations</span>
           <span class="account-section-summary" id="data-sources-section-status">● Notion API connected</span>
           <span class="account-section-detail" id="data-sources-section-summary">—</span>
         </span>
         <span class="account-section-chevron" aria-hidden="true">▸</span>
       </button>
-      <div class="account-section-body" id="data-sources-section-body" hidden>
+      <div class="account-section-body" id="data-integrations-section-body" hidden>
+        <div id="integrations-section-body"></div>
         <div class="account-compact-block" id="journal-profile-default-pane">
           <div class="journal-profile-manage-content">
+            <div class="data-sources-head">
+              <span class="data-sources-title">Data sources</span>
+              <span class="data-sources-count" id="data-sources-card-summary">—</span>
+            </div>
             <div class="journal-profile-switch-list" id="journal-profile-switch-list"></div>
             <button class="account-secondary-btn journal-profile-add-btn" type="button" id="journal-profile-add-btn" data-action="journal-profile-add-source">+ Add source</button>
             <div class="journal-profile-editor-slot" id="journal-profile-editor-slot"></div>
@@ -1196,6 +1209,7 @@
         </div>
       </div>
     </section>
+
   </div>
 </div>
 
