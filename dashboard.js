@@ -4838,15 +4838,10 @@ async function _handleNotionProfileSyncNow(profileId) {
     showThemeToast('Reconnect Notion to enable syncing.', true);
     return;
   }
-  if (getActiveJournalProfile()?.id !== profile.id) {
-    setActiveJournalProfile(profile.id);
-    const preferredSource = _getJournalProfilePreferredSource(profile);
-    if (preferredSource && (localStorage.getItem(HTF_SOURCE_KEY) || 'm15') !== preferredSource) {
-      setHTFSource(preferredSource);
-    }
-  }
-  const activeProfile = getActiveJournalProfile() || profile;
-  await _loadNotionTrades(activeProfile, { force: false, syncNow: true });
+  // Sync runs against the target profile's slot without switching the active
+  // view. `_loadNotionTrades` gates DS_KEY / HTF / UI side-effects on
+  // `wasActiveAtStart` so a background sync stays silent.
+  await _loadNotionTrades(profile, { force: false, syncNow: true });
 }
 function _renderJournalProfileModalList() {
   return;
@@ -8058,17 +8053,24 @@ async function _loadNotionTrades(profile, options = {}) {
   }
 
   const source = (String(profile.type || '').toLowerCase() === 'h4') ? 'h4' : 'm15';
+  // Snapshot once: is THIS sync targeting the currently active profile? Decides
+  // whether we mutate global view state (DS_KEY, HTF_SOURCE_KEY, toasts, source
+  // indicator). Background syncs of non-active profiles must stay silent so the
+  // per-row Sync button does not switch the user's view.
+  const wasActiveAtStart = stillActive();
 
   // ── Ensure we are in api mode and on the right HTF source ─────────────────
-  // Notion profiles must always operate in 'api' mode. If the user was in demo
-  // or csv mode, switch silently — the UI source buttons follow from DS_KEY.
-  if (localStorage.getItem(DS_KEY) !== 'api') {
-    localStorage.setItem(DS_KEY, 'api');
-    if (typeof updateSourceUI === 'function') updateSourceUI('api');
-  }
-  // Align HTF source so cache keys and injection gates are consistent
-  if (_getCurrentHTFSource() !== source) {
-    try { localStorage.setItem(HTF_SOURCE_KEY, source); } catch (e) {}
+  // Notion profiles must always operate in 'api' mode when the user is viewing
+  // them. Only switch when the synced profile IS the active one — a background
+  // sync of a non-active profile must not flip DS_KEY or HTF_SOURCE_KEY.
+  if (wasActiveAtStart) {
+    if (localStorage.getItem(DS_KEY) !== 'api') {
+      localStorage.setItem(DS_KEY, 'api');
+      if (typeof updateSourceUI === 'function') updateSourceUI('api');
+    }
+    if (_getCurrentHTFSource() !== source) {
+      try { localStorage.setItem(HTF_SOURCE_KEY, source); } catch (e) {}
+    }
   }
 
   _migrateFieldOverridesToProfileScope();
@@ -8117,6 +8119,12 @@ async function _loadNotionTrades(profile, options = {}) {
     }
   }
 
+  // ── Pin cache scope to THIS profile for the whole fetch + processing run.
+  // Covers existingCache / existingRawCache / sync-cursor reads below AND every
+  // write inside the fetch try-block. Restored in the outer finally.
+  const _prevCacheCtx = _journalProfileCacheContextOverride;
+  _journalProfileCacheContextOverride = profileId;
+
   const existingCache = getCachedAPIData(source) || [];
   const existingRawCache = _getRawAPICache(source) || [];
   const lastCursor = _getNotionSyncCursor();
@@ -8131,8 +8139,10 @@ async function _loadNotionTrades(profile, options = {}) {
     _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'syncing' });
   }
   debugLog('[NotionSync] start:', { profileId, database: profile.notionDatabaseId, source });
-  if (!silent) showDataStatus('Loading Notion data…', 'warn');
-  setSourceIndicator('loading');
+  // Skip global UI feedback when syncing a non-active profile — those
+  // indicators belong to the user's current view, not the background target.
+  if (!silent && wasActiveAtStart) showDataStatus('Loading Notion data…', 'warn');
+  if (wasActiveAtStart) setSourceIndicator('loading');
 
   const btn = typeof getByIdSafe === 'function' ? getByIdSafe('ds-refresh-btn') : null;
   if (btn) btn.classList.add('spinning');
@@ -8153,14 +8163,12 @@ async function _loadNotionTrades(profile, options = {}) {
     const resp = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
 
-    // ── Race-guard scope override ──────────────────────────────────────────
-    // User may switch active profile during the await. Pin all profile-scoped
-    // cache writes below (raw cache, parsed cache, sync cursor) to the
-    // captured profileId so the response always lands in *this* profile's
-    // slot, regardless of who is currently active.
-    const _prevCacheCtx = _journalProfileCacheContextOverride;
-    _journalProfileCacheContextOverride = profileId;
-    try {
+    // Cache-scope override is already pinned to `profileId` at the top of the
+    // function, so every profile-scoped read/write below (raw cache, parsed
+    // cache, sync cursor) lands in *this* profile's slot regardless of which
+    // profile is currently active (user may have switched mid-await, or this
+    // may be a background sync of a non-active profile triggered from the
+    // per-row Sync button).
 
     if (!resp.ok) {
       let errJson = null;
@@ -8350,10 +8358,6 @@ async function _loadNotionTrades(profile, options = {}) {
     // currently visible rows become permanent before older months.
     _mediaQueue.enqueue(parsed, source, user.id, profileId);
 
-    } finally {
-      // Restore cache-scope override regardless of which sub-branch returned.
-      _journalProfileCacheContextOverride = _prevCacheCtx;
-    }
   } catch (err) {
     console.error('[NotionLoad]', err.name, err.message);
     if (profileId) {
@@ -8365,6 +8369,9 @@ async function _loadNotionTrades(profile, options = {}) {
       setSourceIndicator('pending');
     }
   } finally {
+    // Restore cache-scope override regardless of success / error / which
+    // sub-branch returned. Pinned at the top of the function.
+    _journalProfileCacheContextOverride = _prevCacheCtx;
     appState.settings.dataSource.loading = false;
     if (btn) btn.classList.remove('spinning');
     if (typeof dataHubOpen !== 'undefined' && dataHubOpen) {
