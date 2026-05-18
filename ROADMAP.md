@@ -39,6 +39,8 @@ _(none)_
 
 ## TODO — Deferred
 
+- [ ] **[Post-readonly] Trading Journal evolution** — manual trade entry, custom schemas, Notion two-way sync. Spec complète dans `docs/journal-evolution.md`. **Ne pas démarrer avant que le read-only soit clos.** Bloquants identifiés : XSS fix (SEV-HIGH), Ghost trades (SEV-MED), Mappings cross-device sync (audit M1) — tous listés dans le doc §9.
+
 - [ ] **Drawdown Intelligence section** — DD by context (setup/session/pair decomposing max DD), Recovery Factor (Total R / |Max DD|), DD Duration distribution, Risk of Ruin estimate. Optional: Underwater curve, Streak/DD scatter, MAR/Calmar (~14 months of data, low priority). Deferred pending community priority signal.
 
 - [ ] **Hardcoded font-sizes (~180 remaining)** — deferred pending community feedback on typography editor coverage.
