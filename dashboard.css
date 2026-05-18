@@ -1483,7 +1483,7 @@ body.layout-edit-mode #layout-toolbar * {
   font-size: var(--typo-micro-size);
   line-height: 1.5;
 }
-.logo-guide-panel .csv-doc-table {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
@@ -1495,7 +1495,7 @@ body.layout-edit-mode #layout-toolbar * {
   table-layout: fixed;
   margin: 0;
 }
-.logo-guide-panel .csv-doc-table thead th {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th {
   text-align: left;
   font-weight: 500;
   font-size: 9px;
@@ -1506,11 +1506,11 @@ body.layout-edit-mode #layout-toolbar * {
   background: var(--bg2);
   border-bottom: 1px solid var(--line);
 }
-.logo-guide-panel .csv-doc-table thead th.csv-doc-col-prop   { width: 22%; }
-.logo-guide-panel .csv-doc-table thead th.csv-doc-col-type   { width: 14%; }
-.logo-guide-panel .csv-doc-table thead th.csv-doc-col-powers { width: 36%; }
-.logo-guide-panel .csv-doc-table thead th.csv-doc-col-desc   { width: 28%; }
-.logo-guide-panel .csv-doc-table tbody td {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th.csv-doc-col-prop   { width: 22%; }
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th.csv-doc-col-type   { width: 14%; }
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th.csv-doc-col-powers { width: 36%; }
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th.csv-doc-col-desc   { width: 28%; }
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table tbody td {
   padding: 10px 12px;
   vertical-align: top;
   border-bottom: 1px solid var(--line);
@@ -1520,10 +1520,10 @@ body.layout-edit-mode #layout-toolbar * {
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
-.logo-guide-panel .csv-doc-table tbody tr:last-child td {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table tbody tr:last-child td {
   border-bottom: none;
 }
-.logo-guide-panel .csv-doc-prop {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-prop {
   color: var(--white);
   font-weight: 500;
   font-size: 10.5px;
@@ -1536,7 +1536,7 @@ body.layout-edit-mode #layout-toolbar * {
   font-family: 'DM Mono', monospace;
   word-break: break-word;
 }
-.logo-guide-panel .csv-doc-type-pill {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill {
   display: inline-block;
   font-size: 8.5px;
   padding: 2px 7px;
@@ -1550,42 +1550,42 @@ body.layout-edit-mode #layout-toolbar * {
   white-space: nowrap;
   font-family: 'DM Mono', monospace;
 }
-.logo-guide-panel .csv-doc-type-pill.is-number {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill.is-number {
   color: #3ec8d8;
   border-color: rgba(62,200,216,.40);
   background: rgba(62,200,216,.10);
 }
-.logo-guide-panel .csv-doc-type-pill.is-date {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill.is-date {
   color: var(--g);
   border-color: color-mix(in srgb, var(--g) 35%, transparent);
   background: var(--g2);
 }
-.logo-guide-panel .csv-doc-type-pill.is-select {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill.is-select {
   color: var(--a);
   border-color: color-mix(in srgb, var(--a) 35%, transparent);
   background: var(--a2);
 }
-.logo-guide-panel .csv-doc-type-pill.is-multiselect {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill.is-multiselect {
   color: #ea8a4a;
   border-color: rgba(234, 138, 74, .40);
   background: rgba(234, 138, 74, .10);
 }
-.logo-guide-panel .csv-doc-type-pill.is-formula {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill.is-formula {
   color: #b5895e;
   border-color: rgba(181, 137, 94, .40);
   background: rgba(181, 137, 94, .10);
 }
-.logo-guide-panel .csv-doc-type-pill.is-checkbox {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill.is-checkbox {
   color: #e86ca6;
   border-color: rgba(232, 108, 166, .40);
   background: rgba(232, 108, 166, .10);
 }
-.logo-guide-panel .csv-doc-type-pill.is-url {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-type-pill.is-url {
   color: #9aa6c4;
   border-color: rgba(154, 166, 196, .40);
   background: rgba(154, 166, 196, .10);
 }
-.logo-guide-panel .csv-doc-multi-tp-note {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-multi-tp-note {
   font-size: var(--typo-micro-size);
   color: var(--text-muted);
   background: var(--bg2);
@@ -1595,14 +1595,14 @@ body.layout-edit-mode #layout-toolbar * {
   margin: 0 0 8px;
   line-height: 1.5;
 }
-.logo-guide-panel .csv-doc-multi-tp-note code {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-multi-tp-note code {
   background: var(--bg3, var(--bg2));
   padding: 1px 4px;
   border-radius: 2px;
   font-family: 'DM Mono', monospace;
   font-size: 0.95em;
 }
-.logo-guide-panel .csv-doc-section-title {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-section-title {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1614,13 +1614,13 @@ body.layout-edit-mode #layout-toolbar * {
   opacity: .9;
   font-family: 'DM Mono', monospace;
 }
-.logo-guide-panel .csv-doc-section-title::after {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-section-title::after {
   content: '';
   flex: 1;
   height: 1px;
   background: var(--line);
 }
-.logo-guide-panel .csv-doc-section-title-badge {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-section-title-badge {
   font-size: 8.5px;
   padding: 2px 6px;
   border-radius: 3px;
@@ -1629,22 +1629,22 @@ body.layout-edit-mode #layout-toolbar * {
   font-family: 'DM Mono', monospace;
   flex-shrink: 0;
 }
-.logo-guide-panel .csv-doc-section-title-badge.is-required {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-section-title-badge.is-required {
   background: color-mix(in srgb, var(--r) 12%, transparent);
   color: var(--r);
   border: 1px solid color-mix(in srgb, var(--r) 35%, transparent);
 }
-.logo-guide-panel .csv-doc-section-title-badge.is-optional {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-section-title-badge.is-optional {
   background: var(--gold2);
   color: var(--gold);
   border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
 }
-.logo-guide-panel .csv-doc-section-title-badge.is-important {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-section-title-badge.is-important {
   background: color-mix(in srgb, #ff9e3d 14%, transparent);
   color: #ff9e3d;
   border: 1px solid color-mix(in srgb, #ff9e3d 40%, transparent);
 }
-.logo-guide-panel .csv-doc-prop-or {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-prop-or {
   display: inline-block;
   margin: 0 4px;
   font-size: 9px;
@@ -1653,12 +1653,12 @@ body.layout-edit-mode #layout-toolbar * {
   letter-spacing: .5px;
   font-family: 'DM Mono', monospace;
 }
-.logo-guide-panel .csv-doc-chips {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
-.logo-guide-panel .csv-doc-chip {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-chip {
   display: inline-block;
   font-size: 9px;
   padding: 2px 7px;
@@ -1670,18 +1670,18 @@ body.layout-edit-mode #layout-toolbar * {
   letter-spacing: .2px;
   font-family: 'DM Mono', monospace;
 }
-.logo-guide-panel .csv-doc-chip.is-critical {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-chip.is-critical {
   background: var(--g3);
   border-color: color-mix(in srgb, var(--g) 45%, transparent);
   color: var(--g);
   font-weight: 500;
 }
-.logo-guide-panel .csv-doc-desc {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-desc {
   color: var(--dim);
   font-size: var(--typo-micro-size);
   line-height: 1.55;
 }
-.logo-guide-panel .csv-doc-desc code {
+:is(.logo-guide-panel, #ljp-list) .csv-doc-desc code {
   color: var(--body);
   background: var(--bg2);
   padding: 1px 4px;
@@ -1690,24 +1690,24 @@ body.layout-edit-mode #layout-toolbar * {
   border: 1px solid var(--line);
 }
 @media (max-width: 720px) {
-  .logo-guide-panel .csv-doc-table,
-  .logo-guide-panel .csv-doc-table thead,
-  .logo-guide-panel .csv-doc-table tbody,
-  .logo-guide-panel .csv-doc-table tr,
-  .logo-guide-panel .csv-doc-table td {
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table,
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table thead,
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table tbody,
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table tr,
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table td {
     display: block;
   }
-  .logo-guide-panel .csv-doc-table thead { display: none; }
-  .logo-guide-panel .csv-doc-table tbody tr {
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table thead { display: none; }
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table tbody tr {
     border-bottom: 1px solid var(--line);
     padding: 12px;
   }
-  .logo-guide-panel .csv-doc-table tbody tr:last-child { border-bottom: none; }
-  .logo-guide-panel .csv-doc-table tbody td {
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table tbody tr:last-child { border-bottom: none; }
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table tbody td {
     border-bottom: none;
     padding: 4px 0;
   }
-  .logo-guide-panel .csv-doc-table tbody td[data-label]::before {
+  :is(.logo-guide-panel, #ljp-list) .csv-doc-table tbody td[data-label]::before {
     content: attr(data-label);
     display: block;
     font-size: 8.5px;
@@ -1864,6 +1864,245 @@ body.layout-edit-mode #layout-toolbar * {
   color: var(--gold);
 }
 .ljp-pencil-btn svg { display: block; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Mapping tab — grouped tables (CSV-Guide layout reused, then refined for
+   interactive density). All overrides scoped to `#ljp-list` so the CSV
+   Guide modal keeps its original look.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Column widths: tuned for the 560px Data Hub panel. Description gets the
+   most room (prose), Mapping cell is compact thanks to the vertical stack. */
+:is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th.csv-doc-col-mapping { width: 38%; }
+#ljp-list .ljp-mapping-table thead th.csv-doc-col-prop    { width: 22%; }
+#ljp-list .ljp-mapping-table thead th.csv-doc-col-type    { width: 11%; }
+#ljp-list .ljp-mapping-table thead th.csv-doc-col-desc    { width: 38%; }
+#ljp-list .ljp-mapping-table thead th.csv-doc-col-mapping { width: 29%; }
+
+/* Tables — drop the heavy outer border, keep only inner row separators
+   so multiple sections stack as one continuous list with breathing room. */
+#ljp-list .ljp-mapping-table {
+  margin: 0 0 4px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+#ljp-list .ljp-mapping-table thead th {
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: .9px;
+  color: var(--text-muted);
+  padding: 4px 14px 8px;
+  border-bottom: 1px solid var(--line);
+}
+#ljp-list .ljp-mapping-table tbody td {
+  padding: 14px;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+}
+#ljp-list .ljp-mapping-table tbody tr:last-child > td {
+  border-bottom: none;
+}
+
+/* Status-tinted row backgrounds — a subtle wash in the mapping status
+   colour so the eye can scan for missing / remapped rows without reading
+   each pill. Kept very low alpha (~6%) so it sits behind everything as a
+   quiet semantic hint instead of a loud highlight. */
+#ljp-list .ljp-mapping-row { transition: background-color .14s ease; }
+#ljp-list .ljp-mapping-row.is-ok         > td { background: color-mix(in srgb, var(--g)    6%, transparent); }
+#ljp-list .ljp-mapping-row.is-missing    > td { background: color-mix(in srgb, var(--r)    7%, transparent); }
+#ljp-list .ljp-mapping-row.is-remapped   > td { background: color-mix(in srgb, var(--gold) 7%, transparent); }
+#ljp-list .ljp-mapping-row.is-no-mapping > td { background: color-mix(in srgb, #7dd3fc      7%, transparent); }
+/* Hover deepens the same tint — keeps the row hue, just bumps presence. */
+#ljp-list .ljp-mapping-row:not(.is-readonly).is-ok:hover         > td { background: color-mix(in srgb, var(--g)    12%, transparent); }
+#ljp-list .ljp-mapping-row:not(.is-readonly).is-missing:hover    > td { background: color-mix(in srgb, var(--r)    13%, transparent); }
+#ljp-list .ljp-mapping-row:not(.is-readonly).is-remapped:hover   > td { background: color-mix(in srgb, var(--gold) 13%, transparent); }
+#ljp-list .ljp-mapping-row:not(.is-readonly).is-no-mapping:hover > td { background: color-mix(in srgb, #7dd3fc      13%, transparent); }
+
+/* Section heading — proper heading style instead of the original CSV-Guide
+   "label" treatment. Sans-serif, mid weight, sentence-case kept, more
+   space above so each tier reads as a distinct chapter. */
+#ljp-list .csv-doc-section-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -.1px;
+  text-transform: none;
+  color: var(--white);
+  opacity: 1;
+  margin: 26px 0 10px;
+  gap: 10px;
+}
+#ljp-list .csv-doc-section-title:first-child { margin-top: 8px; }
+#ljp-list .csv-doc-section-title::after {
+  background: color-mix(in srgb, var(--line) 70%, transparent);
+}
+#ljp-list .csv-doc-section-title-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  padding: 2px 7px;
+  letter-spacing: .3px;
+  font-weight: 500;
+}
+
+/* Property column — keep the gold left-bar that signals "canonical name",
+   but slim down the chrome so it stops competing with the mapping target. */
+#ljp-list .csv-doc-prop {
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--gold);
+  padding: 1px 0 1px 8px;
+  border-radius: 0;
+  font-size: 11.5px;
+  color: var(--white);
+}
+#ljp-list .ljp-required-badge {
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* Type pill — minor reduction so it reads as a quiet tag, not a chip. */
+#ljp-list .csv-doc-type-pill {
+  font-size: 8px;
+  padding: 2px 6px;
+  letter-spacing: .5px;
+}
+
+/* Descriptions in prose font — biggest readability win. Inline `<code>`
+   keeps mono so code identifiers still stand out. Selector bumped to
+   `tbody td.csv-doc-desc` because the inherited `.csv-doc-table tbody td`
+   rule (specificity 1,1,2) sets a smaller `--typo-micro-size`. */
+#ljp-list .ljp-mapping-table tbody td.csv-doc-desc {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  letter-spacing: .1px;
+}
+#ljp-list .ljp-mapping-table tbody td.csv-doc-desc code {
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
+  border: none;
+  color: var(--body);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Mapping cell — vertical stack: status pill (top row, alongside pencil),
+   then current target + coverage as a quiet meta line underneath. */
+#ljp-list .ljp-mapping-cell { position: relative; }
+#ljp-list .ljp-status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-right: 30px; /* clears the floating pencil */
+}
+#ljp-list .ljp-status {
+  flex-shrink: 0;
+  font-family: 'DM Mono', monospace;
+  font-size: 8.5px;
+  letter-spacing: .4px;
+}
+#ljp-list .ljp-mapping-target {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--white);
+  background: transparent;
+  border: none;
+  padding: 0;
+  word-break: break-word;
+  max-width: 100%;
+  font-feature-settings: 'tnum';
+}
+#ljp-list .ljp-mapping-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+#ljp-list .ljp-mapping-row.is-missing .ljp-mapping-target,
+#ljp-list .ljp-mapping-row.is-no-mapping .ljp-mapping-target { color: var(--text-muted); }
+#ljp-list .ljp-mapping-default,
+#ljp-list .ljp-mapping-coverage {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0;
+  font-feature-settings: 'tnum';
+}
+#ljp-list .ljp-mapping-default .ljp-field-name {
+  color: var(--gold);
+  font-weight: 500;
+  font-family: 'DM Mono', monospace;
+}
+
+/* Pencil docked top-right of the Mapping cell — small, calm, lights up
+   gold on hover/open to mirror the rest of the dashboard's tone. */
+#ljp-list .ljp-mapping-cell .ljp-pencil-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  margin: 0;
+  width: 24px;
+  height: 24px;
+  border-color: color-mix(in srgb, var(--line2) 80%, transparent);
+  transition: all .16s ease;
+}
+#ljp-list .ljp-mapping-cell .ljp-pencil-btn:hover { transform: translateY(-1px); }
+
+/* Picker follow-up row — invisible host that hands the picker the full
+   table width. Indented slightly so it reads as belonging to the row
+   above instead of as a new entry. */
+#ljp-list .ljp-mapping-picker-row > td {
+  padding: 0 14px 14px 28px;
+  background: color-mix(in srgb, var(--bg2) 30%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+}
+#ljp-list .ljp-mapping-picker-row .csv-remap-picker { margin-top: 0; }
+
+/* Outcome value report follow-up row — full-width payload from
+   _renderOutcomeValueReportHTML for the Position Result row. */
+#ljp-list .ljp-mapping-report-row > td {
+  padding: 0 14px 14px 28px;
+  background: color-mix(in srgb, var(--bg2) 30%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+}
+
+/* Multi-TP advisory note — quieter typographic treatment that matches
+   the new description style instead of looking like another card. */
+#ljp-list .csv-doc-multi-tp-note {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  line-height: 1.55;
+  background: transparent;
+  border: none;
+  border-left: 2px solid color-mix(in srgb, var(--gold) 50%, transparent);
+  border-radius: 0;
+  padding: 0 0 0 10px;
+  margin: -2px 0 12px;
+  color: var(--text-muted);
+}
+#ljp-list .csv-doc-multi-tp-note code {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
+}
+
+/* Empty-state shown when no data is loaded at all (Demo with no fixture
+   loaded yet, or API without raw cache). */
+#ljp-list .csv-remap-empty {
+  text-align: center;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  padding: 28px 8px;
+}
 
 /* Custom heatmap grid */
 .cw-hm-wrap {
@@ -12924,7 +13163,7 @@ body.ms-sidebar-open .view-tabs {
 }
 .csv-doc-copy-snippet:active { transform: translateY(1px); }
 .csv-format-hint .csv-doc-copy-snippet code,
-.logo-guide-panel .csv-doc-copy-snippet code,
+:is(.logo-guide-panel, #ljp-list) .csv-doc-copy-snippet code,
 .csv-doc-copy-snippet > code {
   color: var(--gold);
   background: transparent;
@@ -12933,7 +13172,7 @@ body.ms-sidebar-open .view-tabs {
   font-size: 10px;
 }
 .csv-format-hint .csv-doc-copy-snippet.is-copied code,
-.logo-guide-panel .csv-doc-copy-snippet.is-copied code,
+:is(.logo-guide-panel, #ljp-list) .csv-doc-copy-snippet.is-copied code,
 .csv-doc-copy-snippet.is-copied > code { color: var(--g); }
 .csv-doc-copy-snippet .csv-doc-copy-icon {
   font-size: 10px;

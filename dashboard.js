@@ -27203,75 +27203,82 @@ const WIDGET_DIM_KEY = {
 };
 
 // Journal rows — one per remappable dimension. Defaults per format.
+// `tier` groups dims for the Mapping tab UI: 'required' (must-map) /
+// 'optional' (unlocks widgets) / 'screenshot' (URL or Files & Media) /
+// 'multi-tp' (only relevant in Multi-TP mode).
+// `propType` matches the Notion property pill classes used by the CSV Guide:
+// 'select' / 'multiselect' / 'number' / 'date' / 'checkbox' / 'url' / 'formula'.
+// `desc` is plain-text HTML rendered inside the Description column of the
+// mapping tables (same prose pattern as the CSV Guide).
 const JOURNAL_DIMS = [
   // ── Required dims (CSV import refuses to ingest without these,
   //    BUT Phase 2 of this PR adds a degraded mode) ──
-  { key: 'outcome', label: 'Position Result', required: true, defaults: {
+  { key: 'outcome', label: 'Position Result', required: true, tier: 'required', propType: 'select', defaults: {
     flipping: 'Résultat TP 1', pro: 'Position Result', beginner: 'Position Result',
-  }, widgets: [] },
-  { key: 'r', label: 'RR TP 1', required: true, defaults: {
+  }, widgets: [], desc: 'Trade outcome:<br><code>Take profit</code>, <code>Stop loss</code>, <code>BE - TP</code>, <code>BE - SL</code>, etc.<br>Rows missing this are skipped.' },
+  { key: 'r', label: 'RR TP 1', required: true, tier: 'required', propType: 'number', defaults: {
     flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
-  }, widgets: [] },
-  { key: 'date', label: 'Date', required: true, defaults: {
+  }, widgets: [], desc: 'Realized R on first take profit:<br>e.g. <code>2.4</code> or <code>-1</code>.<br>Feeds equity, expectancy, drawdown.' },
+  { key: 'date', label: 'Date', required: true, tier: 'required', propType: 'date', defaults: {
     flipping: 'Date', pro: 'Date', beginner: 'Date',
-  }, widgets: [] },
-  { key: 'pair',     label: 'Pair',          defaults: {
+  }, widgets: [], desc: 'Trade date.<br>Format: <code>Month DD, YYYY</code> or <code>YYYY-MM-DD</code>.' },
+  { key: 'pair',     label: 'Pair', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Paire', pro: 'Pair', beginner: 'Pair',
-  }, widgets: ['w-pair', 'w-pair-session'] },
-  { key: 'setup',     label: 'Setup',        defaults: {
+  }, widgets: ['w-pair', 'w-pair-session'], desc: 'Currency pair traded:<br>e.g. <code>EURUSD</code>.' },
+  { key: 'setup',     label: 'Setup', tier: 'optional', propType: 'select', defaults: {
     flipping: 'M15 Confirmation / Continuation',
     pro:      'M15 Confirmation / Continuation',
     beginner: 'M15 Confirmation / Continuation',
-  }, widgets: ['w-setup'] },
-  { key: 'setupDetail', label: 'Setup detail', defaults: {
+  }, widgets: ['w-setup'], desc: 'High-level setup family:<br>e.g. <code>Continuation</code>, <code>Reversal</code>.<br>Drives the Setup Performance widget.' },
+  { key: 'setupDetail', label: 'Setup detail', tier: 'optional', propType: 'select', defaults: {
     flipping: 'M15 Type Détail', pro: 'M15 Type Detailed', beginner: 'M15 Type Detailed',
-  }, widgets: [] },
-  { key: 'session',   label: 'Session',      defaults: {
+  }, widgets: [], desc: 'Detailed setup variant:<br>e.g. <code>Internal Continuation</code>, <code>External Reversal</code>.' },
+  { key: 'session',   label: 'Session', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Session', pro: 'Session', beginner: '—',
-  }, widgets: ['w-session', 'w-heatmap', 'w-pair-session'] },
-  { key: 'day',       label: 'Day of Week',  defaults: {
+  }, widgets: ['w-session', 'w-heatmap', 'w-pair-session'], desc: 'Trading session:<br>e.g. <code>London KZ</code>, <code>New York KZ</code>.' },
+  { key: 'day',       label: 'Day of Week', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Jour', pro: 'Day', beginner: 'Day',
-  }, widgets: ['w-day', 'w-heatmap'] },
-  { key: 'obstacles', label: 'M15 Obstacles', defaults: {
+  }, widgets: ['w-day', 'w-heatmap'], desc: 'Day of week, full English name:<br><code>Monday</code> … <code>Sunday</code>.' },
+  { key: 'obstacles', label: 'M15 Obstacles', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'Obstacles M15', pro: 'M15 Obstacles', beginner: 'M15 Obstacles',
-  }, widgets: ['w-m15'] },
-  { key: 'h4',        label: 'H4 Obstacles', defaults: {
+  }, widgets: ['w-m15'], desc: 'M15 obstacle tags, comma-separated:<br>e.g. <code>Big Volume</code>, <code>Range Sweep</code>.' },
+  { key: 'h4',        label: 'H4 Obstacles', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'Obstacles H4', pro: 'H4 Obstacles', beginner: '—',
-  }, widgets: ['w-h4'] },
-  { key: 'beManagement', label: 'BE Management', defaults: {
+  }, widgets: ['w-h4'], desc: 'H4 obstacle tags, comma-separated.<br>Powers the H4 No-Sweep filter.' },
+  { key: 'beManagement', label: 'BE Management', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'BE Management', pro: 'BE Management', beginner: 'BE Management',
-  }, widgets: [] },
-  { key: 'hour',      label: 'Hour',         defaults: {
+  }, widgets: [], desc: 'BE management tags, comma-separated:<br>e.g. <code>TP Direct</code>, <code>BE si set à 1RR</code>, <code>No BE available</code>.<br>Drives BE-aware classification.' },
+  { key: 'hour',      label: 'Hour', tier: 'optional', propType: 'select', defaults: {
     flipping: '(auto-detect)', pro: '(auto-detect)', beginner: '(auto-detect)',
-  }, widgets: ['w-hour'] },
-  { key: 'positionType', label: 'Position Type', defaults: {
+  }, widgets: ['w-hour'], desc: 'Entry hour:<br><code>HHh</code> format (e.g. <code>10h</code>) or integer 0–23.<br>Auto-detected from <code>Time</code>.' },
+  { key: 'positionType', label: 'Position Type', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'Type de trade', pro: 'Position Type', beginner: 'Position Type',
-  }, widgets: [] },
-  { key: 'direction',    label: 'Order (direction)', defaults: {
+  }, widgets: [], desc: 'Trade classification:<br><code>BackTest</code>, <code>Live</code>, <code>Invalid</code>.' },
+  { key: 'direction',    label: 'Order (direction)', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Order', pro: 'Order', beginner: 'Order',
-  }, widgets: [] },
-  { key: 'rrMax',        label: 'RR Max', defaults: {
+  }, widgets: [], desc: 'Trade direction:<br><code>Buy</code> (long) or <code>Sell</code> (short).' },
+  { key: 'rrMax',        label: 'RR Max', tier: 'optional', propType: 'number', defaults: {
     flipping: 'RR Max', pro: 'RR Max', beginner: 'RR Max',
-  }, widgets: [] },
-  { key: 'badFeeling',   label: 'Bad feeling', defaults: {
+  }, widgets: [], desc: 'Hypothetical peak R the trade could have reached if left open.<br>Drives the Partial Optimizer.' },
+  { key: 'badFeeling',   label: 'Bad feeling', tier: 'optional', propType: 'checkbox', defaults: {
     flipping: 'Bad feeling', pro: 'Bad feeling', beginner: 'Bad feeling',
-  }, widgets: [] },
-  { key: 'notionUrl',    label: 'Notion URL', defaults: {
+  }, widgets: [], desc: 'Checkbox flag for emotion-marked trades.<br>Lets you filter them out.' },
+  { key: 'notionUrl',    label: 'Notion URL', tier: 'optional', propType: 'formula', defaults: {
     flipping: 'Notion URL', pro: 'Notion URL', beginner: 'Notion URL',
-  }, widgets: [] },
+  }, widgets: [], desc: 'Deep link to the Notion page.<br>Adds the 🔗 button on each trade row.<br>Use a Notion formula: <code>"https://www.notion.so/" + id()</code>.' },
   // ── Screenshot URL columns (TradingView snapshot feature) ──
   // Values may be Notion Files&Media URLs or TradingView /x/<ID>/ share URLs.
   // widgets:[] because there is no dedicated widget — they surface via the
   // trade-table / drawer / selection-table 📷 buttons.
-  { key: 'img_m15',        label: 'M15 Before screenshot', defaults: {
+  { key: 'img_m15',        label: 'M15 Before screenshot', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'M15 Before', pro: 'M15 Before', beginner: 'M15 Before',
-  }, widgets: [] },
-  { key: 'img_h4_before',  label: 'H4 Before screenshot', defaults: {
+  }, widgets: [], desc: 'M15 chart screenshot before entry.<br>Accepts a Notion <code>Files &amp; media</code> property or a plain URL.<br>TradingView share URLs auto-convert to S3 snapshots.' },
+  { key: 'img_h4_before',  label: 'H4 Before screenshot', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'H4 Before', pro: 'H4 Before', beginner: 'H4 Before',
-  }, widgets: [] },
-  { key: 'img_m15_after',  label: 'M15 After screenshot', defaults: {
+  }, widgets: [], desc: 'H4 chart screenshot before entry.<br>Same format as <code>M15 Before</code>.' },
+  { key: 'img_m15_after',  label: 'M15 After screenshot', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'M15 After', pro: 'M15 After', beginner: 'M15 After',
-  }, widgets: [] },
+  }, widgets: [], desc: 'M15 chart screenshot after the trade closes.<br>Same format as <code>M15 Before</code>.' },
   // ── Multi TP mode fields (Phase 3) ──
   // Per-tier realized R. Nullable: null = tier not hit (value-presence = hit flag).
   // Defaults follow standard Notion conventions ('RR TP N'); the maps below
@@ -27279,16 +27286,36 @@ const JOURNAL_DIMS = [
   // with custom tier naming auto-detect too. widgets:[] intentional:
   // Multi TP requirements are surfaced via FEATURE_REQS (Phase 3.A), not
   // MISSING_DATA_META.
-  { key: 'tp1_rr',       label: 'TP 1 realized R', defaults: {
+  { key: 'tp1_rr',       label: 'TP 1 realized R', tier: 'multi-tp', propType: 'number', defaults: {
     flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
-  }, widgets: [] },
-  { key: 'tp2_rr',       label: 'TP 2 realized R', defaults: {
+  }, widgets: [], desc: 'Realized R at the first take-profit tier.<br><code>null</code> if TP1 was not hit.' },
+  { key: 'tp2_rr',       label: 'TP 2 realized R', tier: 'multi-tp', propType: 'number', defaults: {
     flipping: 'RR TP 2', pro: 'RR TP 2', beginner: 'RR TP 2',
-  }, widgets: [] },
-  { key: 'tp3_rr',       label: 'TP 3 realized R', defaults: {
+  }, widgets: [], desc: 'Realized R at the second take-profit tier.<br><code>null</code> if TP2 was not hit.' },
+  { key: 'tp3_rr',       label: 'TP 3 realized R', tier: 'multi-tp', propType: 'number', defaults: {
     flipping: 'RR TP 3', pro: 'RR TP 3', beginner: 'RR TP 3',
-  }, widgets: [] },
+  }, widgets: [], desc: 'Realized R at the third take-profit tier.<br>Only required for 3-tier setups.<br><code>null</code> if TP3 was not hit.' },
 ];
+
+// Section metadata for the Mapping tab — order, title, badge text, optional note.
+// Lookup by tier key; `count` is filled from JOURNAL_DIMS at render time.
+const MAPPING_TIER_SECTIONS = [
+  { tier: 'required',   title: 'Required properties',   badgeClass: 'is-required',  badgeSuffix: 'mandatory'           },
+  { tier: 'optional',   title: 'Optional properties',   badgeClass: 'is-optional',  badgeSuffix: 'unlock more'         },
+  { tier: 'screenshot', title: 'Screenshots',           badgeClass: 'is-optional',  badgeSuffix: 'URL or Files & media' },
+  { tier: 'multi-tp',   title: 'Multi TP mode (advanced)', badgeClass: 'is-optional', badgeSuffix: 'fields · no defaults', note: 'These fields are only required when the active TP Management mode is set to <strong>Multi TP</strong>. They have no canonical Notion name — wire your own properties via the pencil. A <code>null</code> value means that tier was not hit.' },
+];
+
+// Pill labels for the Type column (mirrors CSV Guide `.csv-doc-type-pill` classes).
+const MAPPING_PROP_TYPE_LABELS = {
+  'select':       'Select',
+  'multiselect':  'Multi-select',
+  'number':       'Number',
+  'date':         'Date',
+  'checkbox':     'Checkbox',
+  'url':          'URL / File',
+  'formula':      'Formula',
+};
 
 function _getJournalDimLabel(dimOrKey) {
   const key = typeof dimOrKey === 'string' ? dimOrKey : dimOrKey?.key;
@@ -27895,6 +27922,77 @@ function _renderOutcomeValueReportHTML(rawCache, source = null) {
           </div>`;
 }
 
+// Renders one Mapping row (a `<tr>` in the table) for a given dim. `st` is
+// the status descriptor built by the caller (CSV branch / API+Demo branch).
+// When `st.reportHtml` is set, an extra full-width `<tr>` follows the main one
+// (used by the Position Result row to surface the outcome-value report).
+function _renderMappingTableRow(dim, st) {
+  const dimLabel = _getJournalDimLabel(dim);
+  const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
+  const typeKey = String(dim.propType || '').trim();
+  const typeLabel = MAPPING_PROP_TYPE_LABELS[typeKey] || typeKey;
+  const typePill = typeKey
+    ? `<span class="csv-doc-type-pill is-${_escapeHtml(typeKey)}">${_escapeHtml(typeLabel)}</span>`
+    : '';
+  const desc = dim.desc || '';
+  const shownEsc = (st.shownIsRaw ? st.shown : _escapeHtml(st.shown || ''));
+  const suffix = st.suffix || '';
+  const pencil = st.pencilHtml || '';
+  const mainRow = `<tr class="ljp-mapping-row ${st.status}${st.rowClass ? ' ' + st.rowClass : ''}" data-dim-key="${_escapeHtml(dim.key)}">
+    <td data-label="Property"><code class="csv-doc-prop">${_escapeHtml(dimLabel)}</code>${requiredBadge}</td>
+    <td data-label="Type">${typePill}</td>
+    <td data-label="Description" class="csv-doc-desc">${desc}</td>
+    <td data-label="Mapping" class="ljp-mapping-cell">
+      <div class="ljp-status-cell">
+        <span class="ljp-status ${st.status}">${_escapeHtml(st.statusTxt || '')}</span>
+        <div class="ljp-mapping-meta">
+          <span class="ljp-mapping-target">${shownEsc}</span>${suffix}
+        </div>
+      </div>
+      ${pencil}
+    </td>
+  </tr>`;
+  return st.reportHtml
+    ? mainRow + `<tr class="ljp-mapping-report-row"><td colspan="4">${st.reportHtml}</td></tr>`
+    : mainRow;
+}
+
+// Builds the full set of tier-grouped Mapping tables. `getStatusForDim(dim)`
+// returns the per-row status descriptor (see _renderMappingTableRow), or
+// `null` to skip the dim entirely (e.g. overrideOnly dims in non-API modes).
+function _renderMappingSectionsHtml(getStatusForDim) {
+  const head = `<thead><tr>
+    <th scope="col" class="csv-doc-col-prop">Property</th>
+    <th scope="col" class="csv-doc-col-type">Type</th>
+    <th scope="col" class="csv-doc-col-desc">Description</th>
+    <th scope="col" class="csv-doc-col-mapping">Mapping</th>
+  </tr></thead>`;
+  return MAPPING_TIER_SECTIONS.map(sect => {
+    const sectDims = JOURNAL_DIMS.filter(d => d.tier === sect.tier);
+    if (!sectDims.length) return '';
+    const rendered = sectDims.map(dim => {
+      const st = getStatusForDim(dim);
+      if (!st) return '';
+      return _renderMappingTableRow(dim, st);
+    }).filter(Boolean).join('');
+    if (!rendered) return '';
+    const visibleCount = sectDims.filter(d => getStatusForDim(d)).length;
+    const badge = `<span class="csv-doc-section-title-badge ${sect.badgeClass}">${visibleCount} ${_escapeHtml(sect.badgeSuffix)}</span>`;
+    const note = sect.note ? `<div class="csv-doc-multi-tp-note">${sect.note}</div>` : '';
+    return `
+      <div class="csv-doc-section-title">
+        <span>${_escapeHtml(sect.title)}</span>
+        ${badge}
+      </div>
+      ${note}
+      <table class="csv-doc-table ljp-mapping-table" aria-label="${_escapeHtml(sect.title)}">
+        ${head}
+        <tbody>${rendered}</tbody>
+      </table>
+    `;
+  }).join('');
+}
+
 function updateJournalPanel() {
   const panel = document.getElementById('data-hub-panel');
   const list  = document.getElementById('ljp-list');
@@ -27931,52 +28029,33 @@ function updateJournalPanel() {
     if (subEl) subEl.textContent = 'Which CSV column feeds each widget dimension.';
     if (resetBtn) resetBtn.style.display = '';
     fmtEl.innerHTML = `Format · <strong>${_escapeHtml(FORMAT_LABEL[_csvFormat] || _csvFormat)}</strong> · ${_lastCsvHeaders.length} columns`;
-    list.innerHTML = JOURNAL_DIMS.map(dim => {
+    const pencilSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+    const getStatus = (dim) => {
       const declaredDefault = dim.defaults[_csvFormat];
       const isOverrideOnly  = dim.overrideOnly === true;
-      // Always render every JOURNAL_DIMS entry, regardless of whether the
-      // active format declares a meaningful default. Dims without a default
-      // (or with '—') still surface as MISSING with a pencil so the user can
-      // remap them to any header in the CSV. Previously these rows were
-      // silently skipped (e.g. Beginner format hid Session/H4) — that hid
-      // legitimate remap targets.
-      const override   = _csvColumnOverrides[dim.key];
-      const resolved   = _resolvedHeaderFor(dim.key);
-      const ok         = !!resolved;
-      let status, statusTxt, shown, defaultNote;
+      const override = _csvColumnOverrides[dim.key];
+      const resolved = _resolvedHeaderFor(dim.key);
+      const ok = !!resolved;
+      let status, statusTxt, shown, defaultNote = '';
       if (_isNoMappingValue(override)) {
-        status      = 'is-no-mapping';
-        statusTxt   = 'no mapping';
-        shown       = '— No Mapping —';
-        defaultNote = '';
+        status = 'is-no-mapping'; statusTxt = 'no mapping'; shown = '— No Mapping —';
       } else if (isOverrideOnly) {
-        status      = override ? 'is-remapped' : 'is-missing';
-        statusTxt   = override ? 'remapped' : 'not mapped';
-        shown       = override || '— not mapped —';
-        defaultNote = '';
+        status = override ? 'is-remapped' : 'is-missing';
+        statusTxt = override ? 'remapped' : 'not mapped';
+        shown = override || '— not mapped —';
       } else {
-        status      = override ? 'is-remapped' : (ok ? 'is-ok' : 'is-missing');
-        statusTxt   = override ? 'remapped' : (ok ? 'found' : 'missing');
-        shown       = override ? override : (resolved || declaredDefault);
-        defaultNote = override ? ` <span style="opacity:.6">(default: ${_escapeHtml(declaredDefault)})</span>` : '';
+        status = override ? 'is-remapped' : (ok ? 'is-ok' : 'is-missing');
+        statusTxt = override ? 'remapped' : (ok ? 'found' : 'missing');
+        shown = override ? override : (resolved || declaredDefault);
+        defaultNote = override ? ` <span class="ljp-mapping-default">(default: ${_escapeHtml(declaredDefault)})</span>` : '';
       }
-      const dimLabel = _getJournalDimLabel(dim);
-      const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
-      const outcomeValueReport = (dim.key === 'outcome' && Array.isArray(_lastCsvRows) && _lastCsvRows.length)
+      const outcomeReport = (dim.key === 'outcome' && Array.isArray(_lastCsvRows) && _lastCsvRows.length)
         ? _renderOutcomeValueReportHTML(_lastCsvRows, 'csv')
         : '';
-      return `<li class="ljp-item ${status}" data-dim-key="${_escapeHtml(dim.key)}">
-                <div class="ljp-item-row">
-                  <span class="ljp-item-label">${_escapeHtml(dimLabel)}${requiredBadge}</span>
-                  <span class="ljp-status ${status}">${statusTxt}</span>
-                </div>
-                <div class="ljp-item-col">column · <strong>${_escapeHtml(shown)}</strong>${defaultNote}</div>
-                ${outcomeValueReport}
-                <button class="ljp-pencil-btn" data-action="open-remap-picker" data-dim-key="${_escapeHtml(dim.key)}" data-scope="journal" aria-label="Remap CSV column">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                </button>
-              </li>`;
-    }).filter(Boolean).join('');
+      const pencil = `<button class="ljp-pencil-btn" data-action="open-remap-picker" data-dim-key="${_escapeHtml(dim.key)}" data-scope="journal" aria-label="Remap CSV column">${pencilSvg}</button>`;
+      return { status, statusTxt, shown, suffix: defaultNote, pencilHtml: pencil, reportHtml: outcomeReport };
+    };
+    list.innerHTML = _renderMappingSectionsHtml(getStatus);
     _reopenIfNeeded();
     return;
   }
@@ -28018,7 +28097,7 @@ function updateJournalPanel() {
   // from the raw cache automatically. Do NOT return early.
   if (!items.length && !(isAPI && rawReady)) {
     if (subEl) subEl.textContent = 'Which field feeds each widget dimension.';
-    list.innerHTML = '<li class="csv-remap-empty">No data loaded.</li>';
+    list.innerHTML = '<div class="csv-remap-empty">No data loaded.</div>';
     fmtEl.innerHTML = '';
     return;
   }
@@ -28044,54 +28123,47 @@ function updateJournalPanel() {
     : `<span style="color:var(--r);font-weight:600">0 trades matched</span> — map fields below`;
   fmtEl.innerHTML = `Source · <strong>${_escapeHtml(sourceLabel)}</strong> · ${tradeCountLabel}${fieldCount}`;
 
-  list.innerHTML = JOURNAL_DIMS.map(dim => {
+  const pencilSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+  const getStatus = (dim) => {
     const isOverrideOnly = dim.overrideOnly === true;
     // Demo has no user columns to map against — hide overrideOnly rows
     // entirely rather than render a dead "missing / no pencil" line.
-    if (isOverrideOnly && !isAPI) return '';
+    if (isOverrideOnly && !isAPI) return null;
     const { sample, populated } = _inspectDimInTrades(dim.key);
-    const override   = isAPI ? _getEffectiveApiOverride(dim.key) : apiOverrides[dim.key];
-    const ok         = populated > 0;
+    const override = isAPI ? _getEffectiveApiOverride(dim.key) : apiOverrides[dim.key];
+    const ok = populated > 0;
     let status, statusTxt, shown, coverage;
     if (_isNoMappingValue(override)) {
-      status    = 'is-no-mapping';
-      statusTxt = 'no mapping';
-      shown     = '— No Mapping —';
-      coverage  = 'disabled';
+      status = 'is-no-mapping'; statusTxt = 'no mapping'; shown = '— No Mapping —'; coverage = 'disabled';
     } else if (isOverrideOnly) {
-      status    = override ? 'is-remapped' : 'is-missing';
+      status = override ? 'is-remapped' : 'is-missing';
       statusTxt = override ? 'remapped' : 'not mapped';
-      shown     = sample || '— not mapped —';
-      coverage  = items.length ? (ok ? `${populated}/${items.length} trades` : 'awaiting mapping') : 'awaiting mapping';
+      shown = sample || '— not mapped —';
+      coverage = items.length ? (ok ? `${populated}/${items.length} trades` : 'awaiting mapping') : 'awaiting mapping';
     } else {
-      status    = override ? 'is-remapped' : (ok ? 'is-ok' : 'is-missing');
+      status = override ? 'is-remapped' : (ok ? 'is-ok' : 'is-missing');
       statusTxt = override ? 'remapped' : (ok ? 'found' : 'missing');
-      shown     = sample || '—';
-      coverage  = items.length ? (ok ? `${populated}/${items.length} trades` : 'no values detected') : 'no trades yet';
+      shown = sample || '—';
+      coverage = items.length ? (ok ? `${populated}/${items.length} trades` : 'no values detected') : 'no trades yet';
     }
     const overrideNote = (override && !_isNoMappingValue(override))
-      ? ` <span style="opacity:.6">(field: <span class="ljp-field-name">${_escapeHtml(override)}</span>)</span>`
+      ? ` <span class="ljp-mapping-default">(field: <span class="ljp-field-name">${_escapeHtml(override)}</span>)</span>`
       : '';
-    const outcomeValueReport = (isAPI && dim.key === 'outcome' && rawReady)
+    const coverageNote = ` <span class="ljp-mapping-coverage">· ${_escapeHtml(coverage)}</span>`;
+    const outcomeReport = (isAPI && dim.key === 'outcome' && rawReady)
       ? _renderOutcomeValueReportHTML(rawCache)
       : '';
-    const pencil = canRemap
-      ? `<button class="ljp-pencil-btn" data-action="open-remap-picker" data-dim-key="${_escapeHtml(dim.key)}" data-scope="api-journal" aria-label="Remap API field">
-           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-         </button>`
+    const pencilHtml = canRemap
+      ? `<button class="ljp-pencil-btn" data-action="open-remap-picker" data-dim-key="${_escapeHtml(dim.key)}" data-scope="api-journal" aria-label="Remap API field">${pencilSvg}</button>`
       : '';
-    const dimLabel = _getJournalDimLabel(dim);
-    const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
-    return `<li class="ljp-item ${status}${canRemap ? '' : ' is-readonly'}" data-dim-key="${_escapeHtml(dim.key)}">
-              <div class="ljp-item-row">
-                <span class="ljp-item-label">${_escapeHtml(dimLabel)}${requiredBadge}</span>
-                <span class="ljp-status ${status}">${statusTxt}</span>
-              </div>
-              <div class="ljp-item-col">sample · <strong>${_escapeHtml(shown)}</strong> <span style="opacity:.55">· ${_escapeHtml(coverage)}</span>${overrideNote}</div>
-              ${outcomeValueReport}
-              ${pencil}
-            </li>`;
-  }).filter(Boolean).join('');
+    return {
+      status, statusTxt, shown,
+      suffix: coverageNote + overrideNote,
+      pencilHtml, reportHtml: outcomeReport,
+      rowClass: canRemap ? '' : 'is-readonly',
+    };
+  };
+  list.innerHTML = _renderMappingSectionsHtml(getStatus);
 
   _reopenIfNeeded();
 }
@@ -28946,6 +29018,9 @@ function _renderCreateWidgetList() {
 
 // ── Remap picker (inline dropdown attached to a pencil click) ──
 function _closeAllRemapPickers() {
+  // Mapping-tab pickers are hosted inside a follow-up `<tr>` so the dropdown
+  // can span the full row width. Remove the row, not just the inner picker.
+  document.querySelectorAll('.ljp-mapping-picker-row').forEach(el => el.remove());
   document.querySelectorAll('.csv-remap-picker').forEach(el => el.remove());
   document.querySelectorAll('.lap-pencil-btn.open, .ljp-pencil-btn.open').forEach(b => b.classList.remove('open'));
 }
@@ -28955,9 +29030,20 @@ function openRemapPicker(triggerBtn) {
   const scope  = triggerBtn.getAttribute('data-scope') || 'journal';
   if (!dimKey) return;
 
-  // Toggle: if the same picker is open, close it
-  const existingHost = triggerBtn.closest('.lap-item, .ljp-item');
-  const existing = existingHost?.querySelector('.csv-remap-picker');
+  // Toggle: if the same picker is open, close it. Two host shapes:
+  //  - Mapping tab (this rewrite): trigger sits in a table row `.ljp-mapping-row`,
+  //    picker lives in a follow-up `<tr class="ljp-mapping-picker-row">` injected
+  //    right after it. Existence is detected via the sibling row.
+  //  - Health tab / other legacy callers: trigger sits in a `<li class="lap-item">`
+  //    or `<li class="ljp-item">` (this layout is preserved for backwards compat
+  //    even though the Mapping tab itself no longer renders `.ljp-item`).
+  const tableRowHost = triggerBtn.closest('.ljp-mapping-row');
+  const existingHost = tableRowHost || triggerBtn.closest('.lap-item, .ljp-item');
+  const existing = tableRowHost
+    ? (tableRowHost.nextElementSibling?.classList.contains('ljp-mapping-picker-row')
+        ? tableRowHost.nextElementSibling
+        : null)
+    : existingHost?.querySelector('.csv-remap-picker');
   _closeAllRemapPickers();
   if (existing) return;
 
@@ -29045,7 +29131,19 @@ function openRemapPicker(triggerBtn) {
     ? `<button class="csv-remap-option" data-action="${pickAction}" data-dim-key="${_escapeHtml(dimKey)}" data-header=""><span>— Use default / auto-detect —</span></button>`
     : '';
   picker.innerHTML = hintHeader + noMappingBtn + (candidates.length ? opts : emptyHtml) + clearBtn;
-  existingHost?.appendChild(picker);
+  if (tableRowHost) {
+    // Inject the picker as a follow-up table row so the dropdown spans the
+    // full row width instead of being cramped inside the narrow Mapping cell.
+    const pickerRow = document.createElement('tr');
+    pickerRow.className = 'ljp-mapping-picker-row';
+    const cell = document.createElement('td');
+    cell.colSpan = 4;
+    cell.appendChild(picker);
+    pickerRow.appendChild(cell);
+    tableRowHost.parentNode?.insertBefore(pickerRow, tableRowHost.nextSibling);
+  } else {
+    existingHost?.appendChild(picker);
+  }
   triggerBtn.classList.add('open');
   // Ensure the newly-opened picker is fully visible inside its scroll container.
   requestAnimationFrame(() => {
@@ -29078,8 +29176,13 @@ function _refreshAPIFieldsFromPicker(btnEl) {
   }
   // Immediate feedback: re-render the picker right now so the button flips
   // to the disabled "Loading…" state without waiting for the fetch tick.
+  // The trigger may sit either in the Mapping-tab follow-up picker row
+  // (table layout) or in a legacy lap-item / ljp-item list row.
+  const pickerRow = btnEl.closest('.ljp-mapping-picker-row');
+  const prevMappingRow = pickerRow?.previousElementSibling;
   const existingHost = btnEl.closest('.lap-item, .ljp-item');
-  const triggerBtn = existingHost?.querySelector(`.ljp-pencil-btn[data-dim-key="${dimKey}"][data-scope="api-journal"], .lap-pencil-btn[data-dim-key="${dimKey}"][data-scope="api-journal"]`);
+  const triggerBtn = prevMappingRow?.querySelector(`.ljp-pencil-btn[data-dim-key="${dimKey}"][data-scope="api-journal"]`)
+    || existingHost?.querySelector(`.ljp-pencil-btn[data-dim-key="${dimKey}"][data-scope="api-journal"], .lap-pencil-btn[data-dim-key="${dimKey}"][data-scope="api-journal"]`);
   if (triggerBtn) {
     // openRemapPicker toggles; force-close-then-reopen ensures a fresh render
     // with the current loading flag reflected.
