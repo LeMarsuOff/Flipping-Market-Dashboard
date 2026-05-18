@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=143">
+<link rel="stylesheet" href="dashboard.css?v=144">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1340,6 +1340,45 @@
       <button class="dhp-close" data-action="toggle-data-hub" aria-label="Close">✕</button>
     </div>
   </div>
+
+  <!-- Hero card — at-a-glance health of the active source. Populated by
+       _updateDataSetupHero() each time the panel opens or trade/profile
+       state changes. Hidden via [hidden] attribute when in CSV mode where
+       most fields don't apply. -->
+  <section class="dsh" id="dsh-hero">
+    <div class="dsh-main">
+      <div class="dsh-name-row">
+        <span class="dsh-dot" id="dsh-dot" aria-hidden="true"></span>
+        <span class="dsh-name" id="dsh-name">—</span>
+      </div>
+      <span class="dsh-meta" id="dsh-meta">—</span>
+      <div class="dsh-stats">
+        <div class="dsh-stat">
+          <strong id="dsh-stat-trades">—</strong>
+          <label>trades</label>
+        </div>
+        <div class="dsh-stat">
+          <strong id="dsh-stat-mapped">—</strong>
+          <label>mapped</label>
+        </div>
+        <div class="dsh-stat" id="dsh-stat-locked-wrap">
+          <strong id="dsh-stat-locked">—</strong>
+          <label>locked</label>
+        </div>
+      </div>
+    </div>
+    <div class="dsh-side">
+      <div class="dsh-ring-wrap">
+        <svg class="dsh-ring" viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="dsh-ring-track" cx="50" cy="50" r="42"/>
+          <circle class="dsh-ring-fill" cx="50" cy="50" r="42"
+                  stroke-dasharray="263.9" stroke-dashoffset="263.9"/>
+        </svg>
+        <span class="dsh-ring-label" id="dsh-ring-label">—</span>
+      </div>
+      <button class="dsh-sync-btn" id="dsh-sync-btn" data-action="dsh-sync-now" hidden>↻ Sync</button>
+    </div>
+  </section>
 
   <div class="dhp-tabs" role="tablist">
     <button class="dhp-tab is-active"
@@ -2852,6 +2891,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=241"></script>
+<script src="dashboard.js?v=244"></script>
 </body>
 </html>

@@ -2172,6 +2172,7 @@ function handleActionClick(event) {
     case 'set-warning-threshold': event.stopPropagation(); _setWarningThreshold(parseInt(actionEl.dataset.threshold, 10)); break;
     case 'toggle-data-hub':        event.stopPropagation(); toggleDataHub(); break;
     case 'switch-dh-tab':          event.stopPropagation(); switchDataHubTab(actionEl.dataset.tab); break;
+    case 'dsh-sync-now':           event.stopPropagation(); _handleDataSetupHeroSync(); break;
     case 'toggle-attention-panel': event.stopPropagation(); toggleAttentionPanel(); break;
     case 'toggle-journal-panel':   event.stopPropagation(); toggleJournalPanel(); break;
     case 'toggle-guide-panel':     event.stopPropagation(); toggleGuidePanel(actionEl); break;
@@ -27681,6 +27682,155 @@ function _syncCreateWidgetTypeButtons() {
   });
 }
 
+// ── Data Setup hero card ───────────────────────────────────────────────
+// Populates the at-a-glance health card sitting above the tabs in the
+// Data Hub panel. Reads from getActiveJournalProfile() + JOURNAL_DIMS
+// coverage + FEATURE_REQS to compute trades / mapped / locked counts +
+// coverage ring percentage. Safe no-op when the hero DOM is absent.
+function _updateDataSetupHero() {
+  const hero = document.getElementById('dsh-hero');
+  if (!hero) return;
+  const mode = localStorage.getItem(DS_KEY) || 'demo';
+  const isAPI  = mode === 'api';
+  const isDemo = mode === 'demo';
+  const isCSV  = mode === 'csv';
+  const profile = isAPI ? getActiveJournalProfile() : null;
+
+  // ── Name + meta + connection dot ────────────────────────────────────
+  const nameEl = document.getElementById('dsh-name');
+  const metaEl = document.getElementById('dsh-meta');
+  const dotEl  = document.getElementById('dsh-dot');
+  if (isDemo) {
+    if (nameEl) nameEl.textContent = 'Demo';
+    if (metaEl) metaEl.textContent = 'Sample dataset · read-only';
+    if (dotEl) dotEl.className = 'dsh-dot is-offline';
+  } else if (isCSV) {
+    const fmt = (typeof FORMAT_LABEL !== 'undefined' && _csvFormat) ? (FORMAT_LABEL[_csvFormat] || _csvFormat) : 'CSV';
+    if (nameEl) nameEl.textContent = fmt;
+    if (metaEl) metaEl.textContent = `CSV · ${(_lastCsvHeaders || []).length} columns`;
+    if (dotEl) dotEl.className = 'dsh-dot is-offline';
+  } else if (profile) {
+    if (nameEl) nameEl.textContent = String(profile.name || '').trim() || 'Untitled Journal';
+    const htf = (String(profile.type || '').toLowerCase() === 'h4') ? 'H4' : 'M15';
+    const sync = profile.notionSyncState;
+    let syncLabel = 'not synced';
+    if (sync === 'synced')      syncLabel = `synced ${_formatNotionSyncAgoCompact ? _formatNotionSyncAgoCompact(profile.notionLastSync) : 'recently'}`;
+    else if (sync === 'syncing')      syncLabel = 'syncing…';
+    else if (sync === 'error')        syncLabel = 'sync failed';
+    else if (sync === 'disconnected') syncLabel = 'disconnected';
+    const conn = profile.connectionType === 'notion' ? 'Notion' : 'API';
+    if (metaEl) metaEl.textContent = `${conn} · ${syncLabel} · ${htf}`;
+    if (dotEl) {
+      const stateClass = sync === 'synced' ? 'is-live'
+                       : sync === 'syncing' ? 'is-syncing'
+                       : sync === 'error' || sync === 'disconnected' ? 'is-error'
+                       : 'is-offline';
+      dotEl.className = `dsh-dot ${stateClass}`;
+    }
+  } else {
+    if (nameEl) nameEl.textContent = 'No source';
+    if (metaEl) metaEl.textContent = 'Connect a Notion DB to start';
+    if (dotEl) dotEl.className = 'dsh-dot is-offline';
+  }
+
+  // ── Trade count ─────────────────────────────────────────────────────
+  const items = (appState.trades && appState.trades.items) || [];
+  const tradesEl = document.getElementById('dsh-stat-trades');
+  if (tradesEl) tradesEl.textContent = String(items.length);
+
+  // ── Mapped count (excluding overrideOnly + multi-tp tier when not active) ─
+  // Match the same logic the Mapping tab uses: a dim counts as "mapped" iff
+  // its sample shows at least 1 populated trade OR (in CSV mode) a resolved
+  // header exists. We exclude `overrideOnly` dims to keep the denominator
+  // honest (those are opt-in extras, not part of the canonical 23).
+  let totalDims = 0, mappedDims = 0;
+  try {
+    for (const dim of JOURNAL_DIMS) {
+      if (dim.overrideOnly === true) continue;
+      // Skip multi-tp tier dims when not in Multi-TP mode (avoids penalising
+      // single-TP users for "missing" TP2/TP3 fields they don't need).
+      if (dim.tier === 'multi-tp' && !(appState.ui?.tpConfig?.mode === 'multi')) continue;
+      totalDims++;
+      if (isCSV) {
+        if (typeof _resolvedHeaderFor === 'function' && _resolvedHeaderFor(dim.key)) mappedDims++;
+      } else {
+        if (typeof _inspectDimInTrades === 'function') {
+          const r = _inspectDimInTrades(dim.key);
+          if (r && r.populated > 0) mappedDims++;
+        }
+      }
+    }
+  } catch (e) {
+    // _inspectDimInTrades / _resolvedHeaderFor may not exist or throw on
+    // edge cases (empty appState during boot). Fall back to placeholders.
+  }
+  const mappedEl = document.getElementById('dsh-stat-mapped');
+  if (mappedEl) mappedEl.textContent = totalDims ? `${mappedDims}/${totalDims}` : '—';
+
+  // ── Locked features count (from FEATURE_REQS) ───────────────────────
+  let lockedCount = 0;
+  try {
+    if (typeof FEATURE_REQS !== 'undefined') {
+      const cfg = appState.ui?.tpConfig || {};
+      // Multi-TP locked iff mode is multi and not all required dims mapped
+      if (cfg.mode === 'multi' && FEATURE_REQS['multi-tp']) {
+        const tpCount = cfg.multi?.tpCount === 3 ? 3 : 2;
+        const { complete } = (typeof _getMultiMappingStatus === 'function') ? _getMultiMappingStatus(tpCount) : { complete: true };
+        if (!complete) lockedCount++;
+      }
+      // Personalised-TP locked iff selected and not complete
+      if (cfg.mode === 'personalised' && FEATURE_REQS['personalised-tp']) {
+        const { complete } = (typeof _getPersonalisedMappingStatus === 'function') ? _getPersonalisedMappingStatus() : { complete: true };
+        if (!complete) lockedCount++;
+      }
+    }
+  } catch (e) {}
+  const lockedEl = document.getElementById('dsh-stat-locked');
+  const lockedWrap = document.getElementById('dsh-stat-locked-wrap');
+  if (lockedEl) lockedEl.textContent = String(lockedCount);
+  if (lockedWrap) {
+    lockedWrap.classList.toggle('is-bad', lockedCount > 0);
+    // Hide the locked stat entirely when there's nothing locked — keeps the
+    // hero clean for users on Single TP mode with no locked features.
+    lockedWrap.hidden = lockedCount === 0;
+  }
+
+  // ── Coverage ring + label ───────────────────────────────────────────
+  const pct = totalDims ? Math.round((mappedDims / totalDims) * 100) : 0;
+  const ringFill = hero.querySelector('.dsh-ring-fill');
+  const ringLabel = document.getElementById('dsh-ring-label');
+  if (ringFill) {
+    const C = 263.9; // 2πr for r=42
+    const offset = C * (1 - pct / 100);
+    ringFill.setAttribute('stroke-dashoffset', String(offset));
+  }
+  if (ringLabel) ringLabel.textContent = totalDims ? `${pct}%` : '—';
+
+  // ── Sync button — only meaningful for active Notion profiles ────────
+  const syncBtn = document.getElementById('dsh-sync-btn');
+  if (syncBtn) {
+    const canSync = isAPI && profile && profile.connectionType === 'notion'
+                    && !!profile.notionDatabaseId
+                    && profile.notionSyncState !== 'disconnected';
+    syncBtn.hidden = !canSync;
+    syncBtn.disabled = !canSync || profile?.notionSyncState === 'syncing';
+    if (profile?.notionSyncState === 'syncing') {
+      syncBtn.textContent = '↻ Syncing…';
+    } else {
+      syncBtn.textContent = '↻ Sync';
+    }
+  }
+}
+
+function _handleDataSetupHeroSync() {
+  const profile = getActiveJournalProfile();
+  if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
+  // Reuse the per-row Sync flow — same sync, same race-guard, same UI feedback.
+  if (typeof _handleNotionProfileSyncNow === 'function') {
+    _handleNotionProfileSyncNow(profile.id);
+  }
+}
+
 function toggleDataHub(forceTab = null) {
   const btn = document.getElementById('data-hub-btn');
   const panel = document.getElementById('data-hub-panel');
@@ -27696,6 +27846,7 @@ function toggleDataHub(forceTab = null) {
     try { updateAttentionButton(getHiddenWidgetsList()); } catch (e) {}
     try { updateJournalPanel(); } catch (e) {}
     try { _renderNotionPropsPanel(); } catch (e) {}
+    try { _updateDataSetupHero(); } catch (e) {}
   } else {
     _closeAllRemapPickers();
     _closeGuidePanel();
@@ -28003,6 +28154,11 @@ function updateJournalPanel() {
 
   // Skip wasted work when the Data Hub isn't open (re-rendered on next open).
   if (!panel.classList.contains('open')) return;
+
+  // Refresh the Data Setup hero card on every panel update so trade counts,
+  // mapped fields, locked features, and sync state stay accurate without
+  // needing dedicated wiring at every mutation site.
+  try { _updateDataSetupHero(); } catch (e) {}
 
   // Preserve an open remap picker across re-renders: every render() path
   // eventually calls updateJournalPanel() which rebuilds the list innerHTML.
