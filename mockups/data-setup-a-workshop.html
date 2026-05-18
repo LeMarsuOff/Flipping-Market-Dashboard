@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Data Setup — Mockup A · Workshop</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --text-muted:#7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38, 166, 154, 0.14);
+  --r:         #ef5350;
+  --r2:        rgba(239, 83, 80, 0.14);
+  --gold:      #d4af37;
+  --gold2:     rgba(212, 175, 55, 0.14);
+  --gold3:     rgba(212, 175, 55, 0.07);
+  --info:      #7dd3fc;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(212, 175, 55, .04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 100%, rgba(125, 211, 252, .03) 0%, transparent 60%),
+    var(--bg);
+}
+
+/* ── Panel shell ─────────────────────────────────────────────────────── */
+.ds {
+  width: 100%;
+  max-width: 600px;
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .4), 0 1px 0 rgba(255, 255, 255, .04) inset;
+  overflow: hidden;
+}
+
+.ds-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ds-head h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.2px;
+}
+.ds-head-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+  letter-spacing: .3px;
+}
+.ds-close {
+  width: 28px; height: 28px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  display: grid; place-items: center;
+  transition: all .16s ease;
+}
+.ds-close:hover { color: var(--white); border-color: var(--line2); }
+
+.ds-body { padding: 20px 24px 24px; }
+
+/* ── Source banner (hero) ────────────────────────────────────────────── */
+.ds-source {
+  position: relative;
+  background: linear-gradient(135deg, var(--bg2) 0%, var(--bg1) 100%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 22px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.ds-source::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(212, 175, 55, .08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.ds-source-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: center;
+  position: relative;
+}
+
+.ds-source-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.ds-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--g);
+  box-shadow: 0 0 12px var(--g);
+  flex-shrink: 0;
+}
+.ds-source-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.2px;
+}
+.ds-source-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  letter-spacing: .4px;
+  margin-top: 2px;
+  display: block;
+}
+
+.ds-source-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ds-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ds-stat strong {
+  font-family: 'DM Mono', monospace;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--white);
+  letter-spacing: -.4px;
+  font-feature-settings: 'tnum';
+  line-height: 1;
+}
+.ds-stat label {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* Coverage ring */
+.ds-ring-wrap {
+  position: relative;
+  width: 84px; height: 84px;
+  flex-shrink: 0;
+}
+.ds-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ds-ring circle {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.ds-ring .ds-ring-track { stroke: var(--line); }
+.ds-ring .ds-ring-fill  { stroke: var(--gold); transition: stroke-dashoffset .6s ease; }
+.ds-ring-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--white);
+  letter-spacing: -.5px;
+  font-feature-settings: 'tnum';
+}
+
+.ds-source-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  border-radius: 7px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--white);
+  cursor: pointer;
+  transition: all .16s ease;
+  letter-spacing: .1px;
+}
+.ds-btn-primary {
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  color: var(--gold);
+}
+.ds-btn-primary:hover {
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 60%, transparent);
+  transform: translateY(-1px);
+}
+.ds-btn-ghost { color: var(--body); }
+.ds-btn-ghost:hover { background: var(--bg2); color: var(--white); }
+
+/* ── Sections ────────────────────────────────────────────────────────── */
+.ds-section {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ds-section:last-of-type { border-bottom: none; }
+.ds-section summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+}
+.ds-section summary::-webkit-details-marker { display: none; }
+.ds-section summary::before {
+  content: '';
+  width: 0; height: 0;
+  border: 4px solid transparent;
+  border-left-color: var(--text-muted);
+  transition: transform .16s ease;
+  flex-shrink: 0;
+}
+.ds-section[open] summary::before { transform: rotate(90deg); }
+
+.ds-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.1px;
+  flex: 1;
+}
+.ds-section-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg2);
+  padding: 3px 9px;
+  border-radius: 4px;
+  letter-spacing: .3px;
+  font-weight: 500;
+}
+
+.ds-section-body {
+  padding: 0 4px 18px;
+}
+
+/* ── Mapping section — tier bars ─────────────────────────────────────── */
+.ds-tier {
+  display: grid;
+  grid-template-columns: 110px 1fr 60px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+.ds-tier + .ds-tier { border-top: 1px solid color-mix(in srgb, var(--line) 40%, transparent); }
+.ds-tier-label {
+  font-size: 11.5px;
+  color: var(--body);
+  letter-spacing: -.05px;
+}
+.ds-bar {
+  height: 4px;
+  background: var(--bg2);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.ds-bar-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 2px;
+  transition: width .6s ease;
+}
+.ds-bar-fill.is-full   { background: var(--g); }
+.ds-tier-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-align: right;
+  font-feature-settings: 'tnum';
+  letter-spacing: .2px;
+}
+
+/* ── Field & widget lists ────────────────────────────────────────────── */
+.ds-list { list-style: none; margin: 0; padding: 0; }
+.ds-list li {
+  display: grid;
+  grid-template-columns: 16px 1fr auto auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 40%, transparent);
+  transition: background-color .12s ease;
+}
+.ds-list li:last-child { border-bottom: none; }
+.ds-list li:hover {
+  background: color-mix(in srgb, var(--bg2) 50%, transparent);
+  margin: 0 -8px;
+  padding: 10px 8px;
+}
+
+.ds-list-icon {
+  font-size: 12px;
+  color: var(--gold);
+  text-align: center;
+  font-family: 'DM Mono', monospace;
+}
+.ds-list-name {
+  font-size: 12px;
+  color: var(--white);
+  font-weight: 500;
+}
+.ds-list-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 8.5px;
+  color: var(--text-muted);
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.ds-list-cov {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-feature-settings: 'tnum';
+}
+.ds-icon-btn {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 11px;
+  display: grid; place-items: center;
+  transition: all .14s ease;
+  font-family: 'DM Mono', monospace;
+}
+.ds-icon-btn:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 30%, transparent);
+}
+
+/* ── Inline action link ──────────────────────────────────────────────── */
+.ds-action-link {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  background: transparent;
+  border: 1px dashed var(--line2);
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: .2px;
+  transition: all .14s ease;
+}
+.ds-action-link:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  border-style: solid;
+}
+
+/* ── CSV guide footer ────────────────────────────────────────────────── */
+.ds-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg2) 40%, transparent);
+  font-size: 11px;
+}
+.ds-footer-text {
+  color: var(--text-muted);
+  letter-spacing: .1px;
+}
+.ds-footer-link {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: .1px;
+  transition: gap .16s ease;
+}
+.ds-footer-link:hover { gap: 7px; }
+
+/* Status tints for tier counts */
+.ds-tier-count.is-full { color: var(--g); }
+.ds-tier-count.is-partial { color: var(--gold); }
+.ds-tier-count.is-missing { color: var(--r); }
+
+/* Field type leading dot colour */
+.ds-field-type-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--info);
+}
+.ds-field-type-dot.is-select { background: var(--gold); }
+.ds-field-type-dot.is-number { background: #3ec8d8; }
+.ds-field-type-dot.is-multiselect { background: #ea8a4a; }
+</style>
+</head>
+<body>
+
+<div class="ds">
+
+  <header class="ds-head">
+    <div>
+      <h1>Data setup</h1>
+      <span class="ds-head-sub">Workshop / variant A</span>
+    </div>
+    <button class="ds-close" aria-label="Close">✕</button>
+  </header>
+
+  <main class="ds-body">
+
+    <!-- ── Source banner ──────────────────────────────────────────────── -->
+    <section class="ds-source">
+      <div class="ds-source-grid">
+        <div>
+          <div class="ds-source-name-row">
+            <span class="ds-dot"></span>
+            <span class="ds-source-name">M15 Personnel</span>
+          </div>
+          <span class="ds-source-meta">Notion · synced 2 min ago · M15</span>
+        </div>
+        <div class="ds-ring-wrap">
+          <svg class="ds-ring" viewBox="0 0 100 100">
+            <circle class="ds-ring-track" cx="50" cy="50" r="42"/>
+            <circle class="ds-ring-fill" cx="50" cy="50" r="42"
+                    stroke-dasharray="263.9" stroke-dashoffset="44.9"/>
+          </svg>
+          <span class="ds-ring-label">83%</span>
+        </div>
+      </div>
+
+      <div class="ds-source-stats">
+        <div class="ds-stat"><strong>234</strong><label>trades</label></div>
+        <div class="ds-stat"><strong>19/23</strong><label>mapped</label></div>
+        <div class="ds-stat"><strong>2</strong><label>custom</label></div>
+        <div class="ds-stat"><strong>4</strong><label>widgets</label></div>
+      </div>
+
+      <div class="ds-source-actions">
+        <button class="ds-btn ds-btn-primary">↻ Sync now</button>
+        <button class="ds-btn ds-btn-ghost">Manage profiles</button>
+        <button class="ds-btn ds-btn-ghost">+ Add source</button>
+      </div>
+    </section>
+
+    <!-- ── Mapping section ───────────────────────────────────────────── -->
+    <details class="ds-section" open>
+      <summary>
+        <span class="ds-section-title">Mapping</span>
+        <span class="ds-section-badge">19 of 23</span>
+      </summary>
+      <div class="ds-section-body">
+        <div class="ds-tiers">
+          <div class="ds-tier">
+            <span class="ds-tier-label">Required</span>
+            <div class="ds-bar"><div class="ds-bar-fill is-full" style="width:100%"></div></div>
+            <span class="ds-tier-count is-full">3 / 3</span>
+          </div>
+          <div class="ds-tier">
+            <span class="ds-tier-label">Optional</span>
+            <div class="ds-bar"><div class="ds-bar-fill" style="width:86%"></div></div>
+            <span class="ds-tier-count is-partial">12 / 14</span>
+          </div>
+          <div class="ds-tier">
+            <span class="ds-tier-label">Screenshots</span>
+            <div class="ds-bar"><div class="ds-bar-fill" style="width:67%"></div></div>
+            <span class="ds-tier-count is-partial">2 / 3</span>
+          </div>
+          <div class="ds-tier">
+            <span class="ds-tier-label">Multi-TP</span>
+            <div class="ds-bar"><div class="ds-bar-fill" style="width:67%"></div></div>
+            <span class="ds-tier-count is-partial">2 / 3</span>
+          </div>
+        </div>
+        <button class="ds-action-link">Open field mapping →</button>
+      </div>
+    </details>
+
+    <!-- ── Custom fields section ─────────────────────────────────────── -->
+    <details class="ds-section" open>
+      <summary>
+        <span class="ds-section-title">Custom fields</span>
+        <span class="ds-section-badge">2 active</span>
+      </summary>
+      <div class="ds-section-body">
+        <ul class="ds-list">
+          <li>
+            <span class="ds-field-type-dot is-select"></span>
+            <span class="ds-list-name">Mood</span>
+            <span class="ds-list-tag">Select</span>
+            <span class="ds-list-cov">12 trades</span>
+            <button class="ds-icon-btn" title="Edit">✎</button>
+            <button class="ds-icon-btn" title="Remove">×</button>
+          </li>
+          <li>
+            <span class="ds-field-type-dot is-number"></span>
+            <span class="ds-list-name">Confidence</span>
+            <span class="ds-list-tag">Number</span>
+            <span class="ds-list-cov">98 trades</span>
+            <button class="ds-icon-btn" title="Edit">✎</button>
+            <button class="ds-icon-btn" title="Remove">×</button>
+          </li>
+        </ul>
+        <button class="ds-action-link">+ Declare a custom field</button>
+      </div>
+    </details>
+
+    <!-- ── Custom widgets section ────────────────────────────────────── -->
+    <details class="ds-section" open>
+      <summary>
+        <span class="ds-section-title">Custom widgets</span>
+        <span class="ds-section-badge">4 built</span>
+      </summary>
+      <div class="ds-section-body">
+        <ul class="ds-list">
+          <li>
+            <span class="ds-list-icon">◕</span>
+            <span class="ds-list-name">Mood breakdown</span>
+            <span class="ds-list-tag">Donut</span>
+            <span class="ds-list-cov">Mood</span>
+            <button class="ds-icon-btn" title="Edit">✎</button>
+            <button class="ds-icon-btn" title="Remove">×</button>
+          </li>
+          <li>
+            <span class="ds-list-icon">▮</span>
+            <span class="ds-list-name">Confidence by setup</span>
+            <span class="ds-list-tag">Bars</span>
+            <span class="ds-list-cov">Confidence × Setup</span>
+            <button class="ds-icon-btn" title="Edit">✎</button>
+            <button class="ds-icon-btn" title="Remove">×</button>
+          </li>
+          <li>
+            <span class="ds-list-icon">▦</span>
+            <span class="ds-list-name">Pair × Mood</span>
+            <span class="ds-list-tag">Heatmap</span>
+            <span class="ds-list-cov">Pair × Mood</span>
+            <button class="ds-icon-btn" title="Edit">✎</button>
+            <button class="ds-icon-btn" title="Remove">×</button>
+          </li>
+          <li>
+            <span class="ds-list-icon">▮</span>
+            <span class="ds-list-name">Bias rating breakdown</span>
+            <span class="ds-list-tag">Bars</span>
+            <span class="ds-list-cov">Bias rating</span>
+            <button class="ds-icon-btn" title="Edit">✎</button>
+            <button class="ds-icon-btn" title="Remove">×</button>
+          </li>
+        </ul>
+        <button class="ds-action-link">+ Create a widget</button>
+      </div>
+    </details>
+
+  </main>
+
+  <footer class="ds-footer">
+    <span class="ds-footer-text">CSV reference · 23 properties · 4 tiers</span>
+    <a class="ds-footer-link" href="#">Open guide <span style="font-family:'DM Mono'">→</span></a>
+  </footer>
+
+</div>
+
+</body>
+</html>

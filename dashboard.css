@@ -1875,9 +1875,24 @@ body.layout-edit-mode #layout-toolbar * {
    most room (prose), Mapping cell is compact thanks to the vertical stack. */
 :is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th.csv-doc-col-mapping { width: 38%; }
 #ljp-list .ljp-mapping-table thead th.csv-doc-col-prop    { width: 22%; }
-#ljp-list .ljp-mapping-table thead th.csv-doc-col-type    { width: 11%; }
+#ljp-list .ljp-mapping-table thead th.csv-doc-col-mapping { width: 25%; }
+#ljp-list .ljp-mapping-table thead th.csv-doc-col-type    { width: 15%; }
 #ljp-list .ljp-mapping-table thead th.csv-doc-col-desc    { width: 38%; }
-#ljp-list .ljp-mapping-table thead th.csv-doc-col-mapping { width: 29%; }
+/* Type pills inside the Mapping table are constrained by the narrow
+   Type column (~74px gross, ~46px content). Long labels like "URL / File"
+   and "Multi-select" overflow when rendered as the single-line pills
+   used in the wide CSV Guide modal — so here we let them wrap to two
+   lines within their own border, keeping the cadre snug around the
+   actual text instead of clipping. */
+#ljp-list .ljp-mapping-table tbody td[data-label="Type"] {
+  overflow: hidden;
+}
+#ljp-list .ljp-mapping-table .csv-doc-type-pill {
+  white-space: normal;
+  line-height: 1.35;
+  word-break: break-word;
+  text-align: center;
+}
 
 /* Tables — drop the heavy outer border, keep only inner row separators
    so multiple sections stack as one continuous list with breathing room. */
@@ -1921,6 +1936,65 @@ body.layout-edit-mode #layout-toolbar * {
 #ljp-list .ljp-mapping-row:not(.is-readonly).is-remapped:hover   > td { background: color-mix(in srgb, var(--gold) 13%, transparent); }
 #ljp-list .ljp-mapping-row:not(.is-readonly).is-no-mapping:hover > td { background: color-mix(in srgb, #7dd3fc      13%, transparent); }
 
+/* Group header rows ("Missing" / "Mapped") — rendered between the two
+   zones inside a tier accordion. A full-width tinted band marks the
+   section change strongly, so the user can scan large tiers and locate
+   the boundary at a glance. Only emitted when both groups exist. */
+#ljp-list .ljp-tier-group-row > td {
+  border: none;
+  padding: 6px 12px;
+}
+/* The TD itself stays a real table cell so `colspan="4"` actually spans
+   the full row width. Flex layout for the label + rule lives on an
+   inner wrapper. */
+#ljp-list .ljp-tier-group-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#ljp-list .ljp-tier-group-label {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* The rule element kept for backwards-compat but folded into a 1-px
+   line that extends the visual band into the right gutter. Could be
+   hidden — left visible as a subtle finish. */
+#ljp-list .ljp-tier-group-rule {
+  flex: 1;
+  height: 1px;
+  opacity: 0.5;
+}
+
+/* Missing band — distinctly red so it reads as the actionable section.
+   The tint sits noticeably above the per-row 7% red wash used on
+   `.ljp-mapping-row.is-missing` so the header still stands out. */
+#ljp-list .ljp-tier-group-row.is-missing-group > td {
+  background: color-mix(in srgb, var(--color-danger, var(--r)) 20%, transparent);
+}
+#ljp-list .ljp-tier-group-row.is-missing-group .ljp-tier-group-label {
+  color: var(--color-danger, var(--r));
+}
+#ljp-list .ljp-tier-group-row.is-missing-group .ljp-tier-group-rule {
+  background: color-mix(in srgb, var(--color-danger, var(--r)) 50%, transparent);
+}
+
+/* Mapped band — green tint at the same alpha as the Missing band, so
+   the two zones read as a matched red/green pair signalling
+   "needs-attention" vs "done". */
+#ljp-list .ljp-tier-group-row.is-mapped-group > td {
+  background: color-mix(in srgb, var(--color-success, var(--g)) 20%, transparent);
+}
+#ljp-list .ljp-tier-group-row.is-mapped-group .ljp-tier-group-label {
+  color: var(--color-success, var(--g));
+}
+#ljp-list .ljp-tier-group-row.is-mapped-group .ljp-tier-group-rule {
+  background: color-mix(in srgb, var(--color-success, var(--g)) 50%, transparent);
+}
+
 /* ── Phase 3 — Tier accordions ─────────────────────────────────────────
    Each tier (Required / Optional / Screenshots / Multi-TP) wraps its
    table in a `<details>` element. Summary shows: chevron, name, mini
@@ -1941,12 +2015,56 @@ body.layout-edit-mode #layout-toolbar * {
   list-style: none;
   cursor: pointer;
   padding: 11px 14px;
-  display: grid;
-  grid-template-columns: 14px 110px 1fr 64px;
-  align-items: center;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   user-select: none;
   transition: background-color var(--ease-normal);
+}
+#ljp-list .ljp-tier-summary-main {
+  display: grid;
+  /* chevron · tier name · progress bar · mapped/total count */
+  grid-template-columns: 14px auto minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 12px;
+}
+/* Missing indicators — one row per missing dim: red dot emoji + label.
+   Stacked vertically (one per line) inside the tier summary's middle
+   slot. Uses the same 🔴 emoji as Account → Data & Integrations
+   sync-state indicators so the visual vocabulary stays consistent. */
+#ljp-list .ljp-tier-missing-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  /* Indent to align under the tier name (past the chevron column +
+     gap), so missing rows visually belong to the tier above. */
+  margin-left: 26px;
+  max-width: calc(100% - 26px);
+  min-width: 0;
+}
+#ljp-list .ljp-tier-missing-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-secondary, var(--body));
+  letter-spacing: 0.2px;
+  max-width: 100%;
+}
+#ljp-list .ljp-tier-missing-dot {
+  /* Match the Account → Data & Integrations disconnected indicator —
+     emoji-based so the colour and shape are platform-rendered and stay
+     visually identical to the rest of the dashboard's status pills. */
+  font-size: 9px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+#ljp-list .ljp-tier-missing-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #ljp-list .ljp-tier-summary::-webkit-details-marker { display: none; }
 #ljp-list .ljp-tier-summary::marker { content: ''; }
@@ -15127,31 +15245,7 @@ body.ms-sidebar-open .view-tabs {
   letter-spacing: -0.4px;
   font-feature-settings: 'tnum';
 }
-.dsh-sync-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  background: transparent;
-  border: var(--border-thin) solid color-mix(in srgb, var(--accent-primary) 35%, transparent);
-  border-radius: var(--rad-sm);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--accent-primary);
-  cursor: pointer;
-  transition: background var(--ease-normal), border-color var(--ease-normal);
-  letter-spacing: 0.1px;
-  white-space: nowrap;
-}
-.dsh-sync-btn:hover {
-  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-  border-color: color-mix(in srgb, var(--accent-primary) 60%, transparent);
-}
-.dsh-sync-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* dsh-sync-btn retired — sync lives in Account → Data & Integrations. */
 
 /* ── Tabs ── */
 .dhp-tabs {
@@ -15231,6 +15325,11 @@ body.ms-sidebar-open .view-tabs {
   display: none;
   flex: 1 1 auto;
   overflow-y: auto;
+  /* Reserve the scrollbar gutter at all times so expanding an accordion
+     that overflows (e.g. Optional with 14 rows) doesn't reflow the panel
+     width by ~12px when the scrollbar pops in. Avoids the visible jitter
+     of the Data Setup card when the user toggles a tier. */
+  scrollbar-gutter: stable;
   padding: var(--space-4);
 }
 .dhp-tab-panel.is-active { display: block; }
@@ -15265,11 +15364,18 @@ body.ms-sidebar-open .view-tabs {
   line-height: 1.45;
 }
 
-/* Phase 4 — drop the redundant legacy info row in the Mapping panel.
-   `.ljp-sub` and `.ljp-format` are still populated by updateJournalPanel
-   (kept for JS compat) but the Phase 1 hero card already shows source,
-   trade count, and coverage — no need to surface them a second time.
-   The reset-overrides button stays visible (right-aligned) when active. */
+/* Phase 4 — drop everything redundant in the Mapping panel. The Phase 1
+   hero card surfaces source / trade count / mapped coverage / locked
+   count, and the Phase 3 tier accordions auto-expand when they contain
+   missing fields — so the standalone "What's this?" intro, the
+   lap-list ("Day Performance MISSING"), and the feature-requirements
+   block ("Multi TP mode · 1 of 2 mapped") all duplicated information
+   that's now reachable in one click from the accordions. DOM is kept so
+   the existing render functions (renderAttentionList,
+   renderFeatureRequirementsBlock, updateJournalPanel) keep working
+   without any wiring change — we just hide their output here. */
+#dhp-panel-mapping .dhp-section-intro,
+#dhp-panel-mapping .dhp-mapping-health,
 #dhp-panel-mapping .ljp-sub,
 #dhp-panel-mapping .ljp-format {
   display: none;

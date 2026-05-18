@@ -2172,7 +2172,6 @@ function handleActionClick(event) {
     case 'set-warning-threshold': event.stopPropagation(); _setWarningThreshold(parseInt(actionEl.dataset.threshold, 10)); break;
     case 'toggle-data-hub':        event.stopPropagation(); toggleDataHub(); break;
     case 'switch-dh-tab':          event.stopPropagation(); switchDataHubTab(actionEl.dataset.tab); break;
-    case 'dsh-sync-now':           event.stopPropagation(); _handleDataSetupHeroSync(); break;
     case 'toggle-attention-panel': event.stopPropagation(); toggleAttentionPanel(); break;
     case 'toggle-journal-panel':   event.stopPropagation(); toggleJournalPanel(); break;
     case 'toggle-guide-panel':     event.stopPropagation(); toggleGuidePanel(actionEl); break;
@@ -27810,29 +27809,28 @@ function _updateDataSetupHero() {
   }
   if (ringLabel) ringLabel.textContent = totalDims ? `${pct}%` : '—';
 
-  // ── Sync button — only meaningful for active Notion profiles ────────
-  const syncBtn = document.getElementById('dsh-sync-btn');
-  if (syncBtn) {
-    const canSync = isAPI && profile && profile.connectionType === 'notion'
-                    && !!profile.notionDatabaseId
-                    && profile.notionSyncState !== 'disconnected';
-    syncBtn.hidden = !canSync;
-    syncBtn.disabled = !canSync || profile?.notionSyncState === 'syncing';
-    if (profile?.notionSyncState === 'syncing') {
-      syncBtn.textContent = '↻ Syncing…';
-    } else {
-      syncBtn.textContent = '↻ Sync';
+  // ── Custom fields + widgets counts ──────────────────────────────────
+  // Profile-scoped via `loadCustomProps()` / `_loadCustomWidgetDefs()`,
+  // so the hero reflects what the *active* profile has declared rather
+  // than a global count (avoids confusing users juggling multiple
+  // Notion profiles with different schema overlays).
+  let customCount = 0, widgetCount = 0;
+  try {
+    if (typeof loadCustomProps === 'function') {
+      const props = loadCustomProps();
+      customCount = Array.isArray(props) ? props.length : 0;
     }
-  }
-}
-
-function _handleDataSetupHeroSync() {
-  const profile = getActiveJournalProfile();
-  if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
-  // Reuse the per-row Sync flow — same sync, same race-guard, same UI feedback.
-  if (typeof _handleNotionProfileSyncNow === 'function') {
-    _handleNotionProfileSyncNow(profile.id);
-  }
+  } catch (e) {}
+  try {
+    if (typeof _loadCustomWidgetDefs === 'function') {
+      const widgets = _loadCustomWidgetDefs();
+      widgetCount = Array.isArray(widgets) ? widgets.length : 0;
+    }
+  } catch (e) {}
+  const customEl  = document.getElementById('dsh-stat-custom');
+  const widgetsEl = document.getElementById('dsh-stat-widgets');
+  if (customEl)  customEl.textContent  = String(customCount);
+  if (widgetsEl) widgetsEl.textContent = String(widgetCount);
 }
 
 function toggleDataHub(forceTab = null) {
@@ -28106,8 +28104,6 @@ function _renderMappingTableRow(dim, st) {
   const pencil = st.pencilHtml || '';
   const mainRow = `<tr class="ljp-mapping-row ${st.status}${st.rowClass ? ' ' + st.rowClass : ''}" data-dim-key="${_escapeHtml(dim.key)}">
     <td data-label="Property"><code class="csv-doc-prop">${_escapeHtml(dimLabel)}</code>${requiredBadge}</td>
-    <td data-label="Type">${typePill}</td>
-    <td data-label="Description" class="csv-doc-desc">${desc}</td>
     <td data-label="Mapping" class="ljp-mapping-cell">
       <div class="ljp-status-cell">
         <span class="ljp-status ${st.status}">${_escapeHtml(st.statusTxt || '')}</span>
@@ -28117,6 +28113,8 @@ function _renderMappingTableRow(dim, st) {
       </div>
       ${pencil}
     </td>
+    <td data-label="Type">${typePill}</td>
+    <td data-label="Description" class="csv-doc-desc">${desc}</td>
   </tr>`;
   return st.reportHtml
     ? mainRow + `<tr class="ljp-mapping-report-row"><td colspan="4">${st.reportHtml}</td></tr>`
@@ -28170,32 +28168,81 @@ function _renderMappingSectionsHtml(getStatusForDim) {
 
   const head = `<thead><tr>
     <th scope="col" class="csv-doc-col-prop">Property</th>
+    <th scope="col" class="csv-doc-col-mapping">Mapping</th>
     <th scope="col" class="csv-doc-col-type">Type</th>
     <th scope="col" class="csv-doc-col-desc">Description</th>
-    <th scope="col" class="csv-doc-col-mapping">Mapping</th>
   </tr></thead>`;
 
   return MAPPING_TIER_SECTIONS.map(sect => {
     const sectDims = JOURNAL_DIMS.filter(d => d.tier === sect.tier);
     if (!sectDims.length) return '';
 
-    // Walk the tier's dims once to build both the rows AND the summary
-    // stats (mapped count, missing count, percentage, "should open by
-    // default" hint). Avoids calling getStatusForDim twice per dim.
-    let mapped = 0, total = 0, hasMissing = false;
-    const rendered = sectDims.map(dim => {
+    // Walk the tier's dims twice — once to compute status + collect stats,
+    // then again to render rows in the *desired display order*: missing
+    // fields first (so they're at the top when the accordion expands),
+    // followed by mapped fields, each group alphabetical by label.
+    let mapped = 0, total = 0;
+    const missingDims = [];
+    const otherDims = [];
+    for (const dim of sectDims) {
       const st = getStatusForDim(dim);
-      if (!st) return '';
+      if (!st) continue;
       total++;
-      if (st.status === 'is-ok' || st.status === 'is-remapped') mapped++;
-      if (st.status === 'is-missing') hasMissing = true;
-      return _renderMappingTableRow(dim, st);
-    }).filter(Boolean).join('');
+      if (st.status === 'is-ok' || st.status === 'is-remapped') {
+        mapped++;
+        otherDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
+      } else if (st.status === 'is-missing') {
+        missingDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
+      } else {
+        // is-no-mapping / other states — keep with non-missing so they
+        // don't clutter the top with non-actionable rows.
+        otherDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
+      }
+    }
+    const byLabelAsc = (a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+    missingDims.sort(byLabelAsc);
+    otherDims.sort(byLabelAsc);
+    const missingLabels = missingDims.map(x => x.label);
+
+    // Group header rows — full-width tinted bands that mark each zone
+    // (Missing / Mapped). Emitted for every non-empty group so the
+    // user always sees the zone label, even when a tier is entirely
+    // missing or entirely mapped.
+    const groupHeader = (label, klass) => `
+      <tr class="ljp-tier-group-row ${klass}" aria-hidden="true">
+        <td colspan="4" class="ljp-tier-group-cell">
+          <div class="ljp-tier-group-inner">
+            <span class="ljp-tier-group-label">${_escapeHtml(label)}</span>
+            <span class="ljp-tier-group-rule"></span>
+          </div>
+        </td>
+      </tr>`;
+
+    const missingHtml = missingDims.map(({ dim, st }) => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
+    const otherHtml   = otherDims.map(({ dim, st })   => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
+
+    const rendered =
+        (missingDims.length > 0 ? groupHeader('Missing', 'is-missing-group') + missingHtml : '')
+      + (otherDims.length   > 0 ? groupHeader('Mapped',  'is-mapped-group')  + otherHtml   : '');
     if (!rendered) return '';
 
-    // First-render default: expand only the tiers that have something to fix.
-    if (useDefaults && hasMissing) _openMappingTiers.add(sect.tier);
+    const hasMissing = missingLabels.length > 0;
     const isOpen = _openMappingTiers.has(sect.tier);
+
+    // Inline "missing" indicators on the collapsed summary — one red
+    // dot (same 🔴 emoji used by the disconnected state in Account →
+    // Data & Integrations, so the dashboard's "something needs your
+    // attention" visual language stays consistent across surfaces) +
+    // label per missing field, stacked one per line.
+    let missingChip = '';
+    if (missingLabels.length > 0) {
+      const items = missingLabels.map(label => `
+        <span class="ljp-tier-missing-item">
+          <span class="ljp-tier-missing-dot" aria-hidden="true">🔴</span>
+          <span class="ljp-tier-missing-label">${_escapeHtml(label)}</span>
+        </span>`).join('');
+      missingChip = `<div class="ljp-tier-missing-list">${items}</div>`;
+    }
 
     // Mini progress bar + count chip — same visual language as the Phase 1
     // hero ring (mapped vs total) so the summary reads at a glance.
@@ -28216,10 +28263,13 @@ function _renderMappingSectionsHtml(getStatusForDim) {
 
     return `<details class="ljp-tier-acc${hasMissing ? ' has-missing' : ''}"${isOpen ? ' open' : ''} data-tier="${_escapeHtml(sect.tier)}">
       <summary class="ljp-tier-summary">
-        <span class="ljp-tier-chev" aria-hidden="true"></span>
-        <span class="ljp-tier-name">${_escapeHtml(shortTitle)}</span>
-        ${tierBar}
-        ${tierCount}
+        <div class="ljp-tier-summary-main">
+          <span class="ljp-tier-chev" aria-hidden="true"></span>
+          <span class="ljp-tier-name">${_escapeHtml(shortTitle)}</span>
+          ${tierBar}
+          ${tierCount}
+        </div>
+        ${missingChip}
       </summary>
       <div class="ljp-tier-body">
         ${note}

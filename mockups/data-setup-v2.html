@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Data Setup — v2 · Hero + tabs</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --text-muted:#7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38, 166, 154, 0.14);
+  --g3:        rgba(38, 166, 154, 0.06);
+  --r:         #ef5350;
+  --r2:        rgba(239, 83, 80, 0.14);
+  --r3:        rgba(239, 83, 80, 0.07);
+  --gold:      #d4af37;
+  --gold2:     rgba(212, 175, 55, 0.14);
+  --gold3:     rgba(212, 175, 55, 0.07);
+  --info:      #7dd3fc;
+  --warn:      #ff9e3d;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 36px 24px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(212, 175, 55, .04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 100%, rgba(38, 166, 154, .025) 0%, transparent 60%),
+    var(--bg);
+}
+
+/* ── Panel shell ─────────────────────────────────────────────────────── */
+.ds {
+  width: 100%;
+  max-width: 620px;
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .4), 0 1px 0 rgba(255, 255, 255, .04) inset;
+  overflow: hidden;
+}
+
+.ds-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ds-head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.2px;
+}
+.ds-close {
+  width: 28px; height: 28px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  display: grid; place-items: center;
+  transition: all .16s ease;
+}
+.ds-close:hover { color: var(--white); border-color: var(--line2); }
+
+/* ── Hero card (santé) ───────────────────────────────────────────────── */
+.ds-hero {
+  position: relative;
+  margin: 18px 22px 0;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, var(--bg2) 0%, var(--bg1) 100%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 20px;
+  align-items: center;
+}
+.ds-hero::before {
+  content: '';
+  position: absolute;
+  top: -20%; right: -10%;
+  width: 220px; height: 220px;
+  background: radial-gradient(circle, rgba(212, 175, 55, .08) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.ds-hero-main { position: relative; min-width: 0; }
+.ds-hero-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.ds-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--g);
+  box-shadow: 0 0 12px var(--g);
+  flex-shrink: 0;
+}
+.ds-hero-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.2px;
+}
+.ds-hero-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  letter-spacing: .4px;
+  display: block;
+}
+.ds-hero-stats {
+  display: flex;
+  gap: 22px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ds-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ds-stat strong {
+  font-family: 'DM Mono', monospace;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--white);
+  letter-spacing: -.4px;
+  font-feature-settings: 'tnum';
+  line-height: 1;
+}
+.ds-stat label {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.ds-stat-bad strong { color: var(--r); }
+
+.ds-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+.ds-ring-wrap {
+  position: relative;
+  width: 78px; height: 78px;
+}
+.ds-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ds-ring circle {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.ds-ring .ds-ring-track { stroke: var(--line); }
+.ds-ring .ds-ring-fill  { stroke: var(--gold); transition: stroke-dashoffset .6s ease; }
+.ds-ring-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--white);
+  letter-spacing: -.5px;
+  font-feature-settings: 'tnum';
+}
+
+.ds-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gold);
+  cursor: pointer;
+  transition: all .16s ease;
+  letter-spacing: .1px;
+  white-space: nowrap;
+}
+.ds-sync-btn:hover {
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 60%, transparent);
+  transform: translateY(-1px);
+}
+
+/* ── Tabs strip ──────────────────────────────────────────────────────── */
+.ds-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 14px 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ds-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all .14s ease;
+  letter-spacing: -.05px;
+  margin-bottom: -1px;
+}
+.ds-tab:hover { color: var(--body); }
+.ds-tab.is-active {
+  color: var(--white);
+  border-bottom-color: var(--gold);
+}
+.ds-tab-icon {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+}
+.ds-tab-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  background: var(--bg2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  letter-spacing: .3px;
+}
+.ds-tab.is-active .ds-tab-badge { color: var(--white); background: var(--bg3); }
+.ds-tab-badge.is-warn { background: var(--r3); color: var(--r); }
+
+/* ── Tab content area ────────────────────────────────────────────────── */
+.ds-body {
+  padding: 18px 22px 22px;
+}
+
+.ds-pane-title {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+
+.ds-tiers { display: flex; flex-direction: column; gap: 0; }
+.ds-tier {
+  display: grid;
+  grid-template-columns: 130px 1fr 64px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 40%, transparent);
+}
+.ds-tier:last-child { border-bottom: none; }
+.ds-tier-label {
+  font-size: 12px;
+  color: var(--body);
+  letter-spacing: -.05px;
+}
+.ds-bar {
+  height: 4px;
+  background: var(--bg2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ds-bar-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 2px;
+  transition: width .6s ease;
+}
+.ds-bar-fill.is-full { background: var(--g); }
+.ds-tier-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-align: right;
+  font-feature-settings: 'tnum';
+}
+.ds-tier-count.is-full { color: var(--g); }
+.ds-tier-count.is-partial { color: var(--gold); }
+
+/* Missing list */
+.ds-block {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.ds-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.ds-block-title {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.ds-block-action {
+  font-size: 11px;
+  color: var(--gold);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  padding: 0;
+  letter-spacing: .1px;
+  transition: opacity .14s ease;
+}
+.ds-block-action:hover { opacity: .8; }
+
+.ds-missing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ds-missing-list li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  transition: background-color .12s ease;
+  cursor: pointer;
+}
+.ds-missing-list li:hover { background: color-mix(in srgb, var(--bg2) 60%, transparent); }
+.ds-missing-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--r);
+  justify-self: center;
+}
+.ds-missing-name {
+  font-size: 12px;
+  color: var(--white);
+  font-weight: 500;
+}
+.ds-missing-tier {
+  font-family: 'DM Mono', monospace;
+  font-size: 8.5px;
+  color: var(--text-muted);
+  background: var(--bg2);
+  padding: 2px 5px;
+  border-radius: 3px;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+}
+.ds-missing-fix {
+  font-size: 11px;
+  color: var(--gold);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color .14s ease;
+}
+.ds-missing-fix:hover { background: var(--gold3); }
+
+/* Locked features */
+.ds-locked-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ds-locked-item {
+  padding: 11px 14px;
+  background: var(--r3);
+  border-left: 2px solid var(--r);
+  border-radius: 0 6px 6px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.ds-locked-icon {
+  font-family: 'DM Mono', monospace;
+  color: var(--r);
+  font-size: 14px;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+.ds-locked-body { flex: 1; min-width: 0; }
+.ds-locked-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--white);
+  letter-spacing: -.05px;
+  margin-bottom: 3px;
+}
+.ds-locked-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: .2px;
+}
+.ds-locked-sub code {
+  background: var(--bg2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--body);
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────── */
+.ds-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 22px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg2) 30%, transparent);
+  font-size: 11px;
+}
+.ds-footer-text {
+  color: var(--text-muted);
+  letter-spacing: .1px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ds-footer-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ds-footer-link {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: gap .16s ease;
+}
+.ds-footer-link:hover { gap: 8px; }
+
+</style>
+</head>
+<body>
+
+<div class="ds">
+
+  <header class="ds-head">
+    <h1>Data setup</h1>
+    <button class="ds-close" aria-label="Close">✕</button>
+  </header>
+
+  <!-- ── Hero card: santé du profil actif ─────────────────────────────── -->
+  <section class="ds-hero">
+    <div class="ds-hero-main">
+      <div class="ds-hero-name-row">
+        <span class="ds-dot"></span>
+        <span class="ds-hero-name">M15 Personnel</span>
+      </div>
+      <span class="ds-hero-meta">Notion · synced 2 min ago · M15</span>
+
+      <div class="ds-hero-stats">
+        <div class="ds-stat"><strong>234</strong><label>trades</label></div>
+        <div class="ds-stat"><strong>19/23</strong><label>mapped</label></div>
+        <div class="ds-stat ds-stat-bad"><strong>1</strong><label>locked</label></div>
+      </div>
+    </div>
+
+    <div class="ds-hero-side">
+      <div class="ds-ring-wrap">
+        <svg class="ds-ring" viewBox="0 0 100 100">
+          <circle class="ds-ring-track" cx="50" cy="50" r="42"/>
+          <circle class="ds-ring-fill" cx="50" cy="50" r="42"
+                  stroke-dasharray="263.9" stroke-dashoffset="44.9"/>
+        </svg>
+        <span class="ds-ring-label">83%</span>
+      </div>
+      <button class="ds-sync-btn">↻ Sync now</button>
+    </div>
+  </section>
+
+  <!-- ── Onglets ─────────────────────────────────────────────────────── -->
+  <nav class="ds-tabs" role="tablist">
+    <button class="ds-tab is-active" role="tab">
+      <span class="ds-tab-icon">✓</span>
+      Health
+      <span class="ds-tab-badge is-warn">3</span>
+    </button>
+    <button class="ds-tab" role="tab">
+      <span class="ds-tab-icon">⌖</span>
+      Mapping
+      <span class="ds-tab-badge">19/23</span>
+    </button>
+    <button class="ds-tab" role="tab">
+      <span class="ds-tab-icon">⊕</span>
+      Custom fields
+      <span class="ds-tab-badge">2</span>
+    </button>
+    <button class="ds-tab" role="tab">
+      <span class="ds-tab-icon">▦</span>
+      Create widget
+      <span class="ds-tab-badge">4</span>
+    </button>
+  </nav>
+
+  <!-- ── Contenu (default tab: Health) ────────────────────────────────── -->
+  <main class="ds-body">
+
+    <h2 class="ds-pane-title">Coverage by tier</h2>
+    <div class="ds-tiers">
+      <div class="ds-tier">
+        <span class="ds-tier-label">Required</span>
+        <div class="ds-bar"><div class="ds-bar-fill is-full" style="width:100%"></div></div>
+        <span class="ds-tier-count is-full">3 / 3</span>
+      </div>
+      <div class="ds-tier">
+        <span class="ds-tier-label">Optional</span>
+        <div class="ds-bar"><div class="ds-bar-fill" style="width:86%"></div></div>
+        <span class="ds-tier-count is-partial">12 / 14</span>
+      </div>
+      <div class="ds-tier">
+        <span class="ds-tier-label">Screenshots</span>
+        <div class="ds-bar"><div class="ds-bar-fill" style="width:67%"></div></div>
+        <span class="ds-tier-count is-partial">2 / 3</span>
+      </div>
+      <div class="ds-tier">
+        <span class="ds-tier-label">Multi-TP</span>
+        <div class="ds-bar"><div class="ds-bar-fill" style="width:67%"></div></div>
+        <span class="ds-tier-count is-partial">2 / 3</span>
+      </div>
+    </div>
+
+    <div class="ds-block">
+      <div class="ds-block-head">
+        <span class="ds-block-title">Missing fields</span>
+        <button class="ds-block-action">Open mapping →</button>
+      </div>
+      <ul class="ds-missing-list">
+        <li>
+          <span class="ds-missing-dot"></span>
+          <span class="ds-missing-name">H4 Obstacles</span>
+          <span class="ds-missing-tier">Optional</span>
+          <button class="ds-missing-fix">Fix →</button>
+        </li>
+        <li>
+          <span class="ds-missing-dot"></span>
+          <span class="ds-missing-name">H4 Before screenshot</span>
+          <span class="ds-missing-tier">Screenshot</span>
+          <button class="ds-missing-fix">Fix →</button>
+        </li>
+        <li>
+          <span class="ds-missing-dot"></span>
+          <span class="ds-missing-name">TP 3 realized R</span>
+          <span class="ds-missing-tier">Multi-TP</span>
+          <button class="ds-missing-fix">Fix →</button>
+        </li>
+      </ul>
+    </div>
+
+    <div class="ds-block">
+      <div class="ds-block-head">
+        <span class="ds-block-title">Locked features</span>
+      </div>
+      <ul class="ds-locked-list">
+        <li class="ds-locked-item">
+          <span class="ds-locked-icon">⌬</span>
+          <div class="ds-locked-body">
+            <div class="ds-locked-title">Multi-TP simulation</div>
+            <div class="ds-locked-sub">requires <code>TP 3 realized R</code></div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+  </main>
+
+  <footer class="ds-footer">
+    <div class="ds-footer-text">
+      <span class="ds-footer-label">CSV ref.</span>
+      <span>23 properties · 4 tiers</span>
+    </div>
+    <a class="ds-footer-link" href="#">Open guide →</a>
+  </footer>
+
+</div>
+
+</body>
+</html>

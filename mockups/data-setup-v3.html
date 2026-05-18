@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Data Setup — v3 · Hero + 3 tabs (interactive)</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --text-muted:#7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38, 166, 154, 0.14);
+  --g3:        rgba(38, 166, 154, 0.06);
+  --r:         #ef5350;
+  --r2:        rgba(239, 83, 80, 0.14);
+  --r3:        rgba(239, 83, 80, 0.07);
+  --gold:      #d4af37;
+  --gold2:     rgba(212, 175, 55, 0.14);
+  --gold3:     rgba(212, 175, 55, 0.07);
+  --info:      #7dd3fc;
+  --warn:      #ff9e3d;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 36px 24px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(212, 175, 55, .04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 100%, rgba(38, 166, 154, .025) 0%, transparent 60%),
+    var(--bg);
+}
+
+/* ── Panel shell ─────────────────────────────────────────────────────── */
+.ds {
+  width: 100%;
+  max-width: 640px;
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .4), 0 1px 0 rgba(255, 255, 255, .04) inset;
+  overflow: hidden;
+}
+
+.ds-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ds-head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.2px;
+}
+.ds-close {
+  width: 28px; height: 28px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  display: grid; place-items: center;
+  transition: all .16s ease;
+}
+.ds-close:hover { color: var(--white); border-color: var(--line2); }
+
+/* ── Hero card ───────────────────────────────────────────────────────── */
+.ds-hero {
+  position: relative;
+  margin: 18px 22px 0;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, var(--bg2) 0%, var(--bg1) 100%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 20px;
+  align-items: center;
+}
+.ds-hero::before {
+  content: '';
+  position: absolute;
+  top: -20%; right: -10%;
+  width: 220px; height: 220px;
+  background: radial-gradient(circle, rgba(212, 175, 55, .08) 0%, transparent 65%);
+  pointer-events: none;
+}
+.ds-hero-main { position: relative; min-width: 0; }
+.ds-hero-name-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+.ds-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--g); box-shadow: 0 0 12px var(--g);
+}
+.ds-hero-name {
+  font-size: 16px; font-weight: 600; color: var(--white); letter-spacing: -.2px;
+}
+.ds-hero-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px; color: var(--text-muted); letter-spacing: .4px;
+  display: block;
+}
+.ds-hero-stats {
+  display: flex; gap: 22px; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ds-stat { display: flex; flex-direction: column; gap: 3px; }
+.ds-stat strong {
+  font-family: 'DM Mono', monospace;
+  font-size: 17px; font-weight: 500; color: var(--white);
+  letter-spacing: -.4px; font-feature-settings: 'tnum'; line-height: 1;
+}
+.ds-stat label {
+  font-size: 9.5px; color: var(--text-muted); letter-spacing: .6px;
+  text-transform: uppercase; font-weight: 500;
+}
+.ds-stat-bad strong { color: var(--r); }
+
+.ds-hero-side {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.ds-ring-wrap { position: relative; width: 78px; height: 78px; }
+.ds-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ds-ring circle { fill: none; stroke-width: 6; stroke-linecap: round; }
+.ds-ring .ds-ring-track { stroke: var(--line); }
+.ds-ring .ds-ring-fill  { stroke: var(--gold); }
+.ds-ring-label {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 16px; font-weight: 500; color: var(--white);
+  letter-spacing: -.5px; font-feature-settings: 'tnum';
+}
+.ds-sync-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px;
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; font-weight: 500; color: var(--gold);
+  cursor: pointer; transition: all .16s ease; letter-spacing: .1px;
+  white-space: nowrap;
+}
+.ds-sync-btn:hover {
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+  transform: translateY(-1px);
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+.ds-tabs {
+  display: flex; gap: 4px; padding: 14px 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ds-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 14px;
+  background: transparent; border: none;
+  border-bottom: 2px solid transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px; font-weight: 500; color: var(--text-muted);
+  cursor: pointer; transition: all .14s ease;
+  letter-spacing: -.05px;
+  margin-bottom: -1px;
+}
+.ds-tab:hover { color: var(--body); }
+.ds-tab.is-active { color: var(--white); border-bottom-color: var(--gold); }
+.ds-tab-icon { font-family: 'DM Mono', monospace; font-size: 11px; }
+.ds-tab-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; background: var(--bg2); padding: 1px 6px;
+  border-radius: 3px; color: var(--text-muted); letter-spacing: .3px;
+}
+.ds-tab.is-active .ds-tab-badge { color: var(--white); background: var(--bg3); }
+.ds-tab-badge.is-warn { background: var(--r3); color: var(--r); }
+
+/* ── Body / panes ────────────────────────────────────────────────────── */
+.ds-body { padding: 18px 22px 22px; min-height: 400px; }
+.ds-pane { display: none; }
+.ds-pane.is-active { display: block; }
+
+.ds-pane-title {
+  font-size: 10px; font-weight: 500; color: var(--text-muted);
+  letter-spacing: 1.4px; text-transform: uppercase;
+  margin: 0 0 12px;
+}
+
+/* ── Locked-feature banner (Mapping tab) ─────────────────────────────── */
+.ds-alert {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; margin: 0 0 16px;
+  background: var(--r3);
+  border-left: 2px solid var(--r);
+  border-radius: 0 6px 6px 0;
+}
+.ds-alert-icon {
+  font-family: 'DM Mono', monospace; color: var(--r);
+  font-size: 14px; line-height: 1.2;
+}
+.ds-alert-body { flex: 1; min-width: 0; }
+.ds-alert-title {
+  font-size: 11.5px; font-weight: 500; color: var(--white);
+  letter-spacing: -.05px;
+}
+.ds-alert-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--text-muted); letter-spacing: .2px;
+  margin-top: 2px;
+}
+.ds-alert-sub code {
+  background: var(--bg2); padding: 1px 5px; border-radius: 3px; color: var(--body);
+}
+.ds-alert-cta {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; color: var(--gold); background: none; border: none;
+  cursor: pointer; padding: 4px 10px; border-radius: 4px;
+  transition: background-color .14s ease;
+}
+.ds-alert-cta:hover { background: var(--gold3); }
+
+/* ── Mapping tables (excerpt) ────────────────────────────────────────── */
+.ds-section-title {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12.5px; font-weight: 600; color: var(--white);
+  margin: 22px 0 8px;
+  letter-spacing: -.1px;
+}
+.ds-section-title:first-of-type { margin-top: 6px; }
+.ds-section-title::after {
+  content: ''; flex: 1; height: 1px;
+  background: color-mix(in srgb, var(--line) 70%, transparent);
+}
+.ds-section-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; padding: 2px 7px; letter-spacing: .3px;
+  font-weight: 500;
+}
+.ds-section-badge.is-required {
+  background: var(--r2); color: var(--r);
+  border: 1px solid color-mix(in srgb, var(--r) 35%, transparent);
+  border-radius: 3px;
+}
+.ds-section-badge.is-optional {
+  background: var(--gold2); color: var(--gold);
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: 3px;
+}
+
+.ds-mtable {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-family: 'DM Sans', sans-serif;
+  margin-bottom: 4px;
+}
+.ds-mtable thead th {
+  text-align: left;
+  font-family: 'DM Sans', sans-serif; font-weight: 500;
+  font-size: 9.5px; letter-spacing: .9px;
+  color: var(--text-muted);
+  padding: 4px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.ds-mtable tbody td {
+  padding: 12px; vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+.ds-mtable tbody tr:last-child td { border-bottom: none; }
+.ds-mtable tbody tr.is-ok      > td { background: color-mix(in srgb, var(--g)    6%, transparent); }
+.ds-mtable tbody tr.is-missing > td { background: color-mix(in srgb, var(--r)    7%, transparent); }
+.ds-mtable tbody tr:hover.is-ok      > td { background: color-mix(in srgb, var(--g)    12%, transparent); }
+.ds-mtable tbody tr:hover.is-missing > td { background: color-mix(in srgb, var(--r)    13%, transparent); }
+
+.ds-prop {
+  font-family: 'DM Mono', monospace;
+  font-size: 11.5px; color: var(--white); font-weight: 500;
+  border-left: 2px solid var(--gold);
+  padding: 1px 0 1px 8px;
+  display: inline-block;
+}
+.ds-required-badge {
+  display: inline-block; margin-left: 8px; vertical-align: middle;
+  font-family: 'DM Mono', monospace;
+  font-size: 8px; padding: 2px 6px; border-radius: 3px;
+  background: var(--r2); color: var(--r);
+  border: 1px solid color-mix(in srgb, var(--r) 35%, transparent);
+  letter-spacing: .4px; text-transform: uppercase; font-weight: 500;
+}
+.ds-type-pill {
+  display: inline-block;
+  font-family: 'DM Mono', monospace;
+  font-size: 8px; padding: 2px 6px; border-radius: 3px;
+  letter-spacing: .5px; text-transform: uppercase; font-weight: 500;
+  background: var(--bg2); color: var(--text-muted);
+  border: 1px solid var(--line2);
+}
+.ds-type-pill.is-select { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 35%, transparent); background: var(--gold2); }
+.ds-type-pill.is-number { color: #3ec8d8; border-color: rgba(62,200,216,.4); background: rgba(62,200,216,.1); }
+.ds-type-pill.is-date   { color: var(--g); border-color: color-mix(in srgb, var(--g) 35%, transparent); background: var(--g2); }
+.ds-type-pill.is-url    { color: #9aa6c4; border-color: rgba(154,166,196,.4); background: rgba(154,166,196,.1); }
+
+.ds-desc {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; line-height: 1.5; color: var(--text-muted);
+}
+.ds-desc code {
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
+  padding: 1px 5px; border-radius: 3px;
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--body);
+}
+
+.ds-mcell { position: relative; }
+.ds-status-cell { display: flex; flex-direction: column; gap: 6px; padding-right: 30px; }
+.ds-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 8.5px; padding: 2px 7px; border-radius: 3px;
+  letter-spacing: .4px;
+  align-self: flex-start;
+}
+.ds-status.is-ok      { color: var(--g);    background: var(--g2); }
+.ds-status.is-missing { color: var(--r);    background: var(--r2); }
+.ds-mapping-target {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px; color: var(--white);
+}
+.ds-mapping-row.is-missing .ds-mapping-target { color: var(--text-muted); }
+.ds-mapping-coverage {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 9.5px; color: var(--text-muted);
+}
+.ds-pencil {
+  position: absolute; top: 10px; right: 10px;
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--line2) 80%, transparent);
+  border-radius: 5px;
+  color: var(--dim); cursor: pointer;
+  font-size: 11px; display: grid; place-items: center;
+  font-family: 'DM Mono', monospace;
+  transition: all .14s ease;
+}
+.ds-pencil:hover { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 50%, transparent); }
+
+/* Column widths */
+.ds-mtable .ds-col-prop    { width: 22%; }
+.ds-mtable .ds-col-type    { width: 12%; }
+.ds-mtable .ds-col-desc    { width: 36%; }
+.ds-mtable .ds-col-mapping { width: 30%; }
+
+/* ── Custom fields tab ───────────────────────────────────────────────── */
+.ds-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ds-list li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto auto auto;
+  align-items: center; gap: 10px;
+  padding: 11px 12px;
+  border-radius: 6px;
+  transition: background-color .12s ease;
+  border: 1px solid transparent;
+}
+.ds-list li:hover {
+  background: color-mix(in srgb, var(--bg2) 60%, transparent);
+  border-color: color-mix(in srgb, var(--line) 50%, transparent);
+}
+.ds-list-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold); justify-self: center;
+}
+.ds-list-dot.is-number { background: #3ec8d8; }
+.ds-list-dot.is-multiselect { background: #ea8a4a; }
+.ds-list-dot.is-checkbox { background: #e86ca6; }
+.ds-list-icon {
+  font-family: 'DM Mono', monospace; font-size: 12px;
+  color: var(--gold); text-align: center;
+}
+.ds-list-name {
+  font-size: 12px; color: var(--white); font-weight: 500;
+  letter-spacing: -.05px;
+}
+.ds-list-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px; color: var(--text-muted);
+  background: var(--bg2); padding: 2px 5px; border-radius: 3px;
+  letter-spacing: .5px; text-transform: uppercase;
+  font-weight: 500; border: 1px solid var(--line);
+}
+.ds-list-cov {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--text-muted);
+  font-feature-settings: 'tnum';
+}
+.ds-icon-btn {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--dim);
+  cursor: pointer; font-size: 11px;
+  display: grid; place-items: center;
+  font-family: 'DM Mono', monospace;
+  transition: all .14s ease;
+}
+.ds-icon-btn:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 30%, transparent);
+}
+
+.ds-block {
+  margin-top: 22px;
+}
+.ds-block-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.ds-block-title {
+  font-size: 10px; font-weight: 500; color: var(--text-muted);
+  letter-spacing: 1.4px; text-transform: uppercase;
+}
+.ds-block-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--text-muted);
+}
+
+.ds-detected-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ds-detected-list li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  transition: background-color .12s ease;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+}
+.ds-detected-list li:hover { background: color-mix(in srgb, var(--bg2) 50%, transparent); }
+.ds-detected-name { color: var(--body); }
+.ds-detected-meta {
+  font-size: 9.5px; color: var(--text-muted);
+}
+.ds-declare-btn {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10.5px; color: var(--gold);
+  background: none; border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: 4px;
+  padding: 3px 9px; cursor: pointer;
+  transition: all .14s ease;
+}
+.ds-declare-btn:hover {
+  background: var(--gold3);
+}
+
+.ds-add-bar {
+  margin-top: 16px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--bg2) 50%, transparent);
+  border: 1px dashed var(--line2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .14s ease;
+}
+.ds-add-bar:hover {
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  background: var(--gold3);
+}
+.ds-add-bar-icon {
+  font-family: 'DM Mono', monospace;
+  font-size: 14px; color: var(--gold);
+}
+.ds-add-bar-label {
+  flex: 1; font-size: 12px; color: var(--white); font-weight: 500;
+  letter-spacing: -.05px;
+}
+.ds-add-bar-hint {
+  font-size: 10px; color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+}
+
+/* ── Create widget tab ───────────────────────────────────────────────── */
+.ds-widget-types {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.ds-wtype {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px;
+  padding: 18px 12px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all .14s ease;
+  font-family: 'DM Sans', sans-serif;
+}
+.ds-wtype:hover {
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  background: color-mix(in srgb, var(--gold) 4%, var(--bg2));
+  transform: translateY(-2px);
+}
+.ds-wtype-icon {
+  font-family: 'DM Mono', monospace;
+  font-size: 22px; color: var(--gold);
+  line-height: 1;
+}
+.ds-wtype-name {
+  font-size: 12px; font-weight: 500; color: var(--white);
+  letter-spacing: -.05px;
+}
+.ds-wtype-sub {
+  font-size: 9.5px; color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+  letter-spacing: .3px;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────── */
+.ds-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 22px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg2) 30%, transparent);
+  font-size: 11px;
+}
+.ds-footer-text {
+  color: var(--text-muted); display: flex; align-items: center; gap: 14px;
+}
+.ds-footer-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ds-footer-link {
+  color: var(--gold); text-decoration: none; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: gap .16s ease;
+}
+.ds-footer-link:hover { gap: 8px; }
+
+/* Reset link in Mapping pane */
+.ds-reset {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 10px; margin-top: 14px;
+  background: transparent;
+  border: 1px dashed var(--line2);
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10.5px; color: var(--text-muted);
+  cursor: pointer; letter-spacing: .2px;
+  transition: all .14s ease;
+}
+.ds-reset:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  border-style: solid;
+}
+
+</style>
+</head>
+<body>
+
+<div class="ds">
+
+  <header class="ds-head">
+    <h1>Data setup</h1>
+    <button class="ds-close" aria-label="Close">✕</button>
+  </header>
+
+  <!-- ── Hero card (toujours visible) ─────────────────────────────────── -->
+  <section class="ds-hero">
+    <div class="ds-hero-main">
+      <div class="ds-hero-name-row">
+        <span class="ds-dot"></span>
+        <span class="ds-hero-name">M15 Personnel</span>
+      </div>
+      <span class="ds-hero-meta">Notion · synced 2 min ago · M15</span>
+
+      <div class="ds-hero-stats">
+        <div class="ds-stat"><strong>234</strong><label>trades</label></div>
+        <div class="ds-stat"><strong>19/23</strong><label>mapped</label></div>
+        <div class="ds-stat ds-stat-bad"><strong>1</strong><label>locked</label></div>
+      </div>
+    </div>
+    <div class="ds-hero-side">
+      <div class="ds-ring-wrap">
+        <svg class="ds-ring" viewBox="0 0 100 100">
+          <circle class="ds-ring-track" cx="50" cy="50" r="42"/>
+          <circle class="ds-ring-fill" cx="50" cy="50" r="42"
+                  stroke-dasharray="263.9" stroke-dashoffset="44.9"/>
+        </svg>
+        <span class="ds-ring-label">83%</span>
+      </div>
+      <button class="ds-sync-btn">↻ Sync now</button>
+    </div>
+  </section>
+
+  <!-- ── Tabs (cliquables) ────────────────────────────────────────────── -->
+  <nav class="ds-tabs" role="tablist">
+    <button class="ds-tab is-active" role="tab" data-tab-id="mapping">
+      <span class="ds-tab-icon">⌖</span>
+      Mapping
+      <span class="ds-tab-badge">19/23</span>
+    </button>
+    <button class="ds-tab" role="tab" data-tab-id="custom">
+      <span class="ds-tab-icon">⊕</span>
+      Custom fields
+      <span class="ds-tab-badge">2</span>
+    </button>
+    <button class="ds-tab" role="tab" data-tab-id="widgets">
+      <span class="ds-tab-icon">▦</span>
+      Create widget
+      <span class="ds-tab-badge">4</span>
+    </button>
+  </nav>
+
+  <main class="ds-body">
+
+    <!-- ╔═════════════════════════════════════════════════════════════╗ -->
+    <!-- ║ TAB 1 — MAPPING (Health absorbed) — default                ║ -->
+    <!-- ╚═════════════════════════════════════════════════════════════╝ -->
+    <section class="ds-pane is-active" data-tab-id="mapping">
+
+      <!-- Locked-feature alert (only shown when something is locked) -->
+      <div class="ds-alert">
+        <span class="ds-alert-icon">⌬</span>
+        <div class="ds-alert-body">
+          <div class="ds-alert-title">1 widget locked</div>
+          <div class="ds-alert-sub">Multi-TP simulation requires <code>TP 3 realized R</code></div>
+        </div>
+        <button class="ds-alert-cta">Fix →</button>
+      </div>
+
+      <!-- Required tier -->
+      <div class="ds-section-title">
+        <span>Required properties</span>
+        <span class="ds-section-badge is-required">3 mandatory</span>
+      </div>
+      <table class="ds-mtable">
+        <thead><tr>
+          <th class="ds-col-prop">Property</th>
+          <th class="ds-col-type">Type</th>
+          <th class="ds-col-desc">Description</th>
+          <th class="ds-col-mapping">Mapping</th>
+        </tr></thead>
+        <tbody>
+          <tr class="ds-mapping-row is-ok">
+            <td><code class="ds-prop">Position Result</code><span class="ds-required-badge">REQUIRED</span></td>
+            <td><span class="ds-type-pill is-select">Select</span></td>
+            <td class="ds-desc">Trade outcome:<br><code>Take profit</code>, <code>Stop loss</code>, etc.</td>
+            <td class="ds-mcell">
+              <div class="ds-status-cell">
+                <span class="ds-status is-ok">found</span>
+                <div><span class="ds-mapping-target">positionResult</span> <span class="ds-mapping-coverage">· 234 / 234</span></div>
+              </div>
+              <button class="ds-pencil">✎</button>
+            </td>
+          </tr>
+          <tr class="ds-mapping-row is-ok">
+            <td><code class="ds-prop">RR TP 1</code><span class="ds-required-badge">REQUIRED</span></td>
+            <td><span class="ds-type-pill is-number">Number</span></td>
+            <td class="ds-desc">Realized R on first take profit.<br>e.g. <code>2.4</code> or <code>-1</code>.</td>
+            <td class="ds-mcell">
+              <div class="ds-status-cell">
+                <span class="ds-status is-ok">found</span>
+                <div><span class="ds-mapping-target">rrTp1</span> <span class="ds-mapping-coverage">· 234 / 234</span></div>
+              </div>
+              <button class="ds-pencil">✎</button>
+            </td>
+          </tr>
+          <tr class="ds-mapping-row is-ok">
+            <td><code class="ds-prop">Date</code><span class="ds-required-badge">REQUIRED</span></td>
+            <td><span class="ds-type-pill is-date">Date</span></td>
+            <td class="ds-desc">Trade date.<br>Format: <code>YYYY-MM-DD</code>.</td>
+            <td class="ds-mcell">
+              <div class="ds-status-cell">
+                <span class="ds-status is-ok">found</span>
+                <div><span class="ds-mapping-target">date</span> <span class="ds-mapping-coverage">· 234 / 234</span></div>
+              </div>
+              <button class="ds-pencil">✎</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Multi-TP tier (excerpt — shows one missing row) -->
+      <div class="ds-section-title">
+        <span>Multi-TP mode</span>
+        <span class="ds-section-badge is-optional">3 fields · advanced</span>
+      </div>
+      <table class="ds-mtable">
+        <thead><tr>
+          <th class="ds-col-prop">Property</th>
+          <th class="ds-col-type">Type</th>
+          <th class="ds-col-desc">Description</th>
+          <th class="ds-col-mapping">Mapping</th>
+        </tr></thead>
+        <tbody>
+          <tr class="ds-mapping-row is-ok">
+            <td><code class="ds-prop">TP 1 realized R</code></td>
+            <td><span class="ds-type-pill is-number">Number</span></td>
+            <td class="ds-desc">Realized R at first TP.</td>
+            <td class="ds-mcell">
+              <div class="ds-status-cell">
+                <span class="ds-status is-ok">found</span>
+                <div><span class="ds-mapping-target">tp1RealR</span></div>
+              </div>
+              <button class="ds-pencil">✎</button>
+            </td>
+          </tr>
+          <tr class="ds-mapping-row is-ok">
+            <td><code class="ds-prop">TP 2 realized R</code></td>
+            <td><span class="ds-type-pill is-number">Number</span></td>
+            <td class="ds-desc">Realized R at second TP.</td>
+            <td class="ds-mcell">
+              <div class="ds-status-cell">
+                <span class="ds-status is-ok">found</span>
+                <div><span class="ds-mapping-target">tp2RealR</span></div>
+              </div>
+              <button class="ds-pencil">✎</button>
+            </td>
+          </tr>
+          <tr class="ds-mapping-row is-missing">
+            <td><code class="ds-prop">TP 3 realized R</code></td>
+            <td><span class="ds-type-pill is-number">Number</span></td>
+            <td class="ds-desc">Realized R at third TP.<br>Only for 3-tier setups.</td>
+            <td class="ds-mcell">
+              <div class="ds-status-cell">
+                <span class="ds-status is-missing">missing</span>
+                <div><span class="ds-mapping-target">—</span></div>
+              </div>
+              <button class="ds-pencil">✎</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="font-family: 'DM Sans', sans-serif; font-size: 11px; color: var(--text-muted); margin: 20px 0 0; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 6px; text-align: center;">
+        + 14 optional · 3 screenshots in full panel
+      </p>
+
+      <button class="ds-reset">↺ Reset all overrides</button>
+    </section>
+
+    <!-- ╔═════════════════════════════════════════════════════════════╗ -->
+    <!-- ║ TAB 2 — CUSTOM FIELDS                                       ║ -->
+    <!-- ╚═════════════════════════════════════════════════════════════╝ -->
+    <section class="ds-pane" data-tab-id="custom">
+
+      <div class="ds-block-head" style="margin-top: 0;">
+        <span class="ds-block-title">Declared fields</span>
+        <span class="ds-block-sub">2 active</span>
+      </div>
+      <ul class="ds-list">
+        <li>
+          <span class="ds-list-dot"></span>
+          <span class="ds-list-name">Mood</span>
+          <span class="ds-list-tag">Select</span>
+          <span class="ds-list-cov">12 / 234 trades</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-dot is-number"></span>
+          <span class="ds-list-name">Confidence</span>
+          <span class="ds-list-tag">Number</span>
+          <span class="ds-list-cov">98 / 234 trades</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+      </ul>
+
+      <div class="ds-block">
+        <div class="ds-block-head">
+          <span class="ds-block-title">Detected in Notion</span>
+          <span class="ds-block-sub">4 candidates</span>
+        </div>
+        <ul class="ds-detected-list">
+          <li>
+            <span class="ds-list-dot is-multiselect" style="justify-self:center"></span>
+            <span class="ds-detected-name">Bias rating</span>
+            <span class="ds-detected-meta">multi-select · 187 trades</span>
+            <button class="ds-declare-btn">+ Declare</button>
+          </li>
+          <li>
+            <span class="ds-list-dot" style="justify-self:center"></span>
+            <span class="ds-detected-name">Session detail</span>
+            <span class="ds-detected-meta">select · 234 trades</span>
+            <button class="ds-declare-btn">+ Declare</button>
+          </li>
+          <li>
+            <span class="ds-list-dot is-checkbox" style="justify-self:center"></span>
+            <span class="ds-detected-name">News event nearby</span>
+            <span class="ds-detected-meta">checkbox · 234 trades</span>
+            <button class="ds-declare-btn">+ Declare</button>
+          </li>
+          <li>
+            <span class="ds-list-dot is-number" style="justify-self:center"></span>
+            <span class="ds-detected-name">RR Max realized</span>
+            <span class="ds-detected-meta">number · 198 trades</span>
+            <button class="ds-declare-btn">+ Declare</button>
+          </li>
+        </ul>
+      </div>
+
+      <div class="ds-add-bar">
+        <span class="ds-add-bar-icon">+</span>
+        <span class="ds-add-bar-label">Declare a new custom field</span>
+        <span class="ds-add-bar-hint">name · type · default</span>
+      </div>
+    </section>
+
+    <!-- ╔═════════════════════════════════════════════════════════════╗ -->
+    <!-- ║ TAB 3 — CREATE WIDGET                                       ║ -->
+    <!-- ╚═════════════════════════════════════════════════════════════╝ -->
+    <section class="ds-pane" data-tab-id="widgets">
+
+      <h2 class="ds-pane-title">Build from your data</h2>
+      <div class="ds-widget-types">
+        <div class="ds-wtype">
+          <span class="ds-wtype-icon">▮</span>
+          <span class="ds-wtype-name">Bar chart</span>
+          <span class="ds-wtype-sub">1 dim</span>
+        </div>
+        <div class="ds-wtype">
+          <span class="ds-wtype-icon">▦</span>
+          <span class="ds-wtype-name">Heatmap</span>
+          <span class="ds-wtype-sub">2 dims</span>
+        </div>
+        <div class="ds-wtype">
+          <span class="ds-wtype-icon">◕</span>
+          <span class="ds-wtype-name">Donut</span>
+          <span class="ds-wtype-sub">1 dim</span>
+        </div>
+      </div>
+
+      <div class="ds-block-head">
+        <span class="ds-block-title">Your widgets</span>
+        <span class="ds-block-sub">4 built</span>
+      </div>
+      <ul class="ds-list">
+        <li>
+          <span class="ds-list-icon">◕</span>
+          <span class="ds-list-name">Mood breakdown</span>
+          <span class="ds-list-tag">Donut</span>
+          <span class="ds-list-cov">Mood</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-icon">▮</span>
+          <span class="ds-list-name">Confidence by setup</span>
+          <span class="ds-list-tag">Bars</span>
+          <span class="ds-list-cov">Conf × Setup</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-icon">▦</span>
+          <span class="ds-list-name">Pair × Mood</span>
+          <span class="ds-list-tag">Heatmap</span>
+          <span class="ds-list-cov">Pair × Mood</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-icon">▮</span>
+          <span class="ds-list-name">Bias rating breakdown</span>
+          <span class="ds-list-tag">Bars</span>
+          <span class="ds-list-cov">Bias rating</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+      </ul>
+    </section>
+
+  </main>
+
+  <footer class="ds-footer">
+    <div class="ds-footer-text">
+      <span class="ds-footer-label">CSV ref.</span>
+      <span>23 properties · 4 tiers</span>
+    </div>
+    <a class="ds-footer-link" href="#">Open guide →</a>
+  </footer>
+
+</div>
+
+<script>
+// Tab switching
+document.querySelectorAll('.ds-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.tabId;
+    document.querySelectorAll('.ds-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tabId === id));
+    document.querySelectorAll('.ds-pane').forEach(p => p.classList.toggle('is-active', p.dataset.tabId === id));
+  });
+});
+</script>
+
+</body>
+</html>

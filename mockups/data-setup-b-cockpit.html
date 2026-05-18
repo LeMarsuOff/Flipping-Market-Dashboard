@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Data Setup — Mockup B · Cockpit</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --text-muted:#7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38, 166, 154, 0.14);
+  --g3:        rgba(38, 166, 154, 0.06);
+  --r:         #ef5350;
+  --r2:        rgba(239, 83, 80, 0.14);
+  --r3:        rgba(239, 83, 80, 0.07);
+  --gold:      #d4af37;
+  --gold2:     rgba(212, 175, 55, 0.14);
+  --gold3:     rgba(212, 175, 55, 0.07);
+  --info:      #7dd3fc;
+  --warn:      #ff9e3d;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 36px 24px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(212, 175, 55, .04) 0%, transparent 45%),
+    radial-gradient(circle at 90% 100%, rgba(38, 166, 154, .03) 0%, transparent 55%),
+    var(--bg);
+}
+
+/* Faint grid backdrop — gives the cockpit a "telemetry" feel */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.012) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.012) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Cockpit shell ───────────────────────────────────────────────────── */
+.ds {
+  width: 100%;
+  max-width: 960px;
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, .5), 0 1px 0 rgba(255, 255, 255, .04) inset;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.ds-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255,255,255,.012) 0%, transparent 100%);
+}
+.ds-head-left { display: flex; align-items: baseline; gap: 14px; }
+.ds-head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.2px;
+}
+.ds-breadcrumb {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: .3px;
+}
+.ds-breadcrumb .ds-bc-sep {
+  margin: 0 8px;
+  color: var(--line2);
+}
+.ds-breadcrumb .ds-bc-live {
+  color: var(--g);
+}
+.ds-close {
+  width: 28px; height: 28px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  display: grid; place-items: center;
+  transition: all .16s ease;
+}
+.ds-close:hover { color: var(--white); border-color: var(--line2); }
+
+/* ── Quadrant grid ───────────────────────────────────────────────────── */
+.ds-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+}
+.ds-q {
+  background: var(--bg1);
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+}
+.ds-q-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ds-q-head h2 {
+  margin: 0;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.ds-q-stat {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: .5px;
+  font-feature-settings: 'tnum';
+}
+
+/* ── Source quadrant ─────────────────────────────────────────────────── */
+.ds-source-active {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 18px;
+  align-items: center;
+}
+.ds-ring-wrap {
+  position: relative;
+  width: 96px; height: 96px;
+}
+.ds-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ds-ring circle {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.ds-ring .ds-ring-track { stroke: var(--line); }
+.ds-ring .ds-ring-fill  { stroke: var(--gold); }
+.ds-ring-inner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+.ds-ring-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--white);
+  letter-spacing: -.5px;
+  line-height: 1;
+  font-feature-settings: 'tnum';
+}
+.ds-ring-label-sub {
+  font-size: 8.5px;
+  color: var(--text-muted);
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  display: block;
+  margin-top: 4px;
+}
+
+.ds-source-info { display: flex; flex-direction: column; gap: 6px; }
+.ds-source-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+  letter-spacing: -.2px;
+}
+.ds-source-line {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  letter-spacing: .3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ds-source-line .ds-live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--g);
+  box-shadow: 0 0 8px var(--g);
+}
+
+.ds-source-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--white);
+  cursor: pointer;
+  transition: all .14s ease;
+  letter-spacing: .1px;
+}
+.ds-btn-primary {
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  color: var(--gold);
+}
+.ds-btn-primary:hover { background: color-mix(in srgb, var(--gold) 24%, transparent); }
+.ds-btn-ghost { color: var(--body); }
+.ds-btn-ghost:hover { background: var(--bg2); color: var(--white); }
+
+.ds-other-profiles {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ds-other-profiles li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--body);
+  cursor: pointer;
+  transition: color .14s ease;
+}
+.ds-other-profiles li:hover { color: var(--white); }
+.ds-other-profiles li.is-add { color: var(--text-muted); font-family: 'DM Sans', sans-serif; }
+.ds-other-profiles li.is-add:hover { color: var(--gold); }
+.ds-other-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--line2);
+  flex-shrink: 0;
+}
+.ds-other-meta {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: .3px;
+  margin-left: auto;
+}
+
+/* ── Health quadrant ─────────────────────────────────────────────────── */
+.ds-tiers { display: flex; flex-direction: column; gap: 8px; }
+.ds-tier {
+  display: grid;
+  grid-template-columns: 110px 1fr 56px;
+  align-items: center;
+  gap: 12px;
+}
+.ds-tier-label {
+  font-size: 11px;
+  color: var(--body);
+}
+.ds-bar {
+  height: 4px;
+  background: var(--bg2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ds-bar-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 2px;
+}
+.ds-bar-fill.is-full { background: var(--g); }
+.ds-tier-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-align: right;
+  font-feature-settings: 'tnum';
+}
+.ds-tier-count.is-full { color: var(--g); }
+.ds-tier-count.is-partial { color: var(--gold); }
+
+.ds-missing {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ds-missing-head {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.ds-missing ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ds-missing li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--body);
+  padding: 3px 0;
+}
+.ds-missing-marker {
+  color: var(--r);
+  font-size: 9px;
+}
+
+.ds-locked {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--r3);
+  border-left: 2px solid var(--r);
+  border-radius: 0 4px 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ds-locked-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--r);
+  letter-spacing: -.05px;
+}
+.ds-locked-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: .2px;
+}
+
+/* ── Custom fields & widgets quadrants ───────────────────────────────── */
+.ds-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ds-list li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  transition: background-color .12s ease;
+}
+.ds-list li:hover { background: color-mix(in srgb, var(--bg2) 60%, transparent); }
+
+.ds-list-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  justify-self: center;
+}
+.ds-list-dot.is-number { background: #3ec8d8; }
+.ds-list-dot.is-multiselect { background: #ea8a4a; }
+.ds-list-dot.is-checkbox { background: #e86ca6; }
+
+.ds-list-icon {
+  font-size: 12px;
+  color: var(--gold);
+  text-align: center;
+  font-family: 'DM Mono', monospace;
+}
+.ds-list-name {
+  font-size: 12px;
+  color: var(--white);
+  font-weight: 500;
+  letter-spacing: -.05px;
+}
+.ds-list-tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  color: var(--text-muted);
+  background: var(--bg2);
+  padding: 2px 5px;
+  border-radius: 3px;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  font-weight: 500;
+  border: 1px solid var(--line);
+}
+.ds-list-cov {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-feature-settings: 'tnum';
+}
+.ds-icon-btn {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 11px;
+  display: grid; place-items: center;
+  transition: all .14s ease;
+  font-family: 'DM Mono', monospace;
+}
+.ds-icon-btn:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 30%, transparent);
+}
+
+.ds-q-action {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.ds-action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  background: transparent;
+  border: 1px dashed var(--line2);
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: .2px;
+  transition: all .14s ease;
+}
+.ds-action-link:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  border-style: solid;
+}
+
+/* ── Bottom CSV reference strip ──────────────────────────────────────── */
+.ds-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg2) 40%, transparent);
+  font-size: 11px;
+}
+.ds-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ds-strip-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+.ds-strip-text {
+  color: var(--body);
+  letter-spacing: .1px;
+}
+.ds-strip-text strong {
+  color: var(--white);
+  font-family: 'DM Mono', monospace;
+  font-weight: 500;
+  font-feature-settings: 'tnum';
+}
+.ds-strip-link {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: gap .16s ease;
+}
+.ds-strip-link:hover { gap: 8px; }
+</style>
+</head>
+<body>
+
+<div class="ds">
+
+  <header class="ds-head">
+    <div class="ds-head-left">
+      <h1>Data setup</h1>
+      <span class="ds-breadcrumb">
+        <span class="ds-bc-live">●</span> M15 Personnel
+        <span class="ds-bc-sep">/</span> Notion
+        <span class="ds-bc-sep">/</span> M15
+        <span class="ds-bc-sep">·</span> synced 2 min ago
+      </span>
+    </div>
+    <button class="ds-close" aria-label="Close">✕</button>
+  </header>
+
+  <main class="ds-grid">
+
+    <!-- ── Source quadrant ───────────────────────────────────────────── -->
+    <section class="ds-q ds-q-source">
+      <header class="ds-q-head">
+        <h2>Source</h2>
+        <span class="ds-q-stat">3 profiles</span>
+      </header>
+
+      <div class="ds-source-active">
+        <div class="ds-ring-wrap">
+          <svg class="ds-ring" viewBox="0 0 100 100">
+            <circle class="ds-ring-track" cx="50" cy="50" r="42"/>
+            <circle class="ds-ring-fill" cx="50" cy="50" r="42"
+                    stroke-dasharray="263.9" stroke-dashoffset="44.9"/>
+          </svg>
+          <div class="ds-ring-inner">
+            <div>
+              <div class="ds-ring-num">234</div>
+              <span class="ds-ring-label-sub">trades</span>
+            </div>
+          </div>
+        </div>
+        <div class="ds-source-info">
+          <span class="ds-source-name">M15 Personnel</span>
+          <span class="ds-source-line"><span class="ds-live-dot"></span> Notion · synced 2 min ago</span>
+          <div class="ds-source-actions">
+            <button class="ds-btn ds-btn-primary">↻ Sync</button>
+            <button class="ds-btn ds-btn-ghost">Database</button>
+          </div>
+        </div>
+      </div>
+
+      <ul class="ds-other-profiles">
+        <li>
+          <span class="ds-other-dot"></span>
+          Demo
+          <span class="ds-other-meta">100 trades · sample</span>
+        </li>
+        <li>
+          <span class="ds-other-dot"></span>
+          H4 Backup
+          <span class="ds-other-meta">not synced</span>
+        </li>
+        <li class="is-add">
+          <span style="color:var(--text-muted)">+</span> Add source
+        </li>
+      </ul>
+    </section>
+
+    <!-- ── Health quadrant ───────────────────────────────────────────── -->
+    <section class="ds-q ds-q-health">
+      <header class="ds-q-head">
+        <h2>Health</h2>
+        <span class="ds-q-stat">19 / 23 mapped</span>
+      </header>
+
+      <div class="ds-tiers">
+        <div class="ds-tier">
+          <span class="ds-tier-label">Required</span>
+          <div class="ds-bar"><div class="ds-bar-fill is-full" style="width:100%"></div></div>
+          <span class="ds-tier-count is-full">3 / 3</span>
+        </div>
+        <div class="ds-tier">
+          <span class="ds-tier-label">Optional</span>
+          <div class="ds-bar"><div class="ds-bar-fill" style="width:86%"></div></div>
+          <span class="ds-tier-count is-partial">12 / 14</span>
+        </div>
+        <div class="ds-tier">
+          <span class="ds-tier-label">Screenshots</span>
+          <div class="ds-bar"><div class="ds-bar-fill" style="width:67%"></div></div>
+          <span class="ds-tier-count is-partial">2 / 3</span>
+        </div>
+        <div class="ds-tier">
+          <span class="ds-tier-label">Multi-TP</span>
+          <div class="ds-bar"><div class="ds-bar-fill" style="width:67%"></div></div>
+          <span class="ds-tier-count is-partial">2 / 3</span>
+        </div>
+      </div>
+
+      <div class="ds-missing">
+        <div class="ds-missing-head">Missing fields</div>
+        <ul>
+          <li><span class="ds-missing-marker">●</span> H4 Obstacles</li>
+          <li><span class="ds-missing-marker">●</span> H4 Before screenshot</li>
+          <li><span class="ds-missing-marker">●</span> TP 3 realized R</li>
+        </ul>
+      </div>
+
+      <div class="ds-locked">
+        <span class="ds-locked-title">Multi-TP simulation unavailable</span>
+        <span class="ds-locked-sub">requires TP 3 realized R</span>
+      </div>
+
+      <div class="ds-q-action">
+        <button class="ds-action-link">Open field mapping →</button>
+      </div>
+    </section>
+
+    <!-- ── Custom fields quadrant ────────────────────────────────────── -->
+    <section class="ds-q ds-q-custom">
+      <header class="ds-q-head">
+        <h2>Custom fields</h2>
+        <span class="ds-q-stat">2 active</span>
+      </header>
+
+      <ul class="ds-list">
+        <li>
+          <span class="ds-list-dot"></span>
+          <span class="ds-list-name">Mood</span>
+          <span class="ds-list-tag">Select</span>
+          <span class="ds-list-cov">12 trades</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-dot is-number"></span>
+          <span class="ds-list-name">Confidence</span>
+          <span class="ds-list-tag">Number</span>
+          <span class="ds-list-cov">98 trades</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+      </ul>
+
+      <div class="ds-q-action">
+        <button class="ds-action-link">+ Declare a custom field</button>
+      </div>
+    </section>
+
+    <!-- ── Widgets quadrant ──────────────────────────────────────────── -->
+    <section class="ds-q ds-q-widgets">
+      <header class="ds-q-head">
+        <h2>Widgets</h2>
+        <span class="ds-q-stat">4 built</span>
+      </header>
+
+      <ul class="ds-list">
+        <li>
+          <span class="ds-list-icon">◕</span>
+          <span class="ds-list-name">Mood breakdown</span>
+          <span class="ds-list-tag">Donut</span>
+          <span class="ds-list-cov">Mood</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-icon">▮</span>
+          <span class="ds-list-name">Confidence by setup</span>
+          <span class="ds-list-tag">Bars</span>
+          <span class="ds-list-cov">Conf × Setup</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-icon">▦</span>
+          <span class="ds-list-name">Pair × Mood</span>
+          <span class="ds-list-tag">Heatmap</span>
+          <span class="ds-list-cov">Pair × Mood</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+        <li>
+          <span class="ds-list-icon">▮</span>
+          <span class="ds-list-name">Bias rating</span>
+          <span class="ds-list-tag">Bars</span>
+          <span class="ds-list-cov">Bias rating</span>
+          <button class="ds-icon-btn">✎</button>
+          <button class="ds-icon-btn">×</button>
+        </li>
+      </ul>
+
+      <div class="ds-q-action">
+        <button class="ds-action-link">+ Create a widget</button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="ds-strip">
+    <div class="ds-strip-left">
+      <span class="ds-strip-label">CSV reference</span>
+      <span class="ds-strip-text"><strong>23</strong> properties · <strong>4</strong> tiers · types & defaults</span>
+    </div>
+    <a class="ds-strip-link" href="#">Open full guide →</a>
+  </footer>
+
+</div>
+
+</body>
+</html>
