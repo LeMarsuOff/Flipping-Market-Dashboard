@@ -27586,9 +27586,13 @@ function updateAttentionButton(hidden) {
 }
 
 // Backward-compat stubs: route legacy callers to the unified Data Hub.
+// Phase 2 — the Health tab was merged into Mapping (its lap-list +
+// feature-reqs blocks now render as a prelude inside #dhp-panel-mapping).
+// Old callers that asked for the 'health' tab now land on Mapping which
+// surfaces the same diagnostic info at the top.
 function toggleAttentionPanel() {
-  if (!dataHubOpen) toggleDataHub('health');
-  else switchDataHubTab('health');
+  if (!dataHubOpen) toggleDataHub('mapping');
+  else switchDataHubTab('mapping');
 }
 function toggleJournalPanel() {
   if (!dataHubOpen) toggleDataHub('mapping');
@@ -27658,7 +27662,7 @@ function _closeGuidePanel() {
 
 const DATA_HUB_ONBOARDED_KEY = 'fm_dh_onboarded_v1';
 let dataHubOpen = false;
-let dataHubActiveTab = 'health';
+let dataHubActiveTab = 'mapping';
 let _cwCreateFlowEscHandler = null;
 let _cwCreateFlowState = {
   open: false,
@@ -27841,7 +27845,7 @@ function toggleDataHub(forceTab = null) {
   btn.setAttribute('aria-expanded', dataHubOpen ? 'true' : 'false');
 
   if (dataHubOpen) {
-    switchDataHubTab(forceTab || 'health');
+    switchDataHubTab(forceTab || 'mapping');
     btn.classList.remove('is-first-import');
     try { updateAttentionButton(getHiddenWidgetsList()); } catch (e) {}
     try { updateJournalPanel(); } catch (e) {}
@@ -27857,7 +27861,11 @@ function toggleDataHub(forceTab = null) {
 }
 
 function switchDataHubTab(tabName) {
-  if (!['health', 'mapping', 'custom', 'create-widget'].includes(tabName)) return;
+  // Phase 2: 'health' merged into 'mapping' — keep the legacy name as an
+  // alias so any persisted state or external caller passing 'health' lands
+  // on the right tab instead of being silently ignored.
+  if (tabName === 'health') tabName = 'mapping';
+  if (!['mapping', 'custom', 'create-widget'].includes(tabName)) return;
   dataHubActiveTab = tabName;
   document.querySelectorAll('.dhp-tab').forEach(t => {
     const isActive = t.dataset.tab === tabName;
@@ -27903,7 +27911,10 @@ function _syncDataHubBtnTitle() {
 function updateDataHubBadge() {
   const badge = document.getElementById('dhb-badge');
   const badgeText = document.getElementById('dhb-badge-text');
-  const tabHealthBadge = document.getElementById('dhp-tab-health-badge');
+  // Phase 2: the Health tab badge was retired alongside the Health tab.
+  // Its missing-count signal now lives on the Mapping tab badge, since
+  // Mapping is where the diagnostic and fix actions both happen.
+  const tabMappingBadge = document.getElementById('dhp-tab-mapping-badge');
   if (!badge || !badgeText) return;
 
   const mode = localStorage.getItem(DS_KEY) || 'demo';
@@ -27921,12 +27932,12 @@ function updateDataHubBadge() {
     badgeText.textContent = `${missingCount} to fix`;
   }
 
-  if (tabHealthBadge) {
+  if (tabMappingBadge) {
     if (missingCount > 0) {
-      tabHealthBadge.textContent = String(missingCount);
-      tabHealthBadge.classList.add('is-visible');
+      tabMappingBadge.textContent = String(missingCount);
+      tabMappingBadge.classList.add('is-visible');
     } else {
-      tabHealthBadge.classList.remove('is-visible');
+      tabMappingBadge.classList.remove('is-visible');
     }
   }
 

@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=144">
+<link rel="stylesheet" href="dashboard.css?v=145">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1383,21 +1383,13 @@
   <div class="dhp-tabs" role="tablist">
     <button class="dhp-tab is-active"
             data-action="switch-dh-tab"
-            data-tab="health"
-            role="tab"
-            aria-selected="true"
-            id="dhp-tab-health">
-      <span class="dhp-tab-icon" aria-hidden="true">✓</span>
-      <span class="dhp-tab-label">Health</span>
-      <span class="dhp-tab-badge" id="dhp-tab-health-badge"></span>
-    </button>
-    <button class="dhp-tab"
-            data-action="switch-dh-tab"
             data-tab="mapping"
             role="tab"
-            aria-selected="false">
+            aria-selected="true"
+            id="dhp-tab-mapping">
       <span class="dhp-tab-icon" aria-hidden="true">🔗</span>
       <span class="dhp-tab-label">Mapping</span>
+      <span class="dhp-tab-badge" id="dhp-tab-mapping-badge"></span>
     </button>
     <button class="dhp-tab"
             data-action="switch-dh-tab"
@@ -1420,30 +1412,26 @@
     </button>
   </div>
 
-  <!-- TAB 1: HEALTH -->
+  <!-- TAB 1: MAPPING (Health absorbed — Phase 2 merge) -->
+  <!-- The previous Health panel content (#lap-list + #dhp-feature-reqs)
+       lives here as the "needs attention" prelude above the mapping body,
+       so the user sees what's missing before diving into the full field
+       configuration. The hero card at the top of the panel already shows
+       the overall coverage / locked counts at a glance. -->
   <div class="dhp-tab-panel is-active"
-       id="dhp-panel-health"
-       role="tabpanel"
-       aria-labelledby="dhp-tab-health">
-    <div class="dhp-section-intro">
-      <span class="dhp-intro-label">What's this?</span>
-      <span class="dhp-intro-text">Check which required fields aren't connected yet. Widgets that need missing data are hidden. Click the pencil to fix.</span>
-    </div>
-    <div class="dhp-health-body">
-      <ul class="lap-list" id="lap-list"></ul>
-    </div>
-    <!-- Feature Requirements block (Phase 3.A.final) — populated by renderFeatureRequirementsBlock() -->
-    <div class="dhp-feature-reqs" id="dhp-feature-reqs"></div>
-  </div>
-
-  <!-- TAB 2: MAPPING -->
-  <div class="dhp-tab-panel"
        id="dhp-panel-mapping"
-       role="tabpanel">
+       role="tabpanel"
+       aria-labelledby="dhp-tab-mapping">
     <div class="dhp-section-intro">
       <span class="dhp-intro-label">What's this?</span>
-      <span class="dhp-intro-text">Full view of which CSV column feeds each widget dimension. Override any mapping here.</span>
+      <span class="dhp-intro-text">Diagnose what's missing and remap any dimension to a different field. Locked widgets and unmapped required fields surface up top.</span>
     </div>
+    <!-- ── Health prelude ── populated by renderAttentionList + renderFeatureRequirementsBlock -->
+    <div class="dhp-mapping-health" id="dhp-mapping-health">
+      <ul class="lap-list" id="lap-list"></ul>
+      <div class="dhp-feature-reqs" id="dhp-feature-reqs"></div>
+    </div>
+    <!-- ── Full mapping body (existing — unchanged in Phase 2) ── -->
     <div class="dhp-mapping-body">
       <div class="ljp-sub" id="ljp-sub">Which CSV column feeds each widget dimension.</div>
       <div class="ljp-format-row">
@@ -2891,6 +2879,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=244"></script>
+<script src="dashboard.js?v=249"></script>
 </body>
 </html>
