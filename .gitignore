@@ -23,9 +23,12 @@ node_modules/
 
 # Sensible
 .env
-.env.local
+.env.*
 *.key
 secrets.json
+
+# Vercel local link (per-machine, regenerated via `vercel link`)
+.vercel/
 
 # Claude Code local
 .claude/
