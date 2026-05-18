@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Filters Tab — mockup v2</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --muted:     #7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38,166,154,.14);
+  --r:         #ef5350;
+  --gold:      #d4af37;
+  --gold2:     rgba(212,175,55,.14);
+  --accent:    #7b8fff;
+  --accent2:   rgba(123,143,255,.14);
+  --warn:      #f5c642;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 24px;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+/* ── Panel shell ── */
+.panel {
+  width: 340px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.panel-label {
+  font-family:'DM Mono',monospace;
+  font-size:10px; letter-spacing:1px; text-transform:uppercase;
+  color: var(--dim);
+  margin-bottom: 10px;
+  text-align: center;
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-title { font-family:'DM Mono',monospace; font-size:11px; font-weight:500; letter-spacing:1.2px; text-transform:uppercase; color:var(--white); }
+.panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  padding: 0 8px;
+  gap: 2px;
+}
+.panel-tab {
+  font-family:'DM Mono',monospace;
+  font-size:10px; letter-spacing:.6px; text-transform:uppercase;
+  padding: 9px 10px 7px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.panel-tab.is-active { color: var(--white); border-bottom-color: var(--accent); }
+.panel-body { padding: 16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto; max-height:620px; }
+
+/* ── Shared section title ── */
+.sec-title {
+  font-family:'DM Mono',monospace;
+  font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+  color: var(--gold);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sec-title-count {
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: .3px;
+  text-transform: none;
+}
+.sec-title-btn {
+  margin-left: auto;
+  font-family:'DM Mono',monospace;
+  font-size: 9px; letter-spacing:.4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--line2);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+.sec-title-btn:hover { color: var(--body); border-color: var(--line2); }
+
+/* ── Separator ── */
+.sep {
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Added filter items (compact, secondary) ── */
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.fi-drag { color:var(--dim); font-size:11px; cursor:grab; flex-shrink:0; }
+.fi-info { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.fi-name { font-size:12px; font-weight:500; color:var(--white); }
+.fi-cov { font-family:'DM Sans',sans-serif; font-size:10px; color:var(--muted); font-feature-settings:'tnum'; }
+.fi-cov.is-partial { color:var(--warn); }
+.fi-type {
+  font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.4px; text-transform:uppercase;
+  padding: 2px 6px; border-radius:4px; flex-shrink:0;
+  background:var(--accent2); color:var(--accent);
+}
+.fi-type.ms { background:var(--g2); color:var(--g); }
+.fi-type.cb { background:var(--gold2); color:var(--gold); }
+.fi-vis { font-size:10px; cursor:pointer; padding:2px 5px; border:none; background:transparent; flex-shrink:0; }
+.fi-vis.on { color:var(--g); }
+.fi-vis.off { color:var(--dim); }
+.fi-del { font-size:11px; color:var(--dim); cursor:pointer; padding:2px 5px; border:none; background:transparent; flex-shrink:0; }
+.fi-del:hover { color:var(--r); }
+
+/* ── Add property manually ── */
+.add-manual-btn {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:.4px;
+  padding: 6px 12px; border-radius:6px;
+  border: 1px dashed var(--line2);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  align-self: flex-start;
+  transition: color .12s, border-color .12s;
+}
+.add-manual-btn:hover { color:var(--muted); border-color:var(--muted); }
+
+/* ══════════════════════════════════════
+   OPTION A — Detected as a scannable list
+   with prominent row-level "+ Add" buttons
+   ══════════════════════════════════════ */
+.det-list { display:flex; flex-direction:column; gap:5px; }
+.det-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg3);
+  transition: border-color .12s, background .12s;
+}
+.det-row:hover { border-color: var(--line2); background: color-mix(in srgb,var(--bg3) 100%,var(--accent) 0%); }
+.det-icon { width:28px; height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:6px; background:var(--bg2); }
+.det-info { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.det-name { font-size:12px; font-weight:500; color:var(--white); }
+.det-type-badge {
+  font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.4px; text-transform:uppercase;
+  color: var(--dim);
+}
+.det-add-btn {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:.4px;
+  padding: 5px 11px; border-radius:6px;
+  border: 1px solid color-mix(in srgb,var(--accent) 40%,var(--line));
+  background: color-mix(in srgb,var(--accent) 8%,transparent);
+  color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .12s, border-color .12s;
+}
+.det-add-btn:hover {
+  background: color-mix(in srgb,var(--accent) 16%,transparent);
+  border-color: color-mix(in srgb,var(--accent) 60%,transparent);
+}
+
+/* ══════════════════════════════════════
+   OPTION B — Detected as compact chips
+   with a bolder add action per item
+   ══════════════════════════════════════ */
+.det-chips { display:flex; flex-direction:column; gap:4px; }
+.det-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: default;
+}
+.det-chip:hover { background:var(--bg3); border-color:var(--line); }
+.det-chip-dot {
+  width: 7px; height: 7px; border-radius:50%; flex-shrink:0;
+  background: var(--accent);
+  opacity: .5;
+}
+.det-chip-name { flex:1; font-size:12px; color:var(--body); }
+.det-chip-type { font-family:'DM Mono',monospace; font-size:9px; color:var(--dim); letter-spacing:.4px; text-transform:uppercase; }
+.det-chip-add {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:.3px;
+  padding:4px 10px; border-radius:20px;
+  border:1px solid color-mix(in srgb,var(--g) 35%,var(--line));
+  background:transparent; color:var(--g); cursor:pointer;
+  transition: background .12s;
+}
+.det-chip-add:hover { background:var(--g2); }
+
+/* ══════════════════════════════════════
+   OPTION C — Detected as grouped cards
+   (type-color-coded, big add button)
+   ══════════════════════════════════════ */
+.det-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.det-card {
+  display:flex; flex-direction:column; gap:8px;
+  padding:10px 12px;
+  background:var(--bg3);
+  border:1px solid var(--line);
+  border-radius:9px;
+  cursor:pointer;
+  transition: border-color .12s;
+}
+.det-card:hover { border-color:color-mix(in srgb,var(--accent) 50%,var(--line)); }
+.det-card-top { display:flex; align-items:center; justify-content:space-between; }
+.det-card-name { font-size:12px; font-weight:500; color:var(--white); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.det-card-type {
+  font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.5px; text-transform:uppercase;
+  padding:2px 6px; border-radius:4px; flex-shrink:0;
+}
+.det-card-type.sel  { background:var(--accent2); color:var(--accent); }
+.det-card-type.ms   { background:var(--g2);      color:var(--g);      }
+.det-card-type.cb   { background:var(--gold2);   color:var(--gold);   }
+.det-card-type.num  { background:rgba(239,83,80,.1); color:var(--r); }
+.det-card-add {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:.3px;
+  padding:5px 0; border-radius:5px; border:none;
+  background:color-mix(in srgb,var(--accent) 10%,transparent);
+  color:var(--accent); cursor:pointer; text-align:center;
+  transition: background .12s;
+}
+.det-card-add:hover { background:color-mix(in srgb,var(--accent) 18%,transparent); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════
+     OPTION A — List rows
+     ══════════════════════ -->
+<div>
+  <div class="panel-label">Option A — List rows</div>
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">Data Setup</span></div>
+    <div class="panel-tabs">
+      <span class="panel-tab">Mapping</span>
+      <span class="panel-tab is-active">Filters</span>
+      <span class="panel-tab">Widget</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- DETECTED — priority 1 -->
+      <div>
+        <div class="sec-title">
+          Detected in your data
+          <span class="sec-title-count">(4)</span>
+          <button class="sec-title-btn">↺ Refresh</button>
+        </div>
+        <div class="det-list">
+          <div class="det-row">
+            <div class="det-icon">
+              <svg width="16" height="14" viewBox="0 0 16 14" fill="var(--g)" opacity=".8">
+                <rect x="0" y="0" width="6" height="4" rx="1"/><rect x="0" y="5" width="10" height="4" rx="1" opacity=".5"/><rect x="0" y="10" width="4" height="4" rx="1" opacity=".3"/>
+              </svg>
+            </div>
+            <div class="det-info">
+              <span class="det-name">M15 Pros</span>
+              <span class="det-type-badge">multi-select</span>
+            </div>
+            <button class="det-add-btn">+ Add</button>
+          </div>
+          <div class="det-row">
+            <div class="det-icon">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="var(--accent)" opacity=".8">
+                <rect x="0" y="0" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M1.5 3 L3.5 5 L7 1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="8" y="2" width="6" height="2" rx="1"/>
+                <rect x="0" y="8" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".4"/>
+                <rect x="8" y="10" width="4" height="2" rx="1" opacity=".4"/>
+              </svg>
+            </div>
+            <div class="det-info">
+              <span class="det-name">Risk Confirmed</span>
+              <span class="det-type-badge">checkbox</span>
+            </div>
+            <button class="det-add-btn">+ Add</button>
+          </div>
+          <div class="det-row">
+            <div class="det-icon">
+              <svg width="14" height="12" viewBox="0 0 14 12" fill="var(--gold)" opacity=".8">
+                <rect x="0" y="0" width="14" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <rect x="3" y="2.5" width="6" height="2" rx="1"/>
+                <path d="M11 3.5 L13 5.5 L11 7.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-14,0)"/>
+              </svg>
+            </div>
+            <div class="det-info">
+              <span class="det-name">Session Quality</span>
+              <span class="det-type-badge">select</span>
+            </div>
+            <button class="det-add-btn">+ Add</button>
+          </div>
+          <div class="det-row">
+            <div class="det-icon">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="var(--muted)" opacity=".8">
+                <rect x="3" y="0" width="2" height="14" rx="1"/>
+                <rect x="7" y="3" width="2" height="11" rx="1"/>
+                <rect x="11" y="6" width="2" height="8" rx="1"/>
+              </svg>
+            </div>
+            <div class="det-info">
+              <span class="det-name">Trade Duration</span>
+              <span class="det-type-badge">number</span>
+            </div>
+            <button class="det-add-btn">+ Add</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- ADDED FILTERS — priority 2 -->
+      <div>
+        <div class="sec-title">Added filters</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div class="filter-item">
+            <span class="fi-drag">⋮⋮</span>
+            <div class="fi-info"><span class="fi-name">Setup</span><span class="fi-cov">583/583 trades</span></div>
+            <span class="fi-type">select</span>
+            <button class="fi-vis on">◉</button>
+            <button class="fi-del">✕</button>
+          </div>
+          <div class="filter-item">
+            <span class="fi-drag">⋮⋮</span>
+            <div class="fi-info"><span class="fi-name">M15 Tags</span><span class="fi-cov is-partial">578/583 trades</span></div>
+            <span class="fi-type ms">multi-select</span>
+            <button class="fi-vis on">◉</button>
+            <button class="fi-del">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- ADD MANUALLY — priority 3 -->
+      <button class="add-manual-btn">+ Add property manually</button>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════
+     OPTION B — Chip rows
+     ══════════════════════ -->
+<div>
+  <div class="panel-label">Option B — Chip rows</div>
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">Data Setup</span></div>
+    <div class="panel-tabs">
+      <span class="panel-tab">Mapping</span>
+      <span class="panel-tab is-active">Filters</span>
+      <span class="panel-tab">Widget</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- DETECTED -->
+      <div>
+        <div class="sec-title">
+          Detected in your data
+          <span class="sec-title-count">(4)</span>
+          <button class="sec-title-btn">↺ Refresh</button>
+        </div>
+        <div class="det-chips">
+          <div class="det-chip"><div class="det-chip-dot" style="background:var(--g)"></div><span class="det-chip-name">M15 Pros</span><span class="det-chip-type">multi-select</span><button class="det-chip-add">+ Add</button></div>
+          <div class="det-chip"><div class="det-chip-dot" style="background:var(--accent)"></div><span class="det-chip-name">Risk Confirmed</span><span class="det-chip-type">checkbox</span><button class="det-chip-add">+ Add</button></div>
+          <div class="det-chip"><div class="det-chip-dot" style="background:var(--gold)"></div><span class="det-chip-name">Session Quality</span><span class="det-chip-type">select</span><button class="det-chip-add">+ Add</button></div>
+          <div class="det-chip"><div class="det-chip-dot" style="background:var(--muted)"></div><span class="det-chip-name">Trade Duration</span><span class="det-chip-type">number</span><button class="det-chip-add">+ Add</button></div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- ADDED FILTERS -->
+      <div>
+        <div class="sec-title">Added filters</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div class="filter-item">
+            <span class="fi-drag">⋮⋮</span>
+            <div class="fi-info"><span class="fi-name">Setup</span><span class="fi-cov">583/583 trades</span></div>
+            <span class="fi-type">select</span>
+            <button class="fi-vis on">◉</button>
+            <button class="fi-del">✕</button>
+          </div>
+          <div class="filter-item">
+            <span class="fi-drag">⋮⋮</span>
+            <div class="fi-info"><span class="fi-name">M15 Tags</span><span class="fi-cov is-partial">578/583 trades</span></div>
+            <span class="fi-type ms">multi-select</span>
+            <button class="fi-vis on">◉</button>
+            <button class="fi-del">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- ADD MANUALLY -->
+      <button class="add-manual-btn">+ Add property manually</button>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════
+     OPTION C — 2-col grid
+     ══════════════════════ -->
+<div>
+  <div class="panel-label">Option C — 2-col cards</div>
+  <div class="panel">
+    <div class="panel-header"><span class="panel-title">Data Setup</span></div>
+    <div class="panel-tabs">
+      <span class="panel-tab">Mapping</span>
+      <span class="panel-tab is-active">Filters</span>
+      <span class="panel-tab">Widget</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- DETECTED -->
+      <div>
+        <div class="sec-title">
+          Detected in your data
+          <span class="sec-title-count">(4)</span>
+          <button class="sec-title-btn">↺ Refresh</button>
+        </div>
+        <div class="det-grid">
+          <div class="det-card">
+            <div class="det-card-top"><span class="det-card-name">M15 Pros</span><span class="det-card-type ms">multi</span></div>
+            <button class="det-card-add">+ Add filter</button>
+          </div>
+          <div class="det-card">
+            <div class="det-card-top"><span class="det-card-name">Risk Confirmed</span><span class="det-card-type cb">checkbox</span></div>
+            <button class="det-card-add">+ Add filter</button>
+          </div>
+          <div class="det-card">
+            <div class="det-card-top"><span class="det-card-name">Session Quality</span><span class="det-card-type sel">select</span></div>
+            <button class="det-card-add">+ Add filter</button>
+          </div>
+          <div class="det-card">
+            <div class="det-card-top"><span class="det-card-name">Trade Duration</span><span class="det-card-type num">number</span></div>
+            <button class="det-card-add">+ Add filter</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- ADDED FILTERS -->
+      <div>
+        <div class="sec-title">Added filters</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div class="filter-item">
+            <span class="fi-drag">⋮⋮</span>
+            <div class="fi-info"><span class="fi-name">Setup</span><span class="fi-cov">583/583 trades</span></div>
+            <span class="fi-type">select</span>
+            <button class="fi-vis on">◉</button>
+            <button class="fi-del">✕</button>
+          </div>
+          <div class="filter-item">
+            <span class="fi-drag">⋮⋮</span>
+            <div class="fi-info"><span class="fi-name">M15 Tags</span><span class="fi-cov is-partial">578/583 trades</span></div>
+            <span class="fi-type ms">multi-select</span>
+            <button class="fi-vis on">◉</button>
+            <button class="fi-del">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- ADD MANUALLY -->
+      <button class="add-manual-btn">+ Add property manually</button>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

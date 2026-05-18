@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Filters Tab — mockup v1</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --text-muted:#7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38,166,154,.14);
+  --r:         #ef5350;
+  --r2:        rgba(239,83,80,.14);
+  --gold:      #d4af37;
+  --gold2:     rgba(212,175,55,.14);
+  --accent:    #7b8fff;
+  --accent2:   rgba(123,143,255,.14);
+  --warn:      #f5c642;
+  --warn2:     rgba(245,198,66,.14);
+  --cat1:      #7b8fff;
+  --cat2:      #26a69a;
+  --cat3:      #f5c642;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 32px;
+}
+
+/* ── Panel shell ── */
+.panel {
+  width: 360px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-title { font-family:'DM Mono',monospace; font-size:11px; font-weight:500; letter-spacing:1.2px; text-transform:uppercase; color:var(--white); }
+.panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  padding: 0 8px;
+  gap: 2px;
+}
+.panel-tab {
+  font-family:'DM Mono',monospace;
+  font-size:10px; letter-spacing:.6px; text-transform:uppercase;
+  padding: 9px 10px 7px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.panel-tab.is-active { color: var(--white); border-bottom-color: var(--accent); }
+
+.panel-body { padding: 16px; display:flex; flex-direction:column; gap:16px; overflow-y:auto; max-height:600px; }
+
+/* ── Section title (matches np-detected-header) ── */
+.section-title {
+  font-family:'DM Mono',monospace;
+  font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+  color: var(--gold);
+}
+
+/* ── Type cards (same DA as Create Widget) ── */
+.type-cards {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 10px;
+}
+.type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--bg3) 85%, transparent);
+  border-radius: 10px;
+  padding: 16px 10px 14px;
+  min-height: 84px;
+  cursor: pointer;
+  transition: border-color .14s, background .14s;
+}
+.type-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--bg3) 100%, transparent);
+}
+.type-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent),
+              0 8px 24px color-mix(in srgb,var(--accent) 12%,transparent);
+}
+.type-card svg { opacity:.82; }
+.type-card-label {
+  font-family:'DM Mono',monospace;
+  font-size:10px; font-weight:500; letter-spacing:.5px;
+  color:var(--white);
+  text-align:center;
+  line-height:1.3;
+}
+
+/* ── Inline form (appears after clicking a card) ── */
+.inline-form {
+  background: var(--bg3);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.form-row { display:flex; flex-direction:column; gap:4px; }
+.form-label { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:1px; text-transform:uppercase; color:var(--dim); }
+.form-input {
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  color: var(--white);
+  font-family:'DM Sans',sans-serif; font-size:12px;
+  padding: 7px 10px;
+  outline: none;
+}
+.form-input:focus { border-color: color-mix(in srgb,var(--accent) 55%,var(--line)); }
+.form-actions { display:flex; gap:8px; justify-content:flex-end; }
+.form-btn {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:.4px;
+  padding: 6px 12px; border-radius:6px; border:none; cursor:pointer;
+}
+.form-btn--cancel { background:transparent; border:1px solid var(--line2); color:var(--text-muted); }
+.form-btn--save { background:color-mix(in srgb,var(--accent) 18%,transparent); border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line)); color:var(--accent); }
+
+/* ── Separator ── */
+.sep {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+/* ── Added filters list ── */
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.filter-item-drag { color:var(--dim); font-size:12px; cursor:grab; }
+.filter-item-info { flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.filter-item-name { font-size:12px; font-weight:500; color:var(--white); }
+.filter-item-meta { font-family:'DM Mono',monospace; font-size:10px; color:var(--dim); letter-spacing:.3px; }
+.filter-item-coverage { font-family:'DM Sans',sans-serif; font-size:10px; color:var(--text-muted); font-feature-settings:'tnum'; }
+.filter-item-coverage.is-partial { color:var(--warn); }
+.filter-item-type {
+  font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.5px; text-transform:uppercase;
+  padding: 3px 7px; border-radius:4px;
+  background:var(--accent2); color:var(--accent);
+}
+.filter-item-type.is-multi { background:var(--g2); color:var(--g); }
+.filter-item-type.is-check { background:var(--gold2); color:var(--gold); }
+.filter-item-vis {
+  font-size:10px; color:var(--dim); cursor:pointer;
+  padding:3px 6px; border-radius:4px; border:1px solid transparent;
+}
+.filter-item-vis.is-on { color:var(--g); }
+.filter-item-del { font-size:11px; color:var(--dim); cursor:pointer; padding:3px 6px; border-radius:4px; border:none; background:transparent; }
+.filter-item-del:hover { color:var(--r); }
+
+/* ── Detected ── */
+.detected-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+.detected-item:hover { background:var(--bg3); border-color:var(--line); }
+.detected-name { flex:1; font-size:12px; color:var(--body); }
+.detected-type { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.5px; text-transform:uppercase; color:var(--dim); }
+.detected-add { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:.4px; padding:4px 9px; border-radius:5px; border:1px solid var(--line2); background:transparent; color:var(--text-muted); cursor:pointer; }
+.detected-add:hover { border-color:color-mix(in srgb,var(--accent) 50%,var(--line)); color:var(--accent); }
+
+.empty-hint { font-size:11px; color:var(--dim); padding:6px 2px; }
+
+/* ── Comparison: current design ── */
+.np-footer-actions { padding-top: 4px; }
+.np-add-btn {
+  font-family:'DM Mono',monospace; font-size:10px; letter-spacing:.5px;
+  padding:7px 14px; border-radius:20px;
+  border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
+  background:color-mix(in srgb,var(--bg3) 80%,transparent);
+  color:var(--body); cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<!-- ══ BEFORE (current) ══ -->
+<div>
+  <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:10px;text-align:center;">Current</div>
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Data Setup</span>
+    </div>
+    <div class="panel-tabs">
+      <span class="panel-tab">Mapping</span>
+      <span class="panel-tab is-active">Filters</span>
+      <span class="panel-tab">Widget</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- Added filters -->
+      <div>
+        <div class="section-title" style="margin-bottom:10px;">Added filters</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div class="filter-item">
+            <span class="filter-item-drag">⋮⋮</span>
+            <div class="filter-item-info">
+              <span class="filter-item-name">Setup</span>
+              <span class="filter-item-meta">setup</span>
+              <span class="filter-item-coverage">583/583 trades</span>
+            </div>
+            <span class="filter-item-type">select</span>
+            <span class="filter-item-vis is-on">◉ filter</span>
+            <button class="filter-item-del">✕</button>
+          </div>
+          <div class="filter-item">
+            <span class="filter-item-drag">⋮⋮</span>
+            <div class="filter-item-info">
+              <span class="filter-item-name">M15 Tags</span>
+              <span class="filter-item-meta">m15Tags</span>
+              <span class="filter-item-coverage is-partial">578/583 trades</span>
+            </div>
+            <span class="filter-item-type is-multi">multi-select</span>
+            <span class="filter-item-vis is-on">◉ filter</span>
+            <button class="filter-item-del">✕</button>
+          </div>
+          <div class="filter-item">
+            <span class="filter-item-drag">⋮⋮</span>
+            <div class="filter-item-info">
+              <span class="filter-item-name">Confluences</span>
+              <span class="filter-item-meta">confluences</span>
+              <span class="filter-item-coverage is-partial">420/583 trades</span>
+            </div>
+            <span class="filter-item-type is-check">checkbox</span>
+            <span class="filter-item-vis" style="color:var(--dim)">○ hidden</span>
+            <button class="filter-item-del">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- What's this -->
+      <div style="background:color-mix(in srgb,var(--bg3) 60%,transparent);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;">
+        <span style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim);">What's this?</span>
+        <span style="font-size:11px;color:var(--text-muted);line-height:1.45;">Declare your own Notion properties to unlock custom sidebar filters.</span>
+      </div>
+
+      <hr class="sep">
+
+      <!-- Detected -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span class="section-title">Detected in your data</span>
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--dim);">(4 available)</span>
+          <button style="margin-left:auto;font-family:'DM Mono',monospace;font-size:9px;padding:3px 8px;border-radius:5px;border:1px solid var(--line2);background:transparent;color:var(--dim);cursor:pointer;">↺ Refresh</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div class="detected-item"><span class="detected-name">M15 Pros</span><span class="detected-type">multi-select</span><button class="detected-add">+ Add</button></div>
+          <div class="detected-item"><span class="detected-name">Risk Confirmed</span><span class="detected-type">checkbox</span><button class="detected-add">+ Add</button></div>
+          <div class="detected-item"><span class="detected-name">Session Quality</span><span class="detected-type">select</span><button class="detected-add">+ Add</button></div>
+          <div class="detected-item"><span class="detected-name">Trade Duration</span><span class="detected-type">number</span><button class="detected-add">+ Add</button></div>
+        </div>
+      </div>
+
+      <!-- Add button -->
+      <div class="np-footer-actions">
+        <button class="np-add-btn">+ Add property</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ AFTER (proposed) ══ -->
+<div>
+  <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:10px;text-align:center;">Proposed</div>
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Data Setup</span>
+    </div>
+    <div class="panel-tabs">
+      <span class="panel-tab">Mapping</span>
+      <span class="panel-tab is-active">Filters</span>
+      <span class="panel-tab">Widget</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- Type cards — same DA as Create Widget -->
+      <div>
+        <div class="section-title" style="margin-bottom:10px;">Add a filter</div>
+        <div class="type-cards">
+
+          <!-- Select -->
+          <div class="type-card" onclick="toggleCard(this)">
+            <svg width="30" height="26" viewBox="0 0 30 26" fill="currentColor">
+              <!-- dropdown box with single selected item -->
+              <rect x="1" y="1" width="28" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/>
+              <rect x="5" y="6" width="14" height="3" rx="1.5" opacity=".9"/>
+              <rect x="5" y="11" width="9" height="3" rx="1.5" opacity=".4"/>
+              <path d="M23 8.5 L26 12 L29 8.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+              <!-- selected chip below -->
+              <rect x="4" y="22" width="10" height="3" rx="1.5" opacity=".7"/>
+            </svg>
+            <span class="type-card-label">Select</span>
+          </div>
+
+          <!-- Multi-select -->
+          <div class="type-card" onclick="toggleCard(this)">
+            <svg width="30" height="26" viewBox="0 0 30 26" fill="currentColor">
+              <!-- multiple chips -->
+              <rect x="1"  y="2"  width="12" height="6" rx="3" opacity=".9"/>
+              <rect x="15" y="2"  width="14" height="6" rx="3" opacity=".55"/>
+              <rect x="1"  y="11" width="16" height="6" rx="3" opacity=".75"/>
+              <rect x="19" y="11" width="10" height="6" rx="3" opacity=".35"/>
+              <rect x="1"  y="20" width="9"  height="6" rx="3" opacity=".5"/>
+              <rect x="12" y="20" width="13" height="6" rx="3" opacity=".25"/>
+            </svg>
+            <span class="type-card-label">Multi-select</span>
+          </div>
+
+          <!-- Checkbox -->
+          <div class="type-card" onclick="toggleCard(this)">
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="currentColor">
+              <!-- checked box -->
+              <rect x="1" y="1" width="10" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".8"/>
+              <path d="M3.5 6 L6 8.5 L10 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+              <rect x="14" y="4" width="11" height="2.5" rx="1.2" opacity=".6"/>
+              <!-- unchecked box -->
+              <rect x="1" y="15" width="10" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".35"/>
+              <rect x="14" y="18" width="8" height="2.5" rx="1.2" opacity=".3"/>
+            </svg>
+            <span class="type-card-label">Checkbox</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inline form (shown after clicking a card) -->
+      <div class="inline-form" id="inline-form" style="display:none;">
+        <div class="form-row">
+          <span class="form-label">Property name</span>
+          <input class="form-input" type="text" placeholder="e.g. Setup quality" value="M15 Tags">
+        </div>
+        <div class="form-row">
+          <span class="form-label">Notion key</span>
+          <input class="form-input" type="text" placeholder="auto-generated" value="m15Tags">
+        </div>
+        <div class="form-actions">
+          <button class="form-btn form-btn--cancel" onclick="closeForm()">Cancel</button>
+          <button class="form-btn form-btn--save">Save filter</button>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- Added filters -->
+      <div>
+        <div class="section-title" style="margin-bottom:10px;">Added filters</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div class="filter-item">
+            <span class="filter-item-drag">⋮⋮</span>
+            <div class="filter-item-info">
+              <span class="filter-item-name">Setup</span>
+              <span class="filter-item-meta">setup</span>
+              <span class="filter-item-coverage">583/583 trades</span>
+            </div>
+            <span class="filter-item-type">select</span>
+            <span class="filter-item-vis is-on">◉ filter</span>
+            <button class="filter-item-del">✕</button>
+          </div>
+          <div class="filter-item">
+            <span class="filter-item-drag">⋮⋮</span>
+            <div class="filter-item-info">
+              <span class="filter-item-name">M15 Tags</span>
+              <span class="filter-item-meta">m15Tags</span>
+              <span class="filter-item-coverage is-partial">578/583 trades</span>
+            </div>
+            <span class="filter-item-type is-multi">multi-select</span>
+            <span class="filter-item-vis is-on">◉ filter</span>
+            <button class="filter-item-del">✕</button>
+          </div>
+          <div class="filter-item">
+            <span class="filter-item-drag">⋮⋮</span>
+            <div class="filter-item-info">
+              <span class="filter-item-name">Confluences</span>
+              <span class="filter-item-meta">confluences</span>
+              <span class="filter-item-coverage is-partial">420/583 trades</span>
+            </div>
+            <span class="filter-item-type is-check">checkbox</span>
+            <span class="filter-item-vis" style="color:var(--dim)">○ hidden</span>
+            <button class="filter-item-del">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="sep">
+
+      <!-- Detected -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span class="section-title">Detected in your data</span>
+          <span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--dim);">(4 available)</span>
+          <button style="margin-left:auto;font-family:'DM Mono',monospace;font-size:9px;padding:3px 8px;border-radius:5px;border:1px solid var(--line2);background:transparent;color:var(--dim);cursor:pointer;">↺ Refresh</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div class="detected-item"><span class="detected-name">M15 Pros</span><span class="detected-type">multi-select</span><button class="detected-add">+ Add</button></div>
+          <div class="detected-item"><span class="detected-name">Risk Confirmed</span><span class="detected-type">checkbox</span><button class="detected-add">+ Add</button></div>
+          <div class="detected-item"><span class="detected-name">Session Quality</span><span class="detected-type">select</span><button class="detected-add">+ Add</button></div>
+          <div class="detected-item"><span class="detected-name">Trade Duration</span><span class="detected-type">number</span><button class="detected-add">+ Add</button></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleCard(card) {
+  const wasActive = card.classList.contains('is-active');
+  document.querySelectorAll('.type-card').forEach(c => c.classList.remove('is-active'));
+  const form = document.getElementById('inline-form');
+  if (wasActive) {
+    form.style.display = 'none';
+  } else {
+    card.classList.add('is-active');
+    form.style.display = 'flex';
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+function closeForm() {
+  document.querySelectorAll('.type-card').forEach(c => c.classList.remove('is-active'));
+  document.getElementById('inline-form').style.display = 'none';
+}
+</script>
+</body>
+</html>

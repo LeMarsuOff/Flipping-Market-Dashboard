@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=163">
+<link rel="stylesheet" href="dashboard.css?v=201">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1363,11 +1363,11 @@
         </div>
         <div class="dsh-stat">
           <strong id="dsh-stat-custom">—</strong>
-          <label>custom</label>
+          <label>filters</label>
         </div>
         <div class="dsh-stat">
           <strong id="dsh-stat-widgets">—</strong>
-          <label>widgets</label>
+          <label>widget created</label>
         </div>
         <div class="dsh-stat" id="dsh-stat-locked-wrap">
           <strong id="dsh-stat-locked">—</strong>
@@ -1405,7 +1405,7 @@
             aria-selected="false"
             id="dhp-tab-custom">
       <span class="dhp-tab-icon" aria-hidden="true">⊕</span>
-      <span class="dhp-tab-label">Custom fields</span>
+      <span class="dhp-tab-label">Filters</span>
       <span class="dhp-tab-badge" id="dhp-tab-custom-badge"></span>
     </button>
     <button class="dhp-tab"
@@ -1454,14 +1454,17 @@
        id="dhp-panel-custom"
        role="tabpanel"
        aria-labelledby="dhp-tab-custom">
-    <div class="dhp-section-intro">
-      <span class="dhp-intro-label">What's this?</span>
-      <span class="dhp-intro-text">Declare your own Notion properties (select, multi-select, checkbox) to unlock custom sidebar filters.</span>
-    </div>
     <div class="dhp-custom-body">
-      <div id="np-detected" class="np-detected-section"></div>
-      <div id="np-form-host"></div>
+      <div class="dhp-section-intro">
+        <span class="dhp-intro-label">What's this?</span>
+        <span class="dhp-intro-text">Declare your own Notion properties (select, multi-select, checkbox) to unlock custom sidebar filters.</span>
+      </div>
+      <div class="np-detected-header">
+        <span class="np-detected-title">Added filters</span>
+      </div>
       <div id="np-list" class="np-list"></div>
+      <div id="np-detected" class="np-detected-section np-detected-section--below-added"></div>
+      <div id="np-form-host"></div>
       <div class="np-footer-actions">
         <button class="np-add-btn" id="np-add-btn" data-action="notion-prop-show-add-form">+ Add property</button>
       </div>
@@ -2886,6 +2889,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=275"></script>
+<script src="dashboard.js?v=314"></script>
 </body>
 </html>

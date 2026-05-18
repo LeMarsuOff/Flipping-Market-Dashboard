@@ -27674,6 +27674,31 @@ let _cwCreateFlowState = {
   sourceFilter: 'all',
 };
 
+const _CW_TYPE_ICONS = {
+  bars: `<svg class="cw-type-icon" viewBox="0 0 28 22" fill="currentColor" aria-hidden="true">
+    <rect x="0"    y="14" width="5" height="8"  rx="1.2"/>
+    <rect x="7.5"  y="8"  width="5" height="14" rx="1.2"/>
+    <rect x="15"   y="2"  width="5" height="20" rx="1.2"/>
+    <rect x="22.5" y="10" width="5" height="12" rx="1.2"/>
+  </svg>`,
+  heatmap: `<svg class="cw-type-icon" viewBox="0 0 22 22" fill="currentColor" aria-hidden="true">
+    <rect x="0"  y="0"  width="6" height="6" rx="1" opacity=".22"/>
+    <rect x="8"  y="0"  width="6" height="6" rx="1" opacity=".60"/>
+    <rect x="16" y="0"  width="6" height="6" rx="1"/>
+    <rect x="0"  y="8"  width="6" height="6" rx="1" opacity=".48"/>
+    <rect x="8"  y="8"  width="6" height="6" rx="1" opacity=".82"/>
+    <rect x="16" y="8"  width="6" height="6" rx="1" opacity=".32"/>
+    <rect x="0"  y="16" width="6" height="6" rx="1" opacity=".75"/>
+    <rect x="8"  y="16" width="6" height="6" rx="1" opacity=".14"/>
+    <rect x="16" y="16" width="6" height="6" rx="1" opacity=".52"/>
+  </svg>`,
+  donut: `<svg class="cw-type-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="5" stroke-dasharray="23 34" stroke-linecap="butt"/>
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="5" stroke-dasharray="16 41" stroke-dashoffset="-23" stroke-linecap="butt" opacity=".52"/>
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="5" stroke-dasharray="18 39" stroke-dashoffset="-39" stroke-linecap="butt" opacity=".24"/>
+  </svg>`,
+};
+
 function _syncCreateWidgetTypeButtons() {
   document.querySelectorAll('.np-widget-creator-btn[data-cw-type]').forEach(btn => {
     const type = btn.getAttribute('data-cw-type');
@@ -27681,7 +27706,7 @@ function _syncCreateWidgetTypeButtons() {
     const label = type === 'heatmap' ? 'Heatmap' : type === 'donut' ? 'Donut' : 'Bar Chart';
     btn.classList.toggle('is-active', isActive);
     btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    btn.textContent = `${isActive ? '✓' : '+'} ${label}`;
+    btn.innerHTML = `${_CW_TYPE_ICONS[type] || ''}<span class="cw-type-label">${isActive ? '✓ ' : ''}${label}</span>`;
   });
 }
 
@@ -27886,6 +27911,7 @@ function switchDataHubTab(tabName) {
   // shown, so additions/deletions made elsewhere stay in sync.
   if (tabName === 'create-widget' && typeof _renderCreateWidgetList === 'function') {
     _renderCreateWidgetList();
+    _syncCreateWidgetTypeButtons();
   }
 }
 
@@ -28092,32 +28118,36 @@ function _renderOutcomeValueReportHTML(rawCache, source = null) {
 // (used by the Position Result row to surface the outcome-value report).
 function _renderMappingTableRow(dim, st) {
   const dimLabel = _getJournalDimLabel(dim);
-  const requiredBadge = dim.required ? '<span class="ljp-required-badge">REQUIRED</span>' : '';
-  const typeKey = String(dim.propType || '').trim();
-  const typeLabel = MAPPING_PROP_TYPE_LABELS[typeKey] || typeKey;
-  const typePill = typeKey
-    ? `<span class="csv-doc-type-pill is-${_escapeHtml(typeKey)}">${_escapeHtml(typeLabel)}</span>`
-    : '';
-  const desc = dim.desc || '';
+  // REQUIRED tag dropped — required dims live inside the dedicated "Required"
+  // tier accordion, so the per-row badge was redundant.
+  const requiredBadge = '';
   const shownEsc = (st.shownIsRaw ? st.shown : _escapeHtml(st.shown || ''));
   const suffix = st.suffix || '';
   const pencil = st.pencilHtml || '';
-  const mainRow = `<tr class="ljp-mapping-row ${st.status}${st.rowClass ? ' ' + st.rowClass : ''}" data-dim-key="${_escapeHtml(dim.key)}">
-    <td data-label="Property"><code class="csv-doc-prop">${_escapeHtml(dimLabel)}</code>${requiredBadge}</td>
-    <td data-label="Mapping" class="ljp-mapping-cell">
-      <div class="ljp-status-cell">
-        <span class="ljp-status ${st.status}">${_escapeHtml(st.statusTxt || '')}</span>
-        <div class="ljp-mapping-meta">
-          <span class="ljp-mapping-target">${shownEsc}</span>${suffix}
-        </div>
-      </div>
-      ${pencil}
-    </td>
-    <td data-label="Type">${typePill}</td>
-    <td data-label="Description" class="csv-doc-desc">${desc}</td>
-  </tr>`;
+  // Suppress the trailing value for is-missing — the chip reads cleanly as
+  // "🔴 Label", matching the collapsed accordion summary's missing chip.
+  // Every other status (ok/remapped/no-mapping) shows "— value · coverage".
+  const valueBlock = (st.status !== 'is-missing')
+    ? `<span class="ljp-chip-sep" aria-hidden="true">—</span><span class="ljp-chip-value">${shownEsc}</span>${suffix}`
+    : '';
+  // Status dot — pure CSS circle (no emoji) so baseline alignment is exact
+  // and colour comes from theme tokens. is-no-mapping is now treated as a
+  // user-mapped state (blue, same as is-remapped).
+  // Five grid items per row → invisible columns shared across the list via
+  // CSS subgrid: Dot · Label · Value · Coverage · Action. Empty rows still
+  // emit empty placeholder spans so column widths line up across all rows.
+  const coverage = st.coverageHtml || '';
+  const mainRow = `<div class="ljp-mapping-row ${st.status}${st.rowClass ? ' ' + st.rowClass : ''}" data-dim-key="${_escapeHtml(dim.key)}">
+    <span class="ljp-status-dot ${st.status}" aria-label="${_escapeHtml(st.statusTxt || '')}"></span>
+    <span class="ljp-chip-label-col">
+      <span class="ljp-chip-label">${_escapeHtml(dimLabel)}</span>${requiredBadge}
+    </span>
+    <span class="ljp-chip-value-col">${valueBlock}</span>
+    <span class="ljp-chip-coverage-col">${coverage}</span>
+    <span class="ljp-chip-action-col">${pencil}</span>
+  </div>`;
   return st.reportHtml
-    ? mainRow + `<tr class="ljp-mapping-report-row"><td colspan="4">${st.reportHtml}</td></tr>`
+    ? mainRow + `<div class="ljp-mapping-report-row">${st.reportHtml}</div>`
     : mainRow;
 }
 
@@ -28130,12 +28160,17 @@ function _renderMappingTableRow(dim, st) {
 // listener on `#ljp-list` keeps it in sync with `<details>` events so the
 // renderer can rebuild innerHTML without losing user choice.
 let _openMappingTiers = null;
+// Parallel tracking for the nested Missing/Mapped sub-accordions. Keys are
+// `"${tier}:${group}"`. Null sentinel → apply defaults (Missing open, Mapped
+// closed unless it's the only group present).
+let _openMappingGroups = null;
 
-// Reset the open-tier state — called when the Data Hub closes so the next
-// open re-applies "expand missing" defaults to a fresh session, rather than
-// carrying over a one-off collapse from the previous session.
+// Reset the open state — called when the Data Hub closes so the next open
+// re-applies defaults (tiers with missing fields expanded; Missing group
+// expanded inside each) to a fresh session.
 function _resetOpenMappingTiers() {
   _openMappingTiers = null;
+  _openMappingGroups = null;
 }
 
 function _renderMappingSectionsHtml(getStatusForDim) {
@@ -28155,6 +28190,7 @@ function _renderMappingSectionsHtml(getStatusForDim) {
   const useDefaults = _openMappingTiers === null;
   if (useDefaults) {
     _openMappingTiers = new Set();
+    _openMappingGroups = new Set();
   } else {
     const list = document.getElementById('ljp-list');
     const existingAccs = list ? list.querySelectorAll('.ljp-tier-acc[data-tier]') : [];
@@ -28164,14 +28200,14 @@ function _renderMappingSectionsHtml(getStatusForDim) {
         if (acc.hasAttribute('open')) _openMappingTiers.add(acc.dataset.tier);
       });
     }
+    const existingGroups = list ? list.querySelectorAll('.ljp-mapping-group[data-tier][data-group]') : [];
+    if (existingGroups.length > 0) {
+      _openMappingGroups = new Set();
+      existingGroups.forEach(g => {
+        if (g.hasAttribute('open')) _openMappingGroups.add(`${g.dataset.tier}:${g.dataset.group}`);
+      });
+    }
   }
-
-  const head = `<thead><tr>
-    <th scope="col" class="csv-doc-col-prop">Property</th>
-    <th scope="col" class="csv-doc-col-mapping">Mapping</th>
-    <th scope="col" class="csv-doc-col-type">Type</th>
-    <th scope="col" class="csv-doc-col-desc">Description</th>
-  </tr></thead>`;
 
   return MAPPING_TIER_SECTIONS.map(sect => {
     const sectDims = JOURNAL_DIMS.filter(d => d.tier === sect.tier);
@@ -28204,45 +28240,38 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     otherDims.sort(byLabelAsc);
     const missingLabels = missingDims.map(x => x.label);
 
-    // Group header rows — full-width tinted bands that mark each zone
-    // (Missing / Mapped). Emitted for every non-empty group so the
-    // user always sees the zone label, even when a tier is entirely
-    // missing or entirely mapped.
-    const groupHeader = (label, klass) => `
-      <tr class="ljp-tier-group-row ${klass}" aria-hidden="true">
-        <td colspan="4" class="ljp-tier-group-cell">
-          <div class="ljp-tier-group-inner">
-            <span class="ljp-tier-group-label">${_escapeHtml(label)}</span>
-            <span class="ljp-tier-group-rule"></span>
-          </div>
-        </td>
-      </tr>`;
-
+    // Each group (Missing / Mapped) is its own nested <details> with its own
+    // chip list (own subgrid alignment). Defaults: Missing open; Mapped
+    // closed unless it's the only group present (no missing → just show the
+    // mapped list expanded so the user sees something).
     const missingHtml = missingDims.map(({ dim, st }) => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
     const otherHtml   = otherDims.map(({ dim, st })   => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
 
-    const rendered =
-        (missingDims.length > 0 ? groupHeader('Missing', 'is-missing-group') + missingHtml : '')
-      + (otherDims.length   > 0 ? groupHeader('Mapped',  'is-mapped-group')  + otherHtml   : '');
-    if (!rendered) return '';
+    const renderGroup = (groupKey, groupLabel, klass, rowsHtml, defaultOpen) => {
+      if (!rowsHtml) return '';
+      const stateKey = `${sect.tier}:${groupKey}`;
+      const isGroupOpen = useDefaults ? defaultOpen : _openMappingGroups.has(stateKey);
+      return `<details class="ljp-mapping-group ${klass}"${isGroupOpen ? ' open' : ''} data-tier="${_escapeHtml(sect.tier)}" data-group="${_escapeHtml(groupKey)}">
+        <summary class="ljp-mapping-group-summary">
+          <span class="ljp-tier-chev" aria-hidden="true"></span>
+          <span class="ljp-tier-group-label">${_escapeHtml(groupLabel)}</span>
+          <span class="ljp-tier-group-rule"></span>
+        </summary>
+        <div class="ljp-mapping-list" role="list">${rowsHtml}</div>
+      </details>`;
+    };
+
+    const hasMissingGroup = missingDims.length > 0;
+    const hasMappedGroup  = otherDims.length   > 0;
+    const onlyMapped = !hasMissingGroup && hasMappedGroup;
+
+    const groupsHtml =
+        renderGroup('missing', 'Missing', 'is-missing-group', missingHtml, /* defaultOpen */ true)
+      + renderGroup('mapped',  'Mapped',  'is-mapped-group',  otherHtml,   /* defaultOpen */ onlyMapped);
+    if (!groupsHtml) return '';
 
     const hasMissing = missingLabels.length > 0;
     const isOpen = _openMappingTiers.has(sect.tier);
-
-    // Inline "missing" indicators on the collapsed summary — one red
-    // dot (same 🔴 emoji used by the disconnected state in Account →
-    // Data & Integrations, so the dashboard's "something needs your
-    // attention" visual language stays consistent across surfaces) +
-    // label per missing field, stacked one per line.
-    let missingChip = '';
-    if (missingLabels.length > 0) {
-      const items = missingLabels.map(label => `
-        <span class="ljp-tier-missing-item">
-          <span class="ljp-tier-missing-dot" aria-hidden="true">🔴</span>
-          <span class="ljp-tier-missing-label">${_escapeHtml(label)}</span>
-        </span>`).join('');
-      missingChip = `<div class="ljp-tier-missing-list">${items}</div>`;
-    }
 
     // Mini progress bar + count chip — same visual language as the Phase 1
     // hero ring (mapped vs total) so the summary reads at a glance.
@@ -28269,14 +28298,10 @@ function _renderMappingSectionsHtml(getStatusForDim) {
           ${tierBar}
           ${tierCount}
         </div>
-        ${missingChip}
       </summary>
-      <div class="ljp-tier-body">
+      <div class="ljp-tier-body" aria-label="${_escapeHtml(sect.title)}">
         ${note}
-        <table class="csv-doc-table ljp-mapping-table" aria-label="${_escapeHtml(sect.title)}">
-          ${head}
-          <tbody>${rendered}</tbody>
-        </table>
+        ${groupsHtml}
       </div>
     </details>`;
   }).filter(Boolean).join('');
@@ -28348,7 +28373,7 @@ function updateJournalPanel() {
         ? _renderOutcomeValueReportHTML(_lastCsvRows, 'csv')
         : '';
       const pencil = `<button class="ljp-pencil-btn" data-action="open-remap-picker" data-dim-key="${_escapeHtml(dim.key)}" data-scope="journal" aria-label="Remap CSV column">${pencilSvg}</button>`;
-      return { status, statusTxt, shown, suffix: defaultNote, pencilHtml: pencil, reportHtml: outcomeReport };
+      return { status, statusTxt, shown, suffix: defaultNote, coverageHtml: '', pencilHtml: pencil, reportHtml: outcomeReport };
     };
     list.innerHTML = _renderMappingSectionsHtml(getStatus);
     _reopenIfNeeded();
@@ -28444,7 +28469,12 @@ function updateJournalPanel() {
     const overrideNote = (override && !_isNoMappingValue(override))
       ? ` <span class="ljp-mapping-default">(field: <span class="ljp-field-name">${_escapeHtml(override)}</span>)</span>`
       : '';
-    const coverageNote = ` <span class="ljp-mapping-coverage">· ${_escapeHtml(coverage)}</span>`;
+    // Coverage ("100/100 trades") lives in its own grid column so the
+    // counts align vertically across rows — easier to scan completeness.
+    // Partial coverage (populated < total) gets an orange tint so the
+    // user spots non-exact counts at a glance.
+    const isPartialCoverage = ok && items.length > 0 && populated < items.length;
+    const coverageHtml = `<span class="ljp-mapping-coverage${isPartialCoverage ? ' is-partial' : ''}">${_escapeHtml(coverage)}</span>`;
     const outcomeReport = (isAPI && dim.key === 'outcome' && rawReady)
       ? _renderOutcomeValueReportHTML(rawCache)
       : '';
@@ -28453,7 +28483,8 @@ function updateJournalPanel() {
       : '';
     return {
       status, statusTxt, shown,
-      suffix: coverageNote + overrideNote,
+      suffix: overrideNote,
+      coverageHtml,
       pencilHtml, reportHtml: outcomeReport,
       rowClass: canRemap ? '' : 'is-readonly',
     };
@@ -29048,12 +29079,10 @@ function _renderCreateWidgetBuilder() {
                             class="cw-inline-axis-btn${isY ? ' is-active' : ''}"
                             data-action="cw-create-set-y"
                             data-cw-id="${_escapeAttr(opt.id)}">${isY ? 'Y Axis' : 'Set Y'}</button>`
-                : (isSelected
-                    ? `<button type="button"
-                               class="cw-inline-continue"
-                               data-action="cw-create-continue-inline"
-                               data-cw-id="${_escapeAttr(opt.id)}">Add +</button>`
-                    : '');
+                : `<button type="button"
+                           class="cw-inline-continue"
+                           data-action="cw-create-continue-inline"
+                           data-cw-id="${_escapeAttr(opt.id)}">Add +</button>`;
               return `
                 <div class="cw-inline-row${rowStateClass}">
                   <button type="button"
@@ -29119,10 +29148,10 @@ function _renderCreateWidgetBuilder() {
       ${isHeatmap ? `
       <div class="cw-inline-heatmap-summary">
         <div class="cw-inline-heatmap-summary-copy">
-          <span class="cw-inline-heatmap-summary-title">Heatmap preview config</span>
+          <span class="cw-inline-heatmap-summary-title">${canAddHeatmap ? `${_escapeHtml(xSelected.label)} × ${_escapeHtml(ySelected.label)}` : 'Heatmap'}</span>
           <span class="cw-inline-heatmap-summary-meta">
-            <span class="cw-inline-axis-chip">X: ${_escapeHtml(xSelected?.label || 'Not selected')}</span>
-            <span class="cw-inline-axis-chip">Y: ${_escapeHtml(ySelected?.label || 'Not selected')}</span>
+            <span class="cw-inline-axis-chip${xSelected ? ' is-set' : ''}">X: ${_escapeHtml(xSelected?.label || 'Not selected')}</span>
+            <span class="cw-inline-axis-chip${ySelected ? ' is-set' : ''}">Y: ${_escapeHtml(ySelected?.label || 'Not selected')}</span>
           </span>
         </div>
         ${canAddHeatmap ? `<button type="button" class="cw-inline-continue" data-action="cw-create-continue">Add +</button>` : ''}
@@ -29139,6 +29168,10 @@ function _renderCreateWidgetBuilder() {
 
 function _openCreateWidgetModal(type) {
   if (!['bars', 'heatmap', 'donut'].includes(type)) return;
+  if (_cwCreateFlowState.open && _cwCreateFlowState.type === type) {
+    _closeCreateWidgetBuilder();
+    return;
+  }
   _cwCreateFlowState.open = true;
   _cwCreateFlowState.type = type;
   _cwCreateFlowState.selectedId = '';
@@ -29194,11 +29227,11 @@ function _setCreateWidgetHeatmapAxis(axis, optionId) {
   const match = _getCreateWidgetSelectionById(optionId);
   if (!match) return;
   if (axis === 'x') {
-    _cwCreateFlowState.xSelectedId = match.id;
-    if (_cwCreateFlowState.ySelectedId === match.id) _cwCreateFlowState.ySelectedId = '';
+    _cwCreateFlowState.xSelectedId = _cwCreateFlowState.xSelectedId === match.id ? '' : match.id;
+    if (_cwCreateFlowState.ySelectedId === _cwCreateFlowState.xSelectedId && _cwCreateFlowState.xSelectedId) _cwCreateFlowState.ySelectedId = '';
   } else {
-    _cwCreateFlowState.ySelectedId = match.id;
-    if (_cwCreateFlowState.xSelectedId === match.id) _cwCreateFlowState.xSelectedId = '';
+    _cwCreateFlowState.ySelectedId = _cwCreateFlowState.ySelectedId === match.id ? '' : match.id;
+    if (_cwCreateFlowState.xSelectedId === _cwCreateFlowState.ySelectedId && _cwCreateFlowState.ySelectedId) _cwCreateFlowState.xSelectedId = '';
   }
   _renderCreateWidgetBuilder();
 }
@@ -29326,17 +29359,17 @@ function openRemapPicker(triggerBtn) {
   if (!dimKey) return;
 
   // Toggle: if the same picker is open, close it. Two host shapes:
-  //  - Mapping tab (this rewrite): trigger sits in a table row `.ljp-mapping-row`,
-  //    picker lives in a follow-up `<tr class="ljp-mapping-picker-row">` injected
-  //    right after it. Existence is detected via the sibling row.
+  //  - Mapping tab (this rewrite): trigger sits in a flat chip `.ljp-mapping-row`
+  //    (a `<div>`), picker lives in a follow-up `<div class="ljp-mapping-picker-row">`
+  //    sibling injected right after it. Existence is detected via the sibling.
   //  - Health tab / other legacy callers: trigger sits in a `<li class="lap-item">`
   //    or `<li class="ljp-item">` (this layout is preserved for backwards compat
   //    even though the Mapping tab itself no longer renders `.ljp-item`).
-  const tableRowHost = triggerBtn.closest('.ljp-mapping-row');
-  const existingHost = tableRowHost || triggerBtn.closest('.lap-item, .ljp-item');
-  const existing = tableRowHost
-    ? (tableRowHost.nextElementSibling?.classList.contains('ljp-mapping-picker-row')
-        ? tableRowHost.nextElementSibling
+  const chipRowHost  = triggerBtn.closest('.ljp-mapping-row');
+  const existingHost = chipRowHost || triggerBtn.closest('.lap-item, .ljp-item');
+  const existing = chipRowHost
+    ? (chipRowHost.nextElementSibling?.classList.contains('ljp-mapping-picker-row')
+        ? chipRowHost.nextElementSibling
         : null)
     : existingHost?.querySelector('.csv-remap-picker');
   _closeAllRemapPickers();
@@ -29426,16 +29459,13 @@ function openRemapPicker(triggerBtn) {
     ? `<button class="csv-remap-option" data-action="${pickAction}" data-dim-key="${_escapeHtml(dimKey)}" data-header=""><span>— Use default / auto-detect —</span></button>`
     : '';
   picker.innerHTML = hintHeader + noMappingBtn + (candidates.length ? opts : emptyHtml) + clearBtn;
-  if (tableRowHost) {
-    // Inject the picker as a follow-up table row so the dropdown spans the
-    // full row width instead of being cramped inside the narrow Mapping cell.
-    const pickerRow = document.createElement('tr');
+  if (chipRowHost) {
+    // Inject the picker as a follow-up div sibling so the dropdown spans the
+    // full row width of the flat chip list.
+    const pickerRow = document.createElement('div');
     pickerRow.className = 'ljp-mapping-picker-row';
-    const cell = document.createElement('td');
-    cell.colSpan = 4;
-    cell.appendChild(picker);
-    pickerRow.appendChild(cell);
-    tableRowHost.parentNode?.insertBefore(pickerRow, tableRowHost.nextSibling);
+    pickerRow.appendChild(picker);
+    chipRowHost.parentNode?.insertBefore(pickerRow, chipRowHost.nextSibling);
   } else {
     existingHost?.appendChild(picker);
   }
@@ -30569,7 +30599,7 @@ function _renderCustomPropsList() {
     counterEl.textContent = '';
     counterEl.classList.remove('np-counter--warn');
   } else {
-    listEl.innerHTML = props.map(_npItemHTML).join('');
+    listEl.innerHTML = props.map(p => _npItemHTML(p, _npCoverageForProp(p))).join('');
     counterEl.textContent = `${props.length} / ${CUSTOM_PROPS_MAX} properties`;
     counterEl.classList.toggle('np-counter--warn', props.length >= CUSTOM_PROPS_WARN);
     listEl.querySelectorAll('.np-item').forEach(_bindNotionPropDragHandlers);
@@ -30577,12 +30607,15 @@ function _renderCustomPropsList() {
   addBtn.toggleAttribute('disabled', props.length >= CUSTOM_PROPS_MAX);
 }
 
-function _npItemHTML(p) {
+function _npItemHTML(p, cov) {
   const safeName = _escHTML(p.name);
   const safeKey  = _escHTML(p.key);
   const onLabel  = p.showInFilters ? '◉ filter' : '○ hidden';
   const pending  = _npPendingDeleteId === p.id;
   const editing  = _npFormState?.mode === 'edit' && _npFormState.editingId === p.id;
+  const covHtml  = (cov && cov.total > 0)
+    ? `<span class="np-coverage${cov.covered < cov.total ? ' is-partial' : ''}">${cov.covered}/${cov.total} trades</span>`
+    : '';
   const popover = pending
     ? `<div class="np-del-popover" role="dialog" aria-label="Confirm delete">
          <span class="np-del-popover-text">Delete?</span>
@@ -30599,6 +30632,7 @@ function _npItemHTML(p) {
       <div class="np-name">
         <span>${safeName}</span>
         <span class="np-name-key">${safeKey}</span>
+        ${covHtml}
       </div>
       <span class="np-type ${_npTypeClass(p.type)}">${_escHTML(p.type)}</span>
       <button class="np-visibility" data-action="notion-prop-toggle-visibility" data-prop-id="${p.id}" data-on="${p.showInFilters}" title="Show in sidebar filters">${onLabel}</button>
@@ -30607,6 +30641,17 @@ function _npItemHTML(p) {
       ${popover}
     </div>
     ${inlineForm}`;
+}
+
+function _npCoverageForProp(p) {
+  const items = Array.isArray(appState.trades?.items) ? appState.trades.items : [];
+  let covered = 0;
+  for (const t of items) {
+    const v = t.extras?.[p.key];
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) continue;
+    covered++;
+  }
+  return { covered, total: items.length };
 }
 
 function _escHTML(s) {

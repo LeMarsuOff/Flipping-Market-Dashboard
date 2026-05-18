@@ -1788,19 +1788,24 @@ body.layout-edit-mode #layout-toolbar * {
   color: var(--white);
   letter-spacing: .2px;
 }
-.ljp-status {
-  font-family: 'DM Mono', monospace;
-  font-size: 9px;
-  letter-spacing: .8px;
-  text-transform: uppercase;
-  padding: 1px 6px;
-  border-radius: 3px;
+/* Status dot — CSS-rendered circle (no emoji) so baseline alignment with
+   the chip label is exact across OS/browsers, and the colour comes from
+   theme tokens. Shared between the expanded Mapping chips and the
+   collapsed tier-summary missing list. */
+.ljp-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   flex-shrink: 0;
+  background: currentColor;
 }
-.ljp-status.is-ok       { color: var(--g);    background: color-mix(in srgb, var(--g) 14%, transparent); }
-.ljp-status.is-missing  { color: var(--r);    background: var(--r2); }
-.ljp-status.is-no-mapping { color: #7dd3fc; background: color-mix(in srgb, #7dd3fc 16%, transparent); }
-.ljp-status.is-remapped { color: var(--gold); background: var(--gold2); }
+.ljp-status-dot.is-ok         { color: var(--g); }
+.ljp-status-dot.is-missing    { color: var(--r); }
+.ljp-status-dot.is-remapped   { color: var(--accent-info, #4d9fff); }
+/* No-mapping is treated as a user-chosen mapping (same blue as remapped):
+   the user picked "— No Mapping —" deliberately, so it's mapped, not missing. */
+.ljp-status-dot.is-no-mapping { color: var(--accent-info, #4d9fff); }
 .ljp-required-badge {
   display: inline-block;
   font-size: 8.5px;
@@ -1871,86 +1876,125 @@ body.layout-edit-mode #layout-toolbar * {
    Guide modal keeps its original look.
    ───────────────────────────────────────────────────────────────────────── */
 
-/* Column widths: tuned for the 560px Data Hub panel. Description gets the
-   most room (prose), Mapping cell is compact thanks to the vertical stack. */
-:is(.logo-guide-panel, #ljp-list) .csv-doc-table thead th.csv-doc-col-mapping { width: 38%; }
-#ljp-list .ljp-mapping-table thead th.csv-doc-col-prop    { width: 22%; }
-#ljp-list .ljp-mapping-table thead th.csv-doc-col-mapping { width: 25%; }
-#ljp-list .ljp-mapping-table thead th.csv-doc-col-type    { width: 15%; }
-#ljp-list .ljp-mapping-table thead th.csv-doc-col-desc    { width: 38%; }
-/* Type pills inside the Mapping table are constrained by the narrow
-   Type column (~74px gross, ~46px content). Long labels like "URL / File"
-   and "Multi-select" overflow when rendered as the single-line pills
-   used in the wide CSV Guide modal — so here we let them wrap to two
-   lines within their own border, keeping the cadre snug around the
-   actual text instead of clipping. */
-#ljp-list .ljp-mapping-table tbody td[data-label="Type"] {
-  overflow: hidden;
+/* Flat chip list with INVISIBLE columns — every row is a subgrid sharing
+   the list's column tracks, so dots, labels, values and trade counts line
+   up vertically across all rows without any visible borders. Five columns:
+     1. Dot      (auto, ~8px)
+     2. Label    (auto — widest label across rows sets the column width)
+     3. Value    (1fr — flexes; absorbs remaining space)
+     4. Coverage (auto — "100/100 trades" right-aligned for easy scanning)
+     5. Action   (auto — pencil button or empty)
+   The col-gap creates breathing room; row-gap keeps rows tight. */
+#ljp-list .ljp-mapping-list {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 4px 0;
 }
-#ljp-list .ljp-mapping-table .csv-doc-type-pill {
-  white-space: normal;
-  line-height: 1.35;
-  word-break: break-word;
-  text-align: center;
+#ljp-list .ljp-mapping-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-secondary, var(--body));
+  letter-spacing: 0.2px;
+  transition: background-color .14s ease;
 }
-
-/* Tables — drop the heavy outer border, keep only inner row separators
-   so multiple sections stack as one continuous list with breathing room. */
-#ljp-list .ljp-mapping-table {
-  margin: 0 0 4px;
-  background: transparent;
-  border: none;
-  border-radius: 0;
+#ljp-list .ljp-mapping-row:not(.is-readonly):hover {
+  background: color-mix(in srgb, var(--bg2) 35%, transparent);
 }
-#ljp-list .ljp-mapping-table thead th {
-  background: transparent;
+#ljp-list .ljp-chip-label-col {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+#ljp-list .ljp-chip-value-col {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+}
+#ljp-list .ljp-chip-coverage-col {
+  display: inline-flex;
+  justify-content: flex-end;
+  white-space: nowrap;
   font-family: 'DM Sans', sans-serif;
-  font-weight: 500;
-  font-size: 9.5px;
-  letter-spacing: .9px;
+  font-size: 10px;
   color: var(--text-muted);
-  padding: 4px 14px 8px;
-  border-bottom: 1px solid var(--line);
+  font-feature-settings: 'tnum';
 }
-#ljp-list .ljp-mapping-table tbody td {
-  padding: 14px;
-  vertical-align: top;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+/* Partial coverage (populated < total) — orange tint so non-exact counts
+   (e.g. 577/583) stand out without needing a separate icon or band.
+   --gold is themed blue in this build, so we use --color-warning (the
+   amber `--a` token) explicitly. */
+#ljp-list .ljp-mapping-coverage.is-partial {
+  color: var(--color-warning);
 }
-#ljp-list .ljp-mapping-table tbody tr:last-child > td {
-  border-bottom: none;
+#ljp-list .ljp-chip-action-col {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 22px;
+  min-height: 22px;
+}
+#ljp-list .ljp-chip-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-secondary, var(--body));
+}
+#ljp-list .ljp-chip-sep {
+  color: var(--text-muted);
+}
+#ljp-list .ljp-chip-value {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--white);
+  font-feature-settings: 'tnum';
+  word-break: break-word;
+  min-width: 0;
 }
 
-/* Status-tinted row backgrounds — a subtle wash in the mapping status
-   colour so the eye can scan for missing / remapped rows without reading
-   each pill. Kept very low alpha (~6%) so it sits behind everything as a
-   quiet semantic hint instead of a loud highlight. */
-#ljp-list .ljp-mapping-row { transition: background-color .14s ease; }
-#ljp-list .ljp-mapping-row.is-ok         > td { background: color-mix(in srgb, var(--g)    6%, transparent); }
-#ljp-list .ljp-mapping-row.is-missing    > td { background: color-mix(in srgb, var(--r)    7%, transparent); }
-#ljp-list .ljp-mapping-row.is-remapped   > td { background: color-mix(in srgb, var(--gold) 7%, transparent); }
-#ljp-list .ljp-mapping-row.is-no-mapping > td { background: color-mix(in srgb, #7dd3fc      7%, transparent); }
-/* Hover deepens the same tint — keeps the row hue, just bumps presence. */
-#ljp-list .ljp-mapping-row:not(.is-readonly).is-ok:hover         > td { background: color-mix(in srgb, var(--g)    12%, transparent); }
-#ljp-list .ljp-mapping-row:not(.is-readonly).is-missing:hover    > td { background: color-mix(in srgb, var(--r)    13%, transparent); }
-#ljp-list .ljp-mapping-row:not(.is-readonly).is-remapped:hover   > td { background: color-mix(in srgb, var(--gold) 13%, transparent); }
-#ljp-list .ljp-mapping-row:not(.is-readonly).is-no-mapping:hover > td { background: color-mix(in srgb, #7dd3fc      13%, transparent); }
-
-/* Group header rows ("Missing" / "Mapped") — rendered between the two
-   zones inside a tier accordion. A full-width tinted band marks the
-   section change strongly, so the user can scan large tiers and locate
-   the boundary at a glance. Only emitted when both groups exist. */
-#ljp-list .ljp-tier-group-row > td {
-  border: none;
-  padding: 6px 12px;
+/* Nested Missing/Mapped sub-accordions inside each tier. Defaults:
+   Missing open, Mapped closed (unless it's the only group present).
+   The summary line is chevron + label + thin rule extending into the
+   right gutter, mirroring the visual rhythm of the tier accordion
+   itself but quieter. */
+#ljp-list .ljp-mapping-group {
+  margin: 4px 0 0;
 }
-/* The TD itself stays a real table cell so `colspan="4"` actually spans
-   the full row width. Flex layout for the label + rule lives on an
-   inner wrapper. */
-#ljp-list .ljp-tier-group-inner {
+#ljp-list .ljp-mapping-group:first-of-type { margin-top: 0; }
+#ljp-list .ljp-mapping-group-summary {
+  list-style: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 6px 2px;
+  user-select: none;
+}
+#ljp-list .ljp-mapping-group-summary::-webkit-details-marker { display: none; }
+#ljp-list .ljp-mapping-group-summary::marker { content: ''; }
+/* Closed sub-accordion — hide the chip list. Needed because our explicit
+   `.ljp-mapping-list { display: grid }` overrides the user-agent default
+   that normally hides non-summary children of a closed <details>. */
+#ljp-list .ljp-mapping-group:not([open]) > .ljp-mapping-list {
+  display: none;
+}
+#ljp-list .ljp-mapping-group-summary:hover .ljp-tier-group-label {
+  filter: brightness(1.15);
+}
+/* Reuse the existing tier-chev styling but a touch smaller — it inherits
+   from .ljp-tier-chev (defined elsewhere) and rotates on details[open]. */
+#ljp-list .ljp-mapping-group .ljp-tier-chev { flex-shrink: 0; }
+#ljp-list .ljp-mapping-group[open] > .ljp-mapping-group-summary .ljp-tier-chev {
+  transform: rotate(90deg);
 }
 #ljp-list .ljp-tier-group-label {
   font-family: 'DM Sans', sans-serif;
@@ -1960,38 +2004,21 @@ body.layout-edit-mode #layout-toolbar * {
   text-transform: uppercase;
   flex-shrink: 0;
 }
-/* The rule element kept for backwards-compat but folded into a 1-px
-   line that extends the visual band into the right gutter. Could be
-   hidden — left visible as a subtle finish. */
 #ljp-list .ljp-tier-group-rule {
   flex: 1;
   height: 1px;
-  opacity: 0.5;
+  opacity: 0.45;
 }
-
-/* Missing band — distinctly red so it reads as the actionable section.
-   The tint sits noticeably above the per-row 7% red wash used on
-   `.ljp-mapping-row.is-missing` so the header still stands out. */
-#ljp-list .ljp-tier-group-row.is-missing-group > td {
-  background: color-mix(in srgb, var(--color-danger, var(--r)) 20%, transparent);
-}
-#ljp-list .ljp-tier-group-row.is-missing-group .ljp-tier-group-label {
+#ljp-list .ljp-mapping-group.is-missing-group .ljp-tier-group-label {
   color: var(--color-danger, var(--r));
 }
-#ljp-list .ljp-tier-group-row.is-missing-group .ljp-tier-group-rule {
+#ljp-list .ljp-mapping-group.is-missing-group .ljp-tier-group-rule {
   background: color-mix(in srgb, var(--color-danger, var(--r)) 50%, transparent);
 }
-
-/* Mapped band — green tint at the same alpha as the Missing band, so
-   the two zones read as a matched red/green pair signalling
-   "needs-attention" vs "done". */
-#ljp-list .ljp-tier-group-row.is-mapped-group > td {
-  background: color-mix(in srgb, var(--color-success, var(--g)) 20%, transparent);
-}
-#ljp-list .ljp-tier-group-row.is-mapped-group .ljp-tier-group-label {
+#ljp-list .ljp-mapping-group.is-mapped-group .ljp-tier-group-label {
   color: var(--color-success, var(--g));
 }
-#ljp-list .ljp-tier-group-row.is-mapped-group .ljp-tier-group-rule {
+#ljp-list .ljp-mapping-group.is-mapped-group .ljp-tier-group-rule {
   background: color-mix(in srgb, var(--color-success, var(--g)) 50%, transparent);
 }
 
@@ -2053,14 +2080,6 @@ body.layout-edit-mode #layout-toolbar * {
   letter-spacing: 0.2px;
   max-width: 100%;
 }
-#ljp-list .ljp-tier-missing-dot {
-  /* Match the Account → Data & Integrations disconnected indicator —
-     emoji-based so the colour and shape are platform-rendered and stay
-     visually identical to the rest of the dashboard's status pills. */
-  font-size: 9px;
-  line-height: 1;
-  flex-shrink: 0;
-}
 #ljp-list .ljp-tier-missing-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2083,7 +2102,7 @@ body.layout-edit-mode #layout-toolbar * {
   transition: transform var(--ease-normal);
   justify-self: center;
 }
-#ljp-list .ljp-tier-acc[open] .ljp-tier-chev { transform: rotate(90deg); }
+#ljp-list .ljp-tier-acc[open] > .ljp-tier-summary .ljp-tier-chev { transform: rotate(90deg); }
 
 #ljp-list .ljp-tier-name {
   font-size: 12px;
@@ -2125,17 +2144,11 @@ body.layout-edit-mode #layout-toolbar * {
 #ljp-list .ljp-tier-body .csv-doc-multi-tp-note {
   margin: 4px 0 10px;
 }
-/* The mapping table sits flush with the accordion body — drop the table's
-   own top margin and outer border so the accordion's chrome owns the frame. */
-#ljp-list .ljp-tier-body .ljp-mapping-table {
+/* The mapping list sits flush with the accordion body — own padding only,
+   no outer border so the accordion's chrome owns the frame. */
+#ljp-list .ljp-tier-body .ljp-mapping-list {
   margin: 0;
 }
-#ljp-list .ljp-tier-body .ljp-mapping-table thead th {
-  padding-top: 6px;
-}
-/* Section-title elements aren't emitted inside accordions (the summary is
-   the heading now), but the rules above still target them in the rare
-   "no tier rendered" fallback case. Safe to keep. */
 
 /* Section heading — proper heading style instead of the original CSV-Guide
    "label" treatment. Sans-serif, mid weight, sentence-case kept, more
@@ -2187,63 +2200,8 @@ body.layout-edit-mode #layout-toolbar * {
   letter-spacing: .5px;
 }
 
-/* Descriptions in prose font — biggest readability win. Inline `<code>`
-   keeps mono so code identifiers still stand out. Selector bumped to
-   `tbody td.csv-doc-desc` because the inherited `.csv-doc-table tbody td`
-   rule (specificity 1,1,2) sets a smaller `--typo-micro-size`. */
-#ljp-list .ljp-mapping-table tbody td.csv-doc-desc {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--text-muted);
-  letter-spacing: .1px;
-}
-#ljp-list .ljp-mapping-table tbody td.csv-doc-desc code {
-  background: color-mix(in srgb, var(--bg2) 70%, transparent);
-  border: none;
-  color: var(--body);
-  font-size: 10.5px;
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-
-/* Mapping cell — vertical stack: status pill (top row, alongside pencil),
-   then current target + coverage as a quiet meta line underneath. */
-#ljp-list .ljp-mapping-cell { position: relative; }
-#ljp-list .ljp-status-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding-right: 30px; /* clears the floating pencil */
-}
-#ljp-list .ljp-status {
-  flex-shrink: 0;
-  font-family: 'DM Mono', monospace;
-  font-size: 8.5px;
-  letter-spacing: .4px;
-}
-#ljp-list .ljp-mapping-target {
-  font-family: 'DM Mono', monospace;
-  font-size: 11px;
-  color: var(--white);
-  background: transparent;
-  border: none;
-  padding: 0;
-  word-break: break-word;
-  max-width: 100%;
-  font-feature-settings: 'tnum';
-}
-#ljp-list .ljp-mapping-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 6px;
-  max-width: 100%;
-  min-width: 0;
-}
-#ljp-list .ljp-mapping-row.is-missing .ljp-mapping-target,
-#ljp-list .ljp-mapping-row.is-no-mapping .ljp-mapping-target { color: var(--text-muted); }
+/* Quiet typography for default-hint and coverage spans that sit after
+   the resolved target value. */
 #ljp-list .ljp-mapping-default,
 #ljp-list .ljp-mapping-coverage {
   font-family: 'DM Sans', sans-serif;
@@ -2258,37 +2216,27 @@ body.layout-edit-mode #layout-toolbar * {
   font-family: 'DM Mono', monospace;
 }
 
-/* Pencil docked top-right of the Mapping cell — small, calm, lights up
-   gold on hover/open to mirror the rest of the dashboard's tone. */
-#ljp-list .ljp-mapping-cell .ljp-pencil-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
+/* Pencil sits inside the action column — flow positioning (not absolute)
+   so the grid track owns the placement. Calmer hover/open accent mirrors
+   the rest of the dashboard's tone. */
+#ljp-list .ljp-mapping-row .ljp-pencil-btn {
+  position: static;
   margin: 0;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-color: color-mix(in srgb, var(--line2) 80%, transparent);
   transition: all .16s ease;
 }
-#ljp-list .ljp-mapping-cell .ljp-pencil-btn:hover { transform: translateY(-1px); }
+#ljp-list .ljp-mapping-row .ljp-pencil-btn:hover { transform: translateY(-1px); }
 
-/* Picker follow-up row — invisible host that hands the picker the full
-   table width. Indented slightly so it reads as belonging to the row
-   above instead of as a new entry. */
-#ljp-list .ljp-mapping-picker-row > td {
-  padding: 0 14px 14px 28px;
-  background: color-mix(in srgb, var(--bg2) 30%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+/* Picker + report follow-ups span the full list width (all 4 grid cols).
+   Indented slightly so they read as belonging to the row above. */
+#ljp-list .ljp-mapping-picker-row,
+#ljp-list .ljp-mapping-report-row {
+  grid-column: 1 / -1;
+  padding: 0 4px 10px 28px;
 }
 #ljp-list .ljp-mapping-picker-row .csv-remap-picker { margin-top: 0; }
-
-/* Outcome value report follow-up row — full-width payload from
-   _renderOutcomeValueReportHTML for the Position Result row. */
-#ljp-list .ljp-mapping-report-row > td {
-  padding: 0 14px 14px 28px;
-  background: color-mix(in srgb, var(--bg2) 30%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
-}
 
 /* Multi-TP advisory note — quieter typographic treatment that matches
    the new description style instead of looking like another card. */
@@ -13507,13 +13455,17 @@ body.ms-sidebar-open .view-tabs {
   display: grid;
   grid-template-columns: 16px 1fr auto auto auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 8px 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 95%, transparent);
   border-radius: var(--rad-sm);
   font-size: var(--typo-panel-size);
-  transition: border-color .12s, background .12s;
+  transition: border-color .12s ease, background .12s ease;
+}
+.np-item:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 32%, var(--line));
+  background: color-mix(in srgb, var(--surface-3) 70%, transparent);
 }
 .np-item.dragging      { opacity: .4; }
 .np-item.drag-over-top    { border-top-color: var(--gold); }
@@ -13529,20 +13481,37 @@ body.ms-sidebar-open .view-tabs {
 .np-handle:active { cursor: grabbing; }
 
 .np-name {
-  color: var(--body);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+.np-name > span:first-child {
+  font-size: var(--typo-panel-size);
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .np-name-key {
   font-family: 'DM Mono', monospace;
   font-size: 10px;
   color: var(--dim);
   letter-spacing: .3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-coverage {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-feature-settings: 'tnum';
+  font-weight: 400;
+}
+.np-coverage.is-partial {
+  color: var(--color-warning);
 }
 
 .np-type,
@@ -13925,6 +13894,11 @@ body.ms-sidebar-open .view-tabs {
   align-items: center;
   gap: 8px;
 }
+.np-detected-section--below-added {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle, var(--surface-3));
+}
 .np-detected-header .np-refresh-btn {
   margin-left: auto;
   padding: 4px 9px;
@@ -14058,24 +14032,41 @@ body.ms-sidebar-open .view-tabs {
   max-width: 42ch;
 }
 .np-widget-creator-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 .np-widget-creator-btn {
   appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   border: 1px solid color-mix(in srgb, var(--accent-primary) 34%, var(--line));
   background: color-mix(in srgb, var(--surface-3) 82%, transparent);
   color: var(--text-primary);
-  border-radius: var(--rad-pill);
-  padding: 8px 12px;
-  min-height: 34px;
+  border-radius: var(--rad-2, 10px);
+  padding: 16px 10px 14px;
+  min-height: 84px;
   font-family: 'DM Mono', monospace;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: .45px;
   cursor: default;
   transition: border-color .14s ease, background .14s ease, color .14s ease;
+}
+.cw-type-icon {
+  width: 30px;
+  height: 26px;
+  flex-shrink: 0;
+  opacity: .85;
+}
+.cw-type-label {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
 }
 .np-widget-creator-btn:hover {
   border-color: color-mix(in srgb, var(--accent-primary) 54%, var(--gold));
@@ -15189,6 +15180,8 @@ body.ms-sidebar-open .view-tabs {
 .dsh-stat {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
   gap: 3px;
   min-width: 0;
 }
@@ -15298,11 +15291,11 @@ body.ms-sidebar-open .view-tabs {
   color: var(--text-secondary);
 }
 /* Phase 2 — Mapping tab badge surfaces the missing-fields count (was on
-   the retired Health tab). Coloured danger so the user sees at a glance
-   when there's something blocking widgets, instead of merging with the
+   the retired Health tab). Softened pink/red (vs the saturated --r) so the
+   cue feels suggestive instead of alarming, while still distinct from the
    neutral 'count' badges on the other tabs. */
 .dhp-tab[data-tab="mapping"] .dhp-tab-badge.is-visible {
-  background: var(--color-danger, var(--r));
+  background: color-mix(in srgb, var(--r) 65%, white 35%);
   color: var(--text-inverse, #fff);
 }
 
