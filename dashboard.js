@@ -947,9 +947,11 @@ function addCustomProp({ name, key, type, showInFilters }) {
     key,
     type: CUSTOM_PROP_TYPES.includes(type) ? type : 'text',
     showInFilters: showInFilters !== false,
-    order: props.length,
+    order: 0,
   };
-  _saveCustomProps([...props, newProp]);
+  // Prepend the new prop so it appears at the top of the declared list, then
+  // re-normalize the `order` field so the existing entries shift down by one.
+  _saveCustomProps([newProp, ...props].map((p, i) => ({ ...p, order: i })));
   // Option B: extras populated on every in-memory trade from the raw source
   // so the filter pipeline reads a value immediately, no reload required.
   if (typeof _repopulateExtrasForProp === 'function') _repopulateExtrasForProp(newProp);
@@ -1620,7 +1622,11 @@ function _repopulateExtrasForProp(prop, opts = {}) {
 
   for (const t of items) {
     const rawSource = _getRawForTrade(t, mode);
-    if (!rawSource) { writeOrDelete(t, null); continue; }
+    // Raw source unavailable (typical after a page reload — the raw API cache
+    // is in-memory only): preserve whatever extras are already on the trade
+    // from the persisted parsed cache. Wiping here used to destroy the user's
+    // custom-prop values on every refresh and surface "No value found".
+    if (!rawSource) continue;
     let v = null;
     if (mode === 'api') {
       v = _extractApiValueForProp(rawSource, prop);
@@ -1645,6 +1651,13 @@ function _repopulateExtrasForProp(prop, opts = {}) {
   if (!opts.silent) {
     if (typeof invalidateFilterCache === 'function') invalidateFilterCache();
     if (typeof render === 'function') render();
+    // Persist the freshly-populated extras to the parsed cache LS so the
+    // values survive a page refresh. Without this, the user's prop appears
+    // declared on reload but with empty extras (raw cache is in-memory only
+    // and the parsed cache snapshot wouldn't include the new key).
+    if (mode === 'api' && typeof setCachedAPIData === 'function') {
+      try { setCachedAPIData(items, _getCurrentHTFSource()); } catch (e) {}
+    }
   }
 }
 
@@ -30106,6 +30119,8 @@ function _bindNotionPropDragHandlers(item) {
 // field, every CSV header variant seen across the 3 parsers (FR + EN),
 // and demo short-keys. Comparison is case-insensitive after trimming.
 const _NATIVE_DETECTION_BLACKLIST = new Set([
+  // — Internal / pipeline-computed fields (never user-declarable) —
+  '_notionid','_rawrowindex','effectiver','effectiveclass','_effectiveclassmode',
   // — Reserved validator keys (mirror of _RESERVED_PROP_KEYS) —
   'outcome','setup','session','day','pair','direction','obstacles','h4obs','tradetype','bemanagement','hour',
   'd','m','p','s','sd','ss','su','w','o','h4','be','oc','r','rm','dir','tt','bad','inv','h','tier','flip','h4s','m15s','tp','notion','notionurl',
@@ -30144,16 +30159,21 @@ function _normalizeForMatch(s) {
 }
 
 // Map a Notion property `type` string onto our 6 supported types.
+// Also accepts formula / rollup result sub-types (`'string'` | `'boolean'`)
+// when callers have introspected the wrapper to extract the effective type.
 function _notionTypeToCustom(t) {
   switch (t) {
     case 'select':       return 'select';
+    case 'status':       return 'select';        // status is select-shaped (single named value)
     case 'multi_select': return 'multi-select';
     case 'number':       return 'number';
     case 'checkbox':     return 'checkbox';
+    case 'boolean':      return 'checkbox';      // formula/rollup boolean result
     case 'date':         return 'date';
     case 'rich_text':
-    case 'title':        return 'text';
-    default:             return 'text';   // formula / rollup / relation / status / people …
+    case 'title':
+    case 'string':       return 'text';          // formula/rollup string result
+    default:             return 'text';   // url / email / phone / relation / people / files …
   }
 }
 
@@ -30193,6 +30213,38 @@ function _detectColumnType(values, apiType = null) {
   return 'text';
 }
 
+// Persistent cache of the API-mode detected fields list. The raw Notion cache
+// is in-memory only (signed image URLs blow the localStorage quota — see
+// _persistRawAPIToSession), so without this lightweight snapshot the Detected
+// section is empty on every page reload until the user clicks Sync. We persist
+// just the {key, name, type, sampleCount} tuples (~3 KB for ~30 props).
+const DETECTED_FIELDS_LS_PREFIX = 'flipping_detected_fields_v1_';
+function _detectedFieldsLSKey(src) {
+  return getProfileScopedKey(DETECTED_FIELDS_LS_PREFIX + src);
+}
+function _persistDetectedFields(fields, src) {
+  try {
+    const key = _detectedFieldsLSKey(src);
+    if (!fields || !fields.length) {
+      try { localStorage.removeItem(key); } catch {}
+      return;
+    }
+    safeSetLocalStorage(key, JSON.stringify(fields), {
+      kind: 'detectedFields',
+      activeProfileId: getActiveJournalProfile()?.id || '',
+      activeHtfSource: src,
+    });
+  } catch (e) {}
+}
+function _loadDetectedFields(src) {
+  try {
+    const raw = localStorage.getItem(_detectedFieldsLSKey(src));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) { return null; }
+}
+
 // Walk the active dataset and return column candidates. Each entry:
 //   { key: rawHeaderOrNotionKey, name: rawHeaderOrNotionKey, type, sampleCount }
 // Filters: native blacklist, already-declared (by key OR name normalized
@@ -30215,6 +30267,7 @@ function _scanDatasetColumns() {
 
   // ── Mode: API (raw Notion shape preferred) ──
   if (mode === 'api') {
+    const currentSrc = _getCurrentHTFSource();
     const raw = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : null;
     if (raw && raw.length) {
       // Merge keys across the first 20 trades to be safe with sparse props.
@@ -30227,30 +30280,88 @@ function _scanDatasetColumns() {
           if (!seen.has(k)) { seen.add(k); headerOrder.push(k); }
         }
       }
-      const out = [];
+      // Dedupe normalized variants: the Vercel proxy emits both the original
+      // Notion property name AND a JS-friendly camelCase alias (e.g. "M15 Pros"
+      // and "m15Pros"). Keep the longer/human-readable variant per normalized
+      // group; without this dedup the Detected list shows each property twice.
+      const winnerByNorm = new Map();
       for (const k of headerOrder) {
         if (isExcluded(k)) continue;
-        // Pull a sample of values + the Notion type from the first trade carrying this key.
+        const norm = _normalizeForMatch(k);
+        const existing = winnerByNorm.get(norm);
+        if (!existing || k.length > existing.length) winnerByNorm.set(norm, k);
+      }
+      const winners = new Set(winnerByNorm.values());
+      const out = [];
+      for (const k of headerOrder) {
+        if (!winners.has(k)) continue;
+        // ── Type detection ──
+        // Path A (Notion native shape): propObj is `{ type, ... }`. Peek into
+        // formula/rollup wrappers for the inner result sub-type so a number
+        // formula maps to `number`, a boolean to `checkbox`, etc.
+        // Path B (flat proxy shape): propObj is the raw value already. Fall
+        // back to heuristic detection on a value sample via _detectColumnType.
         let apiType = null;
-        let nonEmpty = 0;
+        let innerType = null;
+        const valueSample = [];
         for (const t of sample) {
-          const propObj = t?.properties?.[k] ?? t?.[k];
-          if (propObj && typeof propObj === 'object' && propObj.type && !apiType) {
-            apiType = propObj.type;
+          const props = t?.properties || t || {};
+          const propObj = props[k];
+          if (propObj === null || propObj === undefined) continue;
+          if (typeof propObj === 'object' && !Array.isArray(propObj) && propObj.type) {
+            if (!apiType) apiType = propObj.type;
+            if (apiType === 'formula' && !innerType && propObj.formula?.type) {
+              innerType = propObj.formula.type;
+            }
+            if (apiType === 'rollup' && !innerType && propObj.rollup?.type) {
+              innerType = propObj.rollup.type;
+            }
+          } else if (propObj !== '') {
+            valueSample.push(propObj);
           }
-          // Detect non-empty across the FULL dataset for the empty-column filter.
         }
-        // Empty-column check uses the full appState dataset (post-normalize)
-        // by looking at extras[k] — gives a defensible "0 values" signal.
-        for (const t of appState.trades.items) {
-          const v = t?.extras?.[k];
+        let customType;
+        if (apiType) {
+          const effective = (apiType === 'formula' || apiType === 'rollup')
+            ? (innerType || 'text')
+            : apiType;
+          customType = _notionTypeToCustom(effective);
+        } else if (valueSample.every(v => Array.isArray(v) && v.length > 0) && valueSample.length) {
+          customType = 'multi-select';
+        } else {
+          customType = _detectColumnType(valueSample);
+        }
+        // Empty-column check: prefer the typed extractor when shape is native,
+        // otherwise treat any truthy raw value as non-empty (flat scalars).
+        const syntheticProp = { key: k, type: customType };
+        let nonEmpty = 0;
+        for (const t of raw) {
+          const props = t?.properties || t || {};
+          const v = apiType
+            ? _extractApiValueForProp(props, syntheticProp)
+            : props[k];
           if (v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)) nonEmpty++;
         }
         if (nonEmpty === 0) continue;
-        out.push({ key: k, name: k, type: _notionTypeToCustom(apiType || 'text'), sampleCount: nonEmpty });
+        out.push({ key: k, name: k, type: customType, sampleCount: nonEmpty });
       }
-      if (out.length) return out;
+      if (out.length) {
+        // Persist the lightweight detected list so the next reload can restore
+        // it without waiting for a fresh API sync. Raw cache lives in memory
+        // only (see _persistRawAPIToSession comment) — without this snapshot
+        // the Detected section is empty until the user re-syncs.
+        _persistDetectedFields(out, currentSrc);
+        return out;
+      }
       // fall through to fallback path
+    }
+    // Raw cache empty (cold reload after memory wipe): restore from the
+    // persisted snapshot so the Detected list survives a refresh without
+    // forcing the user to resync. Re-apply the live exclusion filter so
+    // newly-declared / dismissed entries don't reappear from the cache.
+    const cached = _loadDetectedFields(currentSrc);
+    if (cached && cached.length) {
+      return cached.filter(f => !isExcluded(f.key));
     }
     // Fallback: scan normalized trade objects (no raw Notion types available).
     return _scanFromNormalizedTrades(isExcluded);
@@ -30322,7 +30433,13 @@ function _renderDetectedColumns() {
   const host = document.getElementById('np-detected');
   if (!host) return;
   const mode = localStorage.getItem(DS_KEY) || 'demo';
-  const cols = _scanDatasetColumns();
+  // Sort alphabetically by display name (case-insensitive, locale-aware) so
+  // the Detected list is easy to scan. Sort at the consumer level rather than
+  // inside _scanDatasetColumns so the underlying detection order (which mirrors
+  // the source iteration) stays available to anyone else who wants it raw.
+  const cols = _scanDatasetColumns().slice().sort((a, b) =>
+    String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
+  );
   const refreshBtn = `<button class="np-refresh-btn" data-action="notion-prop-refresh" title="Re-scan the data and restore any dismissed detected columns">↺ Refresh</button>`;
   if (!cols.length) {
     host.classList.add('has-content');
