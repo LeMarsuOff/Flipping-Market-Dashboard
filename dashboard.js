@@ -183,7 +183,9 @@ const _SB_KEY  = 'sb_publishable_XYwK5z-G9Dhf1ZThUbje1g_ZW3SzeSC';
 const _SYNC_KEYS = new Set([
   'flipping_presets','flipping_preset_snapshots_v2','presetLiveFilters_v1',
   'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets',
-  'flipping_notion_properties','flipping_custom_widgets',
+  'flipping_notion_properties',
+  // `flipping_custom_widgets` is now per-profile (see _runCustomWidgetsProfileScopeMigration).
+  // Profile-scoped keys are intentionally out of sync (see ROADMAP audit M1).
   'flipping_dashboard_theme','flipping_active_theme_meta',
   'flipping_builtin_overrides','flipping_user_themes',
   'flipping_sidebar_state','flipping_be_mode','flipping_bar_mode',
@@ -615,14 +617,18 @@ const CUSTOM_PROPS_LS_KEY = 'flipping_notion_properties';
 // preset store without a TDZ risk. The full preset definitions still live
 // in the PRESET DEFINITIONS section further down — see comment there.
 
-// ── Custom Widget Defs ── user-created bar/heatmap widgets for extras fields
+// ── Custom Widget Defs ── user-created bar/heatmap widgets for extras fields.
+// Stored per-profile via getProfileScopedKey() so each Notion DB (and Demo)
+// keeps its own widget set. Pre-v4 deployments used a single global key
+// `flipping_custom_widgets`; the migration in _runCustomWidgetsProfileScopeMigration
+// copies that legacy payload into the active profile's slot on first boot.
 const CUSTOM_WIDGETS_LS_KEY = 'flipping_custom_widgets';
 let _customWidgetDefsCache = null;
 
 function _loadCustomWidgetDefs() {
   if (_customWidgetDefsCache) return _customWidgetDefsCache;
   try {
-    const raw = localStorage.getItem(CUSTOM_WIDGETS_LS_KEY);
+    const raw = localStorage.getItem(getProfileScopedKey(CUSTOM_WIDGETS_LS_KEY));
     _customWidgetDefsCache = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(_customWidgetDefsCache)) _customWidgetDefsCache = [];
     _customWidgetDefsCache = _customWidgetDefsCache.map(_normalizeCustomWidgetDef);
@@ -632,7 +638,7 @@ function _loadCustomWidgetDefs() {
 
 function _saveCustomWidgetDefs(defs) {
   _customWidgetDefsCache = defs;
-  try { localStorage.setItem(CUSTOM_WIDGETS_LS_KEY, JSON.stringify(defs)); } catch {}
+  try { localStorage.setItem(getProfileScopedKey(CUSTOM_WIDGETS_LS_KEY), JSON.stringify(defs)); } catch {}
 }
 
 function _normalizeCustomWidgetDef(def) {
@@ -763,6 +769,29 @@ function _createCustomBarsWidget({ field, label, propertySource = 'mapped', infe
     propertySource,
     inferredType,
     createdFrom,
+    createdAt: Date.now(),
+  };
+  _addCustomWidgetDef(cwDef);
+  _bakeCustomWidgetExtrasIntoCache(cwDef);
+  _injectNewCustomWidget(cwDef);
+  return cwDef;
+}
+
+function _createCustomDonutWidget({ field, label, propertySource = 'mapped', inferredType = 'text', createdFrom = 'mapping-card' }) {
+  if (!field) return null;
+  const cwId = 'w-cust-' + Math.random().toString(36).slice(2, 9);
+  const cwDef = {
+    id: cwId,
+    type: 'donut',
+    field,
+    label: label || field,
+    propertyKey: field,
+    propertyLabel: label || field,
+    fieldSource: propertySource,
+    propertySource,
+    inferredType,
+    createdFrom,
+    createdAt: Date.now(),
   };
   _addCustomWidgetDef(cwDef);
   _bakeCustomWidgetExtrasIntoCache(cwDef);
@@ -804,6 +833,7 @@ function _createCustomHeatmapWidget({
       threshold: 5,
       hardMode: false,
     },
+    createdAt: Date.now(),
   };
   _addCustomWidgetDef(cwDef);
   _bakeCustomWidgetExtrasIntoCache(cwDef);
@@ -2171,6 +2201,15 @@ function handleActionClick(event) {
       if (!cwId) break;
       _closeDeleteConfirm();
       _destroyCustomWidget(cwId);
+      if (typeof _renderCreateWidgetList === 'function') _renderCreateWidgetList();
+      break;
+    }
+    case 'cw-list-delete': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      if (!cwId) break;
+      _destroyCustomWidget(cwId);
+      if (typeof _renderCreateWidgetList === 'function') _renderCreateWidgetList();
       break;
     }
     case 'reset-csv-overrides':    event.stopPropagation(); _resetAllCsvOverrides(); break;
@@ -6744,6 +6783,10 @@ function _syncHTFToggleUI() {
 //   - Idempotent: safe to call multiple times in a row.
 //   - Does NOT touch trade data: callers handle data injection separately.
 function _reloadProfileScopedState() {
+  // Invalidate the in-memory custom widget defs cache so the next reader picks
+  // up the new profile's slot. Without this, profile switches would leak the
+  // previous profile's widget list.
+  _customWidgetDefsCache = null;
   // ── 1. Reset + reload all preset in-memory state for the new slot ──
   Object.keys(presetOverrides).forEach(k => delete presetOverrides[k]);
   // Reset PRESETS to defaults first so that if the new slot has no saved
@@ -11506,10 +11549,262 @@ function renderCustomHeatmap(def, trades) {
 function renderAllCustomWidgets(trades) {
   const defs = _loadCustomWidgetDefs();
   for (const def of defs) {
-    if (def.type === 'bars')    renderCustomBars(def, trades);
+    if (def.type === 'bars')         renderCustomBars(def, trades);
     else if (def.type === 'heatmap') renderCustomHeatmap(def, trades);
+    else if (def.type === 'donut')   renderCustomDonut(def, trades);
   }
 }
+
+// Per-widget runtime state for custom donuts (sectors, geom, hover, segment→trades
+// mapping). Keyed by def.id. Used by the global hover/click handlers below so
+// each donut behaves like the Outcome Breakdown donut (slice grows on hover,
+// inner ring zooms on center hover, click opens the drawer filtered to the
+// slice's trades).
+const _customDonutStates = {};
+
+// Renders a custom donut widget. Groups trades by field value, sorts by
+// count desc, caps to Top 7 + "Other" aggregate, and draws using the same
+// visual structure as the built-in Outcome Donut (`.donut-wrap` /
+// `.donut-canvas-wrap` / `.donut-legend` / `.dl-row`). Colors cycle through
+// the `--chart-cat-1..8` theme palette so the Theme Editor's chart-colors
+// section already covers re-skinning.
+function renderCustomDonut(def, trades) {
+  const root = document.querySelector(`.gs-widget[data-cw-id="${CSS.escape(def.id)}"]`);
+  const canvas = document.getElementById(`donutCanvas-${def.id}`);
+  const wrap   = root?.querySelector('.donut-canvas-wrap');
+  const outer  = root?.querySelector('.donut-wrap');
+  const leg    = document.getElementById(`donut-legend-${def.id}`);
+  if (!root || !canvas || !wrap || !outer || !leg) return;
+
+  // Group trades by field value (handles multi-select via _cwExpandFieldValues).
+  // Track the matching trades per value so click-to-drawer can pull them out
+  // without re-running the filter.
+  const counts = new Map();
+  const tradesByVal = new Map();
+  for (const t of (trades || [])) {
+    const vals = _cwExpandFieldValues(
+      _cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource),
+      def.inferredType
+    );
+    if (!vals.length) continue;
+    for (const v of vals) {
+      const key = String(v);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      if (!tradesByVal.has(key)) tradesByVal.set(key, []);
+      tradesByVal.get(key).push(t);
+    }
+  }
+
+  // Sort desc, keep Top 7, aggregate the rest into "Other" so the chart stays
+  // readable even on high-cardinality fields (e.g. pair with 30+ symbols).
+  const sortedEntries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const TOP_N = 7;
+  const top  = sortedEntries.slice(0, TOP_N);
+  const rest = sortedEntries.slice(TOP_N);
+  const otherCount = rest.reduce((s, [, n]) => s + n, 0);
+  const otherTrades = rest.flatMap(([k]) => tradesByVal.get(k) || []);
+
+  const segments = top.map(([label, n], i) => ({
+    label,
+    n,
+    color: tc(`--chart-cat-${(i % 8) + 1}`),
+    trades: tradesByVal.get(label) || [],
+  }));
+  if (otherCount > 0) {
+    segments.push({ label: 'Other', n: otherCount, color: tc('--dim') || '#7f8aa8', trades: otherTrades });
+  }
+
+  if (!segments.length) {
+    leg.innerHTML = '';
+    delete _customDonutStates[def.id];
+    if (typeof renderCanvasEmptyState === 'function') {
+      renderCanvasEmptyState(`.gs-widget[data-cw-id="${CSS.escape(def.id)}"] .donut-wrap`, [`donutCanvas-${def.id}`]);
+    }
+    return;
+  }
+  if (typeof clearCanvasEmptyState === 'function') {
+    clearCanvasEmptyState(`.gs-widget[data-cw-id="${CSS.escape(def.id)}"] .donut-wrap`);
+  }
+
+  // Mirror drawDonut's responsive sizing: legend rendered first so we can
+  // measure its height and fit the donut into the remaining vertical space.
+  const outerRect = outer.getBoundingClientRect();
+  const availW = outerRect.width  || 200;
+  const availH = outerRect.height || 140;
+  const legFont = availH < 180 ? '9.5px' : '11px';
+  const pctFont = availH < 180 ? '8.5px' : '9.5px';
+  const total = segments.reduce((s, d) => s + d.n, 0) || 1;
+
+  leg.innerHTML = segments.map(d => `
+    <div class="dl-row">
+      <div class="dl-dot" style="background:${d.color}"></div>
+      <span class="dl-label" style="font-size:${legFont}">${_escapeHtml(d.label)}</span>
+      <span class="dl-val"   style="font-size:${legFont}">${d.n}</span>
+      <span class="dl-pct"   style="font-size:${pctFont}">${(d.n/total*100).toFixed(0)}%</span>
+    </div>`).join('');
+
+  const legendH = leg.offsetHeight || 60;
+  const maxW    = availW - 16;
+  const maxH    = availH - legendH - 16;
+  const maxSide = Math.min(maxW, maxH, 260);
+  const S       = Math.max(60, maxSide);
+
+  wrap.style.width  = S + 'px';
+  wrap.style.height = S + 'px';
+  canvas.width      = Math.round(S * devicePixelRatio);
+  canvas.height     = Math.round(S * devicePixelRatio);
+  canvas.style.width  = S + 'px';
+  canvas.style.height = S + 'px';
+
+  // Build sector geometry (mirrors drawDonut) and persist it so the global
+  // hover/click handlers can hit-test without recomputing.
+  const cx = S / 2;
+  const cy = S / 2;
+  const r  = S * 0.38;
+  const iR = S * 0.22;
+  const sectors = [];
+  let angle = -Math.PI / 2;
+  for (const d of segments) {
+    const sweep = (d.n / total) * Math.PI * 2;
+    sectors.push({
+      label: d.label,
+      color: d.color,
+      start: angle,
+      end:   angle + sweep,
+      n:     d.n,
+      trades: d.trades,
+    });
+    angle += sweep;
+  }
+  const geom = { cx, cy, r, iR, S, cBg1: tc('--bg1') || '#0d1526' };
+  const totalTrades = segments.reduce((s, d) => s + (d.trades?.length || 0), 0);
+  // Preserve any hover state across the re-render (resize-driven repaints
+  // shouldn't reset the user's hover position).
+  const previousHover = _customDonutStates[def.id]?.hover || null;
+  _customDonutStates[def.id] = {
+    canvasId: `donutCanvas-${def.id}`,
+    sectors,
+    geom,
+    total: totalTrades,
+    defLabel: def.label || def.field,
+    hover: previousHover,
+  };
+
+  const ctx = canvas.getContext('2d');
+  _drawCustomDonut(ctx, _customDonutStates[def.id], previousHover);
+}
+
+// Same draw treatment as the Outcome donut (slice highlight + dim, center
+// hole zoom on center hover) but with the total trade count as center label
+// instead of the hard-coded TP/SL win-rate.
+function _drawCustomDonut(ctx, state, hoverZone) {
+  if (!ctx || !state) return;
+  // _drawDonutSectors with stats=null does all the slice + hole drawing and
+  // skips the win-rate center label.
+  _drawDonutSectors(ctx, state.sectors, state.geom, null, hoverZone);
+  // Overlay the total trade count in the center (matches the win-rate
+  // typography from the Outcome donut so the DA stays consistent).
+  const { cx, cy, S } = state.geom;
+  const isCenter = hoverZone === 'center';
+  ctx.fillStyle = isCenter ? (tc('--gold') || '#c8a84e') : (tc('--white') || '#fff');
+  const fontSize = isCenter ? Math.max(10, Math.round(S * 0.15)) : Math.max(9, Math.round(S * 0.13));
+  ctx.font = `700 ${fontSize}px Anybody, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(state.total || 0), cx, cy);
+}
+
+// Hit-test a pointer event against a custom donut's stored geometry. Returns
+// 'center' (over the hole), a sector label, or null. Mirrors _donutHitTest
+// but reads from a passed-in state so multiple donuts can coexist.
+function _customDonutHitTest(canvas, state, e) {
+  if (!canvas || !state) return null;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const { cx, cy, r, iR, S } = state.geom;
+  const scaleX = S / rect.width;
+  const scaleY = S / rect.height;
+  const sx = x * scaleX, sy = y * scaleY;
+  const dx = sx - cx, dy = sy - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist > r * 1.08) return null;
+  if (dist < iR) return 'center';
+  const angle = Math.atan2(dy, dx);
+  for (const sec of state.sectors) {
+    let a = angle;
+    if (a < sec.start) a += Math.PI * 2;
+    if (a >= sec.start && a < sec.end) return sec.label;
+    if (sec.end > Math.PI && angle + Math.PI * 2 >= sec.start && angle + Math.PI * 2 < sec.end) {
+      return sec.label;
+    }
+  }
+  return null;
+}
+
+// Resolve the custom donut state attached to a canvas element. The state map
+// is keyed by def.id; the canvas id follows the pattern `donutCanvas-<def.id>`.
+function _customDonutStateFromCanvas(canvas) {
+  if (!canvas) return null;
+  const cid = canvas.id || '';
+  if (!cid.startsWith('donutCanvas-')) return null;
+  const defId = cid.slice('donutCanvas-'.length);
+  return _customDonutStates[defId] ? { defId, state: _customDonutStates[defId] } : null;
+}
+
+// ── Custom donut hover ──
+document.addEventListener('mousemove', e => {
+  const canvas = e.target.closest('canvas[id^="donutCanvas-"]');
+  if (!canvas) {
+    // Mouse moved off any custom donut: clear hover state on every donut
+    // that still has one and repaint to flush the highlight.
+    for (const defId of Object.keys(_customDonutStates)) {
+      const st = _customDonutStates[defId];
+      if (st.hover) {
+        st.hover = null;
+        const c = document.getElementById(st.canvasId);
+        if (c) {
+          c.style.cursor = '';
+          _drawCustomDonut(c.getContext('2d'), st, null);
+        }
+      }
+    }
+    return;
+  }
+  const found = _customDonutStateFromCanvas(canvas);
+  if (!found) return;
+  const { state } = found;
+  const zone = _customDonutHitTest(canvas, state, e);
+  if (zone !== state.hover) {
+    state.hover = zone;
+    canvas.style.cursor = zone ? 'pointer' : '';
+    _drawCustomDonut(canvas.getContext('2d'), state, zone);
+  }
+});
+
+// ── Custom donut click: open drawer per sector (or all from center) ──
+document.addEventListener('click', e => {
+  const canvas = e.target.closest('canvas[id^="donutCanvas-"]');
+  if (!canvas) return;
+  const found = _customDonutStateFromCanvas(canvas);
+  if (!found) return;
+  const { state } = found;
+  const zone = _customDonutHitTest(canvas, state, e);
+  if (!zone) return;
+  let trades, title;
+  if (zone === 'center') {
+    trades = state.sectors.flatMap(s => s.trades || []);
+    title = state.defLabel || 'All Trades';
+  } else {
+    const sec = state.sectors.find(s => s.label === zone);
+    if (!sec) return;
+    trades = sec.trades || [];
+    title = `${state.defLabel || ''} — ${zone}`.trim();
+  }
+  if (trades.length && typeof openWidgetDrawer === 'function') {
+    openWidgetDrawer(title, `${trades.length} trade${trades.length > 1 ? 's' : ''}`, trades);
+  }
+});
 
 function renderBarsSplit(containerId, items, small, chart) {
   const container = document.getElementById(containerId);
@@ -27345,7 +27640,7 @@ function _syncCreateWidgetTypeButtons() {
   document.querySelectorAll('.np-widget-creator-btn[data-cw-type]').forEach(btn => {
     const type = btn.getAttribute('data-cw-type');
     const isActive = !!_cwCreateFlowState.open && _cwCreateFlowState.type === type;
-    const label = type === 'heatmap' ? 'Heatmap' : 'Bar Chart';
+    const label = type === 'heatmap' ? 'Heatmap' : type === 'donut' ? 'Donut' : 'Bar Chart';
     btn.classList.toggle('is-active', isActive);
     btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     btn.textContent = `${isActive ? '✓' : '+'} ${label}`;
@@ -27391,6 +27686,11 @@ function switchDataHubTab(tabName) {
   if (tabName !== 'custom') {
     _closePropertyForm();
     if (_npPendingDeleteId !== null) { _npPendingDeleteId = null; _renderCustomPropsList(); }
+  }
+  // Render the list of created widgets each time the Create Widget tab gets
+  // shown, so additions/deletions made elsewhere stay in sync.
+  if (tabName === 'create-widget' && typeof _renderCreateWidgetList === 'function') {
+    _renderCreateWidgetList();
   }
 }
 
@@ -28296,12 +28596,13 @@ function _renderCreateWidgetBuilder() {
   const host = document.getElementById('cw-inline-builder-host');
   if (!host) return;
   _syncCreateWidgetTypeButtons();
-  if (!_cwCreateFlowState.open || !['bars', 'heatmap'].includes(_cwCreateFlowState.type)) {
+  if (!_cwCreateFlowState.open || !['bars', 'heatmap', 'donut'].includes(_cwCreateFlowState.type)) {
     host.innerHTML = '';
     return;
   }
   const { context, mappedFields, sourceFields } = getAvailableWidgetProperties();
   const isHeatmap = _cwCreateFlowState.type === 'heatmap';
+  const isDonut   = _cwCreateFlowState.type === 'donut';
   const query = String(_cwCreateFlowState.searchQuery || '').trim().toLowerCase();
   const filter = _cwCreateFlowState.sourceFilter || 'all';
 
@@ -28411,12 +28712,18 @@ function _renderCreateWidgetBuilder() {
         <span class="cw-create-empty-copy">Try another keyword or switch the field filter.</span>
       </div>`;
 
+  const builderTitle = isHeatmap ? 'Heatmap Setup'
+                      : isDonut   ? 'Donut Setup'
+                      : 'Bar Chart Setup';
+  const builderSubtitle = isHeatmap ? 'Select X and Y axes'
+                        : isDonut   ? 'Select a categorical property'
+                        : 'Select property';
   host.innerHTML = `
     <div class="cw-inline-builder is-open">
       <div class="cw-inline-head">
         <div class="cw-inline-head-copy">
-          <span class="cw-inline-title">${isHeatmap ? 'Heatmap Setup' : 'Bar Chart Setup'}</span>
-          <span class="cw-inline-subtitle">${isHeatmap ? 'Select X and Y axes' : 'Select property'}</span>
+          <span class="cw-inline-title">${builderTitle}</span>
+          <span class="cw-inline-subtitle">${builderSubtitle}</span>
         </div>
       </div>
       <div class="cw-inline-toolbar">
@@ -28457,7 +28764,7 @@ function _renderCreateWidgetBuilder() {
 }
 
 function _openCreateWidgetModal(type) {
-  if (!['bars', 'heatmap'].includes(type)) return;
+  if (!['bars', 'heatmap', 'donut'].includes(type)) return;
   _cwCreateFlowState.open = true;
   _cwCreateFlowState.type = type;
   _cwCreateFlowState.selectedId = '';
@@ -28544,6 +28851,17 @@ function _handleCreateWidgetContinue() {
       inferredType: selected.inferredType,
       createdFrom: 'widget-builder',
     });
+  } else if (_cwCreateFlowState.type === 'donut') {
+    if (!_cwCreateFlowState.selectedId) return;
+    const selected = _getCreateWidgetSelection();
+    if (!selected) return;
+    _createCustomDonutWidget({
+      field: selected.key,
+      label: selected.label,
+      propertySource: selected.source,
+      inferredType: selected.inferredType,
+      createdFrom: 'widget-builder',
+    });
   } else if (_cwCreateFlowState.type === 'heatmap') {
     const xSelected = _getCreateWidgetSelectionById(_cwCreateFlowState.xSelectedId);
     const ySelected = _getCreateWidgetSelectionById(_cwCreateFlowState.ySelectedId);
@@ -28562,6 +28880,61 @@ function _handleCreateWidgetContinue() {
     });
   }
   _closeCreateWidgetBuilder();
+  if (typeof _renderCreateWidgetList === 'function') _renderCreateWidgetList();
+}
+
+// Render the list of widgets created from this section, scoped per-profile.
+// Each row shows the type icon, label, and a delete affordance. The host
+// (`#cw-list-host`) lives just below the inline builder so additions appear
+// in place. Clicking the trash button removes the widget via _destroyCustomWidget
+// (same code path as the dashboard's per-widget delete confirm).
+function _renderCreateWidgetList() {
+  const host = document.getElementById('cw-list-host');
+  if (!host) return;
+  const defs = (typeof _loadCustomWidgetDefs === 'function') ? _loadCustomWidgetDefs() : [];
+  if (!defs.length) {
+    host.innerHTML = `
+      <div class="cw-list-empty">No custom widgets yet. Use the buttons above to create your first one.</div>`;
+    return;
+  }
+  // Sort: newest first if a created-at timestamp exists, otherwise leave
+  // creation order (which is append-on-add for legacy defs).
+  const sorted = defs.slice().sort((a, b) => {
+    const aTime = Number(a?.createdAt || 0);
+    const bTime = Number(b?.createdAt || 0);
+    return bTime - aTime;
+  });
+  const rows = sorted.map(def => {
+    const isHeatmap = def.type === 'heatmap';
+    const isDonut   = def.type === 'donut';
+    const icon = isHeatmap ? '▦' : isDonut ? '◕' : '▮';
+    const label = _escHTML(def.label || def.field || def.id);
+    const sub   = isHeatmap
+      ? `${_escHTML(def.fieldLabel || def.field || '?')} × ${_escHTML(def.field2Label || def.field2 || '?')}`
+      : _escHTML(def.fieldLabel || def.field || '?');
+    const typeBadge = isHeatmap ? 'Heatmap' : isDonut ? 'Donut' : 'Bar Chart';
+    const typeClass = isHeatmap ? 'cw-list-type-heatmap' : isDonut ? 'cw-list-type-donut' : 'cw-list-type-bars';
+    return `
+      <div class="cw-list-item" data-cw-id="${_escapeAttr(def.id)}">
+        <span class="cw-list-icon" aria-hidden="true">${icon}</span>
+        <div class="cw-list-main">
+          <div class="cw-list-label">${label}</div>
+          <div class="cw-list-sub">${sub}</div>
+        </div>
+        <span class="cw-list-type-badge ${typeClass}">${typeBadge}</span>
+        <button type="button"
+                class="cw-list-delete-btn"
+                data-action="cw-list-delete"
+                data-cw-id="${_escapeAttr(def.id)}"
+                title="Delete this widget">✕</button>
+      </div>`;
+  }).join('');
+  host.innerHTML = `
+    <div class="cw-list-header">
+      <span class="cw-list-title">Your widgets</span>
+      <span class="cw-list-count">${sorted.length} created</span>
+    </div>
+    <div class="cw-list-body">${rows}</div>`;
 }
 
 // ── Remap picker (inline dropdown attached to a pencil click) ──
@@ -31152,10 +31525,38 @@ function _runProfileScopeMigrationV3() {
   }
 }
 
+// Custom widgets were stored under the global `flipping_custom_widgets` key
+// before this revision. Per-profile scoping needs to copy that legacy payload
+// into the currently-active profile's slot exactly once, so existing users
+// don't lose their widgets on first post-update boot.
+function _runCustomWidgetsProfileScopeMigration() {
+  const FLAG = 'flipping_custom_widgets_profile_migration_v1';
+  try {
+    if (localStorage.getItem(FLAG)) return;
+    const legacyRaw = localStorage.getItem(CUSTOM_WIDGETS_LS_KEY);
+    const scopedKey = getProfileScopedKey(CUSTOM_WIDGETS_LS_KEY);
+    // If the scoped slot is already populated (e.g. somehow set ahead of time)
+    // or the legacy payload is missing, skip the copy but still set the flag
+    // so we don't re-check on every boot.
+    if (legacyRaw && scopedKey !== CUSTOM_WIDGETS_LS_KEY && !localStorage.getItem(scopedKey)) {
+      localStorage.setItem(scopedKey, legacyRaw);
+      console.log('[custom-widgets-profile-migration-v1] copied', legacyRaw.length, 'bytes to', scopedKey);
+    }
+    // Drop the legacy global so it doesn't drift from the now-scoped truth.
+    try { localStorage.removeItem(CUSTOM_WIDGETS_LS_KEY); } catch (e) {}
+    localStorage.setItem(FLAG, '1');
+  } catch (e) {
+    console.warn('[custom-widgets-profile-migration-v1] failed:', e?.message);
+  }
+}
+
 window.addEventListener('load', () => {
   // One-shot migration MUST run before any preset / layout load so the new
   // per-profile scoping reads from clean slots.
   _runProfileScopeMigrationV3();
+  // Copy legacy global custom widget defs into the active profile's slot
+  // before any _loadCustomWidgetDefs() reader fires.
+  _runCustomWidgetsProfileScopeMigration();
 
   // Load custom presets BEFORE static chrome rendering so the preset list
   // reflects user-created presets (and respects deletes/renames).
@@ -34657,6 +35058,15 @@ function _injectCustomWidgetHTML() {
         </div>
         ${_renderCustomBarSortToolbarHTML(def.id)}
         <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
+    } else if (def.type === 'donut') {
+      widget.innerHTML = `
+        <div class="cc-head cc-head-spaced">
+          <span class="cc-title">${_escapeHtml(def.label)}</span>
+        </div>
+        <div class="donut-wrap donut-wrap-centered">
+          <div class="donut-canvas-wrap"><canvas id="donutCanvas-${_escapeAttr(def.id)}"></canvas></div>
+          <div class="donut-legend" id="donut-legend-${_escapeAttr(def.id)}"></div>
+        </div>`;
     } else {
       widget.innerHTML = `
         <div class="cc-head">
@@ -34690,6 +35100,15 @@ function _injectNewCustomWidget(def) {
       </div>
       ${_renderCustomBarSortToolbarHTML(def.id)}
       <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
+  } else if (def.type === 'donut') {
+    widget.innerHTML = `
+      <div class="cc-head cc-head-spaced">
+        <span class="cc-title">${_escapeHtml(def.label)}</span>
+      </div>
+      <div class="donut-wrap donut-wrap-centered">
+        <div class="donut-canvas-wrap"><canvas id="donutCanvas-${_escapeAttr(def.id)}"></canvas></div>
+        <div class="donut-legend" id="donut-legend-${_escapeAttr(def.id)}"></div>
+      </div>`;
   } else {
     widget.innerHTML = `
       <div class="cc-head">
@@ -34767,8 +35186,9 @@ function _injectNewCustomWidget(def) {
 
   // Render content immediately
   const filtered = getFiltered();
-  if (def.type === 'bars')    renderCustomBars(def, filtered);
+  if (def.type === 'bars')         renderCustomBars(def, filtered);
   else if (def.type === 'heatmap') renderCustomHeatmap(def, filtered);
+  else if (def.type === 'donut')   renderCustomDonut(def, filtered);
 
   if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
 }
@@ -34778,6 +35198,11 @@ function _destroyCustomWidget(id) {
   _closeDeleteConfirm();
   _closeHideConfirm();
   delete barSortState[id];
+  // Drop any persisted donut hover/sector state so listeners stop
+  // matching against a now-removed canvas.
+  if (typeof _customDonutStates === 'object' && _customDonutStates) {
+    delete _customDonutStates[id];
+  }
   // Remove from defs
   _removeCustomWidgetDef(id);
 
@@ -36171,6 +36596,12 @@ function _redrawAll() {
     // re-render, the calendar stays at its initial (possibly tiny) sizing
     // until the user clicks a calendar control.
     renderCalendar(filtered);
+    // Refit custom widgets too — the ResizeObserver fires _redrawAll on every
+    // GridStack resize, and the custom donut/heatmap/bars all read
+    // getBoundingClientRect() to size themselves. Without this call the
+    // custom donut canvas stays frozen at its first-render dimensions and
+    // doesn't grow/shrink like the built-in Outcome Breakdown.
+    renderAllCustomWidgets(filtered);
     // Refit performance bar widgets to the new widget heights. We don't
     // re-render their HTML (children counts haven't changed) — just recompute
     // the row-height + font-size CSS vars from the current container size.

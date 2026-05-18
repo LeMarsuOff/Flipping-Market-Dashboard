@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=135">
+<link rel="stylesheet" href="dashboard.css?v=138">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1453,8 +1453,10 @@
         <div class="np-widget-creator-actions" aria-label="Widget creation shortcuts">
           <button type="button" class="np-widget-creator-btn" data-action="cw-open-create-modal" data-cw-type="bars">+ Bar Chart</button>
           <button type="button" class="np-widget-creator-btn np-widget-creator-btn--heatmap" data-action="cw-open-create-modal" data-cw-type="heatmap">+ Heatmap</button>
+          <button type="button" class="np-widget-creator-btn np-widget-creator-btn--donut" data-action="cw-open-create-modal" data-cw-type="donut">+ Donut</button>
         </div>
         <div class="cw-inline-builder-host" id="cw-inline-builder-host"></div>
+        <div class="cw-list-host" id="cw-list-host"></div>
       </section>
     </div>
   </div>
@@ -2850,6 +2852,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=200"></script>
+<script src="dashboard.js?v=224"></script>
 </body>
 </html>

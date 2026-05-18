@@ -13652,10 +13652,157 @@ body.ms-sidebar-open .view-tabs {
     0 0 0 1px color-mix(in srgb, var(--gold) 20%, transparent),
     0 10px 28px color-mix(in srgb, var(--gold) 12%, transparent);
 }
+/* Donut button uses --chart-cat-1 (matches the donut slice palette). */
+.np-widget-creator-btn--donut {
+  border-color: color-mix(in srgb, var(--chart-cat-1) 38%, var(--line));
+}
+.np-widget-creator-btn--donut:hover {
+  border-color: color-mix(in srgb, var(--chart-cat-1) 62%, transparent);
+}
+.np-widget-creator-btn--donut.is-active {
+  border-color: color-mix(in srgb, var(--chart-cat-1) 62%, transparent);
+  background: color-mix(in srgb, var(--chart-cat-1) 14%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--chart-cat-1) 20%, transparent),
+    0 10px 28px color-mix(in srgb, var(--chart-cat-1) 12%, transparent);
+}
 
 .cw-inline-builder-host {
   display: flex;
   flex-direction: column;
+}
+
+/* ── Custom widget list (Create Widget tab) ─────────────────────────────
+   Surfaces every widget the user has created via this section. Sits below
+   the inline builder host. Per-profile via _loadCustomWidgetDefs() — switches
+   automatically when the active Notion profile changes.
+   ───────────────────────────────────────────────────────────────────── */
+.cw-list-host {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+}
+.cw-list-host:empty { display: none; }
+.cw-list-empty {
+  color: var(--dim);
+  font-size: var(--typo-panel-size);
+  font-style: italic;
+  padding: 4px 2px;
+}
+.cw-list-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px 6px;
+}
+.cw-list-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent-primary) 70%, var(--body));
+}
+.cw-list-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: .4px;
+}
+.cw-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cw-list-item {
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 95%, transparent);
+  border-radius: var(--rad-sm);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  transition: border-color .12s ease, background .12s ease;
+}
+.cw-list-item:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 32%, var(--line));
+  background: color-mix(in srgb, var(--surface-3) 70%, transparent);
+}
+.cw-list-icon {
+  font-family: 'DM Mono', monospace;
+  font-size: 14px;
+  line-height: 1;
+  text-align: center;
+  color: color-mix(in srgb, var(--accent-primary) 65%, var(--gold));
+}
+.cw-list-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cw-list-label {
+  font-size: var(--typo-panel-size);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cw-list-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cw-list-type-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--rad-pill);
+  border: 1px solid transparent;
+}
+.cw-list-type-bars {
+  color: color-mix(in srgb, var(--accent-primary) 80%, var(--body));
+  border-color: color-mix(in srgb, var(--accent-primary) 34%, var(--line));
+  background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+}
+.cw-list-type-heatmap {
+  color: color-mix(in srgb, var(--gold) 80%, var(--body));
+  border-color: color-mix(in srgb, var(--gold) 38%, var(--line));
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+.cw-list-type-donut {
+  color: color-mix(in srgb, var(--chart-cat-1) 80%, var(--body));
+  border-color: color-mix(in srgb, var(--chart-cat-1) 38%, var(--line));
+  background: color-mix(in srgb, var(--chart-cat-1) 10%, transparent);
+}
+.cw-list-delete-btn {
+  appearance: none;
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--r) 35%, var(--line));
+  color: color-mix(in srgb, var(--r) 70%, var(--dim));
+  width: 24px;
+  height: 24px;
+  border-radius: var(--rad-sm);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.cw-list-delete-btn:hover {
+  background: color-mix(in srgb, var(--r) 18%, transparent);
+  border-color: color-mix(in srgb, var(--r) 60%, transparent);
+  color: var(--r);
 }
 .cw-inline-builder {
   display: flex;
