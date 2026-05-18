@@ -27857,6 +27857,10 @@ function toggleDataHub(forceTab = null) {
     _closePropertyForm();
     _closeCreateWidgetBuilder();
     if (_npPendingDeleteId !== null) { _npPendingDeleteId = null; _renderCustomPropsList(); }
+    // Phase 3 — reset Mapping accordion state so the next open re-applies
+    // the "expand tiers with missing fields" default to a fresh session,
+    // instead of carrying over a one-off collapse from the previous one.
+    _resetOpenMappingTiers();
   }
 }
 
@@ -28122,38 +28126,112 @@ function _renderMappingTableRow(dim, st) {
 // Builds the full set of tier-grouped Mapping tables. `getStatusForDim(dim)`
 // returns the per-row status descriptor (see _renderMappingTableRow), or
 // `null` to skip the dim entirely (e.g. overrideOnly dims in non-API modes).
+// Tracks which Mapping-tab tier accordions are open across re-renders. Null
+// until first render (triggers "expand tiers with missing fields" default);
+// then a Set of tier keys reflecting the user's interactive state. The toggle
+// listener on `#ljp-list` keeps it in sync with `<details>` events so the
+// renderer can rebuild innerHTML without losing user choice.
+let _openMappingTiers = null;
+
+// Reset the open-tier state — called when the Data Hub closes so the next
+// open re-applies "expand missing" defaults to a fresh session, rather than
+// carrying over a one-off collapse from the previous session.
+function _resetOpenMappingTiers() {
+  _openMappingTiers = null;
+}
+
 function _renderMappingSectionsHtml(getStatusForDim) {
+  // Preserve user-driven accordion state across re-renders without
+  // depending on `toggle` events (which queue on `<details>` and may
+  // not fire before the next innerHTML rewrite — see HTML spec on
+  // ToggleEvent.bubbles / task source). Instead we snapshot which
+  // accordions currently carry the `[open]` attribute directly from
+  // the DOM right before rewriting.
+  //
+  // `_openMappingTiers === null` is a *sentinel* meaning "intentionally
+  // unset — apply defaults" (set by _resetOpenMappingTiers on panel
+  // close, or by initial module load). When null we SKIP the DOM
+  // snapshot entirely so defaults can apply, even if stale `<details>`
+  // elements still linger in DOM (closing the Data Hub hides but
+  // doesn't wipe the panel's innerHTML).
+  const useDefaults = _openMappingTiers === null;
+  if (useDefaults) {
+    _openMappingTiers = new Set();
+  } else {
+    const list = document.getElementById('ljp-list');
+    const existingAccs = list ? list.querySelectorAll('.ljp-tier-acc[data-tier]') : [];
+    if (existingAccs.length > 0) {
+      _openMappingTiers = new Set();
+      existingAccs.forEach(acc => {
+        if (acc.hasAttribute('open')) _openMappingTiers.add(acc.dataset.tier);
+      });
+    }
+  }
+
   const head = `<thead><tr>
     <th scope="col" class="csv-doc-col-prop">Property</th>
     <th scope="col" class="csv-doc-col-type">Type</th>
     <th scope="col" class="csv-doc-col-desc">Description</th>
     <th scope="col" class="csv-doc-col-mapping">Mapping</th>
   </tr></thead>`;
+
   return MAPPING_TIER_SECTIONS.map(sect => {
     const sectDims = JOURNAL_DIMS.filter(d => d.tier === sect.tier);
     if (!sectDims.length) return '';
+
+    // Walk the tier's dims once to build both the rows AND the summary
+    // stats (mapped count, missing count, percentage, "should open by
+    // default" hint). Avoids calling getStatusForDim twice per dim.
+    let mapped = 0, total = 0, hasMissing = false;
     const rendered = sectDims.map(dim => {
       const st = getStatusForDim(dim);
       if (!st) return '';
+      total++;
+      if (st.status === 'is-ok' || st.status === 'is-remapped') mapped++;
+      if (st.status === 'is-missing') hasMissing = true;
       return _renderMappingTableRow(dim, st);
     }).filter(Boolean).join('');
     if (!rendered) return '';
-    const visibleCount = sectDims.filter(d => getStatusForDim(d)).length;
-    const badge = `<span class="csv-doc-section-title-badge ${sect.badgeClass}">${visibleCount} ${_escapeHtml(sect.badgeSuffix)}</span>`;
+
+    // First-render default: expand only the tiers that have something to fix.
+    if (useDefaults && hasMissing) _openMappingTiers.add(sect.tier);
+    const isOpen = _openMappingTiers.has(sect.tier);
+
+    // Mini progress bar + count chip — same visual language as the Phase 1
+    // hero ring (mapped vs total) so the summary reads at a glance.
+    const pct = total ? Math.round((mapped / total) * 100) : 0;
+    const fillClass = (total && mapped === total) ? ' is-full' : '';
+    const countClass = (mapped === total) ? 'is-full' : (mapped === 0 ? 'is-bad' : 'is-partial');
+    const tierBar = `<div class="ljp-tier-bar"><div class="ljp-tier-bar-fill${fillClass}" style="width:${pct}%"></div></div>`;
+    const tierCount = `<span class="ljp-tier-count ${countClass}">${mapped} / ${total}</span>`;
+
+    // Strip the trailing " properties" / " mode (advanced)" suffix so the
+    // accordion summary stays compact ("Required" instead of "Required
+    // properties"). Keep the full title as the table aria-label for a11y.
+    const shortTitle = sect.title
+      .replace(/\s+properties$/i, '')
+      .replace(/\s+mode\s*\(advanced\)$/i, '');
+
     const note = sect.note ? `<div class="csv-doc-multi-tp-note">${sect.note}</div>` : '';
-    return `
-      <div class="csv-doc-section-title">
-        <span>${_escapeHtml(sect.title)}</span>
-        ${badge}
+
+    return `<details class="ljp-tier-acc${hasMissing ? ' has-missing' : ''}"${isOpen ? ' open' : ''} data-tier="${_escapeHtml(sect.tier)}">
+      <summary class="ljp-tier-summary">
+        <span class="ljp-tier-chev" aria-hidden="true"></span>
+        <span class="ljp-tier-name">${_escapeHtml(shortTitle)}</span>
+        ${tierBar}
+        ${tierCount}
+      </summary>
+      <div class="ljp-tier-body">
+        ${note}
+        <table class="csv-doc-table ljp-mapping-table" aria-label="${_escapeHtml(sect.title)}">
+          ${head}
+          <tbody>${rendered}</tbody>
+        </table>
       </div>
-      ${note}
-      <table class="csv-doc-table ljp-mapping-table" aria-label="${_escapeHtml(sect.title)}">
-        ${head}
-        <tbody>${rendered}</tbody>
-      </table>
-    `;
-  }).join('');
+    </details>`;
+  }).filter(Boolean).join('');
 }
+
 
 function updateJournalPanel() {
   const panel = document.getElementById('data-hub-panel');

@@ -1921,6 +1921,104 @@ body.layout-edit-mode #layout-toolbar * {
 #ljp-list .ljp-mapping-row:not(.is-readonly).is-remapped:hover   > td { background: color-mix(in srgb, var(--gold) 13%, transparent); }
 #ljp-list .ljp-mapping-row:not(.is-readonly).is-no-mapping:hover > td { background: color-mix(in srgb, #7dd3fc      13%, transparent); }
 
+/* ── Phase 3 — Tier accordions ─────────────────────────────────────────
+   Each tier (Required / Optional / Screenshots / Multi-TP) wraps its
+   table in a `<details>` element. Summary shows: chevron, name, mini
+   progress bar, mapped/total count. Auto-expanded when the tier has at
+   least one missing field; user toggles preserved across re-renders
+   via _openMappingTiers (see dashboard.js).
+   --------------------------------------------------------------------- */
+#ljp-list .ljp-tier-acc {
+  border: var(--border-thin) solid var(--border-subtle);
+  border-radius: var(--rad-md);
+  margin-bottom: var(--space-3);
+  background: var(--bg1);
+  overflow: hidden;
+}
+#ljp-list .ljp-tier-acc:last-child { margin-bottom: 0; }
+
+#ljp-list .ljp-tier-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 11px 14px;
+  display: grid;
+  grid-template-columns: 14px 110px 1fr 64px;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+  transition: background-color var(--ease-normal);
+}
+#ljp-list .ljp-tier-summary::-webkit-details-marker { display: none; }
+#ljp-list .ljp-tier-summary::marker { content: ''; }
+#ljp-list .ljp-tier-summary:hover {
+  background: color-mix(in srgb, var(--bg2) 50%, transparent);
+}
+#ljp-list .ljp-tier-acc[open] .ljp-tier-summary {
+  background: color-mix(in srgb, var(--bg2) 40%, transparent);
+  border-bottom: var(--border-thin) solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+}
+
+#ljp-list .ljp-tier-chev {
+  width: 0; height: 0;
+  border: 4px solid transparent;
+  border-left-color: var(--text-muted);
+  transition: transform var(--ease-normal);
+  justify-self: center;
+}
+#ljp-list .ljp-tier-acc[open] .ljp-tier-chev { transform: rotate(90deg); }
+
+#ljp-list .ljp-tier-name {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 500;
+  letter-spacing: -0.05px;
+}
+
+#ljp-list .ljp-tier-bar {
+  height: 4px;
+  background: var(--bg2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#ljp-list .ljp-tier-bar-fill {
+  height: 100%;
+  background: var(--accent-primary, var(--gold));
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+#ljp-list .ljp-tier-bar-fill.is-full {
+  background: var(--color-success, var(--g));
+}
+
+#ljp-list .ljp-tier-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-align: right;
+  font-feature-settings: 'tnum';
+}
+#ljp-list .ljp-tier-count.is-full    { color: var(--color-success, var(--g)); }
+#ljp-list .ljp-tier-count.is-partial { color: var(--accent-primary, var(--gold)); }
+#ljp-list .ljp-tier-count.is-bad     { color: var(--color-danger, var(--r)); }
+
+#ljp-list .ljp-tier-body {
+  padding: 4px 12px 10px;
+}
+#ljp-list .ljp-tier-body .csv-doc-multi-tp-note {
+  margin: 4px 0 10px;
+}
+/* The mapping table sits flush with the accordion body — drop the table's
+   own top margin and outer border so the accordion's chrome owns the frame. */
+#ljp-list .ljp-tier-body .ljp-mapping-table {
+  margin: 0;
+}
+#ljp-list .ljp-tier-body .ljp-mapping-table thead th {
+  padding-top: 6px;
+}
+/* Section-title elements aren't emitted inside accordions (the summary is
+   the heading now), but the rules above still target them in the rare
+   "no tier rendered" fallback case. Safe to keep. */
+
 /* Section heading — proper heading style instead of the original CSV-Guide
    "label" treatment. Sans-serif, mid weight, sentence-case kept, more
    space above so each tier reads as a distinct chapter. */
