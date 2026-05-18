@@ -8,7 +8,48 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=126">
+<link rel="stylesheet" href="dashboard.css?v=135">
+<script>
+  // Pre-paint theme restore — avoids the brief flash of static :root colors
+  // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
+  // the alpha variants (--gold2/3, --g2/3, etc.) are also applied early.
+  (function () {
+    try {
+      var saved = localStorage.getItem('flipping_dashboard_theme');
+      if (!saved) return;
+      var theme = JSON.parse(saved);
+      if (!theme || typeof theme !== 'object') return;
+      var root = document.documentElement;
+      for (var k in theme) {
+        if (typeof theme[k] === 'string') root.style.setProperty(k, theme[k]);
+      }
+      var toRgb = function (h) {
+        var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(h || '').trim());
+        return m ? parseInt(m[1], 16) + ',' + parseInt(m[2], 16) + ',' + parseInt(m[3], 16) : null;
+      };
+      var derive = function (key, alphas) {
+        var rgb = toRgb(theme[key]);
+        if (!rgb) return;
+        for (var i = 0; i < alphas.length; i++) {
+          root.style.setProperty(key + alphas[i][0], 'rgba(' + rgb + ',' + alphas[i][1] + ')');
+        }
+      };
+      derive('--gold', [['2', '.10'], ['3', '.20']]);
+      derive('--g',    [['2', '.08'], ['3', '.15']]);
+      derive('--r',    [['2', '.08'], ['3', '.16']]);
+      derive('--a',    [['2', '.09'], ['3', '.18']]);
+      derive('--b',    [['2', '.10']]);
+      derive('--t',    [['2', '.10']]);
+      var gRgb = toRgb(theme['--gold']);
+      if (gRgb) {
+        root.style.setProperty('--sel', 'rgba(' + gRgb + ',.13)');
+        root.style.setProperty('--sel-border', 'rgba(' + gRgb + ',.50)');
+      }
+      var bg4 = theme['--bg4'] || theme['--bg3'];
+      if (bg4) root.style.setProperty('--mute', bg4);
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body class="is-booting">
 
@@ -932,6 +973,7 @@
     </button>
     <!-- ── Active TPM mode badge — text/icon/title set dynamically by _ppSyncActivePresetBadge ── -->
     <button class="tpm-active-preset-topbar-btn" id="tpm-active-preset-topbar-btn"
+            style="display:none"
             onclick="_tpmDeactivateActivePreset()">
     </button>
     <!-- ── Data Source switching has moved to Settings → Data & Integrations ── -->
@@ -940,7 +982,7 @@
       <button class="htf-toggle-btn active" id="htf-btn-m15" onclick="setHTFSource('m15')">M15</button>
       <button class="htf-toggle-btn" id="htf-btn-h4" onclick="setHTFSource('h4')">H4</button>
     </div>
-    <button class="ds-refresh-btn" id="ds-refresh-btn" data-action="refresh-api-source" title="Refresh API data">↺ Refresh</button>
+    <button class="ds-refresh-btn" id="ds-refresh-btn" data-action="refresh-api-source" style="display:none" title="Refresh API data">↺ Refresh</button>
     <!-- ── Data source status moved to Settings → Data & Integrations (per-profile "Synced X ago") ── -->
     <div class="tpm-badge-wrap">
       <span class="dhb-badge" id="tpm-badge" data-state="idle" data-action="toggle-tpm-dropdown" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" title="Switch TP Management mode">
@@ -1659,11 +1701,6 @@
   <div class="view-tab" id="tab-share" data-action="switch-view" data-view="share">
     <span>◈</span> Share your data
   </div>
-  <div class="view-tab" id="tab-api" data-action="switch-to-api" title="Reload from Notion">
-    <span>↺</span> Notion Live
-    <span id="tab-api-badge">LIVE</span>
-    <span id="tab-api-loading" class="is-hidden">API LOADING</span>
-  </div>
 </div>
 
 <!-- ══ PERIOD COMPARISON SUB-HEADER ══ -->
@@ -1686,6 +1723,16 @@
 
 <!-- ══ LAYOUT ══ -->
 <div class="layout">
+<script>
+  // Pre-paint sidebar state restore — avoids the open→collapsed flash on boot.
+  // The .layout element exists at this point; setting the class here applies
+  // grid-template-columns before the first paint, so no transition fires.
+  try {
+    if (localStorage.getItem('sidebarCollapsed') === '1') {
+      document.currentScript.parentElement.classList.add('sidebar-collapsed');
+    }
+  } catch (e) {}
+</script>
 
   <!-- ══ SIDEBAR TOGGLE ══ -->
   <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
@@ -2803,6 +2850,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=170"></script>
+<script src="dashboard.js?v=189"></script>
 </body>
 </html>

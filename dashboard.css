@@ -6,11 +6,15 @@
    visible from first paint with last-session values. Transition is
    short — feels like a normal render, not a "loading screen".
    ══════════════════════════════════════════════════════════════════ */
-body.is-booting #main-panel {
+body.is-booting #main-panel,
+body.is-booting #filter-context-strip,
+body.is-booting #dhb-badge {
   opacity: 0;
   pointer-events: none;
 }
-#main-panel {
+#main-panel,
+#filter-context-strip,
+#dhb-badge {
   transition: opacity 0.18s ease-out;
 }
 
@@ -1861,117 +1865,6 @@ body.layout-edit-mode #layout-toolbar * {
 }
 .ljp-pencil-btn svg { display: block; }
 
-/* ── Custom Fields → Widgets section in the mapping panel ── */
-.ljp-cw-section-header {
-  list-style: none;
-  font-family: 'DM Mono', monospace;
-  font-size: 9px;
-  letter-spacing: .7px;
-  text-transform: uppercase;
-  color: var(--gold);
-  padding: 14px 10px 4px;
-  opacity: .85;
-}
-.ljp-cw-note {
-  list-style: none;
-  font-size: 10px;
-  color: var(--dim);
-  padding: 0 10px 6px;
-}
-.ljp-custom-field {
-  position: relative;
-}
-.ljp-cw-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 6px;
-}
-.ljp-cw-btn {
-  background: none;
-  border: 1px solid var(--line2);
-  border-radius: 4px;
-  color: var(--dim);
-  padding: 3px 8px;
-  font-family: 'DM Mono', monospace;
-  font-size: 9.5px;
-  letter-spacing: .5px;
-  cursor: pointer;
-  transition: background .12s, border-color .12s, color .12s;
-}
-.ljp-cw-btn:hover {
-  background: color-mix(in srgb, var(--a) 10%, transparent);
-  border-color: color-mix(in srgb, var(--a) 45%, transparent);
-  color: var(--white);
-}
-.ljp-cw-btn-active {
-  background: color-mix(in srgb, var(--g) 12%, transparent);
-  border-color: color-mix(in srgb, var(--g) 45%, transparent);
-  color: var(--g);
-}
-.ljp-cw-btn-active:hover {
-  background: color-mix(in srgb, var(--r) 12%, transparent);
-  border-color: color-mix(in srgb, var(--r) 45%, transparent);
-  color: var(--r);
-}
-.ljp-cw-btn-hm {
-  border-color: color-mix(in srgb, var(--gold) 30%, transparent);
-  color: color-mix(in srgb, var(--gold) 70%, var(--dim));
-}
-.ljp-cw-btn-hm:hover {
-  background: color-mix(in srgb, var(--gold) 10%, transparent);
-  border-color: color-mix(in srgb, var(--gold) 55%, transparent);
-  color: var(--gold);
-}
-/* Heatmap picker (extends .csv-remap-picker) */
-.cw-heatmap-picker .crp-hint {
-  font-family: 'DM Mono', monospace;
-  font-size: 9px;
-  letter-spacing: .7px;
-  text-transform: uppercase;
-  color: var(--dim);
-  padding: 2px 4px 4px;
-}
-.cw-heatmap-picker .crp-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.cw-heatmap-picker .crp-option {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--white);
-  padding: 5px 8px;
-  font-family: 'DM Mono', monospace;
-  font-size: 11px;
-  cursor: pointer;
-  transition: background .12s, border-color .12s;
-}
-.cw-heatmap-picker .crp-option:hover {
-  background: color-mix(in srgb, var(--gold) 10%, transparent);
-  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
-}
-/* Custom widget remove button in header */
-.cw-remove-inline-btn {
-  background: none;
-  border: 1px solid color-mix(in srgb, var(--r) 35%, transparent);
-  border-radius: 3px;
-  color: color-mix(in srgb, var(--r) 70%, var(--dim));
-  padding: 1px 5px;
-  font-size: 9px;
-  cursor: pointer;
-  margin-left: auto;
-  transition: background .12s, color .12s;
-  line-height: 1.4;
-}
-.cw-remove-inline-btn:hover {
-  background: color-mix(in srgb, var(--r) 18%, transparent);
-  color: var(--r);
-}
 /* Custom heatmap grid */
 .cw-hm-wrap {
   height: calc(100% - 42px);
@@ -2336,10 +2229,6 @@ body.layout-edit-mode #layout-toolbar * {
   box-shadow: 0 1px 0 rgba(255,255,255,.02);
 }
 
-#tab-api {
-  margin-left: auto;
-}
-
 .view-tab {
   display: flex;
   align-items: center;
@@ -2357,34 +2246,6 @@ body.layout-edit-mode #layout-toolbar * {
 }
 .view-tab:hover { color: var(--text-secondary) }
 .view-tab.active { color: var(--tab-active-color); border-bottom-color: var(--tab-active-border) }
-
-/* ── API status badges (LIVE / CHARGEMENT) ── */
-#tab-api-badge,
-#tab-api-loading {
-  font-size: var(--typo-micro-size);
-  padding: 1px 5px;
-  border-radius: 2px;
-  margin-left: 4px;
-  display: inline-block;
-  line-height: 1.2;
-  letter-spacing: .04em;
-  font-weight: 600;
-}
-#tab-api-badge {
-  background: color-mix(in srgb, var(--g) 12%, transparent);
-  color: var(--g);
-  border: 1px solid color-mix(in srgb, var(--g) 25%, transparent);
-}
-#tab-api-loading {
-  background: color-mix(in srgb, var(--gold) 14%, transparent);
-  color: var(--gold);
-  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
-  animation: tab-api-loading-pulse 1.2s ease-in-out infinite;
-}
-@keyframes tab-api-loading-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: .55; }
-}
 
 /* ══════════════════════════════════
    LAYOUT

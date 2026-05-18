@@ -2144,61 +2144,6 @@ function handleActionClick(event) {
     case 'open-remap-picker':      event.stopPropagation(); openRemapPicker(actionEl); break;
     case 'pick-remap-column':      event.stopPropagation(); pickRemapColumn(actionEl); break;
     case 'pick-api-field':         event.stopPropagation(); pickAPIField(actionEl); break;
-    case 'cw-create-bars': {
-      event.stopPropagation();
-      const cwField = actionEl.dataset.cwField;
-      const cwLabel = actionEl.dataset.cwLabel || cwField;
-      _createCustomBarsWidget({
-        field: cwField,
-        label: cwLabel,
-        propertySource: 'mapped',
-        inferredType: 'text',
-        createdFrom: 'mapping-card',
-      });
-      const ljpList = actionEl.closest('#ljp-list');
-      if (ljpList) {
-        const items = (appState.trades && appState.trades.items) || [];
-        _renderCwMappingSection(ljpList, items);
-      }
-      break;
-    }
-    case 'cw-open-heatmap-picker':
-      event.stopPropagation();
-      _openHeatmapPicker(actionEl);
-      break;
-    case 'cw-create-heatmap': {
-      event.stopPropagation();
-      const cwField  = actionEl.dataset.cwField;
-      const cwField2 = actionEl.dataset.cwField2;
-      const cwLabel  = actionEl.dataset.cwLabel || (cwField + ' × ' + cwField2);
-      _createCustomHeatmapWidget({
-        field: cwField,
-        field2: cwField2,
-        label: cwLabel,
-        propertySource: 'mapped',
-        inferredType: 'text',
-        createdFrom: 'mapping-card',
-      });
-      document.querySelectorAll('.cw-heatmap-picker').forEach(el => el.remove());
-      const ljpList = actionEl.closest('#ljp-list');
-      if (ljpList) {
-        const items = (appState.trades && appState.trades.items) || [];
-        _renderCwMappingSection(ljpList, items);
-      }
-      break;
-    }
-    case 'cw-remove': {
-      event.stopPropagation();
-      const cwId = actionEl.dataset.cwId;
-      if (!cwId) break;
-      _destroyCustomWidget(cwId);
-      const ljpList = actionEl.closest('#ljp-list');
-      if (ljpList) {
-        const items = (appState.trades && appState.trades.items) || [];
-        _renderCwMappingSection(ljpList, items);
-      }
-      break;
-    }
     case 'layout-delete-widget-confirm':
       event.stopPropagation();
       _openDeleteConfirm(actionEl.dataset.cwId, actionEl);
@@ -2213,11 +2158,6 @@ function handleActionClick(event) {
       if (!cwId) break;
       _closeDeleteConfirm();
       _destroyCustomWidget(cwId);
-      const ljpList = document.getElementById('ljp-list');
-      if (ljpList) {
-        const items = (appState.trades && appState.trades.items) || [];
-        _renderCwMappingSection(ljpList, items);
-      }
       break;
     }
     case 'reset-csv-overrides':    event.stopPropagation(); _resetAllCsvOverrides(); break;
@@ -2273,7 +2213,6 @@ function handleActionClick(event) {
     case 'set-bar-mode': setBarMode(actionEl.dataset.mode); break;
     case 'set-bar-view': setBarView(actionEl.dataset.view); break;
     case 'switch-view': switchView(actionEl.dataset.view); break;
-    case 'switch-to-api': switchToAPI(); break;
     case 'set-section': {
       setSection(actionEl.dataset.section || 'all');
       break;
@@ -7030,11 +6969,7 @@ async function loadFromAPI(options = {}) {
   if (btn) btn.classList.add('spinning');
   if (!silent) showDataStatus('Loading API…', 'warn');
 
-  const loading = getByIdSafe('tab-api-loading');
-  const badge   = getByIdSafe('tab-api-badge');
   setSourceIndicator('loading');
-  if (loading) setVisible(loading, true);
-  if (badge)   setVisible(badge, false);
 
   try {
     const controller = new AbortController();
@@ -7074,8 +7009,6 @@ async function loadFromAPI(options = {}) {
       appState.settings.dataSource.pendingRestoreState = null;
 
       setSourceIndicator('live');
-        if (loading) setVisible(loading, false);
-        if (badge)   setVisible(badge, true);
 
       showDataStatus(_getAPICacheStatusLabel(requestSource), 'live');
       _updateLastSync();
@@ -7087,7 +7020,6 @@ async function loadFromAPI(options = {}) {
   } catch (err) {
     console.error('[DS] API fetch failed:', err.name, err.message);
     debugDataSource('loadFromAPI:error', { name: err.name, message: err.message });
-    if (loading) setVisible(loading, false);
     // Build human-readable error reason
     let reason = err.message || 'Unknown error';
     if (err.name === 'AbortError')                reason = 'Timeout — Vercel cold start slow (45s)';
@@ -7463,7 +7395,7 @@ function setDataSource(mode) {
         showDataStatus('Loading API…', 'warn');
       } else {
         setSourceIndicator('pending');
-        showDataStatus('API pending — click Notion Live to load', 'warn');
+        showDataStatus('API pending — open Data & Integrations to sync', 'warn');
       }
     }
   } else if (mode === 'demo') {
@@ -7626,35 +7558,6 @@ function refreshAPISource() {
   }
   _setBtnCooldown(0);
   loadFromAPI({ force: false });
-  _fetchOtherSourceBackground(); // concurrent fetch for the non-active HTF source
-}
-
-// ── switchToAPI — the "Notion Live" tab now ONLY refreshes the cache in background ──
-// The active data source mode (demo / csv / api) is NOT changed. Filters/presets stay intact.
-function switchToAPI() {
-  debugDataSource('switchToAPI:refresh-cache-only');
-
-  // Notion profiles never touch the legacy /api/trades endpoint.
-  const _switchProfile = getActiveJournalProfile();
-  if (_switchProfile?.connectionType === 'notion') {
-    loadFromAPI({ force: true });
-    return;
-  }
-
-  // Show "API LOADING" badge on the tab while the fetch runs.
-  const loading = getByIdSafe('tab-api-loading');
-  const badge   = getByIdSafe('tab-api-badge');
-  if (loading) setVisible(loading, true);
-  if (badge)   setVisible(badge, false);
-
-  // Force a fresh fetch in the background. When it resolves, update the cache
-  // silently and restore the normal tab-api label. Errors are absorbed — we
-  // do NOT change the active source mode, just report via the standard banner.
-  _fetchAPICacheSilently({ force: true }).finally(() => {
-    if (appState.settings.dataSource.loading) return; // another fetch still running
-    if (loading) setVisible(loading, false);
-    if (badge)   setVisible(badge, true);
-  });
   _fetchOtherSourceBackground(); // concurrent fetch for the non-active HTF source
 }
 
@@ -8617,7 +8520,7 @@ async function initDataSource() {
     render();
     hideEmptyState();
     setSourceIndicator('pending');
-    showDataStatus('API pending — click Notion Live to load', 'warn');
+    showDataStatus('API pending — open Data & Integrations to sync', 'warn');
   } else {
     loadBuiltinCSV(persistedSidebar);
   }
@@ -24889,8 +24792,8 @@ function injectParsedTrades(parsed, filename, csvFormat) {
   // Update UI indicators
   csvDataActive = true;
   setSourceIndicator('csv');
-  const _ta=document.getElementById('tab-api'),_tm=document.getElementById('tab-section-global'),_tb=document.getElementById('tab-api-badge');
-  if(_ta)_ta.classList.remove('active'); if(_tm)_tm.classList.add('active'); if(_tb)setVisible(_tb,false);
+  const _tm=document.getElementById('tab-section-global');
+  if(_tm)_tm.classList.add('active');
 
   csvStatus(`✓ ${validTrades.length} trades imported`, 'ok');
 
@@ -27814,7 +27717,7 @@ function updateJournalPanel() {
         ? ` · ${_listAPIKeys(rawCache).length} fields available`
         : (isFetching
             ? ' · <em style="opacity:.65">loading fields…</em>'
-            : ' · <em style="opacity:.65">fields unavailable — click Notion Live</em>'))
+            : ' · <em style="opacity:.65">fields unavailable — sync from Data & Integrations</em>'))
     : '';
   const tradeCountLabel = items.length
     ? `${items.length} trades`
@@ -27870,75 +27773,7 @@ function updateJournalPanel() {
             </li>`;
   }).filter(Boolean).join('');
 
-  // ── Custom Fields → Widgets section ──
-  _renderCwMappingSection(list, items);
-
   _reopenIfNeeded();
-}
-
-// Detect extras fields across trades: returns [{key, label, sample, count}]
-function _detectExtrasFields(trades) {
-  const fields = {};
-  trades.forEach(t => {
-    if (!t.extras || typeof t.extras !== 'object') return;
-    Object.keys(t.extras).forEach(key => {
-      if (!fields[key]) fields[key] = { count: 0, sample: null };
-      const v = t.extras[key];
-      if (v !== null && v !== undefined && String(v).trim()) {
-        fields[key].count++;
-        if (!fields[key].sample) fields[key].sample = String(v);
-      }
-    });
-  });
-  return Object.entries(fields)
-    .filter(([, { count }]) => count > 0)
-    .map(([key, { count, sample }]) => {
-      const props = loadCustomProps();
-      const prop = props.find(p => p.key === key);
-      return { key, label: prop ? prop.name : key, sample: sample || '—', count };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-// Categorical top-level fields from JOURNAL_DIMS that make sense as widget dimensions.
-// Numeric/URL/screenshot fields are excluded.
-const _CW_MAPPED_DIMS = [
-  { key: 'pair',         label: 'Pair' },
-  { key: 'setup',        label: 'Setup' },
-  { key: 'setupDetail',  label: 'Setup Detail' },
-  { key: 'session',      label: 'Session' },
-  { key: 'day',          label: 'Day' },
-  { key: 'direction',    label: 'Direction' },
-  { key: 'positionType', label: 'Position Type' },
-  { key: 'beManagement', label: 'BE Management' },
-  { key: 'badFeeling',   label: 'Bad Feeling' },
-  { key: 'obstacles',    label: 'M15 Obstacles' },
-  { key: 'h4',           label: 'H4 Obstacles' },
-];
-
-// Returns [{key, label, sample, count}] for top-level mapped fields that have data.
-function _detectMappedFields(trades) {
-  return _CW_MAPPED_DIMS.map(({ key, label }) => {
-    let sample = '—', count = 0;
-    for (const t of trades) {
-      const v = t[key];
-      const str = Array.isArray(v) ? v.join(', ') : (v != null ? String(v) : '');
-      if (str.trim()) { count++; if (sample === '—') sample = str.substring(0, 40); }
-    }
-    return count > 0 ? { key, label, sample, count } : null;
-  }).filter(Boolean);
-}
-
-// All widgetizable field keys (mapped + extras) for heatmap axis picker.
-function _cwAllAxes(trades, excludeKey) {
-  const mapped = _CW_MAPPED_DIMS.map(d => ({ key: d.key, label: d.label }));
-  const extras = _detectExtrasFields(trades).map(f => ({ key: f.key, label: f.label }));
-  const seen = new Set([excludeKey]);
-  return [...mapped, ...extras].filter(a => {
-    if (seen.has(a.key)) return false;
-    seen.add(a.key);
-    return true;
-  });
 }
 
 function _getTradeFieldValueForWidgetProp(trade, key) {
@@ -28714,101 +28549,6 @@ function _handleCreateWidgetContinue() {
     });
   }
   _closeCreateWidgetBuilder();
-}
-
-// Render the "Custom Fields → Widgets" section at the bottom of the mapping list.
-function _renderCwMappingSection(list, trades) {
-  list.querySelectorAll('.ljp-cw-section-header, .ljp-cw-note, .ljp-custom-field').forEach(el => el.remove());
-
-  const mappedFields = _detectMappedFields(trades);
-  const extrasFields = _detectExtrasFields(trades);
-  const allFields    = [...mappedFields, ...extrasFields];
-  if (!allFields.length) return;
-
-  const cwDefs = _loadCustomWidgetDefs();
-  const total  = trades.length;
-
-  const header = document.createElement('li');
-  header.className = 'ljp-cw-section-header';
-  header.textContent = 'Custom Fields → Widgets';
-  list.appendChild(header);
-
-  const note = document.createElement('li');
-  note.className = 'ljp-cw-note';
-  note.textContent = 'Add bar chart or heatmap widgets for any mapped or detected field';
-  list.appendChild(note);
-
-  const renderFieldRow = ({ key, label, sample, count }) => {
-    const existingBars    = cwDefs.find(d => d.field === key && d.type === 'bars');
-    const existingHeatmaps = cwDefs.filter(d => d.field === key && d.type === 'heatmap');
-
-    const barBtn = existingBars
-      ? `<button class="ljp-cw-btn ljp-cw-btn-active" data-action="cw-remove" data-cw-id="${_escapeAttr(existingBars.id)}" title="Remove bar chart widget">✓ Bar chart</button>`
-      : `<button class="ljp-cw-btn" data-action="cw-create-bars" data-cw-field="${_escapeAttr(key)}" data-cw-label="${_escapeAttr(label)}">+ Bar chart</button>`;
-
-    const hmBtns = existingHeatmaps.map(d =>
-      `<button class="ljp-cw-btn ljp-cw-btn-active" data-action="cw-remove" data-cw-id="${_escapeAttr(d.id)}" title="Remove heatmap (${_escapeHtml(d.field2)})">✓ HM×${_escapeHtml(d.field2 || '')}</button>`
-    ).join('');
-    const addHmBtn = `<button class="ljp-cw-btn ljp-cw-btn-hm" data-action="cw-open-heatmap-picker" data-cw-field="${_escapeAttr(key)}" data-cw-label="${_escapeAttr(label)}">+ Heatmap</button>`;
-
-    const li = document.createElement('li');
-    li.className = 'ljp-item ljp-custom-field';
-    li.setAttribute('data-cw-key', key);
-    li.innerHTML = `
-      <div class="ljp-item-row">
-        <span class="ljp-item-label">${_escapeHtml(label)}</span>
-        <span class="ljp-status is-ok">detected</span>
-      </div>
-      <div class="ljp-item-col">sample · <strong>${_escapeHtml(sample)}</strong> <span style="opacity:.55">· ${count}/${total} trades</span></div>
-      <div class="ljp-cw-actions">${barBtn}${hmBtns}${addHmBtn}</div>`;
-    list.appendChild(li);
-  };
-
-  if (mappedFields.length) {
-    const sub = document.createElement('li');
-    sub.className = 'ljp-cw-note ljp-cw-subsep';
-    sub.textContent = 'Mapped fields';
-    list.appendChild(sub);
-    mappedFields.forEach(renderFieldRow);
-  }
-  if (extrasFields.length) {
-    const sub = document.createElement('li');
-    sub.className = 'ljp-cw-note ljp-cw-subsep';
-    sub.textContent = 'Extra Notion fields';
-    list.appendChild(sub);
-    extrasFields.forEach(renderFieldRow);
-  }
-}
-
-// Open heatmap second-axis picker inline (like openRemapPicker)
-function _openHeatmapPicker(triggerBtn) {
-  if (!triggerBtn) return;
-  const field  = triggerBtn.getAttribute('data-cw-field');
-  const label  = triggerBtn.getAttribute('data-cw-label') || field;
-  const li = triggerBtn.closest('.ljp-custom-field');
-  if (!li) return;
-
-  // Toggle
-  const existing = li.querySelector('.cw-heatmap-picker');
-  document.querySelectorAll('.cw-heatmap-picker').forEach(el => el.remove());
-  if (existing) return;
-
-  const items = (appState.trades && appState.trades.items) || [];
-  const allAxes = _cwAllAxes(items, field);
-
-  const picker = document.createElement('div');
-  picker.className = 'csv-remap-picker cw-heatmap-picker';
-  picker.innerHTML = `<div class="crp-hint">Choose second axis (columns)</div>
-    <ul class="crp-list">
-      ${allAxes.map(ax =>
-        `<li class="crp-option" data-action="cw-create-heatmap"
-            data-cw-field="${_escapeAttr(field)}"
-            data-cw-label="${_escapeAttr(label + ' × ' + ax.label)}"
-            data-cw-field2="${_escapeAttr(ax.key)}">${_escapeHtml(ax.label)}</li>`
-      ).join('')}
-    </ul>`;
-
-  li.appendChild(picker);
 }
 
 // ── Remap picker (inline dropdown attached to a pencil click) ──
