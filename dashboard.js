@@ -2121,6 +2121,7 @@ function handleActionClick(event) {
     case 'notion-db-picker-close':   event.stopPropagation(); _handleNotionDbPickerClose(); break;
     case 'notion-db-picker-confirm': event.stopPropagation(); _handleNotionDbPickerConfirm(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-sync-now':  event.stopPropagation(); _handleNotionProfileSyncNow(actionEl.dataset.profileId || ''); break;
+    case 'notion-profile-full-resync': event.stopPropagation(); _handleNotionProfileFullResync(actionEl.dataset.profileId || ''); break;
     case 'dismiss-onboard': {
       document.getElementById('onboard-banner')?.classList.add('is-hidden');
       try { localStorage.setItem('onboard_dismissed', '1'); } catch(e) {}
@@ -5005,6 +5006,39 @@ async function _handleNotionProfileSyncNow(profileId) {
   // `wasActiveAtStart` so a background sync stays silent.
   await _loadNotionTrades(profile, { force: false, syncNow: true });
 }
+// "Full resync" — bypasses the incremental cursor and refetches the entire
+// Notion database. Replaces the cache wholesale, which implicitly purges
+// ghost trades (rows deleted in Notion that the incremental endpoint can't
+// surface). Always available to power users; also fired silently in the
+// background once per 24h by the ghost-sync auto-trigger.
+async function _handleNotionProfileFullResync(profileId) {
+  const profile = _getJournalProfileById(profileId);
+  if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
+  // Close the row's ⋯ menu before kicking off the sync (the panel stays open
+  // for the whole fetch otherwise, which looks stuck).
+  if (_journalProfileRowMenuOpenId === profile.id) {
+    _journalProfileRowMenuOpenId = '';
+    try { _syncJournalProfileUI(); } catch (e) {}
+  }
+  if (profile.notionSyncState === 'disconnected') {
+    showThemeToast('Reconnect Notion to enable syncing.', true);
+    return;
+  }
+  const beforeRun = _lastFullSyncResult.ranAt;
+  await _loadNotionTrades(profile, { force: true });
+  // Use the post-sync sentinel to surface the outcome. If _loadNotionTrades
+  // threw or returned early (e.g. token expired), `ranAt` is unchanged.
+  if (_lastFullSyncResult.ranAt === beforeRun) {
+    showThemeToast('Full resync failed — check the Notion connection.', true);
+    return;
+  }
+  const { purgedCount, tradeCount } = _lastFullSyncResult;
+  if (purgedCount > 0) {
+    showThemeToast(`Full resync: ${purgedCount} ghost trade${purgedCount === 1 ? '' : 's'} purged · ${tradeCount} total.`);
+  } else {
+    showThemeToast(`Full resync complete · ${tradeCount} trades · no ghosts.`);
+  }
+}
 function _renderJournalProfileModalList() {
   return;
 }
@@ -5215,6 +5249,7 @@ function _renderJournalProfileSwitchList() {
               <button class="journal-profile-row-menu-btn" type="button" data-action="journal-profile-row-menu-toggle" data-profile-id="${pid}" aria-label="More actions">⋯</button>
               <div class="journal-profile-row-menu${_journalProfileRowMenuOpenId === profile.id ? '' : ' is-hidden'}" data-profile-id="${pid}">
                 <button class="journal-profile-row-menu-item" type="button" data-action="notion-db-picker-open" data-profile-id="${pid}"${canChangeDb ? '' : ' disabled'}>Change database</button>
+                ${profile.connectionType === 'notion' ? `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-full-resync" data-profile-id="${pid}" title="Reload every trade from Notion. Detects deletions and removes ghost rows."${canSync ? '' : ' disabled'}>Full resync</button>` : ''}
                 <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-rename" data-profile-id="${_escapeHtml(profile.id)}">Rename</button>
                 <button class="journal-profile-row-menu-item journal-profile-row-menu-item--danger" type="button" data-action="journal-profile-row-delete" data-profile-id="${_escapeHtml(profile.id)}">Delete source</button>
               </div>
@@ -5682,6 +5717,46 @@ function _setNotionSyncCursor(cursor) {
 function _clearNotionSyncCursor() {
   _setNotionSyncCursor('');
 }
+
+// ─── Ghost-trade reconciliation ────────────────────────────────────────────
+// Notion's incremental endpoint can't surface deletions: a deleted page just
+// stops appearing in `last_edited_after` results, so the local cache keeps the
+// stale row forever. To detect ghosts we run a periodic full sync (no cursor)
+// and let the existing `force: true` path in `_loadNotionTrades` rebuild the
+// cache from scratch — any local _notionId absent from the fresh fetch is a
+// ghost and gets implicitly purged when the cache is replaced.
+//
+// Cadence: at most once per 24h per profile, fired in the background after a
+// successful boot/incremental sync. Also exposed manually via "Full resync".
+const _FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+function _lastFullSyncKey() {
+  return getProfileScopedKey('flipping_last_full_sync_at');
+}
+function _getLastFullSyncAt() {
+  try {
+    const v = parseInt(localStorage.getItem(_lastFullSyncKey()) || '0', 10);
+    return Number.isFinite(v) ? v : 0;
+  } catch { return 0; }
+}
+function _setLastFullSyncAt(ts = Date.now()) {
+  try { safeSetLocalStorage(_lastFullSyncKey(), String(ts), { kind: 'lastFullSyncAt' }); }
+  catch (e) {}
+}
+// Most recent reconcile outcome — read by the manual "Full resync" handler to
+// shape its completion toast. Reset before each force sync.
+let _lastFullSyncResult = { purgedCount: 0, tradeCount: 0, ranAt: 0 };
+function _maybeQueueGhostSyncReconcile(profile, force) {
+  if (force) return;                                       // already a full sync
+  if (!profile || profile.connectionType !== 'notion') return;
+  if (profile.notionSyncState === 'disconnected') return;
+  if (Date.now() - _getLastFullSyncAt() <= _FULL_SYNC_INTERVAL_MS) return;
+  const captured = profile;
+  setTimeout(() => {
+    _loadNotionTrades(captured, { force: true, background: true })
+      .catch(e => console.warn('[ghost-sync] background reconcile failed:', e?.message || e));
+  }, 0);
+}
+
 function _maxNotionEditedCursor(rows) {
   let max = '';
   for (const row of rows || []) {
@@ -8343,7 +8418,13 @@ function _enqueueMediaForCachedNotionTrades(trades, userId, source, profileIdOve
 // proxy (/api/notion/query), flattens them, runs _normalizeAPITrade, and injects
 // the result exactly as loadFromAPI does for the legacy /api/trades endpoint.
 async function _loadNotionTrades(profile, options = {}) {
-  const { silent = false, force = false, syncNow = false } = options;
+  const { silent = false, force = false, syncNow = false, background = false } = options;
+  // Background reconcile = fired by the ghost-sync auto-trigger after a normal
+  // sync. Suppresses transient UI feedback (toast, indicator flash, "syncing…"
+  // pill, success toast). Widget re-inject still fires, but only when the
+  // sync actually changed something (purgedCount > 0). Invisible unless a
+  // ghost is found.
+  const isBackgroundReconcile = !!background;
   const profileId = String(profile?.id || '').trim();
   // Race guard helper: returns true only if the captured profile is still the
   // active one. Used after every await to skip UI writes (toast, indicator,
@@ -8449,14 +8530,16 @@ async function _loadNotionTrades(profile, options = {}) {
   // ── Fetch ──────────────────────────────────────────────────────────────────
   debugLog('[DashboardDebug]');
   appState.settings.dataSource.loading = true;
-  if (profileId) {
+  if (profileId && !isBackgroundReconcile) {
     _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'syncing' });
   }
-  debugLog('[NotionSync] start:', { profileId, database: profile.notionDatabaseId, source });
+  debugLog('[NotionSync] start:', { profileId, database: profile.notionDatabaseId, source, background: isBackgroundReconcile });
   // Skip global UI feedback when syncing a non-active profile — those
   // indicators belong to the user's current view, not the background target.
-  if (!silent && wasActiveAtStart) showDataStatus('Loading Notion data…', 'warn');
-  if (wasActiveAtStart) setSourceIndicator('loading');
+  // Also skip for background reconcile (ghost-sync auto-trigger): the prior
+  // incremental already gave the user a "live" state, no need to flash it.
+  if (!silent && !isBackgroundReconcile && wasActiveAtStart) showDataStatus('Loading Notion data…', 'warn');
+  if (wasActiveAtStart && !isBackgroundReconcile) setSourceIndicator('loading');
 
   const btn = typeof getByIdSafe === 'function' ? getByIdSafe('ds-refresh-btn') : null;
   if (btn) btn.classList.add('spinning');
@@ -8552,6 +8635,9 @@ async function _loadNotionTrades(profile, options = {}) {
       } else {
         debugLog('[NotionLoad] profile switched mid-sync — skipping UI inject (incremental empty)');
       }
+      // Successful sync with zero new modifications — still a valid window to
+      // check whether the 24h ghost-sync reconcile is due.
+      _maybeQueueGhostSyncReconcile(profile, force);
       return;
     }
 
@@ -8638,6 +8724,27 @@ async function _loadNotionTrades(profile, options = {}) {
       : _mergeRawNotionRowsById(existingRawCache, fetchedRawTrades);
     const nextCursor = _maxNotionEditedCursor(mergedRaw) || _maxNotionEditedCursor(mergedParsed) || lastCursor;
 
+    // ── Ghost-trade detection ──
+    // On a full sync, any _notionId present in the previous cache but missing
+    // from the fresh fetch is a trade the user deleted in Notion. The merge
+    // path above already replaces the cache wholesale (fullSync branch returns
+    // `parsed` as-is), so the purge is implicit — we just count for logging.
+    let purgedCount = 0;
+    if (fullSync && existingCache.length) {
+      const afterIds = new Set();
+      for (const t of parsed) {
+        const id = String(t?._notionId || '').trim();
+        if (id) afterIds.add(id);
+      }
+      for (const t of existingCache) {
+        const id = String(t?._notionId || '').trim();
+        if (id && !afterIds.has(id)) purgedCount++;
+      }
+      if (purgedCount > 0) {
+        console.info('[ghost-sync] purged', purgedCount, 'trade(s) absent from Notion');
+      }
+    }
+
     _setRawAPICache(mergedRaw.length ? mergedRaw : fetchedRawTrades, source);
     if (nextCursor) _setNotionSyncCursor(nextCursor);
 
@@ -8653,32 +8760,57 @@ async function _loadNotionTrades(profile, options = {}) {
     debugLog('[DashboardDebug]');
     setCachedAPIData(mergedParsed, source);
     const tradeCount = mergedParsed.length;
-    if (profileId) {
-      _updateJournalProfileSyncMeta(profileId, {
-        notionSyncState: 'synced',
-        notionLastSync: Date.now(),
-        notionTradeCount: tradeCount,
-      });
+    // Stamp the full-sync timestamp so the 24h cadence gate trips correctly.
+    // Manual "Full resync" also records its purge count for the toast.
+    if (fullSync) {
+      _setLastFullSyncAt();
+      _lastFullSyncResult = { purgedCount, tradeCount, ranAt: Date.now() };
     }
-    debugLog('[NotionSync] success:', { profileId, database: profile.notionDatabaseId });
+    // Profile meta: skip in background mode UNLESS a ghost was purged (the
+    // trade count must drop so the profile pill reflects reality). The prior
+    // incremental already set notionSyncState=synced + notionLastSync, so we
+    // don't re-stamp those when nothing changed.
+    if (profileId && (!isBackgroundReconcile || purgedCount > 0)) {
+      _updateJournalProfileSyncMeta(profileId, isBackgroundReconcile
+        ? { notionTradeCount: tradeCount }
+        : {
+            notionSyncState: 'synced',
+            notionLastSync: Date.now(),
+            notionTradeCount: tradeCount,
+          });
+    }
+    debugLog('[NotionSync] success:', { profileId, database: profile.notionDatabaseId, purgedCount, background: isBackgroundReconcile });
     debugLog('[NotionSync] tradeCount:', tradeCount);
 
     // Inject only if this profile is still the active one — user may have
-    // switched to another data source while the fetch was in flight.
-    if (stillActive()) {
+    // switched to another data source while the fetch was in flight. In
+    // background mode, skip the re-inject entirely if nothing changed (avoids
+    // a wasted full widget re-render right after the boot sync).
+    const shouldInject = stillActive() && (!isBackgroundReconcile || purgedCount > 0);
+    if (shouldInject) {
       _injectTrades(mergedParsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
-      setSourceIndicator('live');
-      showDataStatus(`Notion · ${mergedParsed.length} trades`, 'live');
-      _updateLastSync();
-      debugLog('[NotionLoad] success — injected', mergedParsed.length, 'trades');
-    } else {
+      if (!isBackgroundReconcile) {
+        setSourceIndicator('live');
+        showDataStatus(`Notion · ${mergedParsed.length} trades`, 'live');
+        _updateLastSync();
+      }
+      debugLog('[NotionLoad] success — injected', mergedParsed.length, 'trades', isBackgroundReconcile ? '(background: ghost purge)' : '');
+    } else if (!stillActive()) {
       debugLog('[NotionLoad] profile switched mid-sync — cache updated, UI skipped');
+    } else {
+      debugLog('[NotionLoad] background reconcile — no changes, skipping UI re-inject');
     }
 
     // Start background media sync — newest trades first so screenshots for
     // currently visible rows become permanent before older months.
     _mediaQueue.enqueue(parsed, source, user.id, profileId);
+
+    // ── Ghost-sync auto-trigger ──
+    // After a successful non-force sync, fire a background full sync if the
+    // last one was more than 24h ago. Deferred via setTimeout(0) so it runs
+    // AFTER this function's finally restores the cache-scope override.
+    _maybeQueueGhostSyncReconcile(profile, force);
 
   } catch (err) {
     console.error('[NotionLoad]', err.name, err.message);
