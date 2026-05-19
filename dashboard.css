@@ -2022,6 +2022,84 @@ body.layout-edit-mode #layout-toolbar * {
   background: color-mix(in srgb, var(--color-success, var(--g)) 50%, transparent);
 }
 
+/* ── Hidden no-mapping footer ──────────────────────────────────────────
+   Per-tier collapsible reveal for dims explicitly set to "no mapping"
+   (either user-set or applied by template auto-detection). Closed by
+   default — these rows are intentionally irrelevant for the active
+   template and shouldn't take screen real estate. Wired in
+   _renderMappingSectionsHtml + the toggle-hidden dispatcher case.
+   --------------------------------------------------------------------- */
+#ljp-list .ljp-mapping-hidden-section {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed color-mix(in srgb, var(--border-subtle) 70%, transparent);
+}
+#ljp-list .ljp-mapping-hidden-toggle {
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  transition: color var(--ease-normal);
+}
+#ljp-list .ljp-mapping-hidden-toggle::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 9px;
+  transition: transform var(--ease-normal);
+}
+#ljp-list .ljp-mapping-hidden-section.is-open .ljp-mapping-hidden-toggle::before {
+  transform: rotate(90deg);
+}
+#ljp-list .ljp-mapping-hidden-toggle:hover { color: var(--text-secondary); }
+#ljp-list .ljp-mapping-hidden-section:not(.is-open) .ljp-mapping-hidden-rows {
+  display: none;
+}
+#ljp-list .ljp-mapping-hidden-section.is-open .ljp-mapping-hidden-rows {
+  margin-top: var(--space-2);
+  opacity: 0.75;
+}
+
+/* ── Detected-template banner ──────────────────────────────────────────
+   Appears at the top of the Mapping panel in API mode when the
+   first-connect fingerprint matched one of the 5 shipped Flipping
+   Market templates. Silent (no banner) when no detection.
+   --------------------------------------------------------------------- */
+#ljp-list > .ljp-template-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: var(--space-3);
+  background: color-mix(in srgb, var(--color-success, var(--g)) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success, var(--g)) 28%, transparent);
+  border-left: 3px solid var(--color-success, var(--g));
+  border-radius: var(--rad-md);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+#ljp-list > .ljp-template-banner .ljp-template-banner-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--color-success, var(--g));
+  flex: 0 0 auto;
+}
+#ljp-list > .ljp-template-banner .ljp-template-banner-label strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+#ljp-list > .ljp-template-banner .ljp-template-banner-meta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* ── Phase 3 — Tier accordions ─────────────────────────────────────────
    Each tier (Required / Optional / Screenshots / Multi-TP) wraps its
    table in a `<details>` element. Summary shows: chevron, name, mini

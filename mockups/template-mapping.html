@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Template auto-mapping — preview · 5 journals (interactive)</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="../dashboard.css?v=local-mock" rel="stylesheet">
+<style>
+  body {
+    margin: 0;
+    padding: 32px 24px 96px;
+    background: var(--app-bg, #0a0e1a);
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text-primary, #d1d4dc);
+    min-height: 100dvh;
+  }
+  .mock-shell { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .mock-head { display: flex; flex-direction: column; gap: 6px; padding-bottom: 4px; }
+  .mock-head h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: .3px; color: var(--text-primary, #d1d4dc); }
+  .mock-head .sub { font-size: 12px; color: var(--text-muted, #7c818f); line-height: 1.55; }
+
+  .tpl-switcher {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+    padding: 10px; background: var(--surface-2, #161b2d);
+    border: 1px solid var(--border-subtle, #2a2e39); border-radius: 10px;
+  }
+  .tpl-btn {
+    cursor: pointer; padding: 10px 6px; background: transparent;
+    border: 1px solid var(--border-subtle, #2a2e39); border-radius: 8px;
+    color: var(--text-secondary, #b2b5be); font-family: inherit; font-size: 11px;
+    font-weight: 500; transition: all .14s ease; position: relative;
+    display: flex; flex-direction: column; gap: 4px; align-items: center;
+  }
+  .tpl-btn .tpl-name { font-size: 12px; color: var(--text-primary, #d1d4dc); font-weight: 600; }
+  .tpl-btn .tpl-meta { font-size: 10px; color: var(--text-muted, #7c818f); }
+  .tpl-btn:hover { border-color: var(--accent-primary, #4d9fff); background: rgba(77,159,255,.06); }
+  .tpl-btn.active { border-color: var(--accent-primary, #4d9fff); background: rgba(77,159,255,.12); }
+  .tpl-btn.active .tpl-name { color: var(--accent-primary, #4d9fff); }
+  .tpl-btn .edit-badge {
+    position: absolute; top: -5px; right: -5px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--gold, #d4af37); color: #0a0e1a; font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 2px var(--surface-2, #161b2d);
+  }
+  .tpl-btn.is-clean .edit-badge { display: none; }
+
+  /* Action bar */
+  .actions {
+    display: flex; gap: 8px; align-items: center; padding: 8px 12px;
+    background: var(--surface-2, #161b2d); border: 1px solid var(--border-subtle, #2a2e39); border-radius: 8px;
+    font-size: 11px; color: var(--text-muted, #7c818f);
+  }
+  .actions .status { flex: 1; }
+  .actions .status strong { color: var(--gold, #d4af37); font-weight: 600; }
+  .actions button {
+    cursor: pointer; padding: 6px 12px; background: transparent;
+    border: 1px solid var(--border-subtle, #2a2e39); border-radius: 6px;
+    color: var(--text-secondary, #b2b5be); font-family: inherit; font-size: 11px;
+    transition: all .14s ease;
+  }
+  .actions button:hover { border-color: var(--accent-primary, #4d9fff); color: var(--text-primary, #d1d4dc); }
+  .actions button.primary { background: rgba(77,159,255,.14); border-color: var(--accent-primary, #4d9fff); color: var(--accent-primary, #4d9fff); }
+  .actions button.danger:hover { border-color: var(--r, #ef5350); color: var(--r, #ef5350); }
+
+  .det-banner {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; background: rgba(38,166,154,.06);
+    border: 1px solid rgba(38,166,154,.25); border-left: 3px solid var(--g, #26a69a);
+    border-radius: 8px; font-size: 12px; color: var(--text-secondary, #b2b5be);
+  }
+  .det-banner .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--g, #26a69a); }
+  .det-banner strong { color: var(--text-primary, #d1d4dc); font-weight: 600; }
+  .det-banner .meta { margin-left: auto; font-size: 11px; color: var(--text-muted, #7c818f); }
+
+  .mock-panel {
+    background: var(--surface-1, #0f1322); border: 1px solid var(--border-subtle, #2a2e39);
+    border-radius: 10px; padding: 18px;
+  }
+  .mock-panel-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+  .mock-panel-head h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--text-primary, #d1d4dc); }
+  .mock-panel-head .ljp-sub { font-size: 11px; color: var(--text-muted, #7c818f); }
+  .mock-panel-head .ljp-format { font-size: 11px; color: var(--text-muted, #7c818f); margin-top: 4px; }
+
+  #ljp-list { display: flex; flex-direction: column; gap: 8px; }
+  #ljp-list .ljp-tier-acc { background: var(--surface-2, #161b2d); border: 1px solid var(--border-subtle, #2a2e39); border-radius: 8px; }
+
+  /* Modified-row indicator (small dot to left of pencil) */
+  .ljp-mapping-row.is-edited { background: rgba(212,175,55,.04); }
+  .ljp-mapping-row .edit-mark {
+    display: none; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--gold, #d4af37); margin: 0 4px 0 0;
+  }
+  .ljp-mapping-row.is-edited .edit-mark { display: inline-block; }
+
+  /* Pencil-style edit button */
+  .row-pencil {
+    cursor: pointer; background: transparent; border: 1px solid var(--border-subtle, #2a2e39);
+    border-radius: 4px; padding: 3px 6px; color: var(--text-muted, #7c818f);
+    font-family: inherit; font-size: 11px; transition: all .14s ease;
+  }
+  .row-pencil:hover { border-color: var(--accent-primary, #4d9fff); color: var(--accent-primary, #4d9fff); }
+
+  /* Picker overlay (inline below the row) */
+  .picker {
+    position: fixed; z-index: 9999;
+    background: var(--surface-2, #161b2d); border: 1px solid var(--accent-primary, #4d9fff);
+    border-radius: 8px; box-shadow: 0 12px 36px rgba(0,0,0,.5);
+    width: 380px; max-height: 420px; display: flex; flex-direction: column;
+    overflow: hidden; font-family: 'DM Sans', sans-serif;
+  }
+  .picker-head {
+    padding: 10px 12px; border-bottom: 1px solid var(--border-subtle, #2a2e39);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .picker-head .title { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted, #7c818f); }
+  .picker-head .target { font-size: 13px; color: var(--text-primary, #d1d4dc); font-weight: 600; }
+  .picker-search {
+    background: var(--bg, #0a0e1a); border: 1px solid var(--border-subtle, #2a2e39); border-radius: 6px;
+    padding: 6px 8px; color: var(--text-primary, #d1d4dc); font-family: inherit; font-size: 12px; outline: none;
+  }
+  .picker-search:focus { border-color: var(--accent-primary, #4d9fff); }
+  .picker-list { overflow: auto; padding: 4px 0; }
+  .picker-item {
+    cursor: pointer; padding: 7px 12px; font-size: 12px; color: var(--text-secondary, #b2b5be);
+    display: flex; align-items: center; gap: 8px; transition: background .1s ease;
+  }
+  .picker-item:hover { background: rgba(77,159,255,.1); color: var(--text-primary, #d1d4dc); }
+  .picker-item .name { font-family: 'DM Mono', monospace; color: var(--text-primary, #d1d4dc); flex: 1; }
+  .picker-item .name.divider-name { color: var(--text-muted, #7c818f); font-style: italic; }
+  .picker-item .type { font-size: 10px; color: var(--text-muted, #7c818f); padding: 2px 6px; border: 1px solid var(--border-subtle, #2a2e39); border-radius: 3px; }
+  .picker-item.current { background: rgba(38,166,154,.1); }
+  .picker-item.current .name { color: var(--g, #26a69a); }
+  .picker-item.no-mapping .name { color: var(--accent-info, #4d9fff); font-style: italic; }
+  .picker-item.canonical-default { border-top: 1px dashed var(--border-subtle, #2a2e39); margin-top: 4px; padding-top: 8px; }
+  .picker-foot {
+    padding: 8px 12px; border-top: 1px solid var(--border-subtle, #2a2e39);
+    font-size: 10px; color: var(--text-muted, #7c818f);
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+  .picker-foot button { font-family: inherit; font-size: 10px; cursor: pointer; background: transparent; border: 0; color: var(--text-muted, #7c818f); padding: 0; }
+  .picker-foot button:hover { color: var(--text-primary, #d1d4dc); }
+
+  /* Export dialog */
+  .export-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .export-dialog {
+    background: var(--surface-2, #161b2d); border: 1px solid var(--border-subtle, #2a2e39); border-radius: 10px;
+    width: 90%; max-width: 720px; max-height: 80vh; padding: 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .export-dialog h3 { margin: 0; font-size: 14px; color: var(--text-primary, #d1d4dc); }
+  .export-dialog textarea {
+    flex: 1; background: var(--bg, #0a0e1a); color: var(--text-primary, #d1d4dc);
+    border: 1px solid var(--border-subtle, #2a2e39); border-radius: 6px; padding: 12px;
+    font-family: 'DM Mono', monospace; font-size: 11px; line-height: 1.55;
+    resize: vertical; min-height: 280px; outline: none;
+  }
+  .export-dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+  .export-dialog button { cursor: pointer; padding: 7px 14px; border-radius: 6px; font-family: inherit; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="mock-shell">
+
+  <div class="mock-head">
+    <h1>Template auto-mapping — interactive preview</h1>
+    <div class="sub">Switch templates with the buttons. Click <code style="background:var(--surface-2);padding:1px 5px;border-radius:3px;font-size:11px;">✎</code> on any row to remap to another Notion column or set <em>No mapping</em>. All changes auto-save to localStorage. When done across the 5 templates, click <strong>Export</strong> and paste the result in chat.</div>
+  </div>
+
+  <div class="tpl-switcher" id="tpl-switcher"></div>
+
+  <div class="actions">
+    <div class="status" id="status">No changes yet.</div>
+    <button id="btn-reset" class="danger">Reset this template</button>
+    <button id="btn-reset-all" class="danger">Reset all</button>
+    <button id="btn-export" class="primary">Export ↓</button>
+  </div>
+
+  <div class="det-banner" id="det-banner">
+    <span class="dot"></span>
+    <span><strong id="det-name"></strong> — auto-mapped from canonical signature</span>
+    <span class="meta" id="det-meta"></span>
+  </div>
+
+  <div class="mock-panel">
+    <div class="mock-panel-head">
+      <h2>Mapping</h2>
+      <div class="ljp-sub">Which Notion API field feeds each widget dimension. Click ✎ to remap.</div>
+      <div class="ljp-format" id="mock-format"></div>
+    </div>
+    <div id="ljp-list"></div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════
+// 1. CANONICAL MAPPINGS — what I propose by default per template
+// ════════════════════════════════════════════════════════════════════════
+const TEMPLATE_MAPPINGS = {
+  'm15-pro': {
+    label: 'Flipping Market M15 (Pro Template)', short: 'M15 Pro', meta: 'full M15 + H4 ctx',
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'M15 Confirmation / Continu', setupDetail: 'M15 Type Detailed',
+    session: 'Session', day: 'Day', obstacles: 'M15 Obstacles', h4: 'H4 Obstacles',
+    beManagement: 'BE Management', hour: 'AUTO', positionType: 'Position Type',
+    direction: 'Order', rrMax: 'RR Max', badFeeling: 'Bad feeling',
+    notionUrl: 'Notion Url',
+    img_m15: 'URL M15 Before', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+  },
+  'm15-beg': {
+    label: 'Flipping Market M15 (Beginner)', short: 'M15 Beg', meta: 'M15 only · slim',
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'M15 Confirmation / Continu', setupDetail: 'M15 Type Detailed',
+    session: '—', day: 'Day', obstacles: 'M15 Obstacles', h4: '—',
+    beManagement: 'BE Management', hour: '—', positionType: 'Position Type',
+    direction: 'Order', rrMax: 'RR max', badFeeling: 'Bad feeling',
+    notionUrl: 'Notion URL',
+    img_m15: 'URL M15 Before', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+  },
+  'm15-free': {
+    label: 'Flipping Market M15 (Free Notion version)', short: 'M15 Free', meta: 'renamed fields',
+    outcome: 'Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'M15 Confirmation / Continu', setupDetail: 'M15 Type Detailed',
+    session: '—', day: 'Day', obstacles: 'M15 Obstacles', h4: '—',
+    beManagement: 'BE Management', hour: '—', positionType: 'Account',
+    direction: 'Order', rrMax: 'RR max', badFeeling: 'Bad feeling',
+    notionUrl: 'Notion URL',
+    img_m15: 'M15', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+  },
+  'h4-pro': {
+    label: 'Flipping Market H4 (Pro Template)', short: 'H4 Pro', meta: 'H4 + Entry Type',
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'H4 Confirmation / Continu', setupDetail: 'H4 Type Detailed',
+    session: '—', day: 'Day', obstacles: '—', h4: 'H4 Obstacles',
+    beManagement: 'BE Management', hour: '—', positionType: 'Position type',
+    direction: 'Order', rrMax: 'RR max', badFeeling: 'Bad feeling',
+    notionUrl: 'Notion URL',
+    img_m15: '—', img_h4_before: 'URL H4 Before', img_m15_after: '—',
+  },
+  'h4-beg': {
+    label: 'Flipping Market H4 (Beginner)', short: 'H4 Beg', meta: 'H4 · slim',
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'H4 Confirmation / Continu', setupDetail: 'H4 Type Detailed',
+    session: '—', day: 'Day', obstacles: '—', h4: 'H4 Obstacles',
+    beManagement: 'BE Management', hour: '—', positionType: 'Position type',
+    direction: 'Order', rrMax: 'RR max', badFeeling: 'Bad feeling',
+    notionUrl: 'Notion URL',
+    img_m15: '—', img_h4_before: 'URL H4 Before', img_m15_after: '—',
+  },
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// 2. AVAILABLE COLUMNS — what Notion exposes per template (extracted from
+//    each template schema fetched via MCP). Order: alphabetical.
+//    Types from Notion schema (select / multiselect / number / date / etc).
+// ════════════════════════════════════════════════════════════════════════
+const TEMPLATE_COLUMNS = {
+  'm15-pro': [
+    { n: ' -----------------', t: 'text' }, { n: ' --Automatic Field-', t: 'text' }, { n: ' --Filter Formula--', t: 'text' },
+    { n: '% Risk', t: 'select' }, { n: '-------------', t: 'text' }, { n: '-------------- ', t: 'text' },
+    { n: '--------H4--------', t: 'text' }, { n: '--------M15-------- ', t: 'text' }, { n: '------RR H4-------', t: 'text' },
+    { n: 'Arrival to Entry', t: 'select' }, { n: 'BE Management', t: 'multi_select' }, { n: 'Bad feeling', t: 'checkbox' },
+    { n: 'Creation Date', t: 'created_time' }, { n: 'Date', t: 'date' }, { n: 'Day', t: 'select' }, { n: 'Day Formula', t: 'formula' },
+    { n: 'Filtered Formula', t: 'formula' }, { n: 'H4 Obstacles', t: 'multi_select' }, { n: 'H4 Structure ', t: 'select' },
+    { n: 'M15', t: 'url' }, { n: 'M15 Confirmation / Continu', t: 'select' }, { n: 'M15 Obstacles', t: 'multi_select' },
+    { n: 'M15 Pros', t: 'multi_select' }, { n: 'M15 Structure', t: 'select' }, { n: 'M15 Type Detailed', t: 'select' },
+    { n: 'Min', t: 'select' }, { n: 'Month', t: 'select' }, { n: 'Month Formula', t: 'formula' },
+    { n: 'Notion Url', t: 'formula' }, { n: 'Order', t: 'select' }, { n: 'Pair', t: 'title' }, { n: 'Pair ', t: 'select' },
+    { n: 'Position Result', t: 'status' }, { n: 'Position Type', t: 'multi_select' },
+    { n: 'RR Max', t: 'number' }, { n: 'RR TP -27', t: 'number' }, { n: 'RR TP 1', t: 'number' },
+    { n: 'RR TP H4 -27', t: 'number' }, { n: 'RR TP H4 0', t: 'number' }, { n: 'RR TP H4 0.71', t: 'number' }, { n: 'RR Trailing', t: 'number' },
+    { n: 'Session', t: 'select' }, { n: 'TP', t: 'multi_select' }, { n: 'Time', t: 'select' }, { n: 'Type', t: 'select' },
+    { n: 'URL H4 Before', t: 'url' }, { n: 'URL M15 After', t: 'url' }, { n: 'URL M15 Before', t: 'url' },
+    { n: 'Year', t: 'select' }, { n: 'Year Formula', t: 'formula' },
+  ],
+  'm15-beg': [
+    { n: ' ------------', t: 'text' }, { n: ' --Automatic Field-', t: 'text' }, { n: '% Risk', t: 'select' },
+    { n: '-------------', t: 'text' }, { n: '-------------- ', t: 'text' }, { n: '--------M15-------- ', t: 'text' },
+    { n: 'BE Management', t: 'multi_select' }, { n: 'Bad feeling', t: 'checkbox' }, { n: 'Creation Date', t: 'created_time' },
+    { n: 'Date', t: 'date' }, { n: 'Day', t: 'select' }, { n: 'Day Formula', t: 'formula' },
+    { n: 'M15 Confirmation / Continu', t: 'select' }, { n: 'M15 Obstacles', t: 'multi_select' }, { n: 'M15 Pros', t: 'multi_select' },
+    { n: 'M15 Type Detailed', t: 'select' }, { n: 'Month', t: 'select' }, { n: 'Month Formula', t: 'formula' },
+    { n: 'Notion URL', t: 'formula' }, { n: 'Order', t: 'select' }, { n: 'Pair ', t: 'select' }, { n: 'Paire', t: 'title' },
+    { n: 'Position Result', t: 'status' }, { n: 'Position Type', t: 'multi_select' },
+    { n: 'RR TP -27', t: 'number' }, { n: 'RR TP 1', t: 'number' }, { n: 'RR Trailing', t: 'number' }, { n: 'RR max', t: 'number' },
+    { n: 'TP', t: 'multi_select' }, { n: 'Type', t: 'select' },
+    { n: 'URL H4 Before', t: 'url' }, { n: 'URL M15 After', t: 'url' }, { n: 'URL M15 Before', t: 'url' },
+    { n: 'Year', t: 'select' }, { n: 'Year Formula', t: 'formula' },
+  ],
+  'm15-free': [
+    { n: ' --Automatic Field-', t: 'text' }, { n: '% Risk', t: 'select' }, { n: '------------', t: 'text' },
+    { n: '-------------', t: 'text' }, { n: '-------------- ', t: 'text' }, { n: '--------M15-------- ', t: 'text' },
+    { n: 'Account', t: 'multi_select' }, { n: 'BE Management', t: 'multi_select' }, { n: 'Bad feeling', t: 'checkbox' },
+    { n: 'Date', t: 'date' }, { n: 'Date de création', t: 'created_time' }, { n: 'Day', t: 'select' }, { n: 'Day Formula', t: 'formula' },
+    { n: 'M15', t: 'file' }, { n: 'M15 Confirmation / Continu', t: 'select' }, { n: 'M15 Obstacles', t: 'multi_select' },
+    { n: 'M15 Pros', t: 'multi_select' }, { n: 'M15 Type Detailed', t: 'select' }, { n: 'Month', t: 'select' }, { n: 'Month Formula', t: 'formula' },
+    { n: 'Notion URL', t: 'formula' }, { n: 'Order', t: 'select' }, { n: 'Pair', t: 'title' }, { n: 'Pair ', t: 'select' },
+    { n: 'RR TP -27', t: 'number' }, { n: 'RR TP 1', t: 'number' }, { n: 'RR Trailing', t: 'number' }, { n: 'RR max', t: 'number' },
+    { n: 'Result', t: 'status' }, { n: 'TP', t: 'multi_select' }, { n: 'Type', t: 'select' },
+    { n: 'URL H4 Before', t: 'url' }, { n: 'URL M15 After', t: 'url' }, { n: 'URL M15 Before', t: 'url' },
+    { n: 'Year', t: 'select' }, { n: 'Year Formula', t: 'formula' },
+  ],
+  'h4-pro': [
+    { n: ' -----------------', t: 'text' }, { n: ' --Automatic Field-', t: 'text' }, { n: '% Risk', t: 'select' },
+    { n: '-------------', t: 'text' }, { n: '-------------- ', t: 'text' }, { n: '--------H4--------', t: 'text' }, { n: '------Formula------', t: 'text' },
+    { n: 'Arrival to Entry', t: 'select' }, { n: 'BE Management', t: 'multi_select' }, { n: 'Bad feeling', t: 'checkbox' },
+    { n: 'Creation date', t: 'created_time' }, { n: 'Date', t: 'date' }, { n: 'Day', t: 'select' }, { n: 'Day Formula', t: 'formula' },
+    { n: 'Entry Type', t: 'select' }, { n: 'Filtered Formula', t: 'formula' }, { n: 'H4 Confirmation / Continu', t: 'select' },
+    { n: 'H4 Obstacles', t: 'multi_select' }, { n: 'H4 Pros', t: 'multi_select' }, { n: 'H4 Structure', t: 'select' }, { n: 'H4 Type Detailed', t: 'select' },
+    { n: 'Month', t: 'select' }, { n: 'Month Formula', t: 'formula' }, { n: 'Notion URL', t: 'formula' },
+    { n: 'Order', t: 'select' }, { n: 'Pair ', t: 'select' }, { n: 'Paire', t: 'title' },
+    { n: 'Position Result', t: 'status' }, { n: 'Position type', t: 'multi_select' },
+    { n: 'RR TP -27', t: 'number' }, { n: 'RR TP 1', t: 'number' }, { n: 'RR Trailing', t: 'number' }, { n: 'RR max', t: 'number' },
+    { n: 'TP', t: 'multi_select' }, { n: 'Type', t: 'select' },
+    { n: 'URL H4 After', t: 'url' }, { n: 'URL H4 Before', t: 'url' },
+    { n: 'Year', t: 'select' }, { n: 'Year Formula', t: 'formula' },
+  ],
+  'h4-beg': [
+    { n: ' --Automatic Field-', t: 'text' }, { n: '% Risk', t: 'select' }, { n: '------------', t: 'text' },
+    { n: '-------------', t: 'text' }, { n: '-------------- ', t: 'text' }, { n: '--------H4--------', t: 'text' },
+    { n: 'BE Management', t: 'multi_select' }, { n: 'Bad feeling', t: 'checkbox' }, { n: 'Creation date', t: 'created_time' },
+    { n: 'Date', t: 'date' }, { n: 'Day', t: 'select' }, { n: 'Day Formula', t: 'formula' }, { n: 'Entry Type', t: 'select' },
+    { n: 'H4 Confirmation / Continu', t: 'select' }, { n: 'H4 Obstacles', t: 'multi_select' },
+    { n: 'H4 Pros', t: 'multi_select' }, { n: 'H4 Type Detailed', t: 'select' },
+    { n: 'Month', t: 'select' }, { n: 'Month Formula', t: 'formula' }, { n: 'Notion URL', t: 'formula' },
+    { n: 'Order', t: 'select' }, { n: 'Pair ', t: 'select' }, { n: 'Paire', t: 'title' },
+    { n: 'Position Result', t: 'status' }, { n: 'Position type', t: 'multi_select' },
+    { n: 'RR TP -27', t: 'number' }, { n: 'RR TP 1', t: 'number' }, { n: 'RR Trailing', t: 'number' }, { n: 'RR max', t: 'number' },
+    { n: 'TP', t: 'multi_select' }, { n: 'Type', t: 'select' },
+    { n: 'URL H4 After', t: 'url' }, { n: 'URL H4 Before', t: 'url' },
+    { n: 'Year', t: 'select' }, { n: 'Year Formula', t: 'formula' },
+  ],
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// 3. DASHBOARD DIMENSIONS — what we need to map
+// ════════════════════════════════════════════════════════════════════════
+const JOURNAL_DIMS = [
+  { key: 'outcome',     label: 'Position Result',  tier: 'required',   propType: 'select' },
+  { key: 'r',           label: 'RR TP 1',          tier: 'required',   propType: 'number' },
+  { key: 'date',        label: 'Date',             tier: 'required',   propType: 'date' },
+  { key: 'pair',        label: 'Pair',             tier: 'optional',   propType: 'select' },
+  { key: 'setup',       label: 'Setup',            tier: 'optional',   propType: 'select' },
+  { key: 'setupDetail', label: 'Setup detail',     tier: 'optional',   propType: 'select' },
+  { key: 'session',     label: 'Session',          tier: 'optional',   propType: 'select' },
+  { key: 'day',         label: 'Day of Week',      tier: 'optional',   propType: 'select' },
+  { key: 'obstacles',   label: 'M15 Obstacles',    tier: 'optional',   propType: 'multiselect' },
+  { key: 'h4',          label: 'H4 Obstacles',     tier: 'optional',   propType: 'multiselect' },
+  { key: 'beManagement', label: 'BE Management',   tier: 'optional',   propType: 'multiselect' },
+  { key: 'hour',        label: 'Hour',             tier: 'optional',   propType: 'select' },
+  { key: 'positionType', label: 'Position Type',   tier: 'optional',   propType: 'multiselect' },
+  { key: 'direction',   label: 'Order (direction)', tier: 'optional',  propType: 'select' },
+  { key: 'rrMax',       label: 'RR Max',           tier: 'optional',   propType: 'number' },
+  { key: 'badFeeling',  label: 'Bad feeling',      tier: 'optional',   propType: 'checkbox' },
+  { key: 'notionUrl',   label: 'Notion URL',       tier: 'optional',   propType: 'formula' },
+  { key: 'img_m15',        label: 'M15 Before screenshot', tier: 'screenshot', propType: 'url' },
+  { key: 'img_h4_before',  label: 'H4 Before screenshot',  tier: 'screenshot', propType: 'url' },
+  { key: 'img_m15_after',  label: 'M15 After screenshot',  tier: 'screenshot', propType: 'url' },
+];
+
+const MAPPING_SECTIONS = [
+  { tier: 'required',   title: 'Required' },
+  { tier: 'optional',   title: 'Optional' },
+  { tier: 'screenshot', title: 'Screenshots' },
+];
+
+const TYPE_PILL = {
+  select: 'Select', multi_select: 'Multi-select', multiselect: 'Multi-select',
+  number: 'Number', date: 'Date', checkbox: 'Checkbox',
+  formula: 'Formula', url: 'URL', file: 'Files & media',
+  status: 'Status', title: 'Title', text: 'Text',
+  created_time: 'Created time',
+};
+const NO_MAPPING = '__NO_MAPPING__';
+
+// ════════════════════════════════════════════════════════════════════════
+// 4. STATE — user overrides loaded from localStorage
+// ════════════════════════════════════════════════════════════════════════
+const LS_KEY = 'tpl_mock_overrides_v1';
+let userOverrides = {};
+let currentTpl = 'm15-pro';
+
+function loadOverrides() {
+  try { userOverrides = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { userOverrides = {}; }
+  if (typeof userOverrides !== 'object' || !userOverrides) userOverrides = {};
+}
+function saveOverrides() {
+  localStorage.setItem(LS_KEY, JSON.stringify(userOverrides));
+}
+function getEffectiveValue(tplId, dimKey) {
+  const ov = userOverrides[tplId] || {};
+  if (dimKey in ov) return ov[dimKey];
+  const m = TEMPLATE_MAPPINGS[tplId];
+  return m[dimKey] || '—';
+}
+function isEdited(tplId, dimKey) {
+  return userOverrides[tplId] && dimKey in userOverrides[tplId];
+}
+function changeCountForTpl(tplId) {
+  return userOverrides[tplId] ? Object.keys(userOverrides[tplId]).length : 0;
+}
+function totalChanges() {
+  return Object.keys(userOverrides).reduce((s, k) => s + Object.keys(userOverrides[k] || {}).length, 0);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 5. RENDER
+// ════════════════════════════════════════════════════════════════════════
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function visibleTrailing(s) {
+  return s.endsWith(' ')
+    ? esc(s.slice(0,-1)) + '<span style="opacity:.6;color:var(--gold,#d4af37);" title="trailing space">·⎵</span>'
+    : esc(s);
+}
+
+function renderRow(dim, tplId) {
+  const colName = getEffectiveValue(tplId, dim.key);
+  const edited = isEdited(tplId, dim.key);
+  let status, statusTxt, valueHtml;
+  if (colName === NO_MAPPING) {
+    status = 'is-no-mapping'; statusTxt = 'no mapping';
+    valueHtml = `<span class="ljp-chip-sep" aria-hidden="true">—</span><span class="ljp-chip-value" style="opacity:.8;font-style:italic;">— No Mapping —</span>`;
+  } else if (colName === '—' || colName === '') {
+    status = 'is-missing'; statusTxt = 'not mapped';
+    valueHtml = '';
+  } else if (colName === 'AUTO') {
+    status = 'is-no-mapping'; statusTxt = 'auto-detected';
+    valueHtml = `<span class="ljp-chip-sep" aria-hidden="true">—</span><span class="ljp-chip-value">auto from <span class="ljp-field-name">Time</span></span>`;
+  } else {
+    status = 'is-remapped'; statusTxt = 'mapped';
+    valueHtml = `<span class="ljp-chip-sep" aria-hidden="true">—</span><span class="ljp-chip-value"><span class="ljp-field-name">${visibleTrailing(colName)}</span></span>`;
+  }
+  return `<div class="ljp-mapping-row ${status}${edited ? ' is-edited' : ''}" data-dim-key="${esc(dim.key)}">
+    <span class="ljp-status-dot ${status}" aria-label="${esc(statusTxt)}"></span>
+    <span class="ljp-chip-label-col">
+      <span class="ljp-chip-label">${esc(dim.label)}</span>
+    </span>
+    <span class="ljp-chip-value-col">${valueHtml}</span>
+    <span class="ljp-chip-coverage-col"><span class="ljp-mapping-coverage">${TYPE_PILL[dim.propType] || dim.propType}</span></span>
+    <span class="ljp-chip-action-col">
+      <span class="edit-mark" title="edited"></span>
+      <button class="row-pencil" data-action="edit-row" data-dim-key="${esc(dim.key)}">✎</button>
+    </span>
+  </div>`;
+}
+
+function renderTier(tier, dims, tplId) {
+  const rows = dims.map(d => renderRow(d, tplId)).join('');
+  const mapped = dims.filter(d => {
+    const v = getEffectiveValue(tplId, d.key);
+    return v && v !== '—' && v !== NO_MAPPING;
+  }).length;
+  const total = dims.length;
+  const pct = total ? Math.round((mapped / total) * 100) : 0;
+  const fillClass = (mapped === total) ? ' is-full' : '';
+  const countClass = (mapped === total) ? 'is-full' : (mapped === 0 ? 'is-bad' : 'is-partial');
+  return `<details class="ljp-tier-acc" open data-tier="${esc(tier.tier)}">
+    <summary class="ljp-tier-summary">
+      <div class="ljp-tier-summary-main">
+        <span class="ljp-tier-chev" aria-hidden="true"></span>
+        <span class="ljp-tier-name">${esc(tier.title)}</span>
+        <div class="ljp-tier-bar"><div class="ljp-tier-bar-fill${fillClass}" style="width:${pct}%"></div></div>
+        <span class="ljp-tier-count ${countClass}">${mapped} / ${total}</span>
+      </div>
+    </summary>
+    <div class="ljp-tier-body">
+      <div class="ljp-mapping-list" role="list">${rows}</div>
+    </div>
+  </details>`;
+}
+
+function renderSwitcher() {
+  const sw = document.getElementById('tpl-switcher');
+  sw.innerHTML = Object.entries(TEMPLATE_MAPPINGS).map(([id, m]) => {
+    const n = changeCountForTpl(id);
+    const cls = (id === currentTpl ? ' active' : '') + (n === 0 ? ' is-clean' : '');
+    return `<button class="tpl-btn${cls}" data-tpl="${id}">
+      <span class="tpl-name">${esc(m.short)}</span>
+      <span class="tpl-meta">${esc(m.meta)}</span>
+      <span class="edit-badge">${n}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderStatus() {
+  const total = totalChanges();
+  const el = document.getElementById('status');
+  if (total === 0) el.innerHTML = 'No changes yet. Click <code>✎</code> on a row to remap.';
+  else {
+    const parts = Object.keys(userOverrides).map(k => {
+      const n = Object.keys(userOverrides[k] || {}).length;
+      return n > 0 ? `${TEMPLATE_MAPPINGS[k].short}: <strong>${n}</strong>` : null;
+    }).filter(Boolean).join(' · ');
+    el.innerHTML = `${total} change${total > 1 ? 's' : ''} across ${parts || '0 templates'}.`;
+  }
+}
+
+function render() {
+  const m = TEMPLATE_MAPPINGS[currentTpl];
+  const list = document.getElementById('ljp-list');
+  list.innerHTML = MAPPING_SECTIONS.map(sect => {
+    const dims = JOURNAL_DIMS.filter(d => d.tier === sect.tier);
+    return renderTier(sect, dims, currentTpl);
+  }).join('');
+
+  const mapped = JOURNAL_DIMS.filter(d => {
+    const v = getEffectiveValue(currentTpl, d.key);
+    return v && v !== '—' && v !== NO_MAPPING;
+  }).length;
+  document.getElementById('det-name').textContent = m.label;
+  document.getElementById('det-meta').textContent = `${mapped} / ${JOURNAL_DIMS.length} fields mapped · ${TEMPLATE_COLUMNS[currentTpl].length} columns available`;
+  document.getElementById('mock-format').innerHTML = `Source · <strong>Notion Live API</strong> · ${TEMPLATE_COLUMNS[currentTpl].length} fields available`;
+
+  renderSwitcher();
+  renderStatus();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 6. PICKER (inline floating dropdown)
+// ════════════════════════════════════════════════════════════════════════
+let _picker = null;
+function closePicker() { if (_picker) { _picker.remove(); _picker = null; } }
+function openPicker(dimKey, anchor) {
+  closePicker();
+  const dim = JOURNAL_DIMS.find(d => d.key === dimKey);
+  const cols = TEMPLATE_COLUMNS[currentTpl] || [];
+  const current = getEffectiveValue(currentTpl, dimKey);
+  const canonical = TEMPLATE_MAPPINGS[currentTpl][dimKey];
+
+  const picker = document.createElement('div');
+  picker.className = 'picker';
+  picker.innerHTML = `
+    <div class="picker-head">
+      <span class="title">Map to Notion field — <em style="opacity:.7;">${esc(currentTpl)}</em></span>
+      <span class="target">${esc(dim.label)}</span>
+      <input class="picker-search" placeholder="Filter columns…" autofocus>
+    </div>
+    <div class="picker-list" id="picker-list"></div>
+    <div class="picker-foot">
+      <span>Canonical: <strong style="color:var(--text-secondary);">${esc(canonical || '—')}</strong></span>
+      <button data-action="cancel">Cancel ⏎</button>
+    </div>
+  `;
+  document.body.appendChild(picker);
+  _picker = picker;
+
+  // Position next to anchor
+  const r = anchor.getBoundingClientRect();
+  const px = Math.min(r.right + 8, window.innerWidth - 400);
+  const py = Math.min(r.top, window.innerHeight - 440);
+  picker.style.left = px + 'px';
+  picker.style.top = py + 'px';
+
+  // Build options
+  const buildList = (filter='') => {
+    const f = filter.trim().toLowerCase();
+    const list = picker.querySelector('#picker-list');
+    const items = [];
+    // 1. No Mapping
+    items.push({ key: NO_MAPPING, name: '— No Mapping —', type: '', cls: 'no-mapping' });
+    // 2. AUTO (only show if currently AUTO or canonical is AUTO)
+    if (canonical === 'AUTO' || current === 'AUTO') {
+      items.push({ key: 'AUTO', name: 'auto from Time', type: '', cls: 'no-mapping' });
+    }
+    // 3. Reset to canonical
+    if (canonical && canonical !== '—' && canonical !== NO_MAPPING) {
+      items.push({ key: '__CANONICAL__', name: 'Reset to canonical: ' + canonical, type: '', cls: 'canonical-default' });
+    }
+    // 4. All available columns
+    cols.forEach(c => {
+      if (!f || c.n.toLowerCase().includes(f) || (TYPE_PILL[c.t] || c.t).toLowerCase().includes(f)) {
+        items.push({ key: c.n, name: c.n, type: TYPE_PILL[c.t] || c.t, isDivider: /^[\s\-—]+$/.test(c.n.trim()) });
+      }
+    });
+    list.innerHTML = items.map(it => {
+      const isCurrent = (current === it.key && it.key !== '__CANONICAL__') ? ' current' : '';
+      const nameCls = it.isDivider ? 'name divider-name' : 'name';
+      const visName = it.key && it.key !== NO_MAPPING && it.key !== 'AUTO' && it.key !== '__CANONICAL__' ? visibleTrailing(it.name) : esc(it.name);
+      return `<div class="picker-item ${it.cls || ''}${isCurrent}" data-key="${esc(it.key)}">
+        <span class="${nameCls}">${visName}</span>
+        ${it.type ? `<span class="type">${esc(it.type)}</span>` : ''}
+      </div>`;
+    }).join('') || `<div style="padding:14px;text-align:center;font-size:11px;color:var(--text-muted);">No matches.</div>`;
+  };
+  buildList('');
+
+  const searchInput = picker.querySelector('.picker-search');
+  searchInput.addEventListener('input', () => buildList(searchInput.value));
+  setTimeout(() => searchInput.focus(), 0);
+
+  picker.addEventListener('click', (e) => {
+    const item = e.target.closest('.picker-item');
+    const action = e.target.closest('[data-action="cancel"]');
+    if (action) { closePicker(); return; }
+    if (item) {
+      const key = item.dataset.key;
+      applyPick(dimKey, key);
+      closePicker();
+    }
+  });
+
+  // Keyboard: Escape closes
+  picker.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePicker();
+  });
+}
+
+function applyPick(dimKey, picked) {
+  if (!userOverrides[currentTpl]) userOverrides[currentTpl] = {};
+  if (picked === '__CANONICAL__') {
+    delete userOverrides[currentTpl][dimKey];
+    if (Object.keys(userOverrides[currentTpl]).length === 0) delete userOverrides[currentTpl];
+  } else {
+    userOverrides[currentTpl][dimKey] = picked;
+  }
+  saveOverrides();
+  render();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 7. WIRE EVENTS
+// ════════════════════════════════════════════════════════════════════════
+document.getElementById('tpl-switcher').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tpl-btn');
+  if (btn) { currentTpl = btn.dataset.tpl; closePicker(); render(); }
+});
+document.getElementById('ljp-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action="edit-row"]');
+  if (btn) openPicker(btn.dataset.dimKey, btn);
+});
+document.addEventListener('click', (e) => {
+  if (_picker && !e.target.closest('.picker') && !e.target.closest('.row-pencil')) closePicker();
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (!userOverrides[currentTpl]) return;
+  if (confirm(`Reset ${TEMPLATE_MAPPINGS[currentTpl].short} to canonical?`)) {
+    delete userOverrides[currentTpl];
+    saveOverrides();
+    render();
+  }
+});
+document.getElementById('btn-reset-all').addEventListener('click', () => {
+  if (!confirm('Reset ALL 5 templates to canonical?')) return;
+  userOverrides = {};
+  saveOverrides();
+  render();
+});
+document.getElementById('btn-export').addEventListener('click', () => {
+  // Effective state per template, listing only DIFFS from canonical so it's clear what changed
+  const out = {};
+  Object.keys(TEMPLATE_MAPPINGS).forEach(id => {
+    const m = TEMPLATE_MAPPINGS[id];
+    const ov = userOverrides[id] || {};
+    const final = {};
+    JOURNAL_DIMS.forEach(d => {
+      final[d.key] = getEffectiveValue(id, d.key);
+    });
+    out[id] = { label: m.label, final, diffs: ov };
+  });
+  const json = JSON.stringify(out, null, 2);
+
+  // Build dialog
+  const ov = document.createElement('div');
+  ov.className = 'export-overlay';
+  ov.innerHTML = `
+    <div class="export-dialog">
+      <h3>Export — paste this JSON in chat</h3>
+      <textarea readonly id="export-textarea">${esc(json)}</textarea>
+      <div class="row">
+        <button id="export-copy" style="background:rgba(77,159,255,.14);border:1px solid var(--accent-primary);color:var(--accent-primary);">Copy to clipboard</button>
+        <button id="export-close" style="background:transparent;border:1px solid var(--border-subtle);color:var(--text-secondary);">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(ov);
+  ov.querySelector('#export-copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(json);
+      ov.querySelector('#export-copy').textContent = 'Copied ✓';
+    } catch (e) {
+      const ta = ov.querySelector('#export-textarea');
+      ta.select(); document.execCommand('copy');
+      ov.querySelector('#export-copy').textContent = 'Copied ✓';
+    }
+  });
+  ov.querySelector('#export-close').addEventListener('click', () => ov.remove());
+  ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+});
+
+// Init
+loadOverrides();
+render();
+</script>
+</body>
+</html>

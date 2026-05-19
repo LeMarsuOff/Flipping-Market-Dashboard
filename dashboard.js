@@ -2187,6 +2187,15 @@ function handleActionClick(event) {
     case 'open-remap-picker':      event.stopPropagation(); openRemapPicker(actionEl); break;
     case 'pick-remap-column':      event.stopPropagation(); pickRemapColumn(actionEl); break;
     case 'pick-api-field':         event.stopPropagation(); pickAPIField(actionEl); break;
+    case 'toggle-hidden': {
+      event.stopPropagation();
+      const tierKey = actionEl.dataset.tier;
+      if (!tierKey) break;
+      if (_openHiddenSections.has(tierKey)) _openHiddenSections.delete(tierKey);
+      else _openHiddenSections.add(tierKey);
+      updateJournalPanel();
+      break;
+    }
     case 'layout-delete-widget-confirm':
       event.stopPropagation();
       _openDeleteConfirm(actionEl.dataset.cwId, actionEl);
@@ -5784,6 +5793,150 @@ function _applyCommonNotionAliases(aliasMap, sample) {
   _applyResolvedAlias(aliasMap, 'rrTp1', sample, ['rr', 'tp', 'RR TP 1', 'rrTp1', 'RR Max', 'rrMax']);
 }
 
+// ── Flipping Market shipped templates — auto-mapping ─────────────────────
+// Five Notion templates distributed in the "Flipping Market Templates" page
+// share schema fingerprints (column-name presence + select-option values).
+// When a community user OAuth-connects a Notion DB matching one of them, we
+// inject the canonical override mapping into apiFieldOverrides_v1_<profile>
+// so they don't have to manually map dimensions. Detection runs on the
+// first sync only — any existing user overrides short-circuit the auto-apply.
+
+const TEMPLATE_LABELS = {
+  'm15-pro':  'Flipping Market M15 (Pro Template)',
+  'm15-beg':  'Flipping Market M15 (Beginner)',
+  'm15-free': 'Flipping Market M15 (Free Notion version)',
+  'h4-pro':   'Flipping Market H4 (Pro Template)',
+  'h4-beg':   'Flipping Market H4 (Beginner)',
+};
+
+// Canonical dimKey → Notion column name. '__NO_MAPPING__' = explicit
+// no-mapping (the dim is irrelevant for this template; the Mapping panel
+// hides it from view by default).
+const TEMPLATE_MAPPINGS = {
+  'm15-pro': {
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'M15 Confirmation / Continu', setupDetail: 'M15 Type Detailed',
+    session: 'Session', day: 'Day Formula',
+    obstacles: 'M15 Obstacles', h4: 'H4 Obstacles',
+    beManagement: 'BE Management', hour: 'Time',
+    positionType: 'Position Type', direction: 'Order',
+    rrMax: 'RR Max', badFeeling: 'Bad feeling', notionUrl: 'Notion Url',
+    img_m15: 'URL M15 Before', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+  },
+  'm15-beg': {
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'M15 Confirmation / Continu', setupDetail: 'M15 Type Detailed',
+    session: '__NO_MAPPING__', day: 'Day Formula',
+    obstacles: 'M15 Obstacles', h4: '__NO_MAPPING__',
+    beManagement: 'BE Management', hour: '__NO_MAPPING__',
+    positionType: 'Position Type', direction: 'Order',
+    rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
+    img_m15: 'URL M15 Before', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+  },
+  'm15-free': {
+    outcome: 'Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'M15 Confirmation / Continu', setupDetail: 'M15 Type Detailed',
+    session: '__NO_MAPPING__', day: 'Day Formula',
+    obstacles: 'M15 Obstacles', h4: '__NO_MAPPING__',
+    beManagement: 'BE Management', hour: '__NO_MAPPING__',
+    positionType: 'Account', direction: 'Order',
+    rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
+    img_m15: 'M15', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+  },
+  'h4-pro': {
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'H4 Confirmation / Continu', setupDetail: 'H4 Type Detailed',
+    session: '__NO_MAPPING__', day: 'Day Formula',
+    obstacles: '__NO_MAPPING__', h4: 'H4 Obstacles',
+    beManagement: 'BE Management', hour: '__NO_MAPPING__',
+    positionType: 'Position type', direction: 'Order',
+    rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
+    img_m15: '__NO_MAPPING__', img_h4_before: 'URL H4 Before', img_m15_after: 'URL H4 After',
+  },
+  'h4-beg': {
+    outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
+    setup: 'H4 Confirmation / Continu', setupDetail: 'H4 Type Detailed',
+    session: '__NO_MAPPING__', day: 'Day Formula',
+    obstacles: '__NO_MAPPING__', h4: 'H4 Obstacles',
+    beManagement: 'BE Management', hour: '__NO_MAPPING__',
+    positionType: 'Position type', direction: 'Order',
+    rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
+    img_m15: '__NO_MAPPING__', img_h4_before: 'URL H4 Before', img_m15_after: 'URL H4 After',
+  },
+};
+
+const DETECTED_TEMPLATE_LS_PREFIX = 'flipping_detected_template_v1';
+function _getDetectedTemplate() {
+  try { return localStorage.getItem(getProfileScopedKey(DETECTED_TEMPLATE_LS_PREFIX)) || null; }
+  catch (e) { return null; }
+}
+function _setDetectedTemplate(id) {
+  try {
+    const key = getProfileScopedKey(DETECTED_TEMPLATE_LS_PREFIX);
+    if (id) localStorage.setItem(key, id); else localStorage.removeItem(key);
+  } catch (e) {}
+}
+
+// Fingerprint a Notion DB against the 5 shipped templates. Returns the
+// matched template id, or null when no signature fits. Detection is purely
+// structural — never reads data-source UUIDs (those change when users
+// duplicate templates into their own workspace).
+function _detectTemplate(rawTrades) {
+  if (!Array.isArray(rawTrades) || !rawTrades.length) return null;
+  const keys = new Set();
+  for (const t of rawTrades) {
+    if (!t || typeof t !== 'object' || Array.isArray(t)) continue;
+    for (const [k, v] of Object.entries(t)) {
+      if (v === null || v === undefined || v === '') continue;
+      if (Array.isArray(v) && !v.length) continue;
+      keys.add(k);
+    }
+  }
+  const has = (k) => keys.has(k);
+
+  // M15 Free first — 'Result' + 'Account' are unique across the 5 templates.
+  if (has('Result') && has('Account')) return 'm15-free';
+  // M15 Pro — only template with intraday refinement (Session + Time + Min).
+  if (has('Session') && has('Time') && has('Min')) return 'm15-pro';
+  // M15 Beginner — M15 Obstacles, no H4 columns.
+  if (has('M15 Obstacles') && !has('H4 Obstacles') && !has('Entry Type')) return 'm15-beg';
+  // H4 templates — same columns; disambiguate by H4 Obstacles option naming.
+  // Beg has "Fib - <X> Touched" / "Sweep - After Sweep"; Pro has
+  // "External Fib Touched" / "Internal Fib Touched".
+  if (has('H4 Obstacles') && has('Entry Type')) {
+    let seenBeg = false, seenPro = false;
+    for (const t of rawTrades) {
+      const v = t && t['H4 Obstacles'];
+      const arr = Array.isArray(v) ? v : (typeof v === 'string' ? v.split(/\s*,\s*/) : []);
+      for (const opt of arr) {
+        if (typeof opt !== 'string') continue;
+        if (opt === 'Sweep - After Sweep' || opt.startsWith('Fib - ')) seenBeg = true;
+        else if (opt === 'External Fib Touched' || opt === 'Internal Fib Touched') seenPro = true;
+      }
+      if (seenBeg && seenPro) break;
+    }
+    if (seenBeg && !seenPro) return 'h4-beg';
+    if (seenPro && !seenBeg) return 'h4-pro';
+    return 'h4-pro';  // No decisive option seen — Pro is the more common default.
+  }
+  return null;
+}
+
+// First-connect hook — write canonical overrides iff the user has none yet.
+// Returns the matched template id (or null) so the caller can log/banner.
+function _maybeAutoApplyTemplateMapping(rawTrades) {
+  const existing = _getAPIFieldOverrides();
+  if (existing && Object.keys(existing).length > 0) return null;
+  const id = _detectTemplate(rawTrades);
+  if (!id) return null;
+  const mapping = TEMPLATE_MAPPINGS[id];
+  if (!mapping) return null;
+  _saveAPIFieldOverrides({ ...mapping });
+  _setDetectedTemplate(id);
+  debugLog('[TplDetect] matched:', id, '· wrote', Object.keys(mapping).length, 'overrides');
+  return id;
+}
+
 // Auto-map Notion property keys to the aliases expected by _normalizeAPITrade,
 // without modifying _normalizeAPITrade or overwriting any explicit user overrides.
 // Only called for Notion profiles; safe to call on legacy profiles (no-ops when
@@ -8254,6 +8407,14 @@ async function _loadNotionTrades(profile, options = {}) {
     }
 
     const fetchedRawTrades = Array.isArray(json.trades) ? json.trades : [];
+
+    // ── Template auto-detect (first connect only) ──
+    // Fingerprint the connected Notion DB against the 5 shipped templates.
+    // If matched and the user has no existing field overrides for this
+    // profile, write the canonical mapping into apiFieldOverrides_v1 BEFORE
+    // _applyNotionAutoMap runs — so this very sync benefits from the new
+    // aliases (no second-round-trip required).
+    try { _maybeAutoApplyTemplateMapping(fetchedRawTrades); } catch (e) {}
 
     // Pre-inject user-mapped outcome, then auto-map unmapped Notion fields to
     // the aliases expected by _normalizeAPITrade (without touching that function).
@@ -28164,6 +28325,9 @@ let _openMappingTiers = null;
 // `"${tier}:${group}"`. Null sentinel → apply defaults (Missing open, Mapped
 // closed unless it's the only group present).
 let _openMappingGroups = null;
+// Per-tier reveal state for the "no-mapping" hidden footer. Tier keys present
+// in this Set are currently expanded. Default closed.
+let _openHiddenSections = new Set();
 
 // Reset the open state — called when the Data Hub closes so the next open
 // re-applies defaults (tiers with missing fields expanded; Missing group
@@ -28171,6 +28335,7 @@ let _openMappingGroups = null;
 function _resetOpenMappingTiers() {
   _openMappingTiers = null;
   _openMappingGroups = null;
+  _openHiddenSections = new Set();
 }
 
 function _renderMappingSectionsHtml(getStatusForDim) {
@@ -28220,6 +28385,7 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     let mapped = 0, total = 0;
     const missingDims = [];
     const otherDims = [];
+    const hiddenDims = [];  // is-no-mapping: irrelevant for the active template
     for (const dim of sectDims) {
       const st = getStatusForDim(dim);
       if (!st) continue;
@@ -28229,9 +28395,11 @@ function _renderMappingSectionsHtml(getStatusForDim) {
         otherDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
       } else if (st.status === 'is-missing') {
         missingDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
+      } else if (st.status === 'is-no-mapping') {
+        // Hidden by default — these rows are explicit no-mapping (either user
+        // intent or template-auto-applied). A footer toggle reveals them.
+        hiddenDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
       } else {
-        // is-no-mapping / other states — keep with non-missing so they
-        // don't clutter the top with non-actionable rows.
         otherDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
       }
     }
@@ -28246,6 +28414,7 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     // mapped list expanded so the user sees something).
     const missingHtml = missingDims.map(({ dim, st }) => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
     const otherHtml   = otherDims.map(({ dim, st })   => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
+    const hiddenHtml  = hiddenDims.map(({ dim, st })  => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
 
     const renderGroup = (groupKey, groupLabel, klass, rowsHtml, defaultOpen) => {
       if (!rowsHtml) return '';
@@ -28261,13 +28430,29 @@ function _renderMappingSectionsHtml(getStatusForDim) {
       </details>`;
     };
 
+    // No-mapping rows live in a discreet footer toggle inside the tier body
+    // — closed by default (the dim is irrelevant for the active template, no
+    // reason to push it into the user's face). Re-open state is tracked in
+    // `_openHiddenSections` so re-renders preserve user intent.
+    const renderHiddenFooter = (tierKey, rowsHtml, n) => {
+      if (!rowsHtml || n === 0) return '';
+      const isOpen = _openHiddenSections.has(tierKey);
+      const wordField = n === 1 ? 'field' : 'fields';
+      const label = isOpen ? `Hide ${n} no-mapping ${wordField}` : `Show ${n} no-mapping ${wordField}`;
+      return `<div class="ljp-mapping-hidden-section${isOpen ? ' is-open' : ''}" data-tier="${_escapeHtml(tierKey)}">
+        <button class="ljp-mapping-hidden-toggle" data-action="toggle-hidden" data-tier="${_escapeHtml(tierKey)}">${_escapeHtml(label)}</button>
+        <div class="ljp-mapping-hidden-rows ljp-mapping-list" role="list">${rowsHtml}</div>
+      </div>`;
+    };
+
     const hasMissingGroup = missingDims.length > 0;
     const hasMappedGroup  = otherDims.length   > 0;
     const onlyMapped = !hasMissingGroup && hasMappedGroup;
 
     const groupsHtml =
         renderGroup('missing', 'Missing', 'is-missing-group', missingHtml, /* defaultOpen */ true)
-      + renderGroup('mapped',  'Mapped',  'is-mapped-group',  otherHtml,   /* defaultOpen */ onlyMapped);
+      + renderGroup('mapped',  'Mapped',  'is-mapped-group',  otherHtml,   /* defaultOpen */ onlyMapped)
+      + renderHiddenFooter(sect.tier, hiddenHtml, hiddenDims.length);
     if (!groupsHtml) return '';
 
     const hasMissing = missingLabels.length > 0;
@@ -28489,7 +28674,18 @@ function updateJournalPanel() {
       rowClass: canRemap ? '' : 'is-readonly',
     };
   };
-  list.innerHTML = _renderMappingSectionsHtml(getStatus);
+  // Detected-template banner — only appears in API mode when the
+  // first-connect fingerprint matched one of the 5 shipped Flipping Market
+  // templates. Hidden silently when no detection (CSV mode, Demo, manual
+  // mapping, or an unknown schema).
+  const detTpl = isAPI ? _getDetectedTemplate() : null;
+  const bannerHtml = (detTpl && TEMPLATE_LABELS[detTpl]) ? `
+    <div class="ljp-template-banner">
+      <span class="ljp-template-banner-dot" aria-hidden="true"></span>
+      <span class="ljp-template-banner-label">Auto-detected: <strong>${_escapeHtml(TEMPLATE_LABELS[detTpl])}</strong></span>
+      <span class="ljp-template-banner-meta">canonical mapping applied</span>
+    </div>` : '';
+  list.innerHTML = bannerHtml + _renderMappingSectionsHtml(getStatus);
 
   _reopenIfNeeded();
 }
