@@ -7677,7 +7677,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: var(--body);
+  background: transparent;
   color: var(--surface-1);
   font-family: ui-serif, Georgia, serif;
   font-size: 14px;
@@ -7685,13 +7685,21 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   flex-shrink: 0;
   overflow: hidden;
 }
-/* SVG icons fill the 22×22 box with ~3px inner padding so the glyph breathes.
-   currentColor inheritance lets per-integration .int-icon--<id> rules colour
-   the mark via the parent's `color` declaration. */
+/* Inline SVG glyphs (currently only the legacy api icon) get ~3px breathing
+   room and inherit currentColor from the parent .int-icon--<id> rule. */
 .int-icon svg {
   width: 16px;
   height: 16px;
   display: block;
+}
+/* Raster brand logos (Notion / MT5 / MT4 / cTrader) fill the 22×22 container
+   completely. object-fit: contain preserves aspect ratio if the source PNG
+   isn't perfectly square. */
+.int-icon img {
+  width: 22px;
+  height: 22px;
+  display: block;
+  object-fit: contain;
 }
 .int-badge { font-size: 12px; }
 .int-badge--connected { color: var(--g, #22c55e); }
@@ -7721,12 +7729,11 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   color: var(--muted, #888);
   line-height: 1.4;
 }
-/* Per-integration icon brand colors — keep generic .int-icon for fallback. */
-.int-icon--notion  { background: #1a1a1a; color: #ffffff; }
-.int-icon--mt5     { background: #f0a020; color: #1a1a1a; }
-.int-icon--mt4     { background: #4a8cff; color: #ffffff; }
-.int-icon--ctrader { background: #e63946; color: #ffffff; }
-.int-icon--api     { background: var(--dim);   color: var(--surface-1); }
+/* Per-integration container styling.
+   Logo-based icons (Notion / MT5 / MT4 / cTrader) keep a transparent
+   container — the PNG carries its own brand identity. Only the API entry
+   (which uses a generic SVG glyph) gets a tinted background. */
+.int-icon--api { background: var(--dim); color: var(--surface-1); }
 .int-workspace { font-size: 12px; color: var(--muted, #888); margin: 8px 0 0 30px; }
 .int-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .int-btn { font-size: 12px; padding: 4px 10px; }
