@@ -1,3 +1,76 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Global localStorage.setItem wrap — permanent dedup + optional audit.
+//
+// Dedup (always on): skip the underlying write when `value` already matches
+// what's stored. Audit (ROADMAP Bloc 4, 2026-05-20) showed ~430KB/30s of
+// fully-redundant writes in normal usage — the wrap reclaims that cleanly
+// across all call sites (including the many that bypass safeSetLocalStorage).
+// Cost: one `getItem` per `setItem`. The browser's `storage` event already
+// fires only when the value actually changes, so cross-tab listeners are
+// unaffected. No call site relies on a redundant write triggering a side
+// effect (verified for `flipping_*`, `gs_layout_*`, `presetLiveFilters_*`,
+// `apiTradesCache_*`, etc.).
+//
+// Audit (opt-in via `?lsAudit=1`): tracks per-key totals, redundant calls
+// (i.e. how many the dedup short-circuited), bytes, first/last timestamps.
+// Dump in DevTools via `__lsAudit({sortBy:"total"|"redundant"|"bytes"})`.
+(function _lsWrapInit() {
+  try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const orig = localStorage.setItem.bind(localStorage);
+    const auditOn = (function() {
+      try { return new URLSearchParams(window.location.search || '').get('lsAudit') === '1'; }
+      catch (e) { return false; }
+    })();
+    const stats = auditOn ? Object.create(null) : null;
+    const t0 = Date.now();
+
+    localStorage.setItem = function(key, value) {
+      const strValue = typeof value === 'string' ? value : String(value);
+      let redundant = false;
+      try { redundant = localStorage.getItem(key) === strValue; }
+      catch (e) {}
+      if (auditOn) {
+        let s = stats[key];
+        if (!s) {
+          s = stats[key] = { total: 0, redundant: 0, changed: 0, bytes: strValue.length, firstAt: Date.now() - t0, lastAt: 0 };
+        }
+        s.total++;
+        if (redundant) s.redundant++; else s.changed++;
+        s.bytes = strValue.length;
+        s.lastAt = Date.now() - t0;
+      }
+      if (redundant) return; // skip — same value already in storage
+      return orig(key, strValue);
+    };
+
+    if (auditOn) {
+      window.__lsAudit = function(opts) {
+        const sortBy = (opts && opts.sortBy) || 'redundant';
+        const rows = Object.entries(stats)
+          .map(([key, s]) => ({
+            key,
+            total: s.total,
+            redundant: s.redundant,
+            changed: s.changed,
+            bytes: s.bytes,
+            firstAtMs: s.firstAt,
+            lastAtMs: s.lastAt,
+            redundantPct: s.total ? Math.round(100 * s.redundant / s.total) : 0,
+          }))
+          .sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
+        console.group(`[ls-audit] ${rows.length} keys, ${rows.reduce((n, r) => n + r.total, 0)} setItem calls (sorted by ${sortBy})`);
+        console.table(rows);
+        console.groupEnd();
+        return rows;
+      };
+      console.info('[ls-audit] active — call __lsAudit() in console. Dedup is also active (always on now).');
+    }
+  } catch (e) {
+    console.warn('[ls-wrap] init failed', e);
+  }
+})();
+
 const DEMO_TRADES = [{"d":"2025-01-07","m":"2025-01","p":"EURUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Contre Order Flow","Volume - 1st Candle"],"h4":[],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":9.4,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-01-09","m":"2025-01","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Asian Box - Fib","Sweep = LQ"],"h4":[],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":8.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2025-02-05","m":"2025-02","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Asian","su":"Asian","w":"Mercredi","o":["Accumula-Sweep","Asian Box - Break","Asian Box - Entry","Contre Order Flow","Faible Sweep"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":2,"tier":"WEAK","flip":"Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-02-26","m":"2025-02","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A + Flip","ss":"Hors Session","su":"New-York","w":"Mercredi","o":["Accumula-Sweep"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Achat","tt":["Invalide"],"bad":false,"inv":true,"h":18,"tier":"WEAK","flip":"Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-02-26","m":"2025-02","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Mercredi","o":["Asian Box - Break","Asian Box - Entry"],"h4":["No-Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":6,"tier":"WEAK","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-04-07","m":"2025-04","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Lundi","o":["Accumula-Sweep","Asian Box - Break","Asian Box - Opposite Sweep","Contre Order Flow"],"h4":["Sweep Accumulation"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2025-05-07","m":"2025-05","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Mercredi","o":["Asian Box - Fib","Range","Setup Geant","Sweep Accumulation"],"h4":["Fib Interne Atteint","Structure - Late"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":21,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-06-02","m":"2025-06","p":"EURUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Accumula-Sweep","Asian Box - Entry","Asian Box - Fib","Setup Geant"],"h4":["No-Sweep","Volume - Mèche"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":2,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-06-19","m":"2025-06","p":"USDCHF","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Asian","su":"Asian","w":"Jeudi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Accumula-Sweep","Asian Box - Break","Asian Box - Entry","Asian Box - Fib","Contre Order Flow","Volume - 1st Candle"],"h4":["Faible Sweep","Sweep = LQ"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":7,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-06-20","m":"2025-06","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Vendredi","o":["Setup Geant"],"h4":["Sweep = LQ"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.5,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-07-09","m":"2025-07","p":"USDCHF","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type B","ss":"New-York","su":"Lunch Time Zone","w":"Mercredi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Volume - Mèche"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":7.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":13,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-08-12","m":"2025-08","p":"USDCHF","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":[],"h4":[],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":8.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"ELITE","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-08-20","m":"2025-08","p":"USDJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Hors Session","su":"No Man's Land","w":"Mercredi","o":["Setup Geant","Volume - Faible"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":22,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-04","m":"2025-09","p":"GBPJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Large Sweep","Setup Geant"],"h4":["Faible Sweep","Range"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.3,"dir":"Vente","tt":["BackTest","Invalide"],"bad":false,"inv":true,"h":10,"tier":"WEAK","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-04","m":"2025-09","p":"EURAUD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Jeudi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Volume - 1st Candle"],"h4":["Structure Geante"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":4.6,"dir":"Achat","tt":["Invalide"],"bad":false,"inv":true,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-09-05","m":"2025-09","p":"USDCHF","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Break"],"h4":["Fib Externe atteint"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-TP","r":2.4,"rm":50.0,"dir":"Vente","tt":["BackTest","Coach"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-09-08","m":"2025-09","p":"EURAUD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Asian Box - Entry","Large Sweep","Setup Geant"],"h4":["Faible Sweep","Fib Interne Atteint","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":3,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-12","m":"2025-09","p":"GBPJPY","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Asian","su":"Asian","w":"Vendredi","o":["Asian Box - Break","Asian Box - Entry","Asian Box - Fib","News","News Entry","Sweep Interne"],"h4":["Range"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":7,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-09-23","m":"2025-09","p":"EURUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Mardi","o":["Large Sweep","Sweep Accumulation","Volume - 1st Candle","Volume - Faible","Volume - Far Away"],"h4":[],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.1,"dir":"Achat","tt":["Coach"],"bad":false,"inv":false,"h":14,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-09-25","m":"2025-09","p":"GBPJPY","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Jeudi","o":[],"h4":["No-Sweep"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":17,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-25","m":"2025-09","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Contre Order Flow","Setup Geant"],"h4":["After Sweep","No-Volume x Good leg"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-09-30","m":"2025-09","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Hors Session","su":"New-York","w":"Mardi","o":["1 Candle Pull-back Break","Range"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":18,"tier":"ELITE","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-09-30","m":"2025-09","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":["1 Candle Pull-back Sweep","Asian Box - Fib","Setup Geant","Sweep Interne"],"h4":["After Sweep"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-02","m":"2025-10","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Setup Geant","Sweep - Fake Accumulation","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.4,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":9,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-14","m":"2025-10","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Mardi","o":["Accumula-Sweep","Asian Box - Break","Large Sweep","Setup Geant"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":13,"tier":"GOOD","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-14","m":"2025-10","p":"EURAUD","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type A","ss":"New-York","su":"Lunch Time Zone","w":"Mardi","o":["Asian Box - Opposite Sweep","Faible Sweep","Volume - Mèche","Wick Break"],"h4":[],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":2.4,"dir":"Achat","tt":["Invalide"],"bad":true,"inv":true,"h":13,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-10-15","m":"2025-10","p":"EURAUD","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["MNR","Volume - Mèche"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":19.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["H4 Fib -27","H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-10-16","m":"2025-10","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"Lunch Time Zone","w":"Jeudi","o":["Accumula-Sweep","Volume - Faible"],"h4":["After Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.4,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-10-24","m":"2025-10","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Vendredi","o":["Big Impact News","Large Sweep","News","News Entry","News break"],"h4":["Faible Sweep","No-Volume","Structure Geante","Wick Break","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-10-24","m":"2025-10","p":"XAUUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"Asian","su":"Asian","w":"Vendredi","o":["Asian Box - Break","Asian Box - Entry","Faible Sweep","Range","Volume - 1st Candle","Volume - Faible","Volume - Mèche"],"h4":["No-Sweep","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":3,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Sub","tp":[],"notion":""},{"d":"2025-10-30","m":"2025-10","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Asian","su":"Asian","w":"Jeudi","o":["Asian Box - Break","Asian Box - Fib","Contre Order Flow"],"h4":["Structure Geante"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":5,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-11-04","m":"2025-11","p":"GBPNZD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Hors Session","su":"Hors Session","w":"Mardi","o":["Contre Order Flow","News","News Entry","Volume - 1st Candle"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":22,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-05","m":"2025-11","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["1 Candle Pull-back Break","Asian Box - Fib","Volume - Faible","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","No-Volume","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["PropFirm"],"bad":true,"inv":false,"h":14,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Asian","su":"Asian","w":"Jeudi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Asian Box - Break","Asian Box - Entry","Asian Box - Fib","Contre Order Flow"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":11.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":3,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["H4 Fib -27","H4 Fib 0","H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"GBPUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Jeudi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Contre Order Flow"],"h4":[],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Vente","tt":["BackTest"],"bad":true,"inv":false,"h":18,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Jeudi","o":["Faible Sweep","Questionable Sweep","Sweep Interne"],"h4":["Fib Interne Atteint","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["Invalide","PropFirm"],"bad":true,"inv":true,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["Accumula-Sweep","Contre Order Flow"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":24.7,"dir":"Achat","tt":["BackTest"],"bad":true,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Sub","tp":["H4 Fib -27","H4 Fib 0","H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-11-06","m":"2025-11","p":"GBPNZD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Jeudi","o":["Contre Order Flow","Range","Volume - Mèche"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Vente","tt":["BackTest"],"bad":true,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-07","m":"2025-11","p":"GBPJPY","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Fib","Asian Box - Opposite Sweep"],"h4":["Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":11,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-10","m":"2025-11","p":"GBPNZD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"No Man's Land","su":"Asian","w":"Lundi","o":["Asian Box - Entry"],"h4":["After Sweep","No-Volume"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.1,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-10","m":"2025-11","p":"AUDUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Setup Geant"],"h4":["Faible Sweep","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":0,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-12","m":"2025-11","p":"EURAUD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"Hors Session","su":"Hors Session","w":"Mercredi","o":["Sweep Accumulation","Volume - Faible"],"h4":["Fib Externe atteint"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":2.7,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":19,"tier":"GOOD","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2025-11-12","m":"2025-11","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Asian","su":"Asian","w":"Mercredi","o":["1 Candle Pull-back Sweep","Large Sweep","Setup Geant","Volume - Faible"],"h4":["No-Sweep","No-Volume","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":4,"tier":"WEAK","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-12","m":"2025-11","p":"GBPJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["Contre Order Flow","Volume - Mèche"],"h4":["After Sweep","Faible Sweep","Fib Externe atteint","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.5,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-14","m":"2025-11","p":"GBPNZD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Vendredi","o":["1 Candle Pull-back Break","1 Candle Pull-back Sweep","Contre Order Flow"],"h4":["No-Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":11,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-14","m":"2025-11","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Lunch Time Zone","su":"Lunch Time Zone","w":"Vendredi","o":[],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.1,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":12,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-17","m":"2025-11","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Lundi","o":["Large Sweep","Setup Geant","Sweep - Fake Accumulation","Volume - Mèche"],"h4":["Wick Break"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":17,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-18","m":"2025-11","p":"EURUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":[],"h4":["Fib Interne Atteint","No-Sweep","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-19","m":"2025-11","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type B","ss":"London","su":"London","w":"Mercredi","o":["Asian Box - Break","Contre Order Flow"],"h4":["1 Candle PB Sweep","No-Volume","Wick Break"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":8,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-19","m":"2025-11","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type B","ss":"New-York","su":"New-York","w":"Mercredi","o":[],"h4":["After Sweep","No-Volume"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["Coaching","PropFirm"],"bad":false,"inv":false,"h":16,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-19","m":"2025-11","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type B","ss":"New-York","su":"New-York","w":"Mercredi","o":["Asian Box - Break","Asian Box - Fib","Contre Order Flow"],"h4":["1 Candle PB Sweep","No-Volume","Wick Break"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.8,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":15,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-11-24","m":"2025-11","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Lundi","o":["Contre Order Flow"],"h4":["Fib Externe atteint","Fib Interne Atteint","No-Sweep","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":6.2,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":16,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-11-26","m":"2025-11","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Mercredi","o":["Asian Box - Break","Asian Box - Entry","Contre Order Flow","Sweep - Fake Accumulation"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.6,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":2,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-27","m":"2025-11","p":"AUDUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Jeudi","o":["Asian Box - Fib","Contre Order Flow","Large Sweep"],"h4":["No-Volume","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.7,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":22,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-11-27","m":"2025-11","p":"USDCHF","s":"Re-confirmation Y","sd":"Re-confirmation Y  - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":["MNR"],"h4":["Fib Externe atteint","No-Sweep","Structure Geante","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.0,"dir":"Vente","tt":["BackTest"],"bad":true,"inv":false,"h":15,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-12-02","m":"2025-12","p":"EURUSD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Mardi","o":["Asian Box - Opposite Sweep"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-12-08","m":"2025-12","p":"USDCHF","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Volume - Faible"],"h4":["Fib Interne Atteint"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":5.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":7,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-12-11","m":"2025-12","p":"GBPJPY","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":["Asian Box - Fib","Sweep - Fake Accumulation","Sweep = LQ"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"ELITE","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2025-12-12","m":"2025-12","p":"GBPJPY","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Fib","Asian Box - Opposite Sweep","News","News Entry","Volume - Mèche"],"h4":["After Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":2.5,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-17","m":"2025-12","p":"GBPNZD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"New-York","su":"New-York","w":"Mercredi","o":["1 Candle Pull-back Sweep","Asian Box - Fib","Big Impact News","Faible Sweep","News","News break","News to break"],"h4":["Fib Externe atteint","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":16,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-19","m":"2025-12","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Vendredi","o":["Asian Box - Entry","Big Impact News","News","News to break"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.8,"dir":"Vente","tt":["BackTest","Coaching","vérif"],"bad":false,"inv":false,"h":1,"tier":"SKIP","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-21","m":"2025-12","p":"EURAUD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Dimanche","o":["Asian Box - Entry","Contre Order Flow","Faible Sweep"],"h4":["Fib Interne Atteint","No-Sweep","No-Volume","Structure Geante"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":16.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2025-12-23","m":"2025-12","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Hors Session","su":"Hors Session","w":"Mardi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Contre Order Flow","Questionable Sweep","Sweep Interne"],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.3,"dir":"Vente","tt":["Invalide"],"bad":false,"inv":true,"h":20,"tier":"GOOD","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-29","m":"2025-12","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"Asian","su":"Asian","w":"Lundi","o":["1 Candle Pull-back Sweep","Accumula-Sweep","Asian Box - Entry","Large Sweep","Sweep = LQ","Volume - Mèche"],"h4":["Fib Interne Atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":1,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2025-12-30","m":"2025-12","p":"USDJPY","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Asian Box - Fib","Contre Order Flow","Range","Setup Geant","Sweep = LQ","Sweep Accumulation"],"h4":["Fib Interne Atteint"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":4.1,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":9,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-02","m":"2026-01","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"London","su":"London","w":"Vendredi","o":["Asian Box - Break","Contre Order Flow","Spread - SL","Sweep = LQ","Sweep Accumulation"],"h4":["No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.1,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":8,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2026-01-02","m":"2026-01","p":"GBPUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Hors Session","su":"Hors Session","w":"Vendredi","o":["Sweep - Fake Accumulation","Volume - Faible","Volume - Mèche"],"h4":["Fib Interne Atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":19,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-02","m":"2026-01","p":"GBPJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"London","su":"London","w":"Vendredi","o":["1 Candle Pull-back Sweep","Asian Box - Break","Asian Box - Fib","Asian Box - Opposite Sweep"],"h4":["No-Sweep","Range","Structure - Late","Volume - Mèche"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":8,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-08","m":"2026-01","p":"GBPJPY","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Jeudi","o":["Asian Box - Entry","Contre Order Flow"],"h4":["After Sweep","Sweep = LQ"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":31.2,"dir":"Achat","tt":["BackTest","Coach"],"bad":false,"inv":false,"h":23,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Sub","tp":["H4 Fib -27","H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-14","m":"2026-01","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"No Man's Land","su":"No Man's Land","w":"Mercredi","o":["Asian Box - Entry","Contre Order Flow"],"h4":["No-Sweep"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-TP","r":2.4,"rm":4.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"WEAK","flip":"Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-14","m":"2026-01","p":"AUDUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"London","su":"London","w":"Mercredi","o":["Asian Box - Fib","Asian Box - Opposite Sweep","Contre Order Flow"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":11,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-15","m":"2026-01","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":["Large Sweep","News","News break","Volume - Faible"],"h4":["No-Sweep"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.4,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":17,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-01-19","m":"2026-01","p":"USDJPY","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Lundi","o":["Asian Box - Opposite Sweep","Contre Order Flow"],"h4":["After Sweep"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":3.3,"dir":"Achat","tt":["BackTest","Coach"],"bad":false,"inv":false,"h":10,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-01-19","m":"2026-01","p":"USDCHF","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"London","su":"London","w":"Lundi","o":["Contre Order Flow"],"h4":["Fib Externe atteint","No-Volume"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["PropFirm"],"bad":false,"inv":false,"h":11,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2026-01-22","m":"2026-01","p":"GBPUSD","s":"Re-confirmation Y","sd":"Re-confirmation Y - Type A + Flip","ss":"London","su":"London","w":"Jeudi","o":["1 Candle Pull-back Sweep"],"h4":["Fib Externe atteint","No-Volume","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2026-02-09","m":"2026-02","p":"AUDUSD","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Asian Box - Break","Asian Box - Entry","Asian Box - Fib"],"h4":["After Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.4,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":2,"tier":"SKIP","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-02-09","m":"2026-02","p":"GBPUSD","s":"Confirmation Swing","sd":"External Confirmation -  Type B","ss":"Asian","su":"Asian","w":"Lundi","o":["Accumula-Sweep","Volume - Mèche"],"h4":["Faible Sweep","Fib Interne Atteint"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-TP","r":2.4,"rm":2.8,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":0,"tier":"WEAK","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":["M15 Fib 0"],"notion":""},{"d":"2026-02-17","m":"2026-02","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A + Flip","ss":"Lunch Time Zone","su":"Lunch Time Zone","w":"Mardi","o":["Contre Order Flow","Volume - 1st Candle","Volume - Far Away"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":12,"tier":"STRONG","flip":"Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2026-02-18","m":"2026-02","p":"EURUSD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["Large Sweep","Setup Geant","Sweep Interne"],"h4":["Fib Externe atteint","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.4,"dir":"Achat","tt":["BackTest","Coaching","PropFirm"],"bad":false,"inv":false,"h":15,"tier":"SKIP","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2026-02-23","m":"2026-02","p":"USDCHF","s":"Continuation Type B","sd":"Continuation Type B","ss":"London","su":"London","w":"Lundi","o":["Asian Box - Break","Questionable Sweep","Sweep Interne"],"h4":["Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.1,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":11,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Sub","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-04","m":"2026-03","p":"GBPJPY","s":"","sd":"Continuation - Type A + Flip","ss":"Asian","su":"Asian","w":"Mercredi","o":["Asian Box - Entry"],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["BE si set à 1RR","BE si set à 2RR"],"oc":"BE-SL","r":-1.0,"rm":2.0,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":5,"tier":"WEAK","flip":"Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-05","m":"2026-03","p":"USDCHF","s":"","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["Asian Box - Break","Asian Box - Fib","Contre Order Flow","Large Sweep"],"h4":["No-Sweep","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":4.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-05","m":"2026-03","p":"USDJPY","s":"","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["1 Candle Pull-back Sweep","Asian Box - Opposite Sweep"],"h4":["Fib Externe atteint","No-Sweep","No-Volume"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2026-03-05","m":"2026-03","p":"EURUSD","s":"Confirmation Swing","sd":"Continuation Interne - Type A","ss":"London","su":"London","w":"Jeudi","o":["Asian Box - Opposite Sweep","Sweep - Fake Accumulation"],"h4":["No mitigation","No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":10,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2026-03-06","m":"2026-03","p":"AUDUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"New-York","su":"New-York","w":"Vendredi","o":["Large Sweep"],"h4":["Fib Externe atteint","No-Sweep"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.4,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":17,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-17","m":"2026-03","p":"EURAUD","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"Asian","su":"Asian","w":"Mardi","o":["Big Impact News","News","News Candle","News Sweep","News break","News to entry"],"h4":["Faible Sweep","contre-OrderFlow"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.2,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":6,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-17","m":"2026-03","p":"USDCHF","s":"Confirmation Swing","sd":"External Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Asian Box - Opposite Sweep","M15 Externe= H4","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.5,"dir":"Achat","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":8,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Interne","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-18","m":"2026-03","p":"USDCHF","s":"","sd":"NEM type B","ss":"London","su":"London","w":"Mercredi","o":[],"h4":["Fib Interne Atteint","No-Sweep","Structure - Late","Structure Geante"],"be":["BE si set à 1RR"],"oc":"BE-SL","r":-1.0,"rm":1.3,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":9,"tier":"SKIP","flip":"","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-18","m":"2026-03","p":"USDCHF","s":"","sd":"NEM type A","ss":"New-York","su":"New-York","w":"Mercredi","o":["News","News to entry"],"h4":["Fib Interne Atteint","No-Sweep","Structure - Late","Structure Geante"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.6,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"WEAK","flip":"","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-22","m":"2026-03","p":"EURUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"No Man's Land","su":"No Man's Land","w":"Dimanche","o":["Asian Box - Entry","Faible Sweep"],"h4":["Volume - Mèche"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":7.6,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":23,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["H4 Fib 0.71","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-23","m":"2026-03","p":"USDJPY","s":"Continuation Type A","sd":"Continuation - Type A","ss":"Lunch Time Zone","su":"Lunch Time Zone","w":"Lundi","o":["1 Candle Pull-back Sweep","Asian Box - Fib","Sweep Interne"],"h4":["Fib Interne Atteint","Volume - Mèche"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":12,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Externe","tp":[],"notion":""},{"d":"2026-03-23","m":"2026-03","p":"EURUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A + Flip","ss":"Hors Session","su":"Hors Session","w":"Lundi","o":["Contre Order Flow","Large Sweep"],"h4":["Volume - Mèche"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.5,"dir":"Vente","tt":["BackTest","Coaching","PropFirm"],"bad":false,"inv":false,"h":19,"tier":"SKIP","flip":"Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-03-24","m":"2026-03","p":"EURUSD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Mardi","o":["Volume - Mèche"],"h4":["Volume - Mèche"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":3.1,"dir":"Vente","tt":["BackTest","Coaching"],"bad":false,"inv":false,"h":15,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":["M15 Fib 0"],"notion":""},{"d":"2026-03-30","m":"2026-03","p":"GBPNZD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Lundi","o":["Asian Box - Opposite Sweep","M15 Externe= H4","Sweep - Fake Accumulation","Volume - Mèche"],"h4":["No-Sweep"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest","Coaching","PropFirm"],"bad":false,"inv":false,"h":14,"tier":"GOOD","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-01","m":"2026-04","p":"EURAUD","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"Hors Session","su":"Hors Session","w":"Mercredi","o":["Sweep = LQ"],"h4":["No-Sweep","Volume - Mèche"],"be":["BE after long duration","BE si set à 1RR"],"oc":"BE-TP","r":2.4,"rm":5.6,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":21,"tier":"NEUTRAL","flip":"Non Flip","h4s":"Externe","m15s":"Sub","tp":["M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-04-02","m":"2026-04","p":"EURAUD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"New-York","su":"New-York","w":"Jeudi","o":[],"h4":["No-Sweep","Structure - Late","Volume - Mèche"],"be":["BE after long duration"],"oc":"SL","r":-1.0,"rm":0.9,"dir":"Achat","tt":["BackTest","PropFirm"],"bad":false,"inv":false,"h":16,"tier":"STRONG","flip":"Non Flip","h4s":"Externe","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-03","m":"2026-04","p":"USDCHF","s":"Continuation Interne Type 1","sd":"Continuation Interne - Type A","ss":"New-York","su":"New-York","w":"Vendredi","o":["Contre Order Flow","Large Sweep","News Entry","Sweep Accumulation","Volume - Mèche"],"h4":["Fib Externe atteint","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":14,"tier":"WEAK","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-06","m":"2026-04","p":"AUDUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"Asian","su":"Asian","w":"Lundi","o":["Contre Order Flow","Large Sweep","Setup Geant","Spread No-tag"],"h4":["Fib Externe atteint","Fib Interne Atteint","No-Sweep","Volume - Mèche","contre-OrderFlow"],"be":["TP Direct"],"oc":"TP","r":2.4,"rm":12.3,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":0,"tier":"SKIP","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":["H4 Fib -27","H4 Fib 0","M15 Fib -27","M15 Fib 0"],"notion":""},{"d":"2026-04-07","m":"2026-04","p":"AUDUSD","s":"Confirmation Interne","sd":"Internal Confirmation - Type A","ss":"London","su":"London","w":"Mardi","o":["Contre Order Flow","News","News Sweep","Volume - Mèche"],"h4":["After Sweep","Fib Externe atteint"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Vente","tt":["BackTest"],"bad":false,"inv":false,"h":10,"tier":"SKIP","flip":"Non Flip","h4s":"Sub","m15s":"Interne","tp":[],"notion":""},{"d":"2026-04-07","m":"2026-04","p":"GBPUSD","s":"Re-confirmation X","sd":"Re-confirmation X - Type A","ss":"Asian","su":"Asian","w":"Mardi","o":["Asian Box - Entry","Volume - Mèche"],"h4":["Fib Externe atteint","No-Sweep","Volume - 1st Candle","contre-OrderFlow"],"be":["No BE available"],"oc":"SL","r":-1.0,"rm":-1.0,"dir":"Achat","tt":["BackTest"],"bad":false,"inv":false,"h":3,"tier":"STRONG","flip":"Non Flip","h4s":"Interne","m15s":"Interne","tp":[],"notion":""}];
 
 const DEBUG_DASHBOARD = false;
@@ -2048,7 +2121,6 @@ function handleActionClick(event) {
       break;
     case 'close-csv-overlay': closeCsvOverlay(); break;
     case 'set-data-source': setDataSource(actionEl.dataset.source); break;
-    case 'refresh-api-source': refreshAPISource(); break;
     case 'toggle-account-section': _toggleAccountSection(); break;
     case 'toggle-data-sources-section': _toggleDataSourcesSection(); break;
     case 'toggle-integrations-section':    _toggleIntegrationsSection(); break;
@@ -4931,26 +5003,6 @@ function _getJournalProfileCacheCount(profile = null) {
   } catch {}
   return 0;
 }
-function _formatNotionSyncAgo(timestamp) {
-  const ts = Number(timestamp || 0);
-  if (!Number.isFinite(ts) || ts <= 0) return 'Never';
-  const diffMs = Math.max(0, Date.now() - ts);
-  const min = Math.floor(diffMs / 60000);
-  if (min < 1) return 'now';
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  return `${day}d ago`;
-}
-function _getNotionSyncView(profile = null) {
-  const state = String(profile?.notionSyncState || 'idle');
-  if (state === 'disconnected') return { label: 'Notion disconnected', className: 'disconnected', dot: '●' };
-  if (state === 'syncing') return { label: 'Syncing...', className: 'syncing', dot: '●' };
-  if (state === 'error') return { label: 'Sync failed', className: 'error', dot: '●' };
-  if (state === 'synced') return { label: 'Synced', className: 'synced', dot: '●' };
-  return { label: 'Not synced', className: 'idle', dot: '○' };
-}
 function _updateJournalProfileSyncMeta(profileId, patch = {}) {
   const id = String(profileId || '').trim();
   if (!id) return null;
@@ -4962,37 +5014,6 @@ function _updateJournalProfileSyncMeta(profileId, patch = {}) {
   const updated = saved.find(p => p.id === id) || profiles[idx];
   _syncJournalProfileUI();
   return updated;
-}
-function _renderNotionSyncSection(profile) {
-  if (profile.connectionType !== 'notion' || !profile.notionDatabaseId) return '';
-  const pid = _escapeHtml(profile.id);
-  const view = _getNotionSyncView(profile);
-  if (view.className === 'disconnected') {
-    return `<div class="jp-notion-sync-panel jp-notion-sync-panel--disconnected">
-      <div class="jp-notion-sync-main">
-        <span class="jp-notion-sync-status">
-          <span class="jp-notion-sync-dot" aria-hidden="true">${view.dot}</span>
-          <span>${view.label}</span>
-        </span>
-        <span class="jp-notion-sync-detail">Reconnect to enable syncing</span>
-      </div>
-      <button class="jp-notion-sync-btn" type="button" data-action="notion-integration-reconnect">Reconnect</button>
-    </div>`;
-  }
-  const lastSync = _formatNotionSyncAgo(profile.notionLastSync);
-  const tradeCount = Number(profile.notionTradeCount || 0);
-  const disabled = view.className === 'syncing' ? ' disabled' : '';
-  return `<div class="jp-notion-sync-panel jp-notion-sync-panel--${view.className}">
-    <div class="jp-notion-sync-main">
-      <span class="jp-notion-sync-status">
-        <span class="jp-notion-sync-dot" aria-hidden="true">${view.dot}</span>
-        <span>${view.label}</span>
-      </span>
-      <span class="jp-notion-sync-detail">Last sync: ${_escapeHtml(lastSync)}</span>
-      <span class="jp-notion-sync-detail">Trades: ${_escapeHtml(String(tradeCount))}</span>
-    </div>
-    <button class="jp-notion-sync-btn" type="button" data-action="notion-profile-sync-now" data-profile-id="${pid}"${disabled}>↻ Sync now</button>
-  </div>`;
 }
 async function _handleNotionProfileSyncNow(profileId) {
   const profile = _getJournalProfileById(profileId);
@@ -5143,7 +5164,7 @@ function _renderNotionDbSection(profile) {
         <span class="jp-notion-db-label">${isDisconnected ? 'Database' : 'Syncing'}: <strong>${title}</strong></span>
         ${isDisconnected ? '' : `<button class="jp-notion-db-change-btn" type="button"
           data-action="notion-db-picker-open" data-profile-id="${pid}">Change</button>`}
-      </div>${_renderNotionSyncSection(profile)}`;
+      </div>`;
     }
     return `<div class="jp-notion-db-section jp-notion-db-section--empty">
       <span class="jp-notion-db-hint">No database selected</span>
@@ -5384,7 +5405,7 @@ async function _reloadJournalProfileSelection(options = {}) {
   const { forceFetch = false } = options;
   const mode = localStorage.getItem(DS_KEY) || 'demo';
   const activeProfile = getActiveJournalProfile();
-  const isNotionWithDb = activeProfile?.connectionType === 'notion' && !!activeProfile?.notionDatabaseId;
+  const isNotionWithDb = activeProfile?.connectionType === 'notion' && getIntegration(activeProfile).isReady(activeProfile);
   debugLog('[DashboardDebug]');
   debugLog('[DashboardDebug]');
   debugLog('[DashboardDebug]');
@@ -5457,6 +5478,7 @@ async function _applyActiveJournalProfile(profile, options = {}) {
   } finally {
     _journalProfileCacheContextOverride = previousOverride;
   }
+  _diagAssertProfileTradeAlignment('post-_applyActiveJournalProfile');
 }
 async function _handleJournalProfileSelectChange(id) {
   const active = setActiveJournalProfile(id);
@@ -6688,6 +6710,13 @@ function cleanupAPIStorage({ activeProfileId = '', activeHtfSource = 'm15' } = {
   }
 }
 function safeSetLocalStorage(key, value, context = {}) {
+  // Dedup short-circuit: skip the write entirely when the value matches what's
+  // already stored. Audit showed ~430KB/30s of fully-redundant writes in normal
+  // usage (ROADMAP Bloc 4 investigation, 2026-05-20). Cheap: one getItem.
+  try {
+    const strValue = typeof value === 'string' ? value : String(value);
+    if (localStorage.getItem(key) === strValue) return true;
+  } catch (e) {}
   const payloadBytes = _storageBytes(value);
   const currentTotalBytes = _getLocalStorageUsageEntries().totalBytes;
   if (context.kind === 'apiTradesCache' && currentTotalBytes > (8000 * 1024)) {
@@ -7072,15 +7101,6 @@ function _getCacheAge(source = null) {
   } catch { return null; }
 }
 
-function getAPICooldownRemainingMs(source = null) {
-  try {
-    const src = source || _getCurrentHTFSource();
-    const ts = parseInt(_readFirstLocalStorageValue(`apiTradesCacheTime_v2_rrmax_${src}`) || '0', 10);
-    if (!ts) return 0;
-    return Math.max(0, API_REFRESH_COOLDOWN_MS - (Date.now() - ts));
-  } catch { return 0; }
-}
-
 function _formatCooldown(ms) {
   if (!ms) return '0 min';
   const minutes = Math.ceil(ms / 60000);
@@ -7163,6 +7183,43 @@ function _syncHTFToggleUI() {
 // Reload all profile-scoped state (presets, snapshots, live filters, layout,
 // hidden widgets) from localStorage. Called whenever the active profile or
 // HTF source changes — both inputs feed _htfKey() / getProfileScopedKey(),
+// [DIAG profile/trade alignment] — issue 2026-05-19
+// Fires console.error when `appState.trades.items` carries a tag pointing to a
+// different profile than the currently-active one. Dedupes by state key so a
+// stuck mismatch logs once, not on every render. Set window.__DIAG_PT_VERBOSE
+// = true in the console to disable dedupe and log every call.
+let _diagLastReportedPTState = '';
+function _diagAssertProfileTradeAlignment(callSite) {
+  try {
+    const items = appState?.trades?.items;
+    if (!items || !items.length) { _diagLastReportedPTState = ''; return; }
+    let dsMode = '';
+    try { dsMode = localStorage.getItem(DS_KEY) || ''; } catch (e) {}
+    if (dsMode !== 'api') { _diagLastReportedPTState = ''; return; }
+    const activeNow = String(getActiveJournalProfile()?.id || '');
+    const tagged    = String(appState.trades.__diagSourceProfileId || '');
+    if (!activeNow || !tagged || activeNow === tagged) {
+      _diagLastReportedPTState = '';
+      return;
+    }
+    const key = `${activeNow}|${tagged}|${items.length}`;
+    if (key === _diagLastReportedPTState && !window.__DIAG_PT_VERBOSE) return;
+    _diagLastReportedPTState = key;
+    console.error('[ProfileTradeMismatch] active profile ≠ injected profile', {
+      callSite,
+      activeProfileNow: activeNow,
+      tradesInjectedFromProfile: tagged,
+      tradeCount: items.length,
+      injectLabel: appState.trades.__diagLabel || '',
+      ageMs: Date.now() - (appState.trades.__diagInjectedAt || Date.now()),
+      overrideAtInject: appState.trades.__diagOverrideAtInject || '',
+      overrideNow: String(_journalProfileCacheContextOverride || ''),
+      dsModeAtInject: appState.trades.__diagDsModeAtInject || '',
+      dsModeNow: dsMode,
+      injectStack: appState.trades.__diagInjectStack || ''
+    });
+  } catch (e) {}
+}
 // so this re-reads from the correct slot for the current (profile × htf) pair.
 //   - Idempotent: safe to call multiple times in a row.
 //   - Does NOT touch trade data: callers handle data injection separately.
@@ -7269,13 +7326,11 @@ function updateSourceUI(mode) {
   const btnDemo = document.getElementById('ds-btn-demo');
   const btnCsv  = document.getElementById('ds-btn-csv');
   const btnApi  = document.getElementById('ds-btn-api');
-  const btnRef  = document.getElementById('ds-refresh-btn');
   if (btnDemo) btnDemo.classList.toggle('active', mode === 'demo');
   if (btnCsv) { btnCsv.classList.toggle('active', mode === 'csv');
                 btnCsv.classList.remove('api-live'); }
   if (btnApi) { btnApi.classList.toggle('active', mode === 'api');
                 btnApi.classList.toggle('api-live', mode === 'api'); }
-  if (btnRef) setVisible(btnRef, false);
   _syncDsButtonTitles();
   const htfGroup = document.getElementById('htf-toggle-group');
   if (htfGroup) htfGroup.classList.add('is-hidden'); // always hidden — profiles determine M15/H4
@@ -7296,6 +7351,22 @@ function _injectTrades(parsed, totalLabel, savedState) {
   appState.trades.items.length = 0;
   valid.forEach(t => appState.trades.items.push(t));
   appState.trades.totalOverride = appState.trades.items.length;
+
+  // [DIAG profile/trade alignment]
+  // Tag the dataset with the profile context that produced it. Read by
+  // _diagAssertProfileTradeAlignment to catch the "wrong profile's data on
+  // screen" bug (issue 2026-05-19: H4 highlighted but M15 trades visible).
+  try {
+    let _diagDsMode = '';
+    try { _diagDsMode = localStorage.getItem(DS_KEY) || ''; } catch (e) {}
+    appState.trades.__diagSourceProfileId = String(getActiveJournalProfile()?.id || '');
+    appState.trades.__diagOverrideAtInject = String(_journalProfileCacheContextOverride || '');
+    appState.trades.__diagDsModeAtInject = _diagDsMode;
+    appState.trades.__diagLabel = String(totalLabel || '');
+    appState.trades.__diagInjectedAt = Date.now();
+    appState.trades.__diagInjectStack = (new Error()).stack || '';
+    _diagAssertProfileTradeAlignment('post-_injectTrades');
+  } catch (e) {}
 
   // Option B (sub-task 4): bulk repopulate extras for every declared custom
   // prop from the freshly ingested raw source. Silent — the render() in the
@@ -7405,8 +7476,6 @@ async function loadFromAPI(options = {}) {
   appState.settings.dataSource.loading = true;
   debugDataSource('loadFromAPI:start', { silent, force, url: requestURL, source: requestSource });
 
-  const btn = getByIdSafe('ds-refresh-btn');
-  if (btn) btn.classList.add('spinning');
   if (!silent) showDataStatus('Loading API…', 'warn');
 
   setSourceIndicator('loading');
@@ -7492,7 +7561,6 @@ async function loadFromAPI(options = {}) {
     }
   } finally {
     appState.settings.dataSource.loading = false;
-    if (btn) btn.classList.remove('spinning');
     // Refresh the Journal panel so "loading fields…" resolves whether the
     // fetch populated the raw cache (success) or bailed to fallback.
     if (typeof dataHubOpen !== 'undefined' && dataHubOpen) {
@@ -7511,6 +7579,26 @@ let _sidebarPersistReady = false;
 // gate user-driven mutations (e.g. mutex resets) so boot-time hydration doesn't
 // wipe persisted state. Flipped to false at the end of initDataSource.
 let _isBootstrapping = true;
+// Cache of the last sidebar state we wrote — shared by the sync and debounced
+// writers so neither path emits a duplicate localStorage write. On the very
+// first call of a session, we compare against localStorage too, which kills
+// the redundant boot-time write (the `_saveFilterState() round-trip rebuilds
+// the same payload that hydration just loaded).
+let _persistSidebarStateLastPayload = null;
+function _writeSidebarStateIfChanged(serialized) {
+  if (serialized === _persistSidebarStateLastPayload) return;
+  if (_persistSidebarStateLastPayload === null) {
+    try {
+      const prev = localStorage.getItem(SIDEBAR_STATE_KEY);
+      if (prev === serialized) {
+        _persistSidebarStateLastPayload = serialized;
+        return;
+      }
+    } catch (e) {}
+  }
+  _persistSidebarStateLastPayload = serialized;
+  localStorage.setItem(SIDEBAR_STATE_KEY, serialized);
+}
 function _persistSidebarState() {
   if (!_sidebarPersistReady) return;
   try {
@@ -7544,7 +7632,7 @@ function _persistSidebarState() {
       pcmpA: document.getElementById('pcmp-a')?.value ?? null,
       pcmpB: document.getElementById('pcmp-b')?.value ?? null,
     };
-    localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify(payload));
+    _writeSidebarStateIfChanged(JSON.stringify(payload));
   } catch (e) {
     console.warn('[sidebar persist]', e.message);
   }
@@ -7556,7 +7644,6 @@ function _persistSidebarState() {
 // synchronously. The beforeunload flush below guarantees pending writes
 // are persisted before the page is closed.
 let _persistSidebarStateTimer = null;
-let _persistSidebarStateLastPayload = null;
 function _persistSidebarStateDebounced() {
   if (_persistSidebarStateTimer) clearTimeout(_persistSidebarStateTimer);
   _persistSidebarStateTimer = setTimeout(() => {
@@ -7591,10 +7678,7 @@ function _persistSidebarStateDebounced() {
         pcmpA: document.getElementById('pcmp-a')?.value ?? null,
         pcmpB: document.getElementById('pcmp-b')?.value ?? null,
       };
-      const serialized = JSON.stringify(payload);
-      if (serialized === _persistSidebarStateLastPayload) return;
-      _persistSidebarStateLastPayload = serialized;
-      localStorage.setItem(SIDEBAR_STATE_KEY, serialized);
+      _writeSidebarStateIfChanged(JSON.stringify(payload));
     } catch (e) {
       console.warn('[sidebar persist]', e && e.message);
     }
@@ -7960,45 +8044,6 @@ function _saveAPIURL() {
   debugDataSource('api-url:updated', { url });
   getByIdSafe('api-error-banner')?.remove();
   loadFromAPI({ force: true });
-}
-
-// ── Manual refresh (only in API mode) ──
-function _setBtnCooldown(remainingMs) {
-  const btn = document.getElementById('ds-btn-api');
-  if (!btn) return;
-  // Clear any existing countdown interval
-  if (btn._cooldownInterval) { clearInterval(btn._cooldownInterval); btn._cooldownInterval = null; }
-  if (!remainingMs || remainingMs <= 0) { btn.dataset.cooldown = ''; return; }
-  const endTs = Date.now() + remainingMs;
-  const tick = () => {
-    const left = Math.max(0, endTs - Date.now());
-    const mins = Math.ceil(left / 60000);
-    btn.dataset.cooldown = left > 0 ? `${mins} min` : '';
-    if (left <= 0) { clearInterval(btn._cooldownInterval); btn._cooldownInterval = null; }
-  };
-  tick();
-  btn._cooldownInterval = setInterval(tick, 30000);
-}
-
-function refreshAPISource() {
-  if (localStorage.getItem(DS_KEY) !== 'api') return;
-  const remainingMs = getAPICooldownRemainingMs();
-  debugDataSource('refreshAPISource', { remainingMs });
-  if (remainingMs > 0) {
-    const cached = getCachedAPIData();
-    if (cached && cached.length) {
-      _injectTrades(cached, 'Cache', appState.settings.dataSource.pendingRestoreState);
-      appState.settings.dataSource.pendingRestoreState = null;
-      setSourceIndicator('live');
-      showDataStatus(_getAPICacheStatusLabel(), 'live');
-      _updateLastSync();
-    }
-    _setBtnCooldown(remainingMs);
-    return;
-  }
-  _setBtnCooldown(0);
-  loadFromAPI({ force: false });
-  _fetchOtherSourceBackground(); // concurrent fetch for the non-active HTF source
 }
 
 // ── Silent cache refresh (no mode switch, no data injection) ──
@@ -8541,9 +8586,6 @@ async function _loadNotionTrades(profile, options = {}) {
   if (!silent && !isBackgroundReconcile && wasActiveAtStart) showDataStatus('Loading Notion data…', 'warn');
   if (wasActiveAtStart && !isBackgroundReconcile) setSourceIndicator('loading');
 
-  const btn = typeof getByIdSafe === 'function' ? getByIdSafe('ds-refresh-btn') : null;
-  if (btn) btn.classList.add('spinning');
-
   try {
     const queryStartedAt = new Date().toISOString();
     const incrementalParam = (!fullSync && lastCursor)
@@ -8827,10 +8869,10 @@ async function _loadNotionTrades(profile, options = {}) {
     // sub-branch returned. Pinned at the top of the function.
     _journalProfileCacheContextOverride = _prevCacheCtx;
     appState.settings.dataSource.loading = false;
-    if (btn) btn.classList.remove('spinning');
     if (typeof dataHubOpen !== 'undefined' && dataHubOpen) {
       try { updateJournalPanel(); } catch (e) {}
     }
+    _diagAssertProfileTradeAlignment('post-_loadNotionTrades');
   }
 }
 
@@ -15445,9 +15487,11 @@ function _saveBootSnapshot() {
     try {
       const ts = document.getElementById('topbar-stats');
       if (!ts || !ts.children.length) return;
+      // Payload deliberately omits a timestamp: only topbarStatsHtml is read on
+      // boot (index.html restore script), so a stable payload lets the global
+      // setItem dedup short-circuit every render where the topbar didn't change.
       localStorage.setItem('dashboard_boot_snapshot_v1', JSON.stringify({
         topbarStatsHtml: ts.innerHTML,
-        savedAt: Date.now(),
       }));
     } catch (e) { /* quota or serialize failure — silently skip */ }
   }, 250);
@@ -18018,13 +18062,17 @@ function _commitLinkedSettingsToAllCustomHeatmaps() {
   let changed = false;
   defs.forEach(def => {
     if (def.type !== 'heatmap') return;
-    changed = true;
+    const prev = def.settings || {};
+    if (prev.metricMode === _sdMetric
+        && prev.threshold === _heatmapThreshold
+        && prev.hardMode === _hmHardMode) return;
     def.settings = {
-      ...(def.settings || {}),
+      ...prev,
       metricMode: _sdMetric,
       threshold: _heatmapThreshold,
       hardMode: _hmHardMode,
     };
+    changed = true;
   });
   if (changed) _saveCustomWidgetDefs(defs);
 }
@@ -32388,8 +32436,12 @@ function loadSavedTheme() {
     }
     const theme = JSON.parse(saved);
     currentTheme = { ...THEME_DEFAULT, ...theme };
-    // Persist the merged version so missing new vars are written back
-    try { localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(currentTheme)); } catch(e) {}
+    // Persist the merged version only if it differs — avoids a redundant
+    // ~4.5KB write on every boot when no new theme vars were introduced.
+    try {
+      const serialized = JSON.stringify(currentTheme);
+      if (serialized !== saved) localStorage.setItem(THEME_STORAGE_KEY, serialized);
+    } catch(e) {}
     applyThemeToCss(currentTheme);
     return true;
   } catch(e) {

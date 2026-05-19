@@ -7921,77 +7921,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .jp-notion-db-confirm-btn:hover {
   background: color-mix(in srgb, var(--gold) 25%, transparent) !important;
 }
-.jp-notion-sync-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--surface-3) 60%, transparent);
-  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
-}
-.jp-notion-sync-main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-.jp-notion-sync-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--body);
-}
-.jp-notion-sync-detail {
-  font-size: 11px;
-  color: var(--dim);
-  white-space: nowrap;
-}
-.jp-notion-sync-dot {
-  font-size: 10px;
-  line-height: 1;
-}
-.jp-notion-sync-panel--synced .jp-notion-sync-dot {
-  color: var(--g, #22c55e);
-}
-.jp-notion-sync-panel--syncing .jp-notion-sync-dot {
-  color: var(--y, #eab308);
-}
-.jp-notion-sync-panel--error .jp-notion-sync-dot {
-  color: var(--r, #ef4444);
-}
-.jp-notion-sync-panel--disconnected .jp-notion-sync-dot {
-  color: var(--r, #ef4444);
-}
-.jp-notion-sync-panel--disconnected {
-  background: color-mix(in srgb, var(--r, #ef4444) 7%, transparent);
-}
-.jp-notion-sync-panel--idle .jp-notion-sync-dot {
-  color: var(--dim);
-}
-.jp-notion-sync-btn {
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, var(--surface-3) 80%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--surface-3) 48%, transparent);
-  color: var(--body);
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background .12s, border-color .12s, opacity .12s;
-}
-.jp-notion-sync-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--surface-3) 76%, transparent);
-  border-color: var(--gold);
-}
-.jp-notion-sync-btn:disabled {
-  cursor: not-allowed;
-  opacity: .58;
-}
 .database-change-confirm-modal {
   max-width: 430px;
 }
@@ -10746,22 +10675,6 @@ body.ms-sidebar-open .view-tabs {
   0%, 100% { opacity: 1; }
   50%       { opacity: .45; }
 }
-.ds-refresh-btn {
-  font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
-  letter-spacing: .4px;
-  padding: 3px 10px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--g) 30%, transparent);
-  background: color-mix(in srgb, var(--g) 8%, transparent);
-  color: var(--g);
-  cursor: pointer;
-  transition: all .15s;
-  display: none; /* hidden unless API mode */
-}
-.ds-refresh-btn:hover { background: color-mix(in srgb, var(--g) 15%, transparent); }
-.ds-refresh-btn.spinning { animation: ds-spin .8s linear infinite; }
-@keyframes ds-spin { to { transform: rotate(360deg); } }
 .ds-last-sync {
   font-family: 'DM Mono', monospace;
   font-size: var(--typo-micro-size);
@@ -16194,9 +16107,7 @@ body.ms-sidebar-open .view-tabs {
   .topbar-stats .ts-l { font-size: 7px; }
   .topbar-stats .ts-v { font-size: 11px; }
   .topbar { padding: 0 10px; gap: 8px; }
-  /* Free more right-side space — refresh button and TPM mode badge get
-     their padding tightened. */
-  .ds-refresh-btn { padding: 4px 6px; font-size: 10px; }
+  /* Free more right-side space — TPM mode badge gets its padding tightened. */
   .ds-toggle-btn  { padding: 4px 5px; }
   .topbar-more-btn { padding: 0 6px; }
   .logo-dot { width: 5px; height: 5px; }
