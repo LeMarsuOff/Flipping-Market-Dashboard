@@ -13532,9 +13532,9 @@ function _selTradeRow(t, highlighted) {
     ? `<button class="trade-media-btn trade-link-btn" data-action="open-notion-overlay" data-notion-url="${notionUrl.replace(/"/g, '&quot;')}" title="Open in Notion">🔗</button>`
     : '';
   return `<tr data-trade-id="${safeTradeId}" style="${hlStyle}">
-    <td class="mono" style="color:var(--dim)">${t.date || '—'}</td>
-    <td><div style="display:flex;align-items:center;gap:4px">${notionBtn}<span class="dpt-pair">${t.pair || '—'}</span></div></td>
-    <td><span class="${ocClass[outcome] || ''}" style="font-weight:600">${outcome}</span></td>
+    <td class="mono" style="color:var(--dim)">${_escapeHtml(t.date || '—')}</td>
+    <td><div style="display:flex;align-items:center;gap:4px">${notionBtn}<span class="dpt-pair">${_escapeHtml(t.pair || '—')}</span></div></td>
+    <td><span class="${ocClass[outcome] || ''}" style="font-weight:600">${_escapeHtml(outcome)}</span></td>
     <td class="r" style="color:${_rEff > 0 ? 'var(--g)' : _rEff < 0 ? 'var(--r)' : 'var(--gold)'};font-weight:600">${rSign}${_rEff.toFixed(1)}R</td>
     <td>${dirHtml}</td>
     <td style="font-size:11px;color:var(--body)">${t.setup || '—'}</td>
@@ -15100,15 +15100,15 @@ function renderTable(trades) {
         data-trade-hour="${t.hour ?? ''}"
         data-trade-r="${t.r /* KEEP raw trade.r — identity matching for click-to-locate. Must NOT use computeEffectiveRR (weighted value would break the lookup). */}"
         title="Open day in drawer">
-      <td class="mono">${t.date || '—'}</td>
-      <td><div style="display:flex;align-items:center;gap:4px">${notionBtn}<strong style="color:var(--white);font-size:${_tlPairSz}">${t.pair}</strong></div></td>
-      <td class="${ocClass[t.outcome] || ''}" style="font-weight:600">${t.outcome}</td>
+      <td class="mono">${_escapeHtml(t.date || '—')}</td>
+      <td><div style="display:flex;align-items:center;gap:4px">${notionBtn}<strong style="color:var(--white);font-size:${_tlPairSz}">${_escapeHtml(t.pair || '')}</strong></div></td>
+      <td class="${ocClass[t.outcome] || ''}" style="font-weight:600">${_escapeHtml(t.outcome || '')}</td>
       <td class="r" style="color:${_rEff > 0 ? 'var(--g)' : _rEff < 0 ? 'var(--r)' : 'var(--gold)'};font-weight:600">${_rEff > 0 ? '+' : ''}${_rEff.toFixed(1)}R</td>
       <td>${dirHtml}</td>
-      <td style="font-size:${_tlSetupSz};color:var(--body)">${SETUP_SHORT[t.setup] || t.setup || '—'}</td>
-      <td style="font-size:${_tlSessionSz};color:var(--body)">${SESSION_SHORT[t.session] || t.session || '—'}</td>
-      <td style="font-size:${_tlDaySz};color:var(--body)">${DAY_EN[t.day] || t.day || '—'}</td>
-      <td style="font-size:${_tlObsSz};color:var(--body);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(t.obstacles || []).join(', ')}">${(t.obstacles || []).slice(0, 2).join(', ')}${(t.obstacles || []).length > 2 ? ' +' + (t.obstacles.length - 2) : ''}</td>
+      <td style="font-size:${_tlSetupSz};color:var(--body)">${_escapeHtml(SETUP_SHORT[t.setup] || t.setup || '—')}</td>
+      <td style="font-size:${_tlSessionSz};color:var(--body)">${_escapeHtml(SESSION_SHORT[t.session] || t.session || '—')}</td>
+      <td style="font-size:${_tlDaySz};color:var(--body)">${_escapeHtml(DAY_EN[t.day] || t.day || '—')}</td>
+      <td style="font-size:${_tlObsSz};color:var(--body);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escapeHtml((t.obstacles || []).join(', '))}">${_escapeHtml((t.obstacles || []).slice(0, 2).join(', '))}${(t.obstacles || []).length > 2 ? ' +' + (t.obstacles.length - 2) : ''}</td>
       <td style="padding:0 4px;text-align:center">${imgBtns}</td>
     </tr>`;
   };
@@ -15807,7 +15807,7 @@ function renderStreakTimeline(trades) {
         data-run-idx="${ri}"
         data-trade-idx="${ti}"
         style="background:${sqCol};opacity:${0.5 + 0.5*(ti/Math.max(run.trades.length-1,1))}"
-        data-tip="${t.date}${t.hour!=null?' '+String(t.hour).padStart(2,'0')+'h':''} · ${t.pair} · ${t.outcome} · ${rStr}"></div>`;
+        data-tip="${_escapeHtml(t.date || '')}${t.hour!=null?' '+String(t.hour).padStart(2,'0')+'h':''} · ${_escapeHtml(t.pair || '')} · ${_escapeHtml(t.outcome || '')} · ${_escapeHtml(rStr || '')}"></div>`;
     }).join('');
     const lbl = run.trades.length > 1
       ? `<span class="stl-run-lbl" style="color:${col}">${run.trades.length}×${(totalR>=0?'+':'')+totalR.toFixed(1)}R</span>`
@@ -18590,9 +18590,9 @@ function _wdTradeCard(t) {
     <div class="wd-trade-card ${_WD_BG_CLASS[t.outcome]||''}">
       <div class="wd-trade-main">
         <div class="wd-trade-pair-row">
-          ${t.pair||'—'}${notionBtn}
+          ${_escapeHtml(t.pair||'—')}${notionBtn}
         </div>
-        ${t.date?`<div class="wd-trade-date">${t.date}</div>`:''}
+        ${t.date?`<div class="wd-trade-date">${_escapeHtml(t.date)}</div>`:''}
       </div>
       <div class="wd-trade-side">
         <div class="wd-trade-r ${t.outcome==='BE-TP'?'wd-trade-r-betp':t.outcome==='BE-SL'?'wd-trade-r-besl':t.r>0?'wd-trade-r-pos':t.r<0?'wd-trade-r-neg':'wd-trade-r-neu'}">
@@ -18624,9 +18624,9 @@ function _wdTradeCard(t) {
       ${directionHtml}
       <div class="wd-trade-outcome-wrap">
         <span class="${_WD_OC_CLASS[t.outcome]||''} wd-trade-outcome">
-          ${t.outcome||'—'}</span>
+          ${_escapeHtml(t.outcome||'—')}</span>
       </div>
-      <div class="wd-trade-setup wd-trade-meta-line-full">${setupLine}</div>
+      <div class="wd-trade-setup wd-trade-meta-line-full">${_escapeHtml(setupLine)}</div>
       ${sessionHourHtml}
       ${rrMaxHtml}
       ${tpHitsHtml}
@@ -19524,9 +19524,9 @@ function _calShowTip(e, dateStr) {
   const rows = day.trades.map(t => {
     const _rEff = t.effectiveR ?? computeEffectiveRR(t, appState.ui.tpConfig);
     return `<div style="display:grid;grid-template-columns:58px 1fr auto auto;gap:6px;align-items:center;padding:5px 10px;border-top:1px solid var(--line)">
-      <span style="color:var(--dim);font-size:var(--typo-micro-size,8px)">${t.pair || '—'}</span>
-      <span style="color:var(--body);font-size:var(--typo-micro-size,8px);overflow:hidden;text-overflow:ellipsis">${t.setup ? t.setup.split(' ').slice(-2).join(' ') : ''}</span>
-      <span class="${_CAL_OC_CLASS[t.outcome] || ''}" style="font-size:var(--typo-micro-size,8px);font-weight:600">${t.outcome || '—'}</span>
+      <span style="color:var(--dim);font-size:var(--typo-micro-size,8px)">${_escapeHtml(t.pair || '—')}</span>
+      <span style="color:var(--body);font-size:var(--typo-micro-size,8px);overflow:hidden;text-overflow:ellipsis">${_escapeHtml(t.setup ? t.setup.split(' ').slice(-2).join(' ') : '')}</span>
+      <span class="${_CAL_OC_CLASS[t.outcome] || ''}" style="font-size:var(--typo-micro-size,8px);font-weight:600">${_escapeHtml(t.outcome || '—')}</span>
       <span style="font-weight:700;color:${_rEff > 0 ? 'var(--g)' : _rEff < 0 ? 'var(--r)' : 'var(--gold)'}">${_rEff > 0 ? '+' : ''}${_rEff.toFixed(1)}R</span>
     </div>`;
   }).join('');
@@ -38149,9 +38149,9 @@ function _renderMobTradeLogPage(wrap) {
                 : t.effectiveClass === 'be' ? 'is-neutral'
                 : (_rEff > 0 ? 'is-positive' : _rEff < 0 ? 'is-negative' : 'is-neutral');
     rows += `<div class="mob-tradelog-row ${rowTone[t.outcome]||''}">
-      <span class="mob-tradelog-pair">${t.pair||'—'}</span>
-      <span class="mob-tradelog-setup">${SETUP_SHORT[t.setup]||t.setup||'—'}</span>
-      <span class="${ocClass[t.outcome]||''} mob-tradelog-outcome">${t.outcome}</span>
+      <span class="mob-tradelog-pair">${_escapeHtml(t.pair||'—')}</span>
+      <span class="mob-tradelog-setup">${_escapeHtml(SETUP_SHORT[t.setup]||t.setup||'—')}</span>
+      <span class="${ocClass[t.outcome]||''} mob-tradelog-outcome">${_escapeHtml(t.outcome||'')}</span>
       <span class="mob-tradelog-r ${_cls}">${_rEff>0?'+':''}${_rEff.toFixed(1)}R</span>
     </div>`;
   });
