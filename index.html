@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=202">
+<link rel="stylesheet" href="dashboard.css?v=204">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1035,7 +1035,7 @@
 
     <nav class="settings-tabs" aria-label="Settings sections">
       <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="account">Account</button>
-      <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="data">Data & Integrations</button>
+      <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="data">Profiles</button>
     </nav>
 
     <section class="account-card account-section settings-tab-panel" id="account-section" data-settings-tab-panel="account">
@@ -1222,7 +1222,7 @@
     <section class="account-card account-section settings-tab-panel" id="data-integrations-section" data-settings-tab-panel="data">
       <button class="account-section-trigger" type="button" data-action="toggle-data-sources-section" aria-expanded="false">
         <span class="account-section-copy">
-          <span class="account-card-label">Data & Integrations</span>
+          <span class="account-card-label">Profiles</span>
           <span class="account-section-summary" id="data-sources-section-status">● Notion API connected</span>
           <span class="account-section-detail" id="data-sources-section-summary">—</span>
         </span>
@@ -1233,11 +1233,11 @@
         <div class="account-compact-block" id="journal-profile-default-pane">
           <div class="journal-profile-manage-content">
             <div class="data-sources-head">
-              <span class="data-sources-title">Data sources</span>
+              <span class="data-sources-title">Your profiles</span>
               <span class="data-sources-count" id="data-sources-card-summary">—</span>
             </div>
             <div class="journal-profile-switch-list" id="journal-profile-switch-list"></div>
-            <button class="account-secondary-btn journal-profile-add-btn" type="button" id="journal-profile-add-btn" data-action="journal-profile-add-source">+ Add source</button>
+            <button class="account-secondary-btn journal-profile-add-btn" type="button" id="journal-profile-add-btn" data-action="journal-profile-add-source">+ Add profile</button>
             <div class="journal-profile-editor-slot" id="journal-profile-editor-slot"></div>
           </div>
         </div>
@@ -2889,6 +2889,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=321"></script>
+<script src="dashboard.js?v=329"></script>
 </body>
 </html>

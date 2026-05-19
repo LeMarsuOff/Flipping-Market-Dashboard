@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Integrations vs Profiles — separation mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --bg4:       #232944;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --text-muted:#7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38, 166, 154, 0.14);
+  --g3:        rgba(38, 166, 154, 0.06);
+  --r:         #ef5350;
+  --r2:        rgba(239, 83, 80, 0.14);
+  --r3:        rgba(239, 83, 80, 0.07);
+  --gold:      #d4af37;
+  --gold2:     rgba(212, 175, 55, 0.14);
+  --gold3:     rgba(212, 175, 55, 0.07);
+  --info:      #7dd3fc;
+  --warn:      #ff9e3d;
+  --blue:      #4a8cff;
+  --purple:    #b478f0;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+body { padding: 32px 24px 80px; }
+
+.page-head {
+  max-width: 1240px; margin: 0 auto 24px;
+}
+.page-head h1 {
+  font-size: 22px; font-weight: 600; color: var(--white);
+  letter-spacing: -.3px; margin: 0 0 8px;
+}
+.page-head p {
+  font-size: 13px; color: var(--text-muted); margin: 0; max-width: 720px; line-height: 1.55;
+}
+
+.tabs {
+  max-width: 1240px; margin: 0 auto 20px;
+  display: flex; gap: 4px;
+  background: var(--bg1); border: 1px solid var(--line);
+  padding: 4px; border-radius: 8px; width: fit-content;
+}
+.tab {
+  padding: 8px 16px; font-size: 12px; font-weight: 500;
+  background: transparent; border: 0; color: var(--text-muted);
+  border-radius: 5px; cursor: pointer; font-family: inherit;
+  letter-spacing: .2px;
+  transition: all .14s ease;
+}
+.tab:hover { color: var(--white); }
+.tab.active { background: var(--bg3); color: var(--white); }
+
+.view { display: none; }
+.view.active { display: block; }
+
+/* ─── Shared panel shell ──────────────────────────────────────────── */
+.panel {
+  max-width: 1240px; margin: 0 auto;
+  background: var(--bg1); border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.35);
+  overflow: hidden;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 22px; border-bottom: 1px solid var(--line);
+  background: var(--bg2);
+}
+.panel-head h2 {
+  margin: 0; font-size: 13px; font-weight: 500; color: var(--white);
+  letter-spacing: .5px; text-transform: uppercase;
+}
+.panel-head .pill {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; padding: 4px 9px; border-radius: 4px;
+  background: var(--g2); color: var(--g); letter-spacing: .4px;
+  text-transform: uppercase;
+  border: 1px solid rgba(38,166,154,.3);
+}
+.panel-close {
+  width: 28px; height: 28px; background: transparent;
+  border: 1px solid var(--line2); border-radius: 5px;
+  color: var(--text-muted); cursor: pointer;
+  display: grid; place-items: center; font-family: 'DM Mono', monospace; font-size: 13px;
+}
+.panel-close:hover { color: var(--white); border-color: var(--white); }
+
+/* ─── Integrations layout: sidebar + main ────────────────────────── */
+.int-body {
+  display: grid; grid-template-columns: 280px 1fr;
+  min-height: 640px;
+}
+.int-sidebar {
+  background: var(--bg1); border-right: 1px solid var(--line);
+  padding: 18px 14px;
+}
+.int-sidebar-label {
+  font-family: 'DM Mono', monospace; font-size: 9px;
+  color: var(--text-muted); letter-spacing: .8px; text-transform: uppercase;
+  padding: 0 8px 10px;
+}
+.int-source {
+  display: grid; grid-template-columns: 32px 1fr auto;
+  gap: 11px; align-items: center;
+  padding: 11px 10px; border-radius: 6px;
+  cursor: pointer; transition: background .14s ease;
+  border: 1px solid transparent;
+  margin-bottom: 3px;
+}
+.int-source:hover { background: var(--bg2); }
+.int-source.active {
+  background: var(--bg3); border-color: var(--line2);
+}
+.int-source-icon {
+  width: 32px; height: 32px; border-radius: 7px;
+  display: grid; place-items: center;
+  background: var(--bg3); border: 1px solid var(--line);
+  font-size: 14px; font-weight: 600;
+  color: var(--white);
+}
+.int-source.notion .int-source-icon { background: #1a1a1a; color: #fff; }
+.int-source.mt5    .int-source-icon { background: #f0a020; color: #1a1a1a; }
+.int-source.mt4    .int-source-icon { background: #4a8cff; color: #fff; }
+.int-source.ctrader .int-source-icon { background: #e63946; color: #fff; }
+.int-source.csv    .int-source-icon { background: #2ecc71; color: #1a1a1a; }
+.int-source-name {
+  font-size: 13px; font-weight: 500; color: var(--white);
+  letter-spacing: -.1px; line-height: 1.2;
+}
+.int-source-sub {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--text-muted); letter-spacing: .2px;
+  margin-top: 3px;
+}
+.int-source-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--dim);
+}
+.int-source-dot.connected { background: var(--g); }
+.int-source-dot.error     { background: var(--r); }
+
+.int-main {
+  padding: 24px 28px; overflow-y: auto;
+}
+.int-main-head {
+  display: grid; grid-template-columns: 48px 1fr;
+  gap: 14px; align-items: center;
+  padding-bottom: 18px; border-bottom: 1px solid var(--line);
+}
+.int-main-icon {
+  width: 48px; height: 48px; border-radius: 10px;
+  background: #f0a020; color: #1a1a1a;
+  display: grid; place-items: center;
+  font-size: 20px; font-weight: 700;
+}
+.int-main-title {
+  font-size: 17px; font-weight: 600; color: var(--white);
+  letter-spacing: -.2px; margin: 0;
+}
+.int-main-sub {
+  font-size: 12px; color: var(--text-muted); margin-top: 3px;
+}
+
+.int-section-label {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--text-muted); letter-spacing: .6px;
+  margin: 22px 0 12px;
+}
+
+.int-grid-2 {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+.field-label {
+  display: block; font-size: 11px; color: var(--text-muted);
+  letter-spacing: .2px; margin-bottom: 6px;
+  font-weight: 500;
+}
+.field-input {
+  width: 100%; padding: 10px 12px;
+  background: var(--bg2); border: 1px solid var(--line2);
+  border-radius: 6px;
+  color: var(--white); font-size: 13px;
+  font-family: 'DM Mono', monospace;
+}
+.field-input::placeholder { color: var(--dim); }
+.field-input:focus { outline: none; border-color: var(--g); }
+.field-hint {
+  font-size: 11px; color: var(--text-muted); margin-top: 5px;
+}
+
+/* Sync token field with copy + regen */
+.token-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 6px;
+  align-items: stretch;
+}
+.token-btn {
+  padding: 0 12px; background: var(--bg2);
+  border: 1px solid var(--line2); border-radius: 6px;
+  color: var(--text-muted); cursor: pointer; font-size: 11px;
+  font-family: 'DM Mono', monospace; letter-spacing: .3px;
+}
+.token-btn:hover { color: var(--white); border-color: var(--white); }
+
+/* Download EA card */
+.ea-card {
+  display: grid; grid-template-columns: 48px 1fr auto;
+  gap: 14px; align-items: center;
+  padding: 14px 16px;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.ea-card-icon {
+  width: 48px; height: 48px; border-radius: 8px;
+  background: var(--bg3); border: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--text-muted);
+}
+.ea-card-name { font-size: 13px; font-weight: 600; color: var(--white); }
+.ea-card-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.ea-card-btn {
+  padding: 10px 18px;
+  background: var(--white); color: var(--bg);
+  font-size: 12px; font-weight: 600; border: 0; border-radius: 6px;
+  cursor: pointer; font-family: inherit; letter-spacing: .2px;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.ea-card-btn:hover { background: #fff; }
+
+/* Sync feedback block */
+.sync-feedback {
+  padding: 14px 16px;
+  background: var(--g3); border: 1px solid rgba(38,166,154,.22);
+  border-radius: 8px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 14px;
+  align-items: center;
+}
+.sync-feedback-stat-label {
+  font-family: 'DM Mono', monospace; font-size: 9px;
+  color: var(--text-muted); letter-spacing: .6px; text-transform: uppercase;
+}
+.sync-feedback-stat-val {
+  font-size: 14px; font-weight: 600; color: var(--white); margin-top: 3px;
+  font-family: 'DM Mono', monospace;
+}
+.sync-feedback .test-btn {
+  padding: 8px 14px; background: var(--bg2);
+  border: 1px solid var(--line2); border-radius: 6px;
+  color: var(--white); font-size: 11px; cursor: pointer;
+  font-family: inherit;
+}
+
+/* Install accordion */
+.install-acc {
+  margin-top: 14px;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 8px; overflow: hidden;
+}
+.install-acc summary {
+  padding: 14px 16px; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--white);
+  list-style: none; display: flex; align-items: center; gap: 10px;
+}
+.install-acc summary::-webkit-details-marker { display: none; }
+.install-acc[open] summary { border-bottom: 1px solid var(--line); }
+.install-acc summary::before {
+  content: '▸'; color: var(--text-muted); transition: transform .14s ease;
+  font-size: 10px;
+}
+.install-acc[open] summary::before { transform: rotate(90deg); }
+.install-body { padding: 16px 18px 18px 32px; }
+.install-step {
+  display: grid; grid-template-columns: 32px 1fr;
+  gap: 14px; padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--body);
+}
+.install-step:first-child { border-top: 0; }
+.install-step-n {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--text-muted); letter-spacing: .3px;
+}
+
+/* Bottom action row */
+.int-actions {
+  margin-top: 22px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+.btn-secondary {
+  padding: 9px 16px; background: transparent;
+  border: 1px solid var(--line2); border-radius: 6px;
+  color: var(--body); font-size: 12px; cursor: pointer;
+  font-family: inherit;
+}
+.btn-secondary:hover { color: var(--white); border-color: var(--white); }
+.btn-danger {
+  padding: 9px 16px; background: transparent;
+  border: 1px solid rgba(239,83,80,.4); border-radius: 6px;
+  color: var(--r); font-size: 12px; cursor: pointer;
+  font-family: inherit;
+}
+.btn-danger:hover { background: var(--r2); }
+
+/* ─── Profiles view ──────────────────────────────────────────────── */
+.pf-active {
+  margin: 18px 22px 0;
+  padding: 16px 20px;
+  background: var(--bg2); border: 1px solid var(--g);
+  border-radius: 8px;
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 14px;
+  align-items: center;
+}
+.pf-active-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--g);
+  box-shadow: 0 0 8px rgba(38,166,154,.5);
+}
+.pf-active-label {
+  font-family: 'DM Mono', monospace; font-size: 9px;
+  color: var(--g); letter-spacing: .6px; text-transform: uppercase;
+}
+.pf-active-name {
+  font-size: 15px; font-weight: 600; color: var(--white);
+  margin-top: 2px; letter-spacing: -.1px;
+}
+.pf-active-meta {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--text-muted); margin-top: 2px;
+}
+.pf-active-stat {
+  text-align: right;
+}
+.pf-active-stat-val {
+  font-family: 'DM Mono', monospace; font-size: 15px;
+  font-weight: 600; color: var(--white);
+}
+.pf-active-stat-label {
+  font-family: 'DM Mono', monospace; font-size: 9px;
+  color: var(--text-muted); letter-spacing: .4px; text-transform: uppercase;
+  margin-top: 2px;
+}
+
+.pf-list-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 24px 22px 12px;
+}
+.pf-list-title {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--text-muted); letter-spacing: .8px; text-transform: uppercase;
+}
+.pf-add-btn {
+  padding: 8px 14px; background: var(--g); color: #051512;
+  font-size: 12px; font-weight: 600; border: 0; border-radius: 6px;
+  cursor: pointer; font-family: inherit; letter-spacing: .2px;
+}
+
+.pf-list { padding: 0 22px 22px; }
+.pf-row {
+  display: grid;
+  grid-template-columns: 24px 32px 1fr auto auto auto;
+  gap: 14px; align-items: center;
+  padding: 14px 16px;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.pf-row:hover { border-color: var(--line2); }
+.pf-row.active { border-color: var(--g); background: var(--bg3); }
+.pf-row.locked { opacity: .85; }
+.pf-radio {
+  width: 16px; height: 16px; border: 1.5px solid var(--line2);
+  border-radius: 50%; display: grid; place-items: center;
+}
+.pf-row.active .pf-radio { border-color: var(--g); }
+.pf-row.active .pf-radio::after {
+  content: ''; width: 7px; height: 7px; background: var(--g); border-radius: 50%;
+}
+.pf-source-icon {
+  width: 32px; height: 32px; border-radius: 7px;
+  display: grid; place-items: center;
+  font-size: 13px; font-weight: 600; color: var(--white);
+}
+.pf-source-icon.mt5    { background: #f0a020; color: #1a1a1a; }
+.pf-source-icon.mt4    { background: #4a8cff; color: #fff; }
+.pf-source-icon.notion { background: #1a1a1a; color: #fff; }
+.pf-source-icon.csv    { background: #2ecc71; color: #1a1a1a; }
+.pf-source-icon.demo   { background: var(--bg3); color: var(--text-muted); border: 1px solid var(--line2); }
+.pf-name {
+  font-size: 13px; font-weight: 600; color: var(--white);
+  letter-spacing: -.1px;
+}
+.pf-sub {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--text-muted); letter-spacing: .2px; margin-top: 3px;
+}
+.pf-trades {
+  font-family: 'DM Mono', monospace; font-size: 13px;
+  color: var(--white); font-weight: 500;
+  min-width: 80px; text-align: right;
+}
+.pf-badge {
+  padding: 4px 9px; font-size: 9px; font-weight: 600;
+  border-radius: 4px; letter-spacing: .4px; text-transform: uppercase;
+  font-family: 'DM Mono', monospace;
+}
+.pf-badge.synced       { background: var(--g2); color: var(--g); }
+.pf-badge.disconnected { background: var(--r2); color: var(--r); }
+.pf-badge.demo         { background: var(--bg3); color: var(--text-muted); border: 1px solid var(--line2); }
+.pf-actions {
+  display: flex; gap: 4px;
+}
+.pf-icon-btn {
+  width: 28px; height: 28px;
+  background: transparent; border: 1px solid var(--line);
+  border-radius: 5px; color: var(--text-muted); cursor: pointer;
+  display: grid; place-items: center; font-family: 'DM Mono', monospace;
+}
+.pf-icon-btn:hover { color: var(--white); border-color: var(--white); }
+.pf-icon-btn.locked { opacity: .3; cursor: not-allowed; }
+
+/* ─── Add Profile modal mockup ──────────────────────────────────── */
+.add-modal {
+  margin: 28px auto; max-width: 540px;
+  background: var(--bg1); border: 1px solid var(--line2);
+  border-radius: 10px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.5);
+  overflow: hidden;
+}
+.add-modal-head {
+  padding: 16px 20px; border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.add-modal-head h3 {
+  margin: 0; font-size: 13px; font-weight: 500; color: var(--white);
+  letter-spacing: .4px; text-transform: uppercase;
+}
+.add-modal-body { padding: 18px 20px; }
+.add-modal-intro {
+  font-size: 13px; color: var(--body); margin-bottom: 14px;
+  line-height: 1.5;
+}
+.add-modal-source {
+  display: grid; grid-template-columns: 32px 1fr auto;
+  gap: 14px; align-items: center;
+  padding: 13px 14px; border: 1px solid var(--line);
+  border-radius: 7px; cursor: pointer; margin-bottom: 8px;
+  background: var(--bg2);
+  transition: all .14s ease;
+}
+.add-modal-source:hover { border-color: var(--line2); background: var(--bg3); }
+.add-modal-source.disabled { opacity: .5; cursor: not-allowed; }
+.add-modal-source .src-name {
+  font-size: 13px; font-weight: 500; color: var(--white);
+}
+.add-modal-source .src-meta {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--text-muted); margin-top: 3px;
+}
+.add-modal-source .chev { color: var(--text-muted); font-size: 14px; }
+
+/* ─── Topbar mockup ─────────────────────────────────────────────── */
+.topbar-mock {
+  max-width: 1240px; margin: 0 auto;
+  background: var(--bg1); border: 1px solid var(--line);
+  border-radius: 10px; overflow: hidden;
+}
+.topbar-mock-head {
+  padding: 14px 22px; border-bottom: 1px solid var(--line);
+  background: var(--bg2);
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--text-muted); letter-spacing: .6px; text-transform: uppercase;
+}
+.topbar-fake {
+  height: 56px;
+  display: grid; grid-template-columns: auto 1fr auto auto auto;
+  gap: 18px; align-items: center;
+  padding: 0 24px; border-bottom: 1px solid var(--line);
+  background: var(--bg1);
+}
+.topbar-logo {
+  font-weight: 700; font-size: 14px; color: var(--white);
+  letter-spacing: -.2px;
+}
+.topbar-pf-selector {
+  display: grid; grid-template-columns: 28px 1fr auto;
+  gap: 10px; align-items: center;
+  padding: 7px 12px;
+  background: var(--bg2); border: 1px solid var(--line2);
+  border-radius: 7px; cursor: pointer; min-width: 240px;
+}
+.topbar-pf-selector:hover { border-color: var(--white); }
+.topbar-pf-icon {
+  width: 24px; height: 24px; border-radius: 5px;
+  background: #f0a020; color: #1a1a1a;
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 700;
+}
+.topbar-pf-name {
+  font-size: 12px; font-weight: 600; color: var(--white);
+}
+.topbar-pf-sub {
+  font-family: 'DM Mono', monospace; font-size: 9px;
+  color: var(--text-muted); margin-top: 1px; letter-spacing: .3px;
+}
+.topbar-pf-chev { color: var(--text-muted); font-size: 11px; }
+.topbar-dummy {
+  width: 36px; height: 36px;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* Dropdown floating */
+.dropdown-wrap {
+  position: relative; padding: 32px 24px;
+}
+.dropdown {
+  margin-left: 200px;
+  width: 360px;
+  background: var(--bg1); border: 1px solid var(--line2);
+  border-radius: 8px; overflow: hidden;
+  box-shadow: 0 20px 48px rgba(0,0,0,.6);
+}
+.dropdown-head {
+  padding: 10px 14px;
+  background: var(--bg2); border-bottom: 1px solid var(--line);
+  font-family: 'DM Mono', monospace; font-size: 9px;
+  color: var(--text-muted); letter-spacing: .6px; text-transform: uppercase;
+}
+.dropdown-item {
+  display: grid; grid-template-columns: 28px 1fr auto;
+  gap: 11px; align-items: center;
+  padding: 10px 14px; cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.dropdown-item:last-child { border-bottom: 0; }
+.dropdown-item:hover { background: var(--bg2); }
+.dropdown-item.active { background: var(--bg3); }
+.dropdown-item.active::before {
+  content: '✓'; color: var(--g); margin-right: -22px;
+  font-size: 11px; transform: translateX(-340px);
+  position: relative; display: inline-block;
+}
+.dropdown-divider {
+  border-top: 1px solid var(--line);
+  padding: 10px 14px; cursor: pointer;
+  font-size: 12px; color: var(--g); font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+.dropdown-divider:hover { background: var(--bg2); }
+
+/* Notion view content */
+.notion-section { padding-top: 4px; }
+.notion-ws-card {
+  margin-top: 10px; padding: 14px 16px;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid; grid-template-columns: 36px 1fr auto; gap: 14px;
+  align-items: center;
+}
+.notion-ws-emoji {
+  width: 36px; height: 36px; border-radius: 7px;
+  background: var(--bg3); display: grid; place-items: center;
+  font-size: 16px;
+}
+.notion-ws-name { font-size: 13px; font-weight: 600; color: var(--white); }
+.notion-ws-meta { font-family: 'DM Mono', monospace; font-size: 10px;
+                  color: var(--text-muted); margin-top: 3px; }
+.notion-db-list { margin-top: 14px; }
+.notion-db-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+  align-items: center;
+  padding: 11px 14px; border-bottom: 1px solid var(--line);
+}
+.notion-db-row:first-child { border-top: 1px solid var(--line); }
+.notion-db-row:last-child { border-bottom: 0; }
+.notion-db-name { font-size: 12px; color: var(--white); }
+.notion-db-meta { font-family: 'DM Mono', monospace; font-size: 10px;
+                  color: var(--text-muted); }
+.notion-db-status {
+  padding: 3px 8px; border-radius: 4px;
+  font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: .4px;
+  text-transform: uppercase;
+}
+.notion-db-status.used   { background: var(--g2); color: var(--g); }
+.notion-db-status.unused { background: var(--bg3); color: var(--text-muted); border: 1px solid var(--line2); }
+
+/* CSV drop zone */
+.csv-drop {
+  margin-top: 12px;
+  padding: 40px 24px;
+  border: 2px dashed var(--line2); border-radius: 10px;
+  background: var(--bg2);
+  text-align: center;
+}
+.csv-drop-title {
+  font-size: 14px; font-weight: 600; color: var(--white); margin-bottom: 6px;
+}
+.csv-drop-sub {
+  font-size: 12px; color: var(--text-muted);
+}
+
+/* Note callout for retention */
+.note-callout {
+  max-width: 1240px; margin: 24px auto 0;
+  padding: 14px 18px;
+  background: var(--gold3); border: 1px solid rgba(212,175,55,.3);
+  border-radius: 8px;
+  font-size: 12px; color: var(--white); line-height: 1.55;
+}
+.note-callout strong { color: var(--gold); }
+.note-callout code {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  background: var(--bg2); padding: 2px 6px; border-radius: 3px;
+  color: var(--body);
+}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Intégrations vs Profils — 2 surfaces séparées</h1>
+  <p>
+    <strong>Intégrations</strong> = setup une fois (OAuth Notion, EA MT5, OAuth cTrader, import CSV).
+    <strong>Profils</strong> = créer/switch entre des sources de données dérivées des intégrations (1 intégration → N profils).
+    Sélecteur quotidien dans la topbar.
+  </p>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-view="topbar">Topbar selector</button>
+  <button class="tab" data-view="integrations">Intégrations</button>
+  <button class="tab" data-view="integrations-notion">Intégrations · Notion</button>
+  <button class="tab" data-view="integrations-csv">Intégrations · CSV</button>
+  <button class="tab" data-view="profiles">Profils</button>
+  <button class="tab" data-view="add-profile">+ Add profile flow</button>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     VIEW 1 — Topbar profile selector
+     ════════════════════════════════════════════════════════════════ -->
+<div class="view active" data-view="topbar">
+  <div class="topbar-mock">
+    <div class="topbar-mock-head">// Topbar — selector visible from any screen</div>
+    <div class="topbar-fake">
+      <div class="topbar-logo">Flipping Market</div>
+      <div></div>
+      <div class="topbar-pf-selector">
+        <div class="topbar-pf-icon">M5</div>
+        <div>
+          <div class="topbar-pf-name">FTMO Funded</div>
+          <div class="topbar-pf-sub">MT5 · synced 2m ago</div>
+        </div>
+        <div class="topbar-pf-chev">▾</div>
+      </div>
+      <div class="topbar-dummy"></div>
+      <div class="topbar-dummy"></div>
+    </div>
+
+    <div class="dropdown-wrap">
+      <div class="dropdown">
+        <div class="dropdown-head">Switch profile</div>
+        <div class="dropdown-item active">
+          <div class="topbar-pf-icon" style="background:#f0a020;color:#1a1a1a;">M5</div>
+          <div>
+            <div class="topbar-pf-name">FTMO Funded</div>
+            <div class="topbar-pf-sub">MT5 · 1,247 trades</div>
+          </div>
+          <span style="color:var(--g);font-size:13px;">●</span>
+        </div>
+        <div class="dropdown-item">
+          <div class="topbar-pf-icon" style="background:#f0a020;color:#1a1a1a;">M5</div>
+          <div>
+            <div class="topbar-pf-name">FTMO Challenge</div>
+            <div class="topbar-pf-sub">MT5 · 423 trades</div>
+          </div>
+          <span style="color:var(--text-muted);font-size:13px;">○</span>
+        </div>
+        <div class="dropdown-item">
+          <div class="topbar-pf-icon" style="background:#1a1a1a;color:#fff;border:1px solid var(--line2);">N</div>
+          <div>
+            <div class="topbar-pf-name">M15 Journal Perso</div>
+            <div class="topbar-pf-sub">Notion · 850 trades</div>
+          </div>
+          <span style="color:var(--text-muted);font-size:13px;">○</span>
+        </div>
+        <div class="dropdown-item">
+          <div class="topbar-pf-icon" style="background:#1a1a1a;color:#fff;border:1px solid var(--line2);">N</div>
+          <div>
+            <div class="topbar-pf-name">Backtests 2025</div>
+            <div class="topbar-pf-sub">Notion · disconnected</div>
+          </div>
+          <span style="color:var(--r);font-size:13px;">●</span>
+        </div>
+        <div class="dropdown-item">
+          <div class="topbar-pf-icon" style="background:var(--bg3);color:var(--text-muted);border:1px solid var(--line2);">D</div>
+          <div>
+            <div class="topbar-pf-name">Demo</div>
+            <div class="topbar-pf-sub">Sample dataset · always available</div>
+          </div>
+          <span style="color:var(--text-muted);font-size:13px;">○</span>
+        </div>
+        <div class="dropdown-divider">+ Manage profiles / integrations…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     VIEW 2 — Integrations (MT5 selected)
+     ════════════════════════════════════════════════════════════════ -->
+<div class="view" data-view="integrations">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Intégrations</h2>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="pill">2 connected</span>
+        <button class="panel-close">✕</button>
+      </div>
+    </div>
+    <div class="int-body">
+      <aside class="int-sidebar">
+        <div class="int-sidebar-label">// Sources disponibles</div>
+
+        <div class="int-source mt5 active">
+          <div class="int-source-icon">M5</div>
+          <div>
+            <div class="int-source-name">MetaTrader 5</div>
+            <div class="int-source-sub">2 accounts · synced</div>
+          </div>
+          <div class="int-source-dot connected"></div>
+        </div>
+
+        <div class="int-source notion">
+          <div class="int-source-icon">N</div>
+          <div>
+            <div class="int-source-name">Notion</div>
+            <div class="int-source-sub">2 DBs accessible</div>
+          </div>
+          <div class="int-source-dot connected"></div>
+        </div>
+
+        <div class="int-source mt4">
+          <div class="int-source-icon">M4</div>
+          <div>
+            <div class="int-source-name">MetaTrader 4</div>
+            <div class="int-source-sub">Not connected</div>
+          </div>
+          <div class="int-source-dot"></div>
+        </div>
+
+        <div class="int-source ctrader">
+          <div class="int-source-icon">cT</div>
+          <div>
+            <div class="int-source-name">cTrader</div>
+            <div class="int-source-sub">Not connected</div>
+          </div>
+          <div class="int-source-dot"></div>
+        </div>
+
+        <div class="int-source csv">
+          <div class="int-source-icon">📄</div>
+          <div>
+            <div class="int-source-name">CSV Import</div>
+            <div class="int-source-sub">One-shot</div>
+          </div>
+          <div class="int-source-dot"></div>
+        </div>
+      </aside>
+
+      <main class="int-main">
+        <div class="int-main-head">
+          <div class="int-main-icon">M5</div>
+          <div>
+            <h3 class="int-main-title">MetaTrader 5</h3>
+            <div class="int-main-sub">Automatic sync via Expert Advisor running in your MT5 terminal</div>
+          </div>
+        </div>
+
+        <div class="int-section-label">// 01 · SYNC TOKEN</div>
+        <div>
+          <label class="field-label">Your unique sync token (paste into the EA's input parameters)</label>
+          <div class="token-row">
+            <input class="field-input" type="text" value="fmd_mt5_a8f3_b1c9_d2e4_8f7a_9b3c5d1e7f2a" readonly />
+            <button class="token-btn">⧉ Copy</button>
+            <button class="token-btn">↻ Regenerate</button>
+          </div>
+          <div class="field-hint">Token-based auth — the account number alone is not authorisation. Regenerating revokes the previous token.</div>
+        </div>
+
+        <div class="int-section-label">// 02 · TRADE HISTORY SCOPE</div>
+        <div class="int-grid-2">
+          <div>
+            <label class="field-label">Start date</label>
+            <input class="field-input" type="text" placeholder="2024-01-01" value="2024-01-01" />
+            <div class="field-hint">Trades before this date won't be synced</div>
+          </div>
+          <div>
+            <label class="field-label">Sync interval</label>
+            <input class="field-input" type="text" value="Every 5 minutes" readonly />
+            <div class="field-hint">Server-side rate limit per token</div>
+          </div>
+        </div>
+
+        <div class="int-section-label">// 03 · EXPERT ADVISOR</div>
+        <div class="ea-card">
+          <div class="ea-card-icon">⬇</div>
+          <div>
+            <div class="ea-card-name">FlippingMarketSync.ex5</div>
+            <div class="ea-card-meta">v1.0 · MT5 build 3815+ · Windows / macOS (via Wine)</div>
+          </div>
+          <button class="ea-card-btn">⬇ Download EA</button>
+        </div>
+
+        <details class="install-acc" open>
+          <summary>Install instructions · ~2 minutes</summary>
+          <div class="install-body">
+            <div class="install-step"><div class="install-step-n">01</div><div>Download <code style="color:var(--white);font-family:'DM Mono',monospace;font-size:11px;">FlippingMarketSync.ex5</code> from the button above</div></div>
+            <div class="install-step"><div class="install-step-n">02</div><div>Open your MetaTrader 5 terminal</div></div>
+            <div class="install-step"><div class="install-step-n">03</div><div>File → Open Data Folder → MQL5 → Experts</div></div>
+            <div class="install-step"><div class="install-step-n">04</div><div>Copy the <code style="font-family:'DM Mono',monospace;font-size:11px;">.ex5</code> file into this folder and restart MT5</div></div>
+            <div class="install-step"><div class="install-step-n">05</div><div>Tools → Options → Expert Advisors → enable "Allow WebRequest" → add <code style="font-family:'DM Mono',monospace;font-size:11px;">https://api.flipping-market.com</code></div></div>
+            <div class="install-step"><div class="install-step-n">06</div><div>Drag the EA onto any chart, paste your sync token in the input parameters, click OK</div></div>
+          </div>
+        </details>
+
+        <div class="int-section-label">// 04 · SYNC STATUS</div>
+        <div class="sync-feedback">
+          <div>
+            <div class="sync-feedback-stat-label">Last ping</div>
+            <div class="sync-feedback-stat-val">2 min ago</div>
+          </div>
+          <div>
+            <div class="sync-feedback-stat-label">Trades received</div>
+            <div class="sync-feedback-stat-val">1,670</div>
+          </div>
+          <div>
+            <div class="sync-feedback-stat-label">Accounts active</div>
+            <div class="sync-feedback-stat-val">2 / 2</div>
+          </div>
+          <button class="test-btn">Test connection</button>
+        </div>
+
+        <div class="int-actions">
+          <button class="btn-secondary">View logs</button>
+          <button class="btn-danger">Disconnect integration</button>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="note-callout">
+    <strong>Disconnect = soft state.</strong>
+    Le sync token est révoqué côté serveur, mais les profils MT5 (FTMO Funded, FTMO Challenge) et leurs trades restent en base.
+    Reconnect = paste un nouveau token dans l'EA → les profils se ré-attachent automatiquement.
+    Hard delete intervient seulement après <code>12 mois d'inactivité user</code> ou click explicite "Delete my account".
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     VIEW 3 — Integrations · Notion variant
+     ════════════════════════════════════════════════════════════════ -->
+<div class="view" data-view="integrations-notion">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Intégrations · Notion</h2>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="pill">Connected</span>
+        <button class="panel-close">✕</button>
+      </div>
+    </div>
+    <div class="int-body">
+      <aside class="int-sidebar">
+        <div class="int-sidebar-label">// Sources disponibles</div>
+        <div class="int-source mt5">
+          <div class="int-source-icon">M5</div>
+          <div><div class="int-source-name">MetaTrader 5</div><div class="int-source-sub">2 accounts · synced</div></div>
+          <div class="int-source-dot connected"></div>
+        </div>
+        <div class="int-source notion active">
+          <div class="int-source-icon">N</div>
+          <div><div class="int-source-name">Notion</div><div class="int-source-sub">2 DBs accessible</div></div>
+          <div class="int-source-dot connected"></div>
+        </div>
+        <div class="int-source mt4">
+          <div class="int-source-icon">M4</div>
+          <div><div class="int-source-name">MetaTrader 4</div><div class="int-source-sub">Not connected</div></div>
+          <div class="int-source-dot"></div>
+        </div>
+        <div class="int-source ctrader">
+          <div class="int-source-icon">cT</div>
+          <div><div class="int-source-name">cTrader</div><div class="int-source-sub">Not connected</div></div>
+          <div class="int-source-dot"></div>
+        </div>
+        <div class="int-source csv">
+          <div class="int-source-icon">📄</div>
+          <div><div class="int-source-name">CSV Import</div><div class="int-source-sub">One-shot</div></div>
+          <div class="int-source-dot"></div>
+        </div>
+      </aside>
+      <main class="int-main">
+        <div class="int-main-head">
+          <div class="int-main-icon" style="background:#1a1a1a;color:#fff;">N</div>
+          <div>
+            <h3 class="int-main-title">Notion</h3>
+            <div class="int-main-sub">OAuth-authorized workspace — pick a database to create a profile</div>
+          </div>
+        </div>
+
+        <div class="int-section-label">// CONNECTED WORKSPACE</div>
+        <div class="notion-ws-card">
+          <div class="notion-ws-emoji">🏛️</div>
+          <div>
+            <div class="notion-ws-name">Maxime's Trading Lab</div>
+            <div class="notion-ws-meta">workspace_id: 5a3f8b2c · OAuth granted 2025-12-04</div>
+          </div>
+          <button class="btn-secondary">Switch workspace</button>
+        </div>
+
+        <div class="int-section-label">// DATABASES IN THIS WORKSPACE</div>
+        <div class="notion-db-list">
+          <div class="notion-db-row">
+            <div>
+              <div class="notion-db-name">M15 Journal Perso</div>
+              <div class="notion-db-meta">db_id: a8f3b1c9 · 850 entries · M15 template detected</div>
+            </div>
+            <span class="notion-db-status used">In use</span>
+            <span class="notion-db-meta" style="font-size:10px;">→ Profil "M15 Perso"</span>
+          </div>
+          <div class="notion-db-row">
+            <div>
+              <div class="notion-db-name">Backtests 2025</div>
+              <div class="notion-db-meta">db_id: c2e4d1f7 · 2,134 entries · H4 template detected</div>
+            </div>
+            <span class="notion-db-status used">In use</span>
+            <span class="notion-db-meta" style="font-size:10px;">→ Profil "Backtests 25"</span>
+          </div>
+          <div class="notion-db-row">
+            <div>
+              <div class="notion-db-name">Sandbox</div>
+              <div class="notion-db-meta">db_id: 9b3c5d1e · 12 entries · no template match</div>
+            </div>
+            <span class="notion-db-status unused">Available</span>
+            <button class="btn-secondary" style="padding:5px 10px;font-size:11px;">+ Create profile</button>
+          </div>
+          <div class="notion-db-row">
+            <div>
+              <div class="notion-db-name">Daily review notes</div>
+              <div class="notion-db-meta">db_id: 7f2a8c4b · 380 entries · not a trade DB</div>
+            </div>
+            <span class="notion-db-status unused">Available</span>
+            <button class="btn-secondary" style="padding:5px 10px;font-size:11px;">+ Create profile</button>
+          </div>
+        </div>
+
+        <div class="int-actions">
+          <button class="btn-secondary">Refresh DB list</button>
+          <button class="btn-danger">Disconnect Notion</button>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     VIEW 4 — Integrations · CSV variant
+     ════════════════════════════════════════════════════════════════ -->
+<div class="view" data-view="integrations-csv">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Intégrations · CSV</h2>
+      <button class="panel-close">✕</button>
+    </div>
+    <div class="int-body">
+      <aside class="int-sidebar">
+        <div class="int-sidebar-label">// Sources disponibles</div>
+        <div class="int-source mt5">
+          <div class="int-source-icon">M5</div>
+          <div><div class="int-source-name">MetaTrader 5</div><div class="int-source-sub">2 accounts · synced</div></div>
+          <div class="int-source-dot connected"></div>
+        </div>
+        <div class="int-source notion">
+          <div class="int-source-icon">N</div>
+          <div><div class="int-source-name">Notion</div><div class="int-source-sub">2 DBs accessible</div></div>
+          <div class="int-source-dot connected"></div>
+        </div>
+        <div class="int-source mt4">
+          <div class="int-source-icon">M4</div>
+          <div><div class="int-source-name">MetaTrader 4</div><div class="int-source-sub">Not connected</div></div>
+          <div class="int-source-dot"></div>
+        </div>
+        <div class="int-source ctrader">
+          <div class="int-source-icon">cT</div>
+          <div><div class="int-source-name">cTrader</div><div class="int-source-sub">Not connected</div></div>
+          <div class="int-source-dot"></div>
+        </div>
+        <div class="int-source csv active">
+          <div class="int-source-icon">📄</div>
+          <div><div class="int-source-name">CSV Import</div><div class="int-source-sub">One-shot</div></div>
+          <div class="int-source-dot"></div>
+        </div>
+      </aside>
+      <main class="int-main">
+        <div class="int-main-head">
+          <div class="int-main-icon" style="background:#2ecc71;color:#1a1a1a;">📄</div>
+          <div>
+            <h3 class="int-main-title">CSV Import</h3>
+            <div class="int-main-sub">One-shot import from any spreadsheet — creates a profile you can switch to from the topbar</div>
+          </div>
+        </div>
+
+        <div class="int-section-label">// 01 · UPLOAD</div>
+        <div class="csv-drop">
+          <div class="csv-drop-title">⬆ Drop your .csv file here</div>
+          <div class="csv-drop-sub">or click to browse · max 10 MB · headers expected on line 1</div>
+        </div>
+
+        <div class="int-section-label">// 02 · PREVIOUSLY IMPORTED</div>
+        <div class="notion-db-list">
+          <div class="notion-db-row">
+            <div>
+              <div class="notion-db-name">2024_TradesViz_export.csv</div>
+              <div class="notion-db-meta">imported 2025-12-12 · 543 trades · 18 columns</div>
+            </div>
+            <span class="notion-db-status used">In use</span>
+            <span class="notion-db-meta" style="font-size:10px;">→ Profil "2024 archive"</span>
+          </div>
+          <div class="notion-db-row">
+            <div>
+              <div class="notion-db-name">backtest_sept_2025.csv</div>
+              <div class="notion-db-meta">imported 2025-09-30 · 89 trades · 12 columns</div>
+            </div>
+            <span class="notion-db-status used">In use</span>
+            <span class="notion-db-meta" style="font-size:10px;">→ Profil "BT Sept"</span>
+          </div>
+        </div>
+
+        <div class="int-actions">
+          <button class="btn-secondary">Download mapping template</button>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     VIEW 5 — Profiles list
+     ════════════════════════════════════════════════════════════════ -->
+<div class="view" data-view="profiles">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Profils</h2>
+      <button class="panel-close">✕</button>
+    </div>
+
+    <div class="pf-active">
+      <div class="pf-active-dot"></div>
+      <div>
+        <div class="pf-active-label">// Active profile</div>
+        <div class="pf-active-name">FTMO Funded</div>
+        <div class="pf-active-meta">MT5 · account 12345678 · synced 2 min ago</div>
+      </div>
+      <div class="pf-active-stat">
+        <div class="pf-active-stat-val">1,247</div>
+        <div class="pf-active-stat-label">trades</div>
+      </div>
+      <div class="pf-active-stat">
+        <div class="pf-active-stat-val">+38.2R</div>
+        <div class="pf-active-stat-label">P&L</div>
+      </div>
+    </div>
+
+    <div class="pf-list-head">
+      <div class="pf-list-title">// All profiles · 5</div>
+      <button class="pf-add-btn">+ Add profile</button>
+    </div>
+
+    <div class="pf-list">
+      <div class="pf-row active">
+        <div class="pf-radio"></div>
+        <div class="pf-source-icon mt5">M5</div>
+        <div>
+          <div class="pf-name">FTMO Funded</div>
+          <div class="pf-sub">MT5 · account 12345678 · synced 2m ago</div>
+        </div>
+        <div class="pf-trades">1,247</div>
+        <div class="pf-badge synced">Synced</div>
+        <div class="pf-actions">
+          <button class="pf-icon-btn">✎</button>
+          <button class="pf-icon-btn">×</button>
+        </div>
+      </div>
+
+      <div class="pf-row">
+        <div class="pf-radio"></div>
+        <div class="pf-source-icon mt5">M5</div>
+        <div>
+          <div class="pf-name">FTMO Challenge</div>
+          <div class="pf-sub">MT5 · account 87654321 · synced 2m ago</div>
+        </div>
+        <div class="pf-trades">423</div>
+        <div class="pf-badge synced">Synced</div>
+        <div class="pf-actions">
+          <button class="pf-icon-btn">✎</button>
+          <button class="pf-icon-btn">×</button>
+        </div>
+      </div>
+
+      <div class="pf-row">
+        <div class="pf-radio"></div>
+        <div class="pf-source-icon notion">N</div>
+        <div>
+          <div class="pf-name">M15 Journal Perso</div>
+          <div class="pf-sub">Notion · DB a8f3b1c9 · synced 5m ago</div>
+        </div>
+        <div class="pf-trades">850</div>
+        <div class="pf-badge synced">Synced</div>
+        <div class="pf-actions">
+          <button class="pf-icon-btn">✎</button>
+          <button class="pf-icon-btn">×</button>
+        </div>
+      </div>
+
+      <div class="pf-row">
+        <div class="pf-radio"></div>
+        <div class="pf-source-icon notion">N</div>
+        <div>
+          <div class="pf-name">Backtests 2025</div>
+          <div class="pf-sub">Notion · DB c2e4d1f7 · last sync 3d ago</div>
+        </div>
+        <div class="pf-trades">2,134</div>
+        <div class="pf-badge disconnected">Disconnected</div>
+        <div class="pf-actions">
+          <button class="pf-icon-btn">✎</button>
+          <button class="pf-icon-btn">×</button>
+        </div>
+      </div>
+
+      <div class="pf-row locked">
+        <div class="pf-radio"></div>
+        <div class="pf-source-icon demo">D</div>
+        <div>
+          <div class="pf-name">Demo</div>
+          <div class="pf-sub">Sample dataset · 300 anon trades · always available</div>
+        </div>
+        <div class="pf-trades">300</div>
+        <div class="pf-badge demo">Demo</div>
+        <div class="pf-actions">
+          <button class="pf-icon-btn locked">✎</button>
+          <button class="pf-icon-btn locked">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     VIEW 6 — Add Profile modal flow
+     ════════════════════════════════════════════════════════════════ -->
+<div class="view" data-view="add-profile">
+  <div class="add-modal">
+    <div class="add-modal-head">
+      <h3>+ Add profile</h3>
+      <button class="panel-close">✕</button>
+    </div>
+    <div class="add-modal-body">
+      <div class="add-modal-intro">
+        Pick a source. A profile is created from data that already exists in one of your integrations.
+      </div>
+
+      <div class="add-modal-source">
+        <div class="int-source-icon" style="background:#1a1a1a;color:#fff;">N</div>
+        <div>
+          <div class="src-name">From Notion</div>
+          <div class="src-meta">1 DB available · "Sandbox" (12 entries)</div>
+        </div>
+        <span class="chev">›</span>
+      </div>
+
+      <div class="add-modal-source">
+        <div class="int-source-icon" style="background:#f0a020;color:#1a1a1a;">M5</div>
+        <div>
+          <div class="src-name">From MetaTrader 5</div>
+          <div class="src-meta">3rd account detected by EA (login 99887766) — not yet a profile</div>
+        </div>
+        <span class="chev">›</span>
+      </div>
+
+      <div class="add-modal-source">
+        <div class="int-source-icon" style="background:#2ecc71;color:#1a1a1a;">📄</div>
+        <div>
+          <div class="src-name">From CSV file</div>
+          <div class="src-meta">Upload a .csv and pick a mapping</div>
+        </div>
+        <span class="chev">›</span>
+      </div>
+
+      <div class="add-modal-source disabled">
+        <div class="int-source-icon" style="background:#4a8cff;color:#fff;">M4</div>
+        <div>
+          <div class="src-name">From MetaTrader 4</div>
+          <div class="src-meta">Not connected — <span style="color:var(--g);">connect MT4 first</span></div>
+        </div>
+        <span class="chev">›</span>
+      </div>
+
+      <div class="add-modal-source disabled">
+        <div class="int-source-icon" style="background:#e63946;color:#fff;">cT</div>
+        <div>
+          <div class="src-name">From cTrader</div>
+          <div class="src-meta">Not connected — <span style="color:var(--g);">connect cTrader first</span></div>
+        </div>
+        <span class="chev">›</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note-callout">
+    <strong>Flow logic.</strong>
+    Sources <em>connectées</em> apparaissent en haut, avec un compteur des ressources dispo (DBs Notion, comptes MT détectés, etc.).
+    Sources <em>non-connectées</em> sont grisées avec un lien direct vers Intégrations.
+    Click sur une source → step 2 (picker spécifique : choisir DB / compte / uploader CSV) → step 3 (nommer le profil) → fin.
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const view = tab.dataset.view;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === view));
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  });
+});
+</script>
+
+</body>
+</html>

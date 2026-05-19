@@ -7566,6 +7566,30 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   grid-template-rows: 1fr;
   opacity: 1;
 }
+/* Vertical rhythm between rendered children inside the connection section
+   (e.g. database <select> and the trailing <div class="account-actions">). */
+.jp-conn-section--visible > * + * {
+  margin-top: 12px;
+}
+/* Loading state for the database picker: keep the field interactive-looking
+   but communicate "not yet ready". Disabled attribute still blocks input. */
+.jp-editor-db-select--loading {
+  cursor: progress;
+  color: var(--text-muted, var(--dim, #7c818f));
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--g, #26a69a) 12%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: jp-editor-db-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes jp-editor-db-shimmer {
+  0%   { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
 /* "Connect Notion" placeholder button */
 .jp-conn-notion-btn {
   background: color-mix(in srgb, #6366f1 10%, transparent);
@@ -7697,6 +7721,25 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .jp-editor-db-loading, .jp-editor-db-empty, .jp-editor-db-error { font-size: 12px; color: var(--muted, #888); padding: 6px 0; }
 .jp-editor-db-error { color: var(--r, #ef4444); display: flex; align-items: center; gap: 8px; }
 .jp-notion-not-connected, .jp-notion-checking { font-size: 12px; color: var(--muted, #888); padding: 4px 0 8px; }
+.jp-legacy-api-note {
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #b2b5be);
+  background: color-mix(in srgb, var(--gold, #d4af37) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold, #d4af37) 24%, transparent);
+  border-radius: 7px;
+}
+.jp-legacy-api-note strong { color: var(--gold, #d4af37); font-weight: 600; }
+.jp-legacy-api-note code {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  background: var(--surface-2, rgba(255,255,255,.04));
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text-primary, #d1d4dc);
+}
 .jp-db-error-block {
   margin: 6px 8px 8px;
   padding: 10px 12px;

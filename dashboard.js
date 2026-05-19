@@ -4150,9 +4150,14 @@ function _openJournalProfileEditor(mode = 'create', id = '') {
   _journalProfileRowMenuOpenId = '';
   if (_journalProfileEditorMode === 'edit' || _journalProfileEditorMode === 'rename') {
     const p = _getJournalProfileById(_journalProfileEditingId);
-    _journalProfileEditorConnectionType = String(p?.connectionType || '').trim() || 'api';
+    // Fallback to 'notion' (was 'api') — Notion is now the canonical default.
+    // Legacy profiles with explicit connectionType: 'api' keep their value.
+    _journalProfileEditorConnectionType = String(p?.connectionType || '').trim() || 'notion';
   } else {
-    _journalProfileEditorConnectionType = 'api';
+    // Create mode always uses Notion. Legacy 'api' profiles are still editable
+    // (the form auto-detects connectionType from the profile in edit mode) but
+    // no new 'api' profiles can be created via the UI — console-only escape hatch.
+    _journalProfileEditorConnectionType = 'notion';
   }
   _syncJournalProfileUI();
   const profile = (_journalProfileEditorMode === 'edit' || _journalProfileEditorMode === 'rename') ? _getJournalProfileById(_journalProfileEditingId) : null;
@@ -4173,7 +4178,7 @@ function _closeJournalProfileEditor() {
   _journalProfileEditorMode = 'create';
   _journalProfileEditingId = '';
   _journalProfileRowMenuOpenId = '';
-  _journalProfileEditorConnectionType = 'api';
+  _journalProfileEditorConnectionType = 'notion';
   _notionConnectState = 'idle';
   if (_notionDbPickerProfileId === '_editor') {
     _notionDbPickerProfileId = '';
@@ -4591,24 +4596,31 @@ function _getJournalProfileEditorDraft() {
 function _renderNotionEditorDbSection() {
   const st  = _notionDbPickerState;
   const dbs = _notionDbPickerDatabases;
-  if (st === 'loading' || (st === 'idle' && _notionDbPickerProfileId === '_editor')) {
-    return `<div class="jp-editor-db-loading">Loading databases…</div>`;
-  }
+
+  // Error and empty states get their own explicit block (no select shell —
+  // a disabled empty select would be confusing and require a separate Retry CTA).
   if (st === 'error') {
     return `<div class="jp-editor-db-error"><span>Could not load databases.</span>
       <button class="account-secondary-btn" type="button" data-action="notion-editor-db-refresh">Retry</button></div>`;
   }
-  if (st === 'loaded') {
-    if (!dbs.length) return `<div class="jp-editor-db-empty">No databases found. Share at least one database with this Notion integration.</div>`;
-    const opts = dbs.map(db =>
-      `<option value="${_escapeHtml(db.id)}" data-title="${_escapeHtml(db.title)}">${_escapeHtml(db.title)}</option>`
-    ).join('');
-    return `<label class="account-field">
-      <span class="account-field-label">Database</span>
-      <select class="account-input" id="jp-editor-notion-db-select">${opts}</select>
-    </label>`;
+  if (st === 'loaded' && !dbs.length) {
+    return `<div class="jp-editor-db-empty">No databases found. Share at least one database with this Notion integration.</div>`;
   }
-  return '';
+
+  // Loading and loaded states share the same select-shell layout so the form
+  // doesn't shift when data arrives. During loading: select is disabled and
+  // shows "Loading databases…" as a placeholder option. On loaded: real options
+  // replace the placeholder and the select becomes interactive.
+  const isLoading = (st === 'loading' || (st === 'idle' && _notionDbPickerProfileId === '_editor'));
+  const opts = isLoading
+    ? `<option value="" disabled selected>Loading databases…</option>`
+    : dbs.map(db =>
+        `<option value="${_escapeHtml(db.id)}" data-title="${_escapeHtml(db.title)}">${_escapeHtml(db.title)}</option>`
+      ).join('');
+  return `<label class="account-field">
+    <span class="account-field-label">Database</span>
+    <select class="account-input jp-editor-db-select${isLoading ? ' jp-editor-db-select--loading' : ''}" id="jp-editor-notion-db-select"${isLoading ? ' disabled' : ''}>${opts}</select>
+  </label>`;
 }
 function _renderJournalProfileEditorMarkup(mode = 'create') {
   if (mode === 'rename') {
@@ -4624,26 +4636,45 @@ function _renderJournalProfileEditorMarkup(mode = 'create') {
     </div>`;
   }
   const isEdit = mode === 'edit';
-  const checkLabel = _journalProfileCheckState === 'checking'
-    ? 'Checking source...'
-    : _journalProfileCheckState === 'success'
-      ? 'Connection successful'
-      : _journalProfileCheckState === 'error'
-        ? 'Connection failed'
-        : 'Check source';
-  const checkIcon = _journalProfileCheckState === 'checking'
-    ? '<span class="journal-profile-check-btn-spinner" aria-hidden="true"></span>'
-    : _journalProfileCheckState === 'success'
-      ? '<span aria-hidden="true">✓</span>'
-      : _journalProfileCheckState === 'error'
-        ? '<span aria-hidden="true">⚠</span>'
-        : '';
-  const ct = _journalProfileEditorConnectionType || 'api';
+  const ct = _journalProfileEditorConnectionType || 'notion';
+
+  // ── Legacy 'api' edit branch ──────────────────────────────────────────
+  // Only reachable when editing a profile that was created before the API/Notion
+  // radio was removed. No way to create a new 'api' profile via the UI.
+  // The form keeps it simple: rename allowed, but the underlying apiUrl is
+  // managed via console (preserved automatically in _saveJournalProfileEditor).
+  if (ct === 'api' && isEdit) {
+    return `
+      <div class="journal-profile-editor-inline">
+        <div class="account-form-title" id="journal-profile-editor-title">Edit profile</div>
+        <label class="account-field" id="jp-name-field">
+          <span class="account-field-label">Profile name</span>
+          <input class="account-input" id="journal-profile-name-input" type="text" placeholder="Profile name" />
+        </label>
+        <label class="account-field" hidden>
+          <select class="account-input" id="journal-profile-type-input">
+            <option value="m15">M15</option>
+            <option value="h4">H4</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <div class="jp-legacy-api-note">
+          <strong>Custom API (legacy)</strong> — this profile uses a manual API URL. The URL is preserved on save; edit it via console if needed (<code>getJournalProfiles()</code>).
+        </div>
+        <div class="account-actions">
+          <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">Save changes</button>
+          <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Notion flow (default for create + edit of notion profiles) ────────
   return `
     <div class="journal-profile-editor-inline">
-      <div class="account-form-title" id="journal-profile-editor-title">${isEdit ? 'Edit source' : 'Create data source'}</div>
-      <label class="account-field" id="jp-name-field"${ct === 'notion' && _notionIntegrationStatus !== 'connected' ? ' hidden' : ''}>
-        <span class="account-field-label">Source name</span>
+      <div class="account-form-title" id="journal-profile-editor-title">${isEdit ? 'Edit profile' : 'Create profile'}</div>
+      <label class="account-field" id="jp-name-field"${_notionIntegrationStatus !== 'connected' ? ' hidden' : ''}>
+        <span class="account-field-label">Profile name</span>
         <input class="account-input" id="journal-profile-name-input" type="text" placeholder="Profile name" />
       </label>
       <label class="account-field" hidden>
@@ -4653,36 +4684,12 @@ function _renderJournalProfileEditorMarkup(mode = 'create') {
           <option value="custom">Custom</option>
         </select>
       </label>
-      <div class="account-field">
-        <span class="account-field-label">Connection type</span>
-        <div class="jp-conn-radio-group">
-          <label class="jp-conn-radio-label">
-            <input type="radio" name="jp-conn-type" value="api" ${ct === 'api' ? 'checked' : ''} />
-            <span>API</span>
-          </label>
-          <label class="jp-conn-radio-label">
-            <input type="radio" name="jp-conn-type" value="notion" ${ct === 'notion' ? 'checked' : ''} />
-            <span>Notion</span>
-          </label>
-        </div>
-      </div>
-      <div class="jp-conn-section${ct === 'api' ? ' jp-conn-section--visible' : ''}" id="jp-api-section">
-        <label class="account-field">
-          <span class="account-field-label">API URL</span>
-          <input class="account-input" id="journal-profile-api-url-input" type="text" placeholder="https://your-project.vercel.app/api/trades" />
-        </label>
-        <div class="account-actions">
-          <button class="account-secondary-btn journal-profile-check-btn journal-profile-check-btn--${_journalProfileCheckState}" type="button" data-action="journal-profile-test-connection" ${_journalProfileCheckState === 'checking' ? 'disabled' : ''}>
-            <span class="journal-profile-check-btn-content">${checkIcon}<span>${checkLabel}</span></span>
-          </button>
-        </div>
-      </div>
-      <div class="jp-conn-section${ct === 'notion' ? ' jp-conn-section--visible' : ''}" id="jp-notion-section">
-        ${ct === 'notion' ? (() => {
+      <div class="jp-conn-section jp-conn-section--visible" id="jp-notion-section">
+        ${(() => {
           if (_notionIntegrationStatus === 'connected') {
             return `${_renderNotionEditorDbSection()}
               <div class="account-actions">
-                <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">${isEdit ? 'Save changes' : 'Create source'}</button>
+                <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">${isEdit ? 'Save changes' : 'Create profile'}</button>
                 <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
               </div>`;
           }
@@ -4700,12 +4707,8 @@ function _renderJournalProfileEditorMarkup(mode = 'create') {
               </button>
               <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
             </div>`;
-        })() : ''}
+        })()}
       </div>
-      ${ct !== 'notion' ? `<div class="account-actions">
-        <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">${isEdit ? 'Save changes' : 'Create source'}</button>
-        <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
-      </div>` : ''}
     </div>
   `;
 }
@@ -5158,7 +5161,7 @@ function _syncJournalProfileUI() {
   const connectedCount = _getJournalProfilesConnectedCount(profiles);
   if (dataSummary) dataSummary.textContent = hasUser ? `${activeProfileName} · ${connectedCount} connected` : 'No account connected';
   if (dataSummary) dataSummary.dataset.tone = hasUser ? 'success' : 'muted';
-  if (dataStatus) dataStatus.textContent = hasUser ? '● Data & Integrations' : '○ Local only';
+  if (dataStatus) dataStatus.textContent = hasUser ? '● Profiles' : '○ Local only';
   if (dataStatus) dataStatus.dataset.tone = hasUser ? 'success' : 'muted';
   if (addBtn) addBtn.hidden = false;
   _renderJournalProfileSwitchList();
@@ -5341,14 +5344,17 @@ function _saveJournalProfileEditor() {
     showThemeToast('Please select a database first.', true);
     return;
   }
-  const nextProfile = _normalizeJournalProfile({
-    id: _journalProfileEditorMode === 'edit' ? _journalProfileEditingId : _makeJournalProfileId(),
-    ...draft,
-    apiUrl: draft.apiUrl || API_URL_DEFAULT,
-  });
   const previousProfile = _journalProfileEditorMode === 'edit'
     ? _getJournalProfileById(_journalProfileEditingId)
     : null;
+  // Preserve previousProfile.apiUrl when the editor does not expose the URL
+  // field (e.g. Notion form or legacy 'api' edit branch). Without this, saving
+  // a legacy 'api' profile would silently reset its custom URL to API_URL_DEFAULT.
+  const nextProfile = _normalizeJournalProfile({
+    id: _journalProfileEditorMode === 'edit' ? _journalProfileEditingId : _makeJournalProfileId(),
+    ...draft,
+    apiUrl: draft.apiUrl || previousProfile?.apiUrl || API_URL_DEFAULT,
+  });
   if (previousProfile
       && previousProfile.connectionType === nextProfile.connectionType
       && previousProfile.notionDatabaseId === nextProfile.notionDatabaseId) {
@@ -7599,7 +7605,7 @@ function setDataSource(mode) {
         showDataStatus('Loading API…', 'warn');
       } else {
         setSourceIndicator('pending');
-        showDataStatus('API pending — open Data & Integrations to sync', 'warn');
+        showDataStatus('API pending — open Profiles to sync', 'warn');
       }
     }
   } else if (mode === 'demo') {
@@ -8744,7 +8750,7 @@ async function initDataSource() {
     render();
     hideEmptyState();
     setSourceIndicator('pending');
-    showDataStatus('API pending — open Data & Integrations to sync', 'warn');
+    showDataStatus('API pending — open Profiles to sync', 'warn');
   } else {
     loadBuiltinCSV(persistedSidebar);
   }
@@ -28621,7 +28627,7 @@ function updateJournalPanel() {
         ? ` · ${_listAPIKeys(rawCache).length} fields available`
         : (isFetching
             ? ' · <em style="opacity:.65">loading fields…</em>'
-            : ' · <em style="opacity:.65">fields unavailable — sync from Data & Integrations</em>'))
+            : ' · <em style="opacity:.65">fields unavailable — sync from Profiles</em>'))
     : '';
   const tradeCountLabel = items.length
     ? `${items.length} trades`
