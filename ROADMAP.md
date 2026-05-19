@@ -15,6 +15,10 @@ _(none)_
 
 - [ ] **[SEV-MED] Ghost trades** — deleted Notion trades survive in local cache indefinitely. Fix: compare `_notionId` set from full sync vs cache, purge absents. Pending design decision on full-sync cadence.
 
+- [ ] **Topbar profile selector** (~1.5h) — last architectural brick of the Intégrations vs Profils split. Dropdown in the topbar listing all profiles with source badge + active state + "Manage profiles / integrations…" footer link. Accessible from any screen (today profile switch lives inside Account → Profiles). Mockup ref: `mockups/integrations-vs-profiles.html` "Topbar selector" view.
+
+- [ ] **Migrate remaining ~27 inline `connectionType === 'notion'` checks to `INTEGRATIONS` registry** — Strangler Fig follow-up to the 2026-05-19 registry refactor. List of dispatch sites: `dashboard.js:3563, 3795, 3803, 4035, 4041, 4051, 4064, 4243, 4816, 4848, 4868, 4871, 4878, 4901, 4906, 4912, 4938, 4946, 5052, 5053, 5197, 5343, 5359, 7147, 7783, 8557, 8645, 8676, 29699`. Low priority — migrate opportunistically when a site is touched for other reasons, or in one batched pass before MT5 ships.
+
 - [ ] **Optimal RR widget: BE Management filter button.**
   Open questions (blockers — resolve before implementation):
   1. Dynamic values from the live dataset, or a fixed list?
@@ -42,6 +46,10 @@ _(none)_
 ---
 
 ## TODO — Deferred
+
+- [ ] **Retention policy design — to spec before any server-side trade storage ships (e.g. MT5)** — today Supabase only holds metadata (~100KB/user) + media; trades live in localStorage so an abandoned user costs nothing. The moment MT5 EA pushes trades to a server endpoint, abandoned accounts start accumulating real volume (~6–30 MB/user). Direction agreed during the 2026-05-19 session: (a) disconnect integration = soft (token revoked, metadata/trades retained), (b) profile manually deleted = soft → hard at 30 days, (c) user inactive 6 months = warning email, archive at 7 months, hard-delete at 12 months, (d) "Delete my account" = soft with 30-day grace period. Implementation: Supabase `pg_cron` or scheduled edge function, runs weekly. Add `last_active_at` column to user/profile rows when the schema is touched next.
+
+- [ ] **MT5 / MT4 / cTrader — actual implementation** — registry stubs (`available: false`) exist since 2026-05-19. Next steps before code: (1) decide MetaApi.cloud SaaS bridge vs. self-built MQL5 EA (cost vs. control); (2) extend Vercel proxy or move to Supabase edge functions for per-broker secret handling (current static-page architecture can't hold per-user API keys safely); (3) spike one platform end-to-end on a single test account before promising to community. cTrader is the easiest technically (OAuth Open API) but smaller audience; MT5 covers most of Max's prop-firm users.
 
 - [ ] **[Post-readonly] Trading Journal evolution** — manual trade entry, custom schemas, Notion two-way sync. Spec complète dans `docs/journal-evolution.md`. **Ne pas démarrer avant que le read-only soit clos.** Bloquants identifiés : XSS fix (SEV-HIGH), Ghost trades (SEV-MED), Mappings cross-device sync (audit M1) — tous listés dans le doc §9.
 
