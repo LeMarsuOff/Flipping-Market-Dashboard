@@ -4581,7 +4581,7 @@ function _getJournalProfileEditorDraft() {
     : '';
   const notionWorkspaceName = _notionIntegrationWorkspace
     || String(document.getElementById('jp-notion-workspace-input')?.value || '').trim();
-  const connectionType      = _journalProfileEditorConnectionType || 'api';
+  const connectionType      = _journalProfileEditorConnectionType || 'notion';
   return {
     name,
     type: (type === 'm15' || type === 'h4' || type === 'custom') ? type : 'custom',
@@ -4622,6 +4622,107 @@ function _renderNotionEditorDbSection() {
     <select class="account-input jp-editor-db-select${isLoading ? ' jp-editor-db-select--loading' : ''}" id="jp-editor-notion-db-select"${isLoading ? ' disabled' : ''}>${opts}</select>
   </label>`;
 }
+
+// ─── Integrations registry ─────────────────────────────────────────────────
+// Single source of truth for the set of data-source integrations the dashboard
+// supports today, and ones we plan to support. Dispatch sites can resolve a
+// profile via `getIntegration(profile)` instead of branching on connectionType.
+//
+// Entry shape:
+//   id              — connectionType key
+//   label           — display name (English)
+//   description     — 1-line user-facing description (also used in tooltips)
+//   icon            — short glyph for compact UI (real SVGs added later)
+//   available       — true if implemented today, false if planned
+//   isLegacy        — true → hidden from "create profile" UI (escape-hatch only)
+//   isReady(p)      — true if profile is fully configured & syncable
+//   getStatusLabel(p) — short status string for badges / lists
+//   renderEditor()  — HTML for the editor's per-integration section (active only)
+//
+// Methods are arrow functions so they resolve referenced helpers at call time
+// (no hoisting issues even though some helpers like `_loadNotionTrades` are
+// defined ~3500 lines later in the file).
+//
+// Migration plan: ~25 dispatch sites still use `profile.connectionType === 'notion'`
+// inline. They will migrate to the registry incrementally as new integrations
+// are added (Strangler Fig pattern). See DECISIONS.md (2026-05-19 entry) for
+// the architectural rationale and full rollout plan.
+const INTEGRATIONS = {
+  // ── Active integrations ───────────────────────────────────────────────────
+  notion: {
+    id: 'notion',
+    label: 'Notion',
+    description: 'OAuth-connected Notion workspace — pick a database per profile',
+    icon: 'N',
+    available: true,
+    isLegacy: false,
+    isReady: (p) => !!p?.notionDatabaseId,
+    getStatusLabel: (p) => {
+      if (!p) return 'Available';
+      if (p.notionErrorCode === 'token_expired')           return 'Notion expired';
+      if (p.notionErrorCode === 'database_not_accessible') return 'DB unavailable';
+      if (p.notionSyncState === 'disconnected')            return 'Disconnected';
+      if (p.notionSyncState === 'syncing')                 return 'Syncing…';
+      if (p.notionSyncState === 'error')                   return 'Sync failed';
+      if (p.notionSyncState === 'synced')                  return 'Synced';
+      return 'Not synced';
+    },
+    renderEditor: () => _renderNotionEditorDbSection(),
+  },
+  api: {
+    id: 'api',
+    label: 'Custom API',
+    description: 'Manual Vercel-proxy URL — legacy escape hatch, console-only',
+    icon: '⚙',
+    available: true,
+    isLegacy: true,
+    isReady: (p) => !!p?.apiUrl,
+    getStatusLabel: () => 'Available',
+    // Legacy 'api' edit form is inlined directly in _renderJournalProfileEditorMarkup;
+    // the registry entry exists for symmetry (label, isReady, etc.) but does not
+    // own the form markup.
+    renderEditor: () => '',
+  },
+  // ── Planned integrations — metadata only, no implementation yet ───────────
+  // These appear in the future "Integrations" panel (iterates Object.values)
+  // as disabled "Coming soon" cards. Do not dispatch active code to them.
+  mt5: {
+    id: 'mt5',
+    label: 'MetaTrader 5',
+    description: 'Auto-sync via an Expert Advisor running in your MT5 terminal',
+    icon: 'M5',
+    available: false,
+    isLegacy: false,
+  },
+  mt4: {
+    id: 'mt4',
+    label: 'MetaTrader 4',
+    description: 'Auto-sync via an Expert Advisor running in your MT4 terminal',
+    icon: 'M4',
+    available: false,
+    isLegacy: false,
+  },
+  ctrader: {
+    id: 'ctrader',
+    label: 'cTrader',
+    description: 'OAuth via Open API — one connection covers every cTrader broker',
+    icon: 'cT',
+    available: false,
+    isLegacy: false,
+  },
+};
+
+// Returns the registry entry matching a profile's connectionType (or a raw
+// type string). Unknown / missing types fall back to 'notion' rather than
+// throwing — preserves graceful behavior for any future schema drift.
+function getIntegration(profileOrType) {
+  if (!profileOrType) return INTEGRATIONS.notion;
+  const type = typeof profileOrType === 'string'
+    ? profileOrType.trim()
+    : String(profileOrType.connectionType || '').trim();
+  return INTEGRATIONS[type] || INTEGRATIONS.notion;
+}
+
 function _renderJournalProfileEditorMarkup(mode = 'create') {
   if (mode === 'rename') {
     return `<div class="journal-profile-editor-inline journal-profile-rename-inline">
@@ -4637,13 +4738,15 @@ function _renderJournalProfileEditorMarkup(mode = 'create') {
   }
   const isEdit = mode === 'edit';
   const ct = _journalProfileEditorConnectionType || 'notion';
+  const integration = getIntegration(ct);
 
-  // ── Legacy 'api' edit branch ──────────────────────────────────────────
-  // Only reachable when editing a profile that was created before the API/Notion
-  // radio was removed. No way to create a new 'api' profile via the UI.
-  // The form keeps it simple: rename allowed, but the underlying apiUrl is
-  // managed via console (preserved automatically in _saveJournalProfileEditor).
-  if (ct === 'api' && isEdit) {
+  // ── Legacy escape-hatch branch ────────────────────────────────────────
+  // Reached when editing a profile whose integration is marked isLegacy
+  // in the registry (currently only the 'api' / Custom API entry — the
+  // pre-OAuth manual Vercel-proxy URL flow). No new legacy profile can be
+  // created via the UI; rename is allowed and the underlying URL is
+  // preserved on save via _saveJournalProfileEditor.
+  if (integration.isLegacy && isEdit) {
     return `
       <div class="journal-profile-editor-inline">
         <div class="account-form-title" id="journal-profile-editor-title">Edit profile</div>
@@ -4687,7 +4790,7 @@ function _renderJournalProfileEditorMarkup(mode = 'create') {
       <div class="jp-conn-section jp-conn-section--visible" id="jp-notion-section">
         ${(() => {
           if (_notionIntegrationStatus === 'connected') {
-            return `${_renderNotionEditorDbSection()}
+            return `${integration.renderEditor()}
               <div class="account-actions">
                 <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">${isEdit ? 'Save changes' : 'Create profile'}</button>
                 <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
@@ -4897,10 +5000,10 @@ function _formatNotionSyncAgoCompact(timestamp) {
 }
 
 function _getJournalProfilesConnectedCount(profiles = []) {
-  return profiles.filter(profile => {
-    if (profile.connectionType === 'notion') return !!profile.notionDatabaseId;
-    return !!profile.apiUrl;
-  }).length;
+  // Delegates the per-integration "is fully configured" check to the registry
+  // (INTEGRATIONS[type].isReady). New integrations get this for free by
+  // implementing isReady on their registry entry.
+  return profiles.filter(profile => getIntegration(profile).isReady?.(profile)).length;
 }
 function _hasTokenExpiredProfiles() {
   try { return getJournalProfiles().some(p => p?.connectionType === 'notion' && p?.notionErrorCode === 'token_expired'); }
@@ -27913,7 +28016,9 @@ function _updateDataSetupHero() {
     else if (sync === 'syncing')      syncLabel = 'syncing…';
     else if (sync === 'error')        syncLabel = 'sync failed';
     else if (sync === 'disconnected') syncLabel = 'disconnected';
-    const conn = profile.connectionType === 'notion' ? 'Notion' : 'API';
+    // Connection label resolved via the integrations registry so new types
+    // (mt5 / ctrader / …) automatically get the right display name.
+    const conn = getIntegration(profile).label;
     if (metaEl) metaEl.textContent = `${conn} · ${syncLabel} · ${htf}`;
     if (dotEl) {
       const stateClass = sync === 'synced' ? 'is-live'
