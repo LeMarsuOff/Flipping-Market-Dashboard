@@ -7682,6 +7682,16 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   font-family: ui-serif, Georgia, serif;
   font-size: 14px;
   font-weight: 800;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+/* SVG icons fill the 22×22 box with ~3px inner padding so the glyph breathes.
+   currentColor inheritance lets per-integration .int-icon--<id> rules colour
+   the mark via the parent's `color` declaration. */
+.int-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 .int-badge { font-size: 12px; }
 .int-badge--connected { color: var(--g, #22c55e); }

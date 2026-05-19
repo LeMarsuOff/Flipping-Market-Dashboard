@@ -3971,7 +3971,7 @@ function _renderNotionIntegrationCard() {
   const errorNames = isError ? _getNotionProfileSyncErrorNames() : [];
   return `<div class="int-row notion-integration-card">
     <div class="int-compact-header">
-      <span class="int-name"><span class="int-icon int-icon--notion" aria-hidden="true">N</span> Notion</span>
+      <span class="int-name"><span class="int-icon int-icon--notion" aria-hidden="true">${INTEGRATION_ICONS.notion}</span> Notion</span>
       ${headerRight}
     </div>
     ${hasFooter ? `<div class="int-compact-footer">
@@ -3994,7 +3994,7 @@ function _renderPlannedIntegrationCards() {
       <div class="int-row int-row--planned" aria-disabled="true">
         <div class="int-compact-header">
           <span class="int-name">
-            <span class="int-icon int-icon--${integ.id}" aria-hidden="true">${_escapeHtml(integ.icon || '?')}</span>
+            <span class="int-icon int-icon--${integ.id}" aria-hidden="true">${INTEGRATION_ICONS[integ.id] || _escapeHtml(integ.icon || '?')}</span>
             ${_escapeHtml(integ.label)}
           </span>
           <span class="int-badge int-badge--planned">⏳ Coming soon</span>
@@ -4742,6 +4742,24 @@ const INTEGRATIONS = {
     available: false,
     isLegacy: false,
   },
+};
+
+// Inline SVG logos sized for the 22×22 .int-icon container. Each uses
+// `fill="currentColor"` so CSS-driven foreground colors (set per integration
+// via .int-icon--<id> rules) apply automatically. Paths approximate the
+// official brand marks — exact-pixel fidelity isn't required because the
+// colored background + label do most of the brand-recognition lifting.
+const INTEGRATION_ICONS = {
+  // Notion — stylized serif N letterform from the brand wordmark.
+  notion: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h2.7l9 13V3h2.6v18h-2.7l-9-13v13H5V3z"/></svg>',
+  // MetaTrader 5 — bold "5" digit; the orange disc background mimics the MT logo's globe.
+  mt5: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3h10v3.5h-7l-.5 3c.9-.4 1.9-.6 2.9-.6 3.4 0 5.6 2.2 5.6 5.6 0 3.8-2.7 6-6 6-3.2 0-5.6-1.6-6-4.6h3.6c.3 1.1 1.2 1.7 2.4 1.7 1.6 0 2.6-1.1 2.6-2.7 0-1.7-1-2.7-2.6-2.7-1 0-1.8.4-2.1 1.1H4.5L7 3z"/></svg>',
+  // MetaTrader 4 — bold "4" digit on the blue disc.
+  mt4: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 3l-7 11v2.5h7V21H17V16.5h2.5V13.5H17V3h-3.5zm0 4.5v6h-3.5l3.5-6z"/></svg>',
+  // cTrader — stylized "cT" letterforms on the red disc.
+  ctrader: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 12c0-3.5 2.5-6.2 6.2-6.2 2.5 0 4.6 1.4 5.4 3.8h-3.3c-.4-.7-1.2-1.1-2.1-1.1-1.9 0-3.1 1.4-3.1 3.5s1.2 3.5 3.1 3.5c.9 0 1.7-.4 2.1-1.1h3.3c-.8 2.4-2.9 3.8-5.4 3.8-3.7 0-6.2-2.7-6.2-6.2zM15 18.2V8.8h-2.5v-3h8.5v3H18.5v9.4H15z"/></svg>',
+  // Custom API (legacy) — generic </> code-brackets glyph.
+  api: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.3 6.3L2.6 12l5.7 5.7L9.7 16 5.4 12l4.3-4.3L8.3 6.3zm7.4 0L14.3 7.7 18.6 12l-4.3 4 1.4 1.7L21.4 12l-5.7-5.7z"/></svg>',
 };
 
 // Returns the registry entry matching a profile's connectionType (or a raw
