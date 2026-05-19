@@ -7687,6 +7687,36 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .int-badge--connected { color: var(--g, #22c55e); }
 .int-badge--checking { color: var(--y, #eab308); }
 .int-badge--disconnected { color: var(--r, #ef4444); }
+.int-badge--planned {
+  font-size: 10px;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--line) 40%, transparent);
+  color: var(--dim);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+/* Coming-soon card variant — non-interactive, dimmed, but still readable */
+.int-row--planned {
+  opacity: .58;
+  background: color-mix(in srgb, var(--surface-3) 40%, transparent);
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--line) 65%, transparent);
+  cursor: not-allowed;
+}
+.int-row--planned .int-name { font-weight: 600; }
+.int-description {
+  font-size: 11px;
+  color: var(--muted, #888);
+  line-height: 1.4;
+}
+/* Per-integration icon brand colors — keep generic .int-icon for fallback. */
+.int-icon--notion  { background: #1a1a1a; color: #ffffff; }
+.int-icon--mt5     { background: #f0a020; color: #1a1a1a; }
+.int-icon--mt4     { background: #4a8cff; color: #ffffff; }
+.int-icon--ctrader { background: #e63946; color: #ffffff; }
+.int-icon--api     { background: var(--dim);   color: var(--surface-1); }
 .int-workspace { font-size: 12px; color: var(--muted, #888); margin: 8px 0 0 30px; }
 .int-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .int-btn { font-size: 12px; padding: 4px 10px; }

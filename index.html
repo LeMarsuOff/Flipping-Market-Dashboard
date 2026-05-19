@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=204">
+<link rel="stylesheet" href="dashboard.css?v=205">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1036,6 +1036,7 @@
     <nav class="settings-tabs" aria-label="Settings sections">
       <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="account">Account</button>
       <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="data">Profiles</button>
+      <button class="settings-tab-btn" type="button" data-action="settings-tab-select" data-settings-tab="integrations">Integrations</button>
     </nav>
 
     <section class="account-card account-section settings-tab-panel" id="account-section" data-settings-tab-panel="account">
@@ -1229,7 +1230,6 @@
         <span class="account-section-chevron" aria-hidden="true">▸</span>
       </button>
       <div class="account-section-body" id="data-integrations-section-body" hidden>
-        <div id="integrations-section-body"></div>
         <div class="account-compact-block" id="journal-profile-default-pane">
           <div class="journal-profile-manage-content">
             <div class="data-sources-head">
@@ -1241,6 +1241,20 @@
             <div class="journal-profile-editor-slot" id="journal-profile-editor-slot"></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section class="account-card account-section settings-tab-panel" id="integrations-tab-section" data-settings-tab-panel="integrations">
+      <button class="account-section-trigger" type="button" data-action="toggle-integrations-section" aria-expanded="false">
+        <span class="account-section-copy">
+          <span class="account-card-label">Integrations</span>
+          <span class="account-section-summary" id="integrations-section-status">○ Not connected</span>
+          <span class="account-section-detail">Connect Notion, MetaTrader, cTrader…</span>
+        </span>
+        <span class="account-section-chevron" aria-hidden="true">▸</span>
+      </button>
+      <div class="account-section-body" id="integrations-tab-section-body" hidden>
+        <div id="integrations-section-body"></div>
       </div>
     </section>
 
@@ -2889,6 +2903,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=335"></script>
+<script src="dashboard.js?v=340"></script>
 </body>
 </html>

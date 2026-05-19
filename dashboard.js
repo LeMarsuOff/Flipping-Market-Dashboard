@@ -3745,7 +3745,7 @@ let _dataSourcesSectionOpen = (() => {
 let _settingsActiveTab = (() => {
   try {
     const saved = localStorage.getItem(SETTINGS_ACTIVE_TAB_LS_KEY);
-    return ['account', 'data'].includes(saved) ? saved : 'data';
+    return ['account', 'data', 'integrations'].includes(saved) ? saved : 'data';
   } catch { return 'data'; }
 })();
 function _closeAccountPanel() {
@@ -3766,13 +3766,15 @@ function _toggleDataSourcesSection(force = null) {
   _syncJournalProfileUI();
 }
 function _setSettingsActiveTab(tab) {
-  const next = ['account', 'data'].includes(tab) ? tab : 'account';
+  const next = ['account', 'data', 'integrations'].includes(tab) ? tab : 'account';
   _settingsActiveTab = next;
   try { localStorage.setItem(SETTINGS_ACTIVE_TAB_LS_KEY, next); } catch {}
   if (next === 'data') {
     _dataSourcesSectionOpen = true;
-    _integrationsSectionOpen = true;
     _persistAccountSectionState(DATA_SOURCES_SECTION_OPEN_LS_KEY, true);
+  }
+  if (next === 'integrations') {
+    _integrationsSectionOpen = true;
     _persistAccountSectionState(INTEGRATIONS_SECTION_LS_KEY, true);
     _checkNotionIntegrationStatus();
   }
@@ -3919,6 +3921,16 @@ async function _checkNotionIntegrationStatus() {
   _syncJournalProfileUI();
 }
 function _renderIntegrationsSection() {
+  return `<div class="int-list">
+    ${_renderNotionIntegrationCard()}
+    ${_renderPlannedIntegrationCards()}
+  </div>`;
+}
+
+// Per-integration renderer extracted from the old monolithic _renderIntegrationsSection.
+// Encapsulates the Notion-specific status logic + OAuth buttons; future
+// active integrations get their own _render<Name>IntegrationCard sibling.
+function _renderNotionIntegrationCard() {
   debugLog('[DataIntegrationUI] rendering notion card');
   const st = _notionIntegrationStatus;
   const ws = _escapeHtml(_notionIntegrationWorkspace || '');
@@ -3957,21 +3969,41 @@ function _renderIntegrationsSection() {
   });
   const hasFooter = !!(ws || footerRight);
   const errorNames = isError ? _getNotionProfileSyncErrorNames() : [];
-  return `<div class="int-list">
-    <div class="int-row notion-integration-card">
-      <div class="int-compact-header">
-        <span class="int-name"><span class="int-icon" aria-hidden="true">N</span> Notion</span>
-        ${headerRight}
-      </div>
-      ${hasFooter ? `<div class="int-compact-footer">
-        <span class="int-workspace-inline">${ws ? `Workspace: ${ws}` : ''}</span>
-        ${footerRight}
-      </div>` : ''}
-      ${errorNames.length ? `<div class="int-error-dbs">
-        ${errorNames.map(n => `<span class="int-error-db-item"><span class="int-error-db-dot" aria-hidden="true">⚠</span>${_escapeHtml(n)}</span>`).join('')}
-      </div>` : ''}
+  return `<div class="int-row notion-integration-card">
+    <div class="int-compact-header">
+      <span class="int-name"><span class="int-icon int-icon--notion" aria-hidden="true">N</span> Notion</span>
+      ${headerRight}
     </div>
+    ${hasFooter ? `<div class="int-compact-footer">
+      <span class="int-workspace-inline">${ws ? `Workspace: ${ws}` : ''}</span>
+      ${footerRight}
+    </div>` : ''}
+    ${errorNames.length ? `<div class="int-error-dbs">
+      ${errorNames.map(n => `<span class="int-error-db-item"><span class="int-error-db-dot" aria-hidden="true">⚠</span>${_escapeHtml(n)}</span>`).join('')}
+    </div>` : ''}
   </div>`;
+}
+
+// Renders all INTEGRATIONS entries with available:false as disabled
+// "Coming soon" cards. Iterates the registry so any new planned entry
+// added to INTEGRATIONS automatically appears here without extra code.
+function _renderPlannedIntegrationCards() {
+  return Object.values(INTEGRATIONS)
+    .filter(integ => integ.available === false)
+    .map(integ => `
+      <div class="int-row int-row--planned" aria-disabled="true">
+        <div class="int-compact-header">
+          <span class="int-name">
+            <span class="int-icon int-icon--${integ.id}" aria-hidden="true">${_escapeHtml(integ.icon || '?')}</span>
+            ${_escapeHtml(integ.label)}
+          </span>
+          <span class="int-badge int-badge--planned">⏳ Coming soon</span>
+        </div>
+        <div class="int-compact-footer">
+          <span class="int-description">${_escapeHtml(integ.description || '')}</span>
+        </div>
+      </div>
+    `).join('');
 }
 function _handleNotionManageAccess() {
   debugLog('[Integrations] manage page access clicked:', { workspace: _notionIntegrationWorkspace || '' });
@@ -5241,9 +5273,14 @@ function _syncJournalProfileUI() {
   const intBody    = document.getElementById('integrations-section-body');
   const intTrigger = document.querySelector('[data-action="toggle-integrations-section"]');
   const intStatus  = document.getElementById('integrations-section-status');
+  const intTabBody = document.getElementById('integrations-tab-section-body');
   if (intBody) {
-    if (_settingsActiveTab === 'data') { intBody.removeAttribute('hidden'); intBody.innerHTML = _renderIntegrationsSection(); }
+    if (_settingsActiveTab === 'integrations') { intBody.removeAttribute('hidden'); intBody.innerHTML = _renderIntegrationsSection(); }
     else intBody.setAttribute('hidden', '');
+  }
+  if (intTabBody) {
+    if (_settingsActiveTab === 'integrations') intTabBody.removeAttribute('hidden');
+    else intTabBody.setAttribute('hidden', '');
   }
   if (intTrigger) intTrigger.setAttribute('aria-expanded', _integrationsSectionOpen ? 'true' : 'false');
   if (intStatus) {
@@ -27183,9 +27220,9 @@ function toggleAccountPanel() {
     _journalProfileSwitcherOpen = false;
     _renderAccountPanelAuthState();
     // Refresh the Notion integration badge when opening the panel on the
-    // Data tab — without this, the tab restored from localStorage shows
-    // "Checking…" until the user manually re-clicks the tab button.
-    if (_settingsActiveTab === 'data') {
+    // Integrations tab — without this, the tab restored from localStorage
+    // shows "Checking…" until the user manually re-clicks the tab button.
+    if (_settingsActiveTab === 'integrations') {
       try { _checkNotionIntegrationStatus(); } catch (e) {}
     }
     setTimeout(() => {
