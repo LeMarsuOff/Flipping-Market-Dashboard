@@ -10590,100 +10590,6 @@ body.ms-sidebar-open .view-tabs {
   color: #2962ff;
 }
 
-/* ══ DATA SOURCE SYSTEM ══ */
-.ds-toggle-group {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--bg2);
-  border: 1px solid var(--line2);
-  border-radius: 8px;
-  padding: 3px;
-}
-.ds-toggle-btn {
-  font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
-  font-weight: 600;
-  letter-spacing: .6px;
-  text-transform: uppercase;
-  padding: 4px 11px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--dim);
-  cursor: pointer;
-  transition: all .15s;
-  white-space: nowrap;
-}
-.ds-toggle-btn:hover { color: var(--body); }
-.ds-toggle-btn.active {
-  background: color-mix(in srgb, var(--gold) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
-  color: var(--gold);
-}
-.ds-toggle-btn.active.api-live {
-  background: color-mix(in srgb, var(--g) 14%, transparent);
-  border-color: color-mix(in srgb, var(--g) 35%, transparent);
-  color: var(--g);
-}
-/* Cooldown countdown badge on the Notion API button */
-#ds-btn-api[data-cooldown]:not([data-cooldown=''])::after {
-  content: attr(data-cooldown);
-  margin-left: 5px;
-  font-size: var(--typo-micro-size);
-  opacity: .65;
-  color: var(--warn, #e2a84b);
-}
-/* "live X min ago" label inside the API Live button */
-.ds-btn-age {
-  display: none;
-  margin-left: 6px;
-  padding-left: 6px;
-  border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  font-family: 'DM Mono', monospace;
-  font-size: 9px;
-  font-weight: 400;
-  letter-spacing: .3px;
-  text-transform: none;
-  opacity: .78;
-}
-.ds-btn-age.visible { display: inline; }
-.ds-status-bar {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
-  letter-spacing: .4px;
-  color: var(--dim);
-  white-space: nowrap;
-  transition: opacity .3s;
-}
-.ds-status-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--dim);
-  transition: background .3s;
-}
-.ds-status-dot.live  { background: var(--g); box-shadow: 0 0 5px var(--g); animation: ds-pulse 2s infinite; }
-.ds-status-dot.csv   { background: var(--b); }
-.ds-status-dot.warn  { background: var(--gold); }
-.ds-status-dot.err   { background: var(--r); }
-@keyframes ds-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: .45; }
-}
-.ds-last-sync {
-  font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
-  color: var(--dim);
-  opacity: 0;
-  transition: opacity .3s;
-}
-.ds-last-sync.visible { opacity: 1; }
-
 /* ══ EMPTY STATE ══ */
 .empty-state {
   display: none;
@@ -16017,8 +15923,7 @@ body.ms-sidebar-open .view-tabs {
       Goal: preserve the KPI strip's natural spacing as long as possible
       by aggressively compacting the right-side elements first. Progression:
 
-        <=1680  : data-source labels, dhb labels/badge, status bar hidden
-                  (right-side text-only labels go first)
+        <=1680  : dhb labels/badge folded
         <=1500  : TPM mode badge text, rr-clear label, active-preset
                   badge → icon-only (badge text content folds into hover
                   titles)
@@ -16028,19 +15933,10 @@ body.ms-sidebar-open .view-tabs {
         <=900   : padding 2px, font 7/11, hide active-preset badge
 
       All hidden info stays accessible via title tooltips, kept in sync by
-      _syncDsButtonTitles(), _syncDataHubBtnTitle(), _ppSyncActivePresetBadge,
-      _updateTpmBadge, and _rrSyncActiveFilterBadge in dashboard.js. ── */
+      _syncDataHubBtnTitle(), _ppSyncActivePresetBadge, _updateTpmBadge, and
+      _rrSyncActiveFilterBadge in dashboard.js. ── */
 
 @media (max-width: 1680px) {
-  /* Data source buttons → icon only, no age badge, compact padding */
-  .ds-btn-label  { display: none; }
-  #ds-btn-age    { display: none; }
-  .ds-toggle-btn { padding: 4px 8px; }
-
-  /* Redundant status bar hidden (active button color conveys current mode) */
-  .ds-status-bar { display: none; }
-  .ds-last-sync  { display: none; }
-
   /* Data Hub button → icon only, no "Data" label, no "Demo/OK/Warn" badge */
   .data-hub-btn .dhb-label { display: none; }
   .data-hub-btn .dhb-badge { display: none; }
@@ -16108,7 +16004,6 @@ body.ms-sidebar-open .view-tabs {
   .topbar-stats .ts-v { font-size: 11px; }
   .topbar { padding: 0 10px; gap: 8px; }
   /* Free more right-side space — TPM mode badge gets its padding tightened. */
-  .ds-toggle-btn  { padding: 4px 5px; }
   .topbar-more-btn { padding: 0 6px; }
   .logo-dot { width: 5px; height: 5px; }
   /* Active TPM preset badge — completely hidden below 900px. The mode is

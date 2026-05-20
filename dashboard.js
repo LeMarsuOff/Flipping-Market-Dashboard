@@ -5436,8 +5436,6 @@ async function _reloadJournalProfileSelection(options = {}) {
   if (cached && cached.length && !forceFetch) {
     _injectTrades(cached, 'Notion Live', null);
     setSourceIndicator('live');
-    showDataStatus(_getAPICacheStatusLabel(), 'live');
-    _updateLastSync();
     _syncJournalProfileUI();
     return;
   }
@@ -6294,6 +6292,11 @@ function _reapplyAPIOverrides() {
 
 function _resetAPIFieldOverrides() {
   _saveAPIFieldOverrides({});
+  // Clear the detected-template marker too — otherwise the Mapping panel
+  // banner keeps showing "Auto-detected: <label>" between reset and the next
+  // sync (the auto-apply hook only fires when overrides are empty AND a
+  // template is detected, so the banner would lie about applied state).
+  _setDetectedTemplate(null);
   _reapplyAPIOverrides();
   updateJournalPanel();
 }
@@ -7085,8 +7088,6 @@ function setCachedAPIData(trades, source = null) {
     if (_getCurrentHTFSource() !== src) return;
     const c = getCachedAPIData(src);
     if (!c || !c.length) return;
-    showDataStatus(_getAPICacheStatusLabel(src), 'live');
-    _updateLastSync();
   }, 60500);
 }
 function _getCacheAge(source = null) {
@@ -7101,65 +7102,9 @@ function _getCacheAge(source = null) {
   } catch { return null; }
 }
 
-function _formatCooldown(ms) {
-  if (!ms) return '0 min';
-  const minutes = Math.ceil(ms / 60000);
-  return minutes <= 1 ? '1 min' : `${minutes} min`;
-}
-
 function _getAPICacheStatusLabel(source = null) {
   const age = _getCacheAge(source);
   return age ? `API live (${age})` : 'API live';
-}
-
-// ── Status indicator ──
-function showDataStatus(msg, type = 'info') {
-  const dot  = document.getElementById('ds-status-dot');
-  const text = document.getElementById('ds-status-text');
-  if (!dot || !text) return;
-  text.textContent = msg;
-  dot.className = 'ds-status-dot';
-  if (type === 'live')   dot.classList.add('live');
-  else if (type === 'csv')  dot.classList.add('csv');
-  else if (type === 'warn') dot.classList.add('warn');
-  else if (type === 'err')  dot.classList.add('err');
-  _syncDsButtonTitles();
-}
-// No-op retained for call-site compatibility. The #ds-last-sync span has been
-// removed from the header (its duplicate "X ago" label was redundant with the
-// one inside the API button). Button titles are refreshed via _syncDsButtonTitles
-// which now reads cache age directly from _getCacheAge().
-function _updateLastSync() {
-  _syncDsButtonTitles();
-}
-
-// Mirror the (hidden at <=1280px) status bar content onto the active
-// .ds-toggle-btn's title attribute so users hovering the active button see
-// the same info. Inactive buttons get a static per-mode label.
-function _syncDsButtonTitles() {
-  const statusText = document.getElementById('ds-status-text')?.textContent?.trim() || '';
-  const lastSync   = _getCacheAge() || '';
-  const dot        = document.getElementById('ds-status-dot');
-
-  const tip = [statusText, lastSync].filter(Boolean).join(' · ');
-
-  let prefix = '';
-  if (dot?.classList.contains('warn')) prefix = '⚠ ';
-  else if (dot?.classList.contains('err')) prefix = '✕ ';
-
-  const fullTip = prefix + tip;
-
-  document.querySelectorAll('.ds-toggle-btn').forEach(btn => {
-    const isActive = btn.classList.contains('active');
-    if (isActive && fullTip) {
-      btn.setAttribute('title', fullTip);
-    } else {
-      const src = btn.dataset.source;
-      if (src === 'demo') btn.setAttribute('title', 'Demo mode — sample dataset');
-      else if (src === 'csv')  btn.setAttribute('title', 'CSV mode — local file');
-      else if (src === 'api')  btn.setAttribute('title', 'API Live — Notion sync');
-    }
-  });
 }
 
 // ── Data source chip — user-facing label in topbar ──
@@ -7299,8 +7244,6 @@ function setHTFSource(source) {
   if (cached && cached.length) {
     _injectTrades(cached, 'Notion Live', null);
     setSourceIndicator('live');
-    showDataStatus(_getAPICacheStatusLabel(), 'live');
-    _updateLastSync();
   } else if (localStorage.getItem(DS_KEY) === 'api') {
     // No cache yet for this source — clear the currently displayed dataset so
     // the previous HTF source cannot visually bleed into the new one.
@@ -7313,7 +7256,6 @@ function setHTFSource(source) {
     // Show pending state only. Do not auto-fetch: API refreshes are strictly
     // user-driven via the Notion Live button.
     setSourceIndicator('pending');
-    showDataStatus('API standby — no data for this source yet', 'warn');
   }
   // Restore preset AFTER data injection — _injectTrades resets activeId
   // on its first-load branch, so a restore from inside _reloadProfileScopedState
@@ -7321,17 +7263,8 @@ function setHTFSource(source) {
   _restoreActivePresetForCurrentSlot();
 }
 
-// ── Update source UI (toggle buttons + refresh btn) ──
+// ── Update source UI (HTF group + profile sync) ──
 function updateSourceUI(mode) {
-  const btnDemo = document.getElementById('ds-btn-demo');
-  const btnCsv  = document.getElementById('ds-btn-csv');
-  const btnApi  = document.getElementById('ds-btn-api');
-  if (btnDemo) btnDemo.classList.toggle('active', mode === 'demo');
-  if (btnCsv) { btnCsv.classList.toggle('active', mode === 'csv');
-                btnCsv.classList.remove('api-live'); }
-  if (btnApi) { btnApi.classList.toggle('active', mode === 'api');
-                btnApi.classList.toggle('api-live', mode === 'api'); }
-  _syncDsButtonTitles();
   const htfGroup = document.getElementById('htf-toggle-group');
   if (htfGroup) htfGroup.classList.add('is-hidden'); // always hidden — profiles determine M15/H4
   _syncHTFToggleUI();
@@ -7452,7 +7385,6 @@ async function loadFromAPI(options = {}) {
     }
     debugLog('[NotionProfile] no database selected yet — showing prompt');
     setSourceIndicator('pending');
-    showDataStatus('Notion connected — select a database in Data Sources to sync.', 'warn');
     return;
   }
 
@@ -7467,8 +7399,6 @@ async function loadFromAPI(options = {}) {
       _injectTrades(cached, 'Cache', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
       setSourceIndicator('live');
-      showDataStatus(_getAPICacheStatusLabel(requestSource), 'live');
-      _updateLastSync();
     }
     return;
   }
@@ -7476,7 +7406,6 @@ async function loadFromAPI(options = {}) {
   appState.settings.dataSource.loading = true;
   debugDataSource('loadFromAPI:start', { silent, force, url: requestURL, source: requestSource });
 
-  if (!silent) showDataStatus('Loading API…', 'warn');
 
   setSourceIndicator('loading');
 
@@ -7494,8 +7423,6 @@ async function loadFromAPI(options = {}) {
           _injectTrades(existingCache, 'Cache', appState.settings.dataSource.pendingRestoreState);
           appState.settings.dataSource.pendingRestoreState = null;
           setSourceIndicator('cache');
-          showDataStatus('API returned no trades — kept cached data', 'warn');
-          _updateLastSync();
         }
         return;
       }
@@ -7519,8 +7446,6 @@ async function loadFromAPI(options = {}) {
 
       setSourceIndicator('live');
 
-      showDataStatus(_getAPICacheStatusLabel(requestSource), 'live');
-      _updateLastSync();
       debugDataSource('loadFromAPI:success', { count: appState.trades.items.length, source: requestSource });
     } else {
       debugDataSource('loadFromAPI:success-stale-source', { count: parsed.length, source: requestSource, currentSource: _getCurrentHTFSource() });
@@ -7546,8 +7471,6 @@ async function loadFromAPI(options = {}) {
         setSourceIndicator('cache');
         _injectTrades(fallbackCache, 'Cache', appState.settings.dataSource.pendingRestoreState);
         appState.settings.dataSource.pendingRestoreState = null;
-        showDataStatus('Offline — cached data', 'warn');
-        _updateLastSync();
       }
       debugDataSource('loadFromAPI:fallback-cache', { count: fallbackCache.length, source: requestSource });
     } else {
@@ -7904,8 +7827,6 @@ function setDataSource(mode) {
     if (cached && cached.length) {
       _injectTrades(cached, 'Cache', isFirstLoad ? null : savedState);
       setSourceIndicator('live');
-      showDataStatus(_getAPICacheStatusLabel(), 'live');
-      _updateLastSync();
     } else {
       // No cache — keep the current filter state for the next manual Notion refresh
       appState.settings.dataSource.pendingRestoreState = isFirstLoad ? null : savedState;
@@ -7916,10 +7837,8 @@ function setDataSource(mode) {
       hideEmptyState();
       if (appState.settings.dataSource.loading === true) {
         setSourceIndicator('loading');
-        showDataStatus('Loading API…', 'warn');
       } else {
         setSourceIndicator('pending');
-        showDataStatus('API pending — open Profiles to sync', 'warn');
       }
     }
   } else if (mode === 'demo') {
@@ -7931,7 +7850,6 @@ function setDataSource(mode) {
     if (_cachedCSVTrades && _cachedCSVTrades.length) {
       _injectTrades(_cachedCSVTrades, 'CSV', isFirstLoad ? null : savedState);
       setSourceIndicator('csv');
-      showDataStatus('CSV — ' + _cachedCSVTrades.length + ' trades', 'csv');
     } else {
       appState.trades.items.length = 0;
       appState.trades.totalOverride = 0;
@@ -7992,7 +7910,6 @@ function loadBuiltinCSV(savedState) {
   _injectTrades(parsed, 'Demo', savedState);
   _csvFormat = 'flipping';
   setSourceIndicator('demo');
-  showDataStatus('Demo — ' + parsed.length + ' trades', 'csv');
   updateSourceUI('demo');
 }
 
@@ -8001,7 +7918,6 @@ function showEmptyState() {
   const el = document.getElementById('empty-state');
   if (el) el.classList.add('visible');
   setSourceIndicator('none');
-  showDataStatus('No data — import a CSV', 'info');
 }
 
 function hideEmptyState() {
@@ -8087,8 +8003,6 @@ async function _fetchAPICacheSilently(options = {}) {
         _injectTrades(existingCache, 'Cache', savedState);
         appState.settings.dataSource.pendingRestoreState = null;
         setSourceIndicator('cache');
-        showDataStatus('API returned no trades — kept cached data', 'warn');
-        _updateLastSync();
       }
       return;
     }
@@ -8115,10 +8029,7 @@ async function _fetchAPICacheSilently(options = {}) {
       _injectTrades(parsed, 'Notion Live', savedState);
       appState.settings.dataSource.pendingRestoreState = null;
       setSourceIndicator('live');
-      showDataStatus(_getAPICacheStatusLabel(requestSource), 'live');
-      _updateLastSync();
     } else {
-      _updateLastSync();
     }
     debugDataSource('fetchAPICacheSilently:success', { count: parsed.length, source: requestSource, currentSource: _getCurrentHTFSource() });
   } catch (err) {
@@ -8476,7 +8387,6 @@ async function _loadNotionTrades(profile, options = {}) {
   // _injectTrades) when the user has switched profiles mid-sync.
   const stillActive = () => !!profileId && String(getActiveJournalProfile()?.id || '') === profileId;
   if (profile?.notionSyncState === 'disconnected' || _notionIntegrationStatus === 'disconnected') {
-    showDataStatus('Notion disconnected — reconnect to sync.', 'warn');
     setSourceIndicator('pending');
     console.warn('[NotionLoad] blocked — Notion disconnected for profile:', profileId || '(none)');
     return;
@@ -8488,7 +8398,6 @@ async function _loadNotionTrades(profile, options = {}) {
       _updateJournalProfileSyncMeta(profileId, { notionSyncState: 'error' });
       debugLog('[NotionSync] error:', { profileId, error: 'missing-user' });
     }
-    showDataStatus('Sign in to load Notion data.', 'warn');
     return;
   }
 
@@ -8549,8 +8458,6 @@ async function _loadNotionTrades(profile, options = {}) {
       _injectTrades(cached, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
       setSourceIndicator('live');
-      showDataStatus(_getAPICacheStatusLabel(source), 'live');
-      _updateLastSync();
       // Restore the background media queue for cached trades. On page refresh the
       // fetch path is skipped, so Notion-hosted screenshot URLs would never get
       // uploaded/resolved without this call. Non-blocking — UI is already live.
@@ -8583,7 +8490,6 @@ async function _loadNotionTrades(profile, options = {}) {
   // indicators belong to the user's current view, not the background target.
   // Also skip for background reconcile (ghost-sync auto-trigger): the prior
   // incremental already gave the user a "live" state, no need to flash it.
-  if (!silent && !isBackgroundReconcile && wasActiveAtStart) showDataStatus('Loading Notion data…', 'warn');
   if (wasActiveAtStart && !isBackgroundReconcile) setSourceIndicator('loading');
 
   try {
@@ -8672,8 +8578,6 @@ async function _loadNotionTrades(profile, options = {}) {
         _injectTrades(existingCache, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
         appState.settings.dataSource.pendingRestoreState = null;
         setSourceIndicator('live');
-        showDataStatus(`Notion · ${existingCache.length} trades`, 'live');
-        _updateLastSync();
       } else {
         debugLog('[NotionLoad] profile switched mid-sync — skipping UI inject (incremental empty)');
       }
@@ -8689,7 +8593,6 @@ async function _loadNotionTrades(profile, options = {}) {
       }
       debugLog('[NotionSync] error:', { profileId, error: 'empty-trades' });
       if (stillActive()) {
-        showDataStatus('Notion database returned no trades.', 'warn');
         setSourceIndicator('pending');
       }
       return;
@@ -8751,7 +8654,6 @@ async function _loadNotionTrades(profile, options = {}) {
       }
       debugLog('[NotionSync] error:', { profileId, error: 'no-valid-trades' });
       if (stillActive()) {
-        showDataStatus('Notion data loaded but no valid trades — check field mapping.', 'warn');
         setSourceIndicator('pending');
       }
       return;
@@ -8834,8 +8736,6 @@ async function _loadNotionTrades(profile, options = {}) {
       appState.settings.dataSource.pendingRestoreState = null;
       if (!isBackgroundReconcile) {
         setSourceIndicator('live');
-        showDataStatus(`Notion · ${mergedParsed.length} trades`, 'live');
-        _updateLastSync();
       }
       debugLog('[NotionLoad] success — injected', mergedParsed.length, 'trades', isBackgroundReconcile ? '(background: ghost purge)' : '');
     } else if (!stillActive()) {
@@ -8861,7 +8761,6 @@ async function _loadNotionTrades(profile, options = {}) {
     }
     debugLog('[NotionSync] error:', { profileId, name: err.name, message: err.message });
     if (stillActive()) {
-      showDataStatus('Notion load failed: ' + (err.message || err.name), 'warn');
       setSourceIndicator('pending');
     }
   } finally {
@@ -9043,8 +8942,6 @@ async function initDataSource() {
     _injectTrades(cached, 'Cache', null);
     debugLog('[DashboardDebug]');
     setSourceIndicator('live');
-    showDataStatus(_getAPICacheStatusLabel(startupSource), 'live');
-    _updateLastSync();
     // Restore the background media queue for Notion profiles. Auth is not yet
     // resolved at this point — _bootNotionMediaRestore polls and starts the
     // queue once the session becomes available.
@@ -9063,7 +8960,6 @@ async function initDataSource() {
         savedState: persistedSidebar,
       });
       setSourceIndicator('csv');
-      showDataStatus('CSV — ' + (appState.trades.totalOverride || 0) + ' trades', 'csv');
     } catch (e) {
       console.warn('[csv-restore] Parse failed — falling back to demo:', e.message);
       try { localStorage.removeItem(CSV_CACHE_KEY); } catch (e2) {}
@@ -9079,7 +8975,6 @@ async function initDataSource() {
     render();
     hideEmptyState();
     setSourceIndicator('pending');
-    showDataStatus('API pending — open Profiles to sync', 'warn');
   } else {
     loadBuiltinCSV(persistedSidebar);
   }
@@ -9137,8 +9032,6 @@ async function initDataSource() {
     if (localStorage.getItem(DS_KEY) !== 'api') return;
     const c = getCachedAPIData();
     if (!c || !c.length) return;
-    showDataStatus(_getAPICacheStatusLabel(), 'live');
-    _updateLastSync();
   }, 30000);
 }
 
@@ -25137,7 +25030,6 @@ function processCsvText(text, filename, opts = {}) {
       _cachedCSVTrades = trades.filter(t => t.pair && t.pair.trim()).slice();
       csvDataActive = true;
       setSourceIndicator('csv');
-      showDataStatus('CSV — ' + appState.trades.totalOverride + ' trades', 'csv');
     } else {
       injectParsedTrades(trades, filename, _csvFormat);
       try { triggerDataHubFirstImportPulse(); } catch (e) {}
@@ -25645,7 +25537,6 @@ function injectParsedTrades(parsed, filename, csvFormat) {
   // Sync data source state to CSV after a successful import
   localStorage.setItem(DS_KEY, 'csv');
   updateSourceUI('csv');
-  showDataStatus('CSV — ' + appState.trades.totalOverride + ' trades', 'csv');
 }
 
 // Dynamic dimension rebuild after CSV import
