@@ -149,6 +149,16 @@
 
 ---
 
+### 2026-05-19 — Vercel `DASHBOARD_URL` is single-tenant prod (no dev/prod split)
+
+**Context:** Mid-session, OAuth Notion redirected to `localhost:8766` after authorization (Max's local front runs on `localhost:8000`). Investigation : la function Vercel `notion-dashboard-api-2` lit `DASHBOARD_URL` (env var) pour rediriger après le callback OAuth. La variable était `http://localhost:8766` scope **Production AND Preview** depuis 2 jours → la prod (github.io users, ~600) était silencieusement cassée pour toute nouvelle connexion Notion. Aucun mécanisme dans le code backend pour distinguer prod vs dev front.
+
+**Decision:** Remettre `DASHBOARD_URL = https://lemarsuoff.github.io/Flipping-Market-Dashboard/` (Production + Preview) et redéployer. Pour le dev OAuth local : **option pragmatique** — tester l'OAuth sur la prod uniquement, garder localhost pour le reste (UI, calculs, widgets). L'option propre (dynamic redirect via `Origin`/`Referer` + allowlist + state encoding) est trackée dans `ROADMAP.md` § Deferred, nécessite l'accès au repo backend qui n'est pas sur cette machine.
+
+**Consequence:** Prod restaurée immédiatement (deploy `dpl_HA7pr4HH7EasGdYBUMXSpL2r2cjV`). Local OAuth flow inutilisable sans flipper temporairement la variable Vercel (ce qui casse la prod) — accepté comme trade-off jusqu'à ce que le backend repo soit accessible. **Règle pour les futurs agents** : ne jamais modifier `DASHBOARD_URL` côté Vercel sans confirmer que c'est volontaire et temporaire — la variable contrôle directement le redirect des 600 utilisateurs prod.
+
+---
+
 ### 2026-05-20 — Global `localStorage.setItem` dedup wrap (Bloc 4 persistence/refresh investigation)
 
 **Context:** Bloc 4 of the ROADMAP — "identify which localStorage writes are redundant on refresh and whether a debounce strategy is needed." Started by instrumenting `localStorage.setItem` at the very top of `dashboard.js` (gated `?lsAudit=1`) to capture per-key write counts, redundant calls (where the new value matches what's already stored), and payload sizes. Real-usage measurement on Max's 30-second interaction with a 658-trade M15 profile: **230 setItem calls, of which ~152 were exact duplicates of the value already in storage — about 800 KB of fully-redundant writes**. The redundancy was structural, not bursty: `presetLiveFilters_v1_<profile>` fired 28× with 100% identical payloads, `gs_layout_active_<profile>` and `gs_layout_default_<profile>` fired in tandem with identical 13.5 KB payloads on every drag/resize, `flipping_custom_widgets_<profile>` rewrote 22 KB on every heatmap threshold-slider move (due to a `changed = true` bug — see consequence). Targeted fixes per-callsite would have required touching 5-7 unrelated code areas with different ownership patterns. The 122-site grep made it clear a centralized fix was much higher leverage.
