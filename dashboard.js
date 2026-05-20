@@ -5196,10 +5196,14 @@ function _renderNotionDbSection(profile) {
   if (!isPickerOpen) {
     if (hasDb) {
       const title = _escapeHtml(profile.notionDatabaseTitle || profile.notionDatabaseId);
+      // No "Change" button — the database is immutable post-creation by
+      // design (see ROADMAP "Template chooser" architectural decision).
+      // To use a different DB, the user creates a new profile. The DB
+      // error recovery path (jp-db-error-block below) still allows
+      // picking a different DB when the current one is unavailable — that
+      // is the only exception to the immutability rule.
       return `<div class="jp-notion-db-section jp-notion-db-section--linked">
         <span class="jp-notion-db-label">${isDisconnected ? 'Database' : 'Syncing'}: <strong>${title}</strong></span>
-        ${isDisconnected ? '' : `<button class="jp-notion-db-change-btn" type="button"
-          data-action="notion-db-picker-open" data-profile-id="${pid}">Change</button>`}
       </div>`;
     }
     return `<div class="jp-notion-db-section jp-notion-db-section--empty">
@@ -5305,7 +5309,9 @@ function _renderJournalProfileSwitchList() {
             <div class="journal-profile-row-menu-wrap">
               <button class="journal-profile-row-menu-btn" type="button" data-action="journal-profile-row-menu-toggle" data-profile-id="${pid}" aria-label="More actions">⋯</button>
               <div class="journal-profile-row-menu${_journalProfileRowMenuOpenId === profile.id ? '' : ' is-hidden'}" data-profile-id="${pid}">
-                <button class="journal-profile-row-menu-item" type="button" data-action="notion-db-picker-open" data-profile-id="${pid}"${canChangeDb ? '' : ' disabled'}>Change database</button>
+                ${/* "Change database" removed — DB is immutable post-creation.
+                     To use a different DB, the user creates a new profile.
+                     See ROADMAP "Template chooser" architectural decision. */ ''}
                 ${profile.connectionType === 'notion' ? `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-full-resync" data-profile-id="${pid}" title="Reload every trade from Notion. Detects deletions and removes ghost rows."${canSync ? '' : ' disabled'}>Full resync</button>` : ''}
                 <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-rename" data-profile-id="${_escapeHtml(profile.id)}">Rename</button>
                 <button class="journal-profile-row-menu-item journal-profile-row-menu-item--danger" type="button" data-action="journal-profile-row-delete" data-profile-id="${_escapeHtml(profile.id)}">Delete source</button>
@@ -5623,6 +5629,16 @@ function _saveJournalProfileEditor() {
     debugLog('[DataSource] profile updated:', { id: created.id, name: created.name });
   } else {
     debugLog('[DataSource] profile created:', { id: created.id, name: created.name });
+    // Seed the layout LS keys from TEMPLATE_LAYOUTS so the grid renders
+    // with the user-chosen template (m15/h4/other) layout the moment the
+    // new profile activates. Done only on create — edits never reach here
+    // because templateChoice is immutable post-creation. Writes are guarded
+    // (no clobber if keys already exist — shouldn't happen for a fresh
+    // profile but defensive).
+    if (typeof _applyTemplateLayoutsForProfile === 'function') {
+      try { _applyTemplateLayoutsForProfile(created); }
+      catch (e) { console.error('[TemplateLayout] apply failed:', e); }
+    }
   }
   const currentActive = getActiveJournalProfile();
   const shouldActivate = _journalProfileEditorMode !== 'edit' || currentActive?.id === created.id;
@@ -6252,6 +6268,49 @@ function _clearAutoMappedDims() {
   try { localStorage.removeItem(getProfileScopedKey(AUTO_MAPPED_DIMS_LS_PREFIX)); } catch (e) {}
 }
 
+// Seed gs_layout_active_<profileId> + gs_hidden_widgets_<profileId> from
+// TEMPLATE_LAYOUTS[choice] on profile creation, so the dashboard grid
+// renders with the user-chosen template layout from the very first
+// activation — no waiting for a sync, no flash of the canonical default.
+//
+// Storage shape mirrors a "slot" payload (_loadSectionSlot): per-section
+// {x,y,w,h,minW,minH} per widget + hiddenWidgets embedded + dynamicWidgets
+// empty. The dedicated gs_hidden_widgets_<profileId> sidecar is also
+// written because _loadSectionSlot intentionally ignores the embedded
+// hiddenWidgets in favor of the standalone key (per the comment in that
+// fn — "single source of truth").
+//
+// Guards: only writes when the LS keys don't already exist (defensive — a
+// fresh profile shouldn't have them, but doesn't hurt). No-op when
+// TEMPLATE_LAYOUTS doesn't have the bucket (shouldn't happen since we
+// hardcode all 3 buckets, but keeps the function tolerant if a future
+// templateChoice value sneaks through normalisation).
+function _applyTemplateLayoutsForProfile(profile) {
+  if (!profile?.id || !profile?.templateChoice) return;
+  const layout = (typeof TEMPLATE_LAYOUTS !== 'undefined') ? TEMPLATE_LAYOUTS[profile.templateChoice] : null;
+  if (!layout) return;
+  const slotPayload = {
+    global:        { ...(layout.global || {}) },
+    'optimal-rr':  { ...(layout['optimal-rr'] || {}) },
+    partials:      { ...(layout.partials || {}) },
+    hiddenWidgets: { ...(layout.hiddenWidgets || {}) },
+    dynamicWidgets: [],
+  };
+  const layoutKey = `gs_layout_active_${profile.id}`;
+  const hiddenKey = `gs_hidden_widgets_${profile.id}`;
+  try {
+    if (!localStorage.getItem(layoutKey)) {
+      localStorage.setItem(layoutKey, JSON.stringify(slotPayload));
+    }
+    if (!localStorage.getItem(hiddenKey) && Object.keys(slotPayload.hiddenWidgets).length) {
+      localStorage.setItem(hiddenKey, JSON.stringify(slotPayload.hiddenWidgets));
+    }
+    debugLog('[TemplateLayout] seeded:', profile.templateChoice, '→', layoutKey, '+', hiddenKey);
+  } catch (e) {
+    console.error('[TemplateLayout] LS write failed:', e);
+  }
+}
+
 // Fingerprint a Notion DB against the 5 shipped templates. Returns the
 // matched template id, or null when no signature fits. Detection is purely
 // structural — never reads data-source UUIDs (those change when users
@@ -6302,19 +6361,66 @@ function _detectTemplate(rawTrades) {
 function _maybeAutoApplyTemplateMapping(rawTrades) {
   const existing = _getAPIFieldOverrides();
   if (existing && Object.keys(existing).length > 0) return null;
-  const id = _detectTemplate(rawTrades);
-  if (!id) return null;
-  const mapping = TEMPLATE_MAPPINGS[id];
-  if (!mapping) return null;
+  // Respect the explicit bucket the user picked at profile creation. Three
+  // possible values on profile.templateChoice : 'm15' / 'h4' / 'other'.
+  // Existing profiles created before the chooser default to 'other' via
+  // _normalizeJournalProfile (no change to behavior).
+  const profile = getActiveJournalProfile();
+  const bucket = profile?.templateChoice || 'other';
+  const detected = _detectTemplate(rawTrades);
+  let mapping = null;
+  let trackingId = detected;
+  if (bucket === 'm15') {
+    // User explicitly picked Flipping M15. Honor the detection if it
+    // narrowed to one of the 3 M15 variants; otherwise force m15-pro
+    // (the most complete M15 mapping) and warn via toast.
+    if (detected && detected.startsWith('m15-')) {
+      mapping = TEMPLATE_MAPPINGS[detected];
+      trackingId = detected;
+    } else {
+      mapping = TEMPLATE_MAPPINGS['m15-pro'];
+      trackingId = 'm15-pro';
+      if (typeof showThemeToast === 'function') {
+        showThemeToast('Database does not look like Flipping M15 — applied M15 Pro defaults. Adjust via the Mapping panel if needed.', false);
+      }
+    }
+  } else if (bucket === 'h4') {
+    // Symmetric for H4. h4-pro/h4-beg share the same mapping anyway, so
+    // the fallback to h4-pro is essentially canonical for the bucket.
+    if (detected && detected.startsWith('h4-')) {
+      mapping = TEMPLATE_MAPPINGS[detected];
+      trackingId = detected;
+    } else {
+      mapping = TEMPLATE_MAPPINGS['h4-pro'];
+      trackingId = 'h4-pro';
+      if (typeof showThemeToast === 'function') {
+        showThemeToast('Database does not look like Flipping H4 — applied H4 Pro defaults. Adjust via the Mapping panel if needed.', false);
+      }
+    }
+  } else {
+    // "Other" bucket: no forced template. Apply detected mapping if any,
+    // then overlay TEMPLATE_MAPPINGS.other on top so the 4 opted-out dims
+    // (obstacles, h4, badFeeling, hour) always end up __NO_MAPPING__
+    // regardless of what was detected. If nothing was detected, write
+    // only the exclusions (the user pencils the rest manually).
+    if (detected) {
+      mapping = { ...TEMPLATE_MAPPINGS[detected], ...TEMPLATE_MAPPINGS.other };
+      trackingId = detected;
+    } else {
+      mapping = { ...TEMPLATE_MAPPINGS.other };
+      trackingId = 'other';
+    }
+  }
+  if (!mapping || !Object.keys(mapping).length) return null;
   _saveAPIFieldOverrides({ ...mapping });
-  _setDetectedTemplate(id);
+  _setDetectedTemplate(trackingId);
   // Tag every dim as "auto-mapped" so the Mapping panel renders them green
   // (is-auto-mapped) instead of blue (is-remapped). The flag is per-dim:
   // when the user manually pencil-picks a dim, its key is removed from the
   // set in `pickAPIField`, which flips it back to is-remapped (blue).
   _setAutoMappedDims(new Set(Object.keys(mapping)));
-  debugLog('[TplDetect] matched:', id, '· wrote', Object.keys(mapping).length, 'overrides');
-  return id;
+  debugLog('[TplDetect] bucket:', bucket, '· detected:', detected, '· applied:', trackingId, '· wrote', Object.keys(mapping).length, 'overrides');
+  return trackingId;
 }
 
 // ──────────────────────────────────────────────────────────────────────
