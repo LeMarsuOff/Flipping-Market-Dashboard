@@ -259,7 +259,7 @@ Stored as one `.md` file per command in `.claude/commands/`. Each file has a `de
 | Command | Purpose |
 |---|---|
 | `/start` | Pull latest, re-read CLAUDE.md + ROADMAP.md, report branch + clean state + top 3 Active TODOs. |
-| `/end` | Update ROADMAP.md (move Done, keep last 10), `git add -A`, commit with imperative message, push, report. |
+| `/end` | **Step 0 — branch safety check**: if `git branch --show-current` ≠ `main`, STOP, report the diff vs main, and ask the user whether to (a) merge/rebase back onto main, (b) push the side branch as-is, or (c) abort. Guards against an agent (cloud, worktree, ultrareview) silently checking out a side branch mid-session. Then: update ROADMAP.md (move Done, keep last 10), append to DECISIONS.md if a non-trivial architectural decision was made, `git add -A`, commit with imperative message, `git push`, report commit hash + pushed yes/no + ROADMAP diff. **Final step**: `/rename Dashboard - DD/MM - <context>` — the session-rename lives at the end so the full commit + ROADMAP delta makes the context unambiguous (vs. running it at the first message, when scope often differs from the eventual ask). |
 | `/localhost` | Use `mcp__Claude_Preview__preview_list` first; if no server, call `mcp__Claude_Preview__preview_start` on the project root; report the localhost URL. |
 | `/status` | `git status --short` + unpushed commits + top 3 Active TODOs + preview URL if running. Under 10 lines. |
 | `/undo` | Show `git log -1 --stat`, ask explicit confirmation, then `git revert HEAD --no-edit` (never `git reset --hard`). Offer to push the revert if the original was already pushed. |
