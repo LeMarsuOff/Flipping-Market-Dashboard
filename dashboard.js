@@ -5636,27 +5636,57 @@ function _saveJournalProfileEditor() {
 }
 function _deleteJournalProfileById(id) {
   const profiles = getJournalProfiles();
-  if (profiles.length <= 1) return;
+  // No floor on the profile count — Demo is a global data-source mode
+  // (DS_KEY === 'demo'), not a profile in the storage. If the user deletes
+  // the very last profile, the dashboard falls back to Demo data instead
+  // of locking the row. The previous `profiles.length <= 1` guard
+  // prevented this and made the FIRST-CREATED profile undeletable when it
+  // became the last one, surprising the user.
   const target = _getJournalProfileById(id);
   if (!target) return;
-  if (!confirm(`Delete profile "${target.name}"?`)) return;
+  const wouldBeLast = profiles.length === 1;
+  const confirmMsg = wouldBeLast
+    ? `Delete profile "${target.name}"?\n\nThis is your last profile — the dashboard will switch to Demo data.`
+    : `Delete profile "${target.name}"?`;
+  if (!confirm(confirmMsg)) return;
   debugLog('[JournalProfilesUI] delete source:', { id: target.id, name: target.name });
   const active = getActiveJournalProfile();
+  const wasActive = active?.id === target.id;
   const remaining = profiles.filter(profile => profile.id !== target.id);
   debugLog('[JournalProfilesUI] profiles after delete —', remaining.length, 'remaining:', remaining.map(p => ({ id: p.id, name: p.name })));
   _markPendingDeletedJournalProfileId(target.id);
   const nextActive = remaining[0] || null;
-  if (active?.id === target.id && nextActive) {
-    try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, nextActive.id); } catch {}
+  if (wasActive) {
+    try {
+      if (nextActive) {
+        localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, nextActive.id);
+      } else {
+        // Last profile gone: clear the active marker so getActiveJournalProfile
+        // returns null, and flip DS_KEY to 'demo' so the next render pulls
+        // from DEMO_TRADES. Without the DS_KEY flip the topbar would keep
+        // saying "API" while having nowhere to fetch from.
+        localStorage.removeItem(ACTIVE_JOURNAL_PROFILE_LS_KEY);
+        localStorage.setItem(DS_KEY, 'demo');
+      }
+    } catch {}
   }
   window._SW.deleteJournalProfileFromRemote(target.id)
     .catch(e => console.error('[JournalProfilesRemote] immediate delete error:', e));
   const saved = saveJournalProfiles(remaining);
   const savedNextActive = saved.find(p => p.id === nextActive?.id) || saved[0] || null;
   _journalProfileRowMenuOpenId = '';
-  if (active?.id === target.id && savedNextActive) {
+  if (wasActive && savedNextActive) {
     _showJournalProfileToast(`Profile deleted. Active: ${savedNextActive.name || 'Untitled Journal'}`);
     _applyActiveJournalProfile(savedNextActive);
+  } else if (wasActive && !savedNextActive) {
+    // No profile left — fall back to Demo. loadBuiltinCSV pulls DEMO_TRADES
+    // and runs the full normalize/inject pipeline so widgets render with
+    // demo data immediately.
+    _showJournalProfileToast(`Profile deleted. Switched to Demo data.`);
+    if (typeof loadBuiltinCSV === 'function') {
+      try { loadBuiltinCSV(); } catch (e) { console.error('[JournalProfilesUI] demo fallback failed:', e); }
+    }
+    _syncJournalProfileUI();
   } else {
     _showJournalProfileToast(`Profile deleted: ${target.name || 'Untitled Journal'}`);
     _syncJournalProfileUI();
@@ -6285,6 +6315,79 @@ function _maybeAutoApplyTemplateMapping(rawTrades) {
   _setAutoMappedDims(new Set(Object.keys(mapping)));
   debugLog('[TplDetect] matched:', id, '· wrote', Object.keys(mapping).length, 'overrides');
   return id;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Screenshot dims (img_m15 / img_h4_before / img_m15_after) often come in
+// from Notion as "Files & Media" properties whose names don't match the
+// canonical TEMPLATE_MAPPINGS values (e.g. user has "M15 before" rather
+// than "URL M15 Before"). The Vercel proxy normalises every key into a
+// camelCase alias _as well as_ keeping the original name, so the raw
+// trade payload contains BOTH. _normalizeAPITrade picks the value via a
+// hardcoded camelCase fallback chain, but the original Notion column
+// name is never written anywhere — and the Mapping panel + lightbox
+// modal both rely on the override to know what to label the slot.
+//
+// Result: with no override, the screenshot row stays "TV Image N" forever
+// even though the data is flowing in fine. This pass backfills the
+// override for any screenshot dim that's currently empty:
+//   1) finds the camelCase alias that has data in the raw sample
+//   2) finds the OTHER raw key (containing a space) that holds the same
+//      value — that's the original Notion column name
+//   3) writes it as the override AND tags the dim auto-mapped (green dot)
+//
+// Skips dims that already have an override (so it never clobbers a user
+// pencil-pick or a previous template auto-detect). Runs alongside
+// _maybeAutoApplyTemplateMapping in the sync path — its check is
+// independent (overrides[dimKey] per-dim, not a global "any override"
+// short-circuit), so it works for the "Other" bucket case where the
+// outer auto-apply bailed early.
+// ──────────────────────────────────────────────────────────────────────
+const _SCREENSHOT_CAMEL_ALIASES = {
+  img_m15:       ['imgM15', 'm15Before', 'm15Image', 'imageM15'],
+  img_h4_before: ['imgH4Before', 'h4Before', 'h4Image', 'imageH4'],
+  img_m15_after: ['imgM15After', 'm15After', 'm15AfterImage'],
+};
+function _autoMapScreenshotsByRawKeys(rawTrades) {
+  if (!Array.isArray(rawTrades) || !rawTrades.length) return;
+  const sample = rawTrades.find(t => t && typeof t === 'object' && !Array.isArray(t));
+  if (!sample) return;
+  const overrides = _getAPIFieldOverrides();
+  const newAutoKeys = [];
+  let changed = false;
+  for (const [dimKey, camelAliases] of Object.entries(_SCREENSHOT_CAMEL_ALIASES)) {
+    // Skip dims with an existing override (user pencil-pick or template
+    // auto-detect already set something — don't second-guess them).
+    if (overrides[dimKey] && String(overrides[dimKey]).trim()) continue;
+    // Find the first camelCase alias that holds non-empty data in the sample.
+    const camelKey = camelAliases.find(k => {
+      if (!(k in sample)) return false;
+      const v = sample[k];
+      if (v === null || v === undefined || v === '') return false;
+      if (Array.isArray(v) && !v.length) return false;
+      return true;
+    });
+    if (!camelKey) continue;
+    // Match the camelCase value against every space-containing raw key
+    // to find the original Notion column. JSON.stringify handles arrays
+    // of file objects (which are equal-content but separate references
+    // post-JSON.parse on the Vercel response).
+    const camelValStr = JSON.stringify(sample[camelKey]);
+    const sourceKey = Object.keys(sample).find(k =>
+      k !== camelKey && /\s/.test(k) && JSON.stringify(sample[k]) === camelValStr
+    );
+    if (!sourceKey) continue;
+    overrides[dimKey] = sourceKey;
+    newAutoKeys.push(dimKey);
+    changed = true;
+    debugLog('[ScreenshotAutoMap] dim', dimKey, '→', sourceKey, '(camel alias:', camelKey + ')');
+  }
+  if (changed) {
+    _saveAPIFieldOverrides(overrides);
+    const existingSet = _getAutoMappedDims();
+    newAutoKeys.forEach(k => existingSet.add(k));
+    _setAutoMappedDims(existingSet);
+  }
 }
 
 // Auto-map Notion property keys to the aliases expected by _normalizeAPITrade,
@@ -8673,6 +8776,9 @@ async function _loadNotionTrades(profile, options = {}) {
     // _applyNotionAutoMap runs — so this very sync benefits from the new
     // aliases (no second-round-trip required).
     try { _maybeAutoApplyTemplateMapping(fetchedRawTrades); } catch (e) {}
+    // Backfill screenshot overrides from raw column names — handles users
+    // with Files & Media properties not named like the canonical templates.
+    try { _autoMapScreenshotsByRawKeys(fetchedRawTrades); } catch (e) {}
 
     // Pre-inject user-mapped outcome, then auto-map unmapped Notion fields to
     // the aliases expected by _normalizeAPITrade (without touching that function).
