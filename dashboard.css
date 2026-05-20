@@ -1775,6 +1775,17 @@ body.layout-edit-mode #layout-toolbar * {
   border-color: color-mix(in srgb, var(--gold) 35%, transparent);
   background: color-mix(in srgb, var(--gold) 6%, transparent);
 }
+/* Template-auto-applied mappings — same green visual as is-ok ("nothing to
+   do, this works") because the user didn't manually pick anything. The
+   distinct class (vs reusing is-ok) keeps the dataset hooks separable so a
+   future tooltip can read "auto-mapped from <template>" without losing the
+   "canonical detection" semantic of is-ok. Stays green until the user
+   pencil-picks the dim, at which point it flips to is-remapped (gold). */
+.ljp-item.is-auto-mapped,
+.ljp-item.is-auto-no-mapping {
+  border-color: color-mix(in srgb, var(--g) 28%, transparent);
+  background: color-mix(in srgb, var(--g) 5%, transparent);
+}
 .ljp-item-row {
   display: flex;
   align-items: center;
@@ -1806,6 +1817,10 @@ body.layout-edit-mode #layout-toolbar * {
 /* No-mapping is treated as a user-chosen mapping (same blue as remapped):
    the user picked "— No Mapping —" deliberately, so it's mapped, not missing. */
 .ljp-status-dot.is-no-mapping { color: var(--accent-info, #4d9fff); }
+/* Template-auto-applied: green dot so the user sees "nothing to do"
+   at a glance, matching the row tint above. See _getAutoMappedDims. */
+.ljp-status-dot.is-auto-mapped,
+.ljp-status-dot.is-auto-no-mapping { color: var(--g); }
 .ljp-required-badge {
   display: inline-block;
   font-size: 8.5px;
@@ -5532,34 +5547,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .csv-status.err { color: var(--r); }
 .csv-status.info { color: var(--gold); }
 .csv-status.warn { color: #ea8a4a; }
-
-/* ── Data source chip — user-facing status indicator in topbar ── */
-.data-source-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px 4px 10px;
-  border-radius: 20px;
-  border: 1px solid var(--line2);
-  background: color-mix(in srgb, var(--dim) 4%, transparent);
-  font-family: 'DM Mono', monospace;
-  font-size: var(--typo-micro-size);
-  letter-spacing: .3px;
-  color: var(--dim);
-  white-space: nowrap;
-  user-select: none;
-}
-.data-source-dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: var(--dim);
-  flex-shrink: 0;
-  transition: background .3s, box-shadow .3s;
-}
-.data-source-dot.csv     { background: var(--b); }
-.data-source-dot.live    { background: var(--g); box-shadow: 0 0 5px var(--g); animation: ds-pulse 2s infinite; }
-.data-source-dot.cache   { background: var(--gold); }
-.data-source-dot.loading { background: var(--gold); animation: ds-pulse 1s infinite; }
 
 /* ══════════════════════════════════
    KPI TOOLTIPS

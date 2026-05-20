@@ -4504,6 +4504,7 @@ async function _handleNotionDbPickerOpen(profileId) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     _notionDbPickerDatabases = Array.isArray(data.databases) ? data.databases : [];
+    _notionDbPickerDatabases.sort((a, b) => String(a?.title || '').localeCompare(String(b?.title || ''), undefined, { sensitivity: 'base' }));
     _notionDbPickerState = 'loaded';
     debugLog('[DataSource] databases loaded:', _notionDbPickerDatabases.length, _notionDbPickerDatabases.map(d => d.title));
     debugLog('[DataSource] rendering database selector');
@@ -4608,6 +4609,12 @@ function _clearNotionProfileMappings(profileId) {
     `apiFieldOverrides_v1_${id}_h4`,
     `apiFieldNames_v1_${id}_m15`,
     `apiFieldNames_v1_${id}_h4`,
+    // Detected template + auto-mapped dim flags belong to the previous
+    // database — without wiping, the Mapping panel banner would advertise
+    // "Auto-detected: <X>" against a database that's a different template,
+    // and stale green dots would lie about the source of the new mappings.
+    `flipping_detected_template_v1_${id}`,
+    `flipping_auto_mapped_dims_v1_${id}`,
   ];
   keys.forEach(key => {
     try { localStorage.removeItem(key); } catch {}
@@ -5435,7 +5442,6 @@ async function _reloadJournalProfileSelection(options = {}) {
   const cached = getCachedAPIData();
   if (cached && cached.length && !forceFetch) {
     _injectTrades(cached, 'Notion Live', null);
-    setSourceIndicator('live');
     _syncJournalProfileUI();
     return;
   }
@@ -6133,6 +6139,38 @@ function _setDetectedTemplate(id) {
   } catch (e) {}
 }
 
+// Set of dim keys whose override was written by template auto-mapping
+// (not by an explicit user pencil-pick). Rendered with green status in the
+// Mapping panel — same visual as `is-ok` (auto-detected via canonical name)
+// because both are "no user action needed". Blue/gold `is-remapped` stays
+// reserved for dims the user actively customised. Cleared per-dim on user
+// pencil-pick, fully cleared on Reset all overrides / database change.
+const AUTO_MAPPED_DIMS_LS_PREFIX = 'flipping_auto_mapped_dims_v1';
+function _getAutoMappedDims() {
+  try {
+    const raw = localStorage.getItem(getProfileScopedKey(AUTO_MAPPED_DIMS_LS_PREFIX));
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.filter(x => typeof x === 'string') : []);
+  } catch (e) { return new Set(); }
+}
+function _setAutoMappedDims(set) {
+  try {
+    const key = getProfileScopedKey(AUTO_MAPPED_DIMS_LS_PREFIX);
+    const arr = Array.from(set || []);
+    if (arr.length) localStorage.setItem(key, JSON.stringify(arr));
+    else localStorage.removeItem(key);
+  } catch (e) {}
+}
+function _removeAutoMappedDim(dimKey) {
+  if (!dimKey) return;
+  const s = _getAutoMappedDims();
+  if (s.has(dimKey)) { s.delete(dimKey); _setAutoMappedDims(s); }
+}
+function _clearAutoMappedDims() {
+  try { localStorage.removeItem(getProfileScopedKey(AUTO_MAPPED_DIMS_LS_PREFIX)); } catch (e) {}
+}
+
 // Fingerprint a Notion DB against the 5 shipped templates. Returns the
 // matched template id, or null when no signature fits. Detection is purely
 // structural — never reads data-source UUIDs (those change when users
@@ -6189,6 +6227,11 @@ function _maybeAutoApplyTemplateMapping(rawTrades) {
   if (!mapping) return null;
   _saveAPIFieldOverrides({ ...mapping });
   _setDetectedTemplate(id);
+  // Tag every dim as "auto-mapped" so the Mapping panel renders them green
+  // (is-auto-mapped) instead of blue (is-remapped). The flag is per-dim:
+  // when the user manually pencil-picks a dim, its key is removed from the
+  // set in `pickAPIField`, which flips it back to is-remapped (blue).
+  _setAutoMappedDims(new Set(Object.keys(mapping)));
   debugLog('[TplDetect] matched:', id, '· wrote', Object.keys(mapping).length, 'overrides');
   return id;
 }
@@ -6297,6 +6340,10 @@ function _resetAPIFieldOverrides() {
   // sync (the auto-apply hook only fires when overrides are empty AND a
   // template is detected, so the banner would lie about applied state).
   _setDetectedTemplate(null);
+  // Wipe the auto-mapped dim flags too — without this, after Reset + re-sync
+  // the new auto-applied overrides would render green (via stale flags) even
+  // for dims that the auto-detect failed on. Fresh slate every reset.
+  _clearAutoMappedDims();
   _reapplyAPIOverrides();
   updateJournalPanel();
 }
@@ -7107,15 +7154,6 @@ function _getAPICacheStatusLabel(source = null) {
   return age ? `API live (${age})` : 'API live';
 }
 
-// ── Data source chip — user-facing label in topbar ──
-const _DS_LABELS = { demo: 'Demo data', csv: 'CSV imported', live: 'API live', cache: 'API (cached)', pending: 'API standby', none: 'No data', loading: 'Connecting…' };
-function setSourceIndicator(state) {
-  const dot = document.getElementById('data-dot');
-  const lbl = document.getElementById('data-source-label');
-  if (dot) dot.className = 'data-source-dot ' + state;
-  if (lbl) lbl.textContent = _DS_LABELS[state] || state;
-}
-
 // ── HTF source toggle (M15 / H4) ──
 function _syncHTFToggleUI() {
   const htf    = localStorage.getItem(HTF_SOURCE_KEY) || 'm15';
@@ -7243,7 +7281,6 @@ function setHTFSource(source) {
   const cached = getCachedAPIData();
   if (cached && cached.length) {
     _injectTrades(cached, 'Notion Live', null);
-    setSourceIndicator('live');
   } else if (localStorage.getItem(DS_KEY) === 'api') {
     // No cache yet for this source — clear the currently displayed dataset so
     // the previous HTF source cannot visually bleed into the new one.
@@ -7255,7 +7292,6 @@ function setHTFSource(source) {
     hideEmptyState();
     // Show pending state only. Do not auto-fetch: API refreshes are strictly
     // user-driven via the Notion Live button.
-    setSourceIndicator('pending');
   }
   // Restore preset AFTER data injection — _injectTrades resets activeId
   // on its first-load branch, so a restore from inside _reloadProfileScopedState
@@ -7384,7 +7420,6 @@ async function loadFromAPI(options = {}) {
       return _loadNotionTrades(_activeForFetch, { silent, force });
     }
     debugLog('[NotionProfile] no database selected yet — showing prompt');
-    setSourceIndicator('pending');
     return;
   }
 
@@ -7398,7 +7433,6 @@ async function loadFromAPI(options = {}) {
     if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
       _injectTrades(cached, 'Cache', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
-      setSourceIndicator('live');
     }
     return;
   }
@@ -7407,7 +7441,6 @@ async function loadFromAPI(options = {}) {
   debugDataSource('loadFromAPI:start', { silent, force, url: requestURL, source: requestSource });
 
 
-  setSourceIndicator('loading');
 
   try {
     const controller = new AbortController();
@@ -7422,7 +7455,6 @@ async function loadFromAPI(options = {}) {
         if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
           _injectTrades(existingCache, 'Cache', appState.settings.dataSource.pendingRestoreState);
           appState.settings.dataSource.pendingRestoreState = null;
-          setSourceIndicator('cache');
         }
         return;
       }
@@ -7444,7 +7476,6 @@ async function loadFromAPI(options = {}) {
       _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
 
-      setSourceIndicator('live');
 
       debugDataSource('loadFromAPI:success', { count: appState.trades.items.length, source: requestSource });
     } else {
@@ -7468,7 +7499,6 @@ async function loadFromAPI(options = {}) {
     const fallbackCache = existingCache || getCachedAPIData(requestSource);
     if (fallbackCache && fallbackCache.length) {
       if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
-        setSourceIndicator('cache');
         _injectTrades(fallbackCache, 'Cache', appState.settings.dataSource.pendingRestoreState);
         appState.settings.dataSource.pendingRestoreState = null;
       }
@@ -7826,7 +7856,6 @@ function setDataSource(mode) {
     const cached = getCachedAPIData();
     if (cached && cached.length) {
       _injectTrades(cached, 'Cache', isFirstLoad ? null : savedState);
-      setSourceIndicator('live');
     } else {
       // No cache — keep the current filter state for the next manual Notion refresh
       appState.settings.dataSource.pendingRestoreState = isFirstLoad ? null : savedState;
@@ -7836,9 +7865,7 @@ function setDataSource(mode) {
       render();
       hideEmptyState();
       if (appState.settings.dataSource.loading === true) {
-        setSourceIndicator('loading');
       } else {
-        setSourceIndicator('pending');
       }
     }
   } else if (mode === 'demo') {
@@ -7849,7 +7876,6 @@ function setDataSource(mode) {
     // csv
     if (_cachedCSVTrades && _cachedCSVTrades.length) {
       _injectTrades(_cachedCSVTrades, 'CSV', isFirstLoad ? null : savedState);
-      setSourceIndicator('csv');
     } else {
       appState.trades.items.length = 0;
       appState.trades.totalOverride = 0;
@@ -7909,7 +7935,6 @@ function loadBuiltinCSV(savedState) {
   }));
   _injectTrades(parsed, 'Demo', savedState);
   _csvFormat = 'flipping';
-  setSourceIndicator('demo');
   updateSourceUI('demo');
 }
 
@@ -7917,7 +7942,6 @@ function loadBuiltinCSV(savedState) {
 function showEmptyState() {
   const el = document.getElementById('empty-state');
   if (el) el.classList.add('visible');
-  setSourceIndicator('none');
 }
 
 function hideEmptyState() {
@@ -8002,7 +8026,6 @@ async function _fetchAPICacheSilently(options = {}) {
                          ?? (typeof _saveFilterState === 'function' ? _saveFilterState() : null);
         _injectTrades(existingCache, 'Cache', savedState);
         appState.settings.dataSource.pendingRestoreState = null;
-        setSourceIndicator('cache');
       }
       return;
     }
@@ -8028,7 +8051,6 @@ async function _fetchAPICacheSilently(options = {}) {
                        ?? (typeof _saveFilterState === 'function' ? _saveFilterState() : null);
       _injectTrades(parsed, 'Notion Live', savedState);
       appState.settings.dataSource.pendingRestoreState = null;
-      setSourceIndicator('live');
     } else {
     }
     debugDataSource('fetchAPICacheSilently:success', { count: parsed.length, source: requestSource, currentSource: _getCurrentHTFSource() });
@@ -8387,7 +8409,6 @@ async function _loadNotionTrades(profile, options = {}) {
   // _injectTrades) when the user has switched profiles mid-sync.
   const stillActive = () => !!profileId && String(getActiveJournalProfile()?.id || '') === profileId;
   if (profile?.notionSyncState === 'disconnected' || _notionIntegrationStatus === 'disconnected') {
-    setSourceIndicator('pending');
     console.warn('[NotionLoad] blocked — Notion disconnected for profile:', profileId || '(none)');
     return;
   }
@@ -8457,7 +8478,6 @@ async function _loadNotionTrades(profile, options = {}) {
       }
       _injectTrades(cached, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
-      setSourceIndicator('live');
       // Restore the background media queue for cached trades. On page refresh the
       // fetch path is skipped, so Notion-hosted screenshot URLs would never get
       // uploaded/resolved without this call. Non-blocking — UI is already live.
@@ -8490,7 +8510,6 @@ async function _loadNotionTrades(profile, options = {}) {
   // indicators belong to the user's current view, not the background target.
   // Also skip for background reconcile (ghost-sync auto-trigger): the prior
   // incremental already gave the user a "live" state, no need to flash it.
-  if (wasActiveAtStart && !isBackgroundReconcile) setSourceIndicator('loading');
 
   try {
     const queryStartedAt = new Date().toISOString();
@@ -8531,7 +8550,6 @@ async function _loadNotionTrades(profile, options = {}) {
           debugLog('[NotionAuth] token expired:', { profileId, status: resp.status });
           debugLog('[NotionAuth] profile updated:', { profileId, notionErrorCode: 'token_expired' });
         }
-        if (stillActive()) setSourceIndicator('pending');
         return;
       }
       // Database inaccessible
@@ -8548,7 +8566,6 @@ async function _loadNotionTrades(profile, options = {}) {
         debugLog('[NotionDatabase] access error:', { profileId, status: resp.status, detail: errMsg });
         debugLog('[NotionDatabase] error code:', 'database_not_accessible');
         debugLog('[NotionDatabase] profile updated:', { profileId, notionErrorCode: 'database_not_accessible' });
-        if (stillActive()) setSourceIndicator('pending');
         return;
       }
       throw new Error('HTTP ' + resp.status);
@@ -8577,7 +8594,6 @@ async function _loadNotionTrades(profile, options = {}) {
       if (stillActive()) {
         _injectTrades(existingCache, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
         appState.settings.dataSource.pendingRestoreState = null;
-        setSourceIndicator('live');
       } else {
         debugLog('[NotionLoad] profile switched mid-sync — skipping UI inject (incremental empty)');
       }
@@ -8593,7 +8609,6 @@ async function _loadNotionTrades(profile, options = {}) {
       }
       debugLog('[NotionSync] error:', { profileId, error: 'empty-trades' });
       if (stillActive()) {
-        setSourceIndicator('pending');
       }
       return;
     }
@@ -8654,7 +8669,6 @@ async function _loadNotionTrades(profile, options = {}) {
       }
       debugLog('[NotionSync] error:', { profileId, error: 'no-valid-trades' });
       if (stillActive()) {
-        setSourceIndicator('pending');
       }
       return;
     }
@@ -8735,7 +8749,6 @@ async function _loadNotionTrades(profile, options = {}) {
       _injectTrades(mergedParsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
       if (!isBackgroundReconcile) {
-        setSourceIndicator('live');
       }
       debugLog('[NotionLoad] success — injected', mergedParsed.length, 'trades', isBackgroundReconcile ? '(background: ghost purge)' : '');
     } else if (!stillActive()) {
@@ -8761,7 +8774,6 @@ async function _loadNotionTrades(profile, options = {}) {
     }
     debugLog('[NotionSync] error:', { profileId, name: err.name, message: err.message });
     if (stillActive()) {
-      setSourceIndicator('pending');
     }
   } finally {
     // Restore cache-scope override regardless of success / error / which
@@ -8941,7 +8953,6 @@ async function initDataSource() {
     debugLog('[DashboardDebug]');
     _injectTrades(cached, 'Cache', null);
     debugLog('[DashboardDebug]');
-    setSourceIndicator('live');
     // Restore the background media queue for Notion profiles. Auth is not yet
     // resolved at this point — _bootNotionMediaRestore polls and starts the
     // queue once the session becomes available.
@@ -8959,7 +8970,6 @@ async function initDataSource() {
         preserveState: true,
         savedState: persistedSidebar,
       });
-      setSourceIndicator('csv');
     } catch (e) {
       console.warn('[csv-restore] Parse failed — falling back to demo:', e.message);
       try { localStorage.removeItem(CSV_CACHE_KEY); } catch (e2) {}
@@ -8974,7 +8984,6 @@ async function initDataSource() {
     invalidateFilterCache();
     render();
     hideEmptyState();
-    setSourceIndicator('pending');
   } else {
     loadBuiltinCSV(persistedSidebar);
   }
@@ -25029,7 +25038,6 @@ function processCsvText(text, filename, opts = {}) {
       _injectTrades(trades, 'CSV', opts.savedState);
       _cachedCSVTrades = trades.filter(t => t.pair && t.pair.trim()).slice();
       csvDataActive = true;
-      setSourceIndicator('csv');
     } else {
       injectParsedTrades(trades, filename, _csvFormat);
       try { triggerDataHubFirstImportPulse(); } catch (e) {}
@@ -25500,7 +25508,6 @@ function injectParsedTrades(parsed, filename, csvFormat) {
 
   // Update UI indicators
   csvDataActive = true;
-  setSourceIndicator('csv');
   const _tm=document.getElementById('tab-section-global');
   if(_tm)_tm.classList.add('active');
 
@@ -28624,12 +28631,12 @@ function _renderMappingSectionsHtml(getStatusForDim) {
       const st = getStatusForDim(dim);
       if (!st) continue;
       total++;
-      if (st.status === 'is-ok' || st.status === 'is-remapped') {
+      if (st.status === 'is-ok' || st.status === 'is-remapped' || st.status === 'is-auto-mapped') {
         mapped++;
         otherDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
       } else if (st.status === 'is-missing') {
         missingDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
-      } else if (st.status === 'is-no-mapping') {
+      } else if (st.status === 'is-no-mapping' || st.status === 'is-auto-no-mapping') {
         // Hidden by default — these rows are explicit no-mapping (either user
         // intent or template-auto-applied). A footer toggle reveals them.
         hiddenDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
@@ -28863,6 +28870,9 @@ function updateJournalPanel() {
   fmtEl.innerHTML = `Source · <strong>${_escapeHtml(sourceLabel)}</strong> · ${tradeCountLabel}${fieldCount}`;
 
   const pencilSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+  // Snapshot the auto-mapped dim set once per render to avoid N LS reads.
+  // Empty in CSV/Demo mode (template auto-mapping only runs in Notion path).
+  const autoMappedDims = isAPI ? _getAutoMappedDims() : new Set();
   const getStatus = (dim) => {
     const isOverrideOnly = dim.overrideOnly === true;
     // Demo has no user columns to map against — hide overrideOnly rows
@@ -28871,17 +28881,20 @@ function updateJournalPanel() {
     const { sample, populated } = _inspectDimInTrades(dim.key);
     const override = isAPI ? _getEffectiveApiOverride(dim.key) : apiOverrides[dim.key];
     const ok = populated > 0;
+    const isAuto = autoMappedDims.has(dim.key);
     let status, statusTxt, shown, coverage;
     if (_isNoMappingValue(override)) {
-      status = 'is-no-mapping'; statusTxt = 'no mapping'; shown = '— No Mapping —'; coverage = 'disabled';
+      status = isAuto ? 'is-auto-no-mapping' : 'is-no-mapping';
+      statusTxt = isAuto ? 'no mapping (auto)' : 'no mapping';
+      shown = '— No Mapping —'; coverage = 'disabled';
     } else if (isOverrideOnly) {
-      status = override ? 'is-remapped' : 'is-missing';
-      statusTxt = override ? 'remapped' : 'not mapped';
+      status = override ? (isAuto ? 'is-auto-mapped' : 'is-remapped') : 'is-missing';
+      statusTxt = override ? (isAuto ? 'auto-mapped' : 'remapped') : 'not mapped';
       shown = sample || '— not mapped —';
       coverage = items.length ? (ok ? `${populated}/${items.length} trades` : 'awaiting mapping') : 'awaiting mapping';
     } else {
-      status = override ? 'is-remapped' : (ok ? 'is-ok' : 'is-missing');
-      statusTxt = override ? 'remapped' : (ok ? 'found' : 'missing');
+      status = override ? (isAuto ? 'is-auto-mapped' : 'is-remapped') : (ok ? 'is-ok' : 'is-missing');
+      statusTxt = override ? (isAuto ? 'auto-mapped' : 'remapped') : (ok ? 'found' : 'missing');
       shown = sample || '—';
       coverage = items.length ? (ok ? `${populated}/${items.length} trades` : 'no values detected') : 'no trades yet';
     }
@@ -29958,6 +29971,10 @@ function pickAPIField(optEl) {
   if (fieldName) overrides[dimKey] = fieldName;
   else           delete overrides[dimKey];
   _saveAPIFieldOverrides(overrides);
+  // The user just made a deliberate choice for this dim — strip the
+  // "auto-mapped" tag so the row flips from green (is-auto-mapped) to blue
+  // (is-remapped) on next render. Tags for sibling dims stay intact.
+  _removeAutoMappedDim(dimKey);
   _reapplyAPIOverrides();
   updateJournalPanel();
 }
