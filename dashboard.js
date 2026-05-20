@@ -22639,11 +22639,25 @@ function _poInternalInitEdit() {
     window.addEventListener('pointerup',   onUp);
   };
 
+  // ── Sibling-event interception ─────────────────────────────────────────────
+  // GridStack 10.3.1 internally listens on `mousedown`/`touchstart`. The
+  // `pointerdown` we use here is a SIBLING event — `stopPropagation()` on
+  // pointerdown does NOT cancel the mousedown that the browser also fires for
+  // the same user gesture, so without the explicit `onmousedown` stopper below
+  // the outer GridStack still grabs the click and starts dragging/resizing
+  // the whole Partial Optimizer widget instead of the inner section.
+  // Symptom before the fix: Mac users (Brave/Chrome with the modern macOS
+  // event order) saw the outer widget activate when trying to drag a tile.
+  const stopOuterDrag = e => { e.stopPropagation(); };
   grid.querySelectorAll('.po-internal-drag-handle').forEach(btn => {
     btn.onpointerdown = e => begin(btn.dataset.dragKey, 'move', e);
+    btn.onmousedown   = stopOuterDrag;
+    btn.ontouchstart  = stopOuterDrag;
   });
   grid.querySelectorAll('[data-po-section] > .ui-resizable-handle').forEach(btn => {
     btn.onpointerdown = e => begin(btn.dataset.resizeKey, 'resize', e, btn.dataset.resizeDir || 'se');
+    btn.onmousedown   = stopOuterDrag;
+    btn.ontouchstart  = stopOuterDrag;
   });
 
 }
