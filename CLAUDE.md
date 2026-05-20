@@ -199,6 +199,7 @@ A preset = a named filter configuration the user saves and switches between.
 | HTF M15/H4 toggle | `_htfKey()` namespacing, `HTF_SOURCE_KEY` localStorage key |
 | Custom Notion chips | `_collectCustomExtras()`, `appState.filters.customChips` |
 | ORR widget | Search `w-optimal-rr` in index.html / dashboard.js |
+| Template detection (title-based) | `_detectTemplateFromTitle(title)` ~line 6243 · `_getDetectedTemplate()` reads live from `profile.notionDatabaseTitle` (no LS lag) |
 
 ---
 
@@ -215,6 +216,8 @@ A preset = a named filter configuration the user saves and switches between.
 9. **`no-be` mode was removed.** Boot migration silently folds it to `be-fallback`. Do not re-add it.
 10. **TPM ↔ ORR widget mutual exclusion** is enforced in code. Do not bypass it.
 11. **`_liveSectionLayouts[sec]` can be stale** after hide/unhide ops. `_msOpenSidebar` reads directly from `_grid.getGridItems()` for truth.
+12. **Multi-TP is bonus tier.** Never counted in the Data Setup coverage ring, the locked-features count, or the "X to fix" attention badge. The `tp1_rr / tp2_rr / tp3_rr` dims live in JOURNAL_DIMS with `tier: 'multi-tp'`; `_updateDataSetupHero`, `_renderMappingSectionsHtml`, and the attention pipeline all treat them as informational only. Section header chip uses the `is-bonus` (gray muted) class instead of `is-bad`/`is-partial`.
+13. **`_maybeAutoApplyTemplateMapping` has a TP-keys backfill exception.** Normally short-circuits when overrides already exist (never clobber user customisation), but always backfills `tp1_rr / tp2_rr / tp3_rr` if missing from existing overrides. Added because these keys were introduced after the initial template release — without backfill, legacy profiles would need a Reset all overrides to get Multi-TP pre-mapped.
 
 ---
 

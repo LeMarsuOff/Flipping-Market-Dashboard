@@ -2230,6 +2230,7 @@ body.layout-edit-mode #layout-toolbar * {
 #ljp-list .ljp-tier-count.is-full    { color: var(--color-success, var(--g)); }
 #ljp-list .ljp-tier-count.is-partial { color: var(--accent-primary, var(--gold)); }
 #ljp-list .ljp-tier-count.is-bad     { color: var(--color-danger, var(--r)); }
+#ljp-list .ljp-tier-count.is-bonus   { color: var(--text-muted); }
 
 #ljp-list .ljp-tier-body {
   padding: 4px 12px 10px;

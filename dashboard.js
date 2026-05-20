@@ -2665,6 +2665,19 @@ function handleActionChange(event) {
     handleCsvFile(event.target.files?.[0]);
     return;
   }
+  // Auto-suggest Template bucket when the user picks a Notion DB in the
+  // create-mode profile editor. Title-only heuristic (see
+  // _inferTemplateBucketFromTitle). Overwrites every change — the user can
+  // still flip the Template select manually after.
+  if (event.target.id === 'jp-editor-notion-db-select') {
+    const title = event.target.selectedOptions?.[0]?.dataset?.title
+               || event.target.value
+               || '';
+    const bucket = _inferTemplateBucketFromTitle(title);
+    const templateSelect = document.getElementById('journal-profile-template-input');
+    if (templateSelect) templateSelect.value = bucket;
+    return;
+  }
   if (event.target.id === 'theme-import-input') {
     importTheme(event.target);
     return;
@@ -6166,6 +6179,7 @@ const TEMPLATE_MAPPINGS = {
     positionType: 'Position Type', direction: 'Order',
     rrMax: 'RR Max', badFeeling: 'Bad feeling', notionUrl: 'Notion Url',
     img_m15: 'URL M15 Before', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+    tp1_rr: 'RR TP 1', tp2_rr: 'RR TP -27', tp3_rr: 'RR Trailing',
   },
   'm15-beg': {
     outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
@@ -6176,6 +6190,7 @@ const TEMPLATE_MAPPINGS = {
     positionType: 'Position Type', direction: 'Order',
     rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
     img_m15: 'URL M15 Before', img_h4_before: 'URL H4 Before', img_m15_after: 'URL M15 After',
+    tp1_rr: 'RR TP 1', tp2_rr: 'RR TP -27', tp3_rr: 'RR Trailing',
   },
   'm15-free': {
     outcome: 'Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
@@ -6196,6 +6211,7 @@ const TEMPLATE_MAPPINGS = {
     positionType: 'Position type', direction: 'Order',
     rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
     img_m15: '__NO_MAPPING__', img_h4_before: 'URL H4 Before', img_m15_after: 'URL H4 After',
+    tp1_rr: 'RR TP 1', tp2_rr: 'RR TP -27', tp3_rr: 'RR Trailing',
   },
   'h4-beg': {
     outcome: 'Position Result', r: 'RR TP 1', date: 'Date', pair: 'Pair ',
@@ -6206,6 +6222,7 @@ const TEMPLATE_MAPPINGS = {
     positionType: 'Position type', direction: 'Order',
     rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
     img_m15: '__NO_MAPPING__', img_h4_before: 'URL H4 Before', img_m15_after: 'URL H4 After',
+    tp1_rr: 'RR TP 1', tp2_rr: 'RR TP -27', tp3_rr: 'RR Trailing',
   },
   // "Other" bucket — partial mapping, only the dims the user explicitly
   // opted out of. Chunk B will run the existing _detectTemplate first; if
@@ -6224,10 +6241,32 @@ const TEMPLATE_MAPPINGS = {
   },
 };
 
+// Cheap title heuristic to pre-fill the Template <select> at DB-pick time.
+// Cannot reuse _detectTemplate here: that one fingerprints actual trade
+// VALUES (e.g. "External Fib Touched") and the DB picker only exposes
+// {id, title} per database. Word-boundary regex avoids false positives
+// like "M152" or "h4beg". Manual override remains the source of truth —
+// this is just a suggestion, the user can still change the select.
+function _inferTemplateBucketFromTitle(title) {
+  const s = String(title || '').toLowerCase();
+  if (/\bm15\b/.test(s)) return 'm15';
+  if (/\bh4\b/.test(s)) return 'h4';
+  return 'other';
+}
+
 const DETECTED_TEMPLATE_LS_PREFIX = 'flipping_detected_template_v1';
 function _getDetectedTemplate() {
-  try { return localStorage.getItem(getProfileScopedKey(DETECTED_TEMPLATE_LS_PREFIX)) || null; }
-  catch (e) { return null; }
+  // Read live from the active profile's DB title rather than the LS cache.
+  // The LS is still written by sync-time auto-apply for backward compat
+  // (and as a record of what was applied), but reading from it lagged
+  // behind any DB title change until the next sync — the banner would
+  // show a stale label even after the title was corrected. Title-based
+  // reads make the banner always reflect today's truth.
+  try {
+    const profile = (typeof getActiveJournalProfile === 'function') ? getActiveJournalProfile() : null;
+    if (!profile) return null;
+    return _detectTemplateFromTitle(profile.notionDatabaseTitle);
+  } catch (e) { return null; }
 }
 function _setDetectedTemplate(id) {
   try {
@@ -6311,78 +6350,81 @@ function _applyTemplateLayoutsForProfile(profile) {
   }
 }
 
-// Fingerprint a Notion DB against the 5 shipped templates. Returns the
-// matched template id, or null when no signature fits. Detection is purely
-// structural — never reads data-source UUIDs (those change when users
-// duplicate templates into their own workspace).
-function _detectTemplate(rawTrades) {
-  if (!Array.isArray(rawTrades) || !rawTrades.length) return null;
-  const keys = new Set();
-  for (const t of rawTrades) {
-    if (!t || typeof t !== 'object' || Array.isArray(t)) continue;
-    for (const [k, v] of Object.entries(t)) {
-      if (v === null || v === undefined || v === '') continue;
-      if (Array.isArray(v) && !v.length) continue;
-      keys.add(k);
-    }
+// Fingerprint a Notion DB against the 5 shipped templates from its TITLE.
+// Returns the matched template id, or null when the title doesn't carry
+// enough signal. We deliberately use the title (not columns/options)
+// because (a) the 5 canonical templates ship with stable canonical names
+// ("Flipping M15 Pro", "Flipping H4 Beginner", etc.), and (b) title-based
+// matching is synchronous, predictable, and survives schema drift.
+//
+// Strict adjacency: the qualifier (pro / beg / free) must come DIRECTLY
+// after m15/h4 (separated only by space, dash, colon, or parens). This
+// avoids the trap where a title like "Flipping M15 Pro - beginner-friendly
+// edition" would mis-fire to Beginner because "beg" exists somewhere in
+// the string. Only if no adjacent qualifier is found do we fall back to a
+// looser global scan, prioritising Pro over Beg.
+function _detectTemplateFromTitle(title) {
+  const s = String(title || '').toLowerCase();
+  // 1. Strict adjacent qualifier — most reliable.
+  if (/\bm15[\s\-:()]+pro\b/.test(s))           return 'm15-pro';
+  if (/\bm15[\s\-:()]+beg(?:inner)?\b/.test(s)) return 'm15-beg';
+  if (/\bm15[\s\-:()]+free\b/.test(s))          return 'm15-free';
+  if (/\bh4[\s\-:()]+pro\b/.test(s))            return 'h4-pro';
+  if (/\bh4[\s\-:()]+beg(?:inner)?\b/.test(s))  return 'h4-beg';
+  // 2. Title contains m15/h4 but no adjacent qualifier — fall back to a
+  // whole-title scan, prioritising Pro over Beg so a stray "beginner"
+  // somewhere doesn't downgrade a Pro template.
+  if (/\bm15\b/.test(s)) {
+    if (/\bfree\b/.test(s))           return 'm15-free';
+    if (/\bpro\b/.test(s))            return 'm15-pro';
+    if (/\bbeg(?:inner)?\b/.test(s))  return 'm15-beg';
+    return 'm15-pro';
   }
-  const has = (k) => keys.has(k);
-
-  // M15 Free first — 'Result' + 'Account' are unique across the 5 templates.
-  if (has('Result') && has('Account')) return 'm15-free';
-  // M15 Pro — only template with intraday refinement (Session + Time + Min).
-  if (has('Session') && has('Time') && has('Min')) return 'm15-pro';
-  // M15 Beginner — M15 Obstacles, no H4 columns.
-  if (has('M15 Obstacles') && !has('H4 Obstacles') && !has('Entry Type')) return 'm15-beg';
-  // H4 templates — same columns; disambiguate by H4 Obstacles option naming.
-  // Beg has "Fib - <X> Touched" / "Sweep - After Sweep"; Pro has
-  // "External Fib Touched" / "Internal Fib Touched".
-  if (has('H4 Obstacles') && has('Entry Type')) {
-    let seenBeg = false, seenPro = false;
-    for (const t of rawTrades) {
-      const v = t && t['H4 Obstacles'];
-      const arr = Array.isArray(v) ? v : (typeof v === 'string' ? v.split(/\s*,\s*/) : []);
-      for (const opt of arr) {
-        if (typeof opt !== 'string') continue;
-        if (opt === 'Sweep - After Sweep' || opt.startsWith('Fib - ')) seenBeg = true;
-        else if (opt === 'External Fib Touched' || opt === 'Internal Fib Touched') seenPro = true;
-      }
-      if (seenBeg && seenPro) break;
-    }
-    if (seenBeg && !seenPro) return 'h4-beg';
-    if (seenPro && !seenBeg) return 'h4-pro';
-    return 'h4-pro';  // No decisive option seen — Pro is the more common default.
+  if (/\bh4\b/.test(s)) {
+    if (/\bpro\b/.test(s))            return 'h4-pro';
+    if (/\bbeg(?:inner)?\b/.test(s))  return 'h4-beg';
+    return 'h4-pro';
   }
   return null;
 }
 
 // First-connect hook — write canonical overrides iff the user has none yet.
 // Returns the matched template id (or null) so the caller can log/banner.
+//
+// IMPORTANT: detection + _setDetectedTemplate run on EVERY sync (not just
+// the first one) so the Mapping banner stays in sync with the live DB
+// schema. The override write still short-circuits when the user already
+// has mappings — we never clobber user customisation. Without this, a
+// profile that was first-synced before a detection-logic fix kept the
+// stale template id forever (the banner lied about what the DB actually
+// looks like today).
 function _maybeAutoApplyTemplateMapping(rawTrades) {
-  const existing = _getAPIFieldOverrides();
-  if (existing && Object.keys(existing).length > 0) return null;
   // Respect the explicit bucket the user picked at profile creation. Three
   // possible values on profile.templateChoice : 'm15' / 'h4' / 'other'.
   // Existing profiles created before the chooser default to 'other' via
   // _normalizeJournalProfile (no change to behavior).
   const profile = getActiveJournalProfile();
   const bucket = profile?.templateChoice || 'other';
-  const detected = _detectTemplate(rawTrades);
+  // Title-based detection — see _detectTemplateFromTitle. The rawTrades
+  // param is preserved for signature stability (some call sites still
+  // pass it) but the fingerprint comes from profile.notionDatabaseTitle.
+  void rawTrades;
+  const detected = _detectTemplateFromTitle(profile?.notionDatabaseTitle);
   let mapping = null;
   let trackingId = detected;
+  let mismatchToast = '';
   if (bucket === 'm15') {
     // User explicitly picked Flipping M15. Honor the detection if it
     // narrowed to one of the 3 M15 variants; otherwise force m15-pro
-    // (the most complete M15 mapping) and warn via toast.
+    // (the most complete M15 mapping) and warn via toast — but only if
+    // we actually write overrides (no spam on every re-sync).
     if (detected && detected.startsWith('m15-')) {
       mapping = TEMPLATE_MAPPINGS[detected];
       trackingId = detected;
     } else {
       mapping = TEMPLATE_MAPPINGS['m15-pro'];
       trackingId = 'm15-pro';
-      if (typeof showThemeToast === 'function') {
-        showThemeToast('Database does not look like Flipping M15 — applied M15 Pro defaults. Adjust via the Mapping panel if needed.', false);
-      }
+      mismatchToast = 'Database does not look like Flipping M15 — applied M15 Pro defaults. Adjust via the Mapping panel if needed.';
     }
   } else if (bucket === 'h4') {
     // Symmetric for H4. h4-pro/h4-beg share the same mapping anyway, so
@@ -6393,9 +6435,7 @@ function _maybeAutoApplyTemplateMapping(rawTrades) {
     } else {
       mapping = TEMPLATE_MAPPINGS['h4-pro'];
       trackingId = 'h4-pro';
-      if (typeof showThemeToast === 'function') {
-        showThemeToast('Database does not look like Flipping H4 — applied H4 Pro defaults. Adjust via the Mapping panel if needed.', false);
-      }
+      mismatchToast = 'Database does not look like Flipping H4 — applied H4 Pro defaults. Adjust via the Mapping panel if needed.';
     }
   } else {
     // "Other" bucket: no forced template. Apply detected mapping if any,
@@ -6411,14 +6451,53 @@ function _maybeAutoApplyTemplateMapping(rawTrades) {
       trackingId = 'other';
     }
   }
+
+  // Always refresh the detected-template LS so the Mapping banner reflects
+  // the CURRENT sync — even when overrides already exist and we won't
+  // re-write them. This fixes a class of bugs where the banner kept showing
+  // a stale "Auto-detected: <X>" forever after the first sync.
+  _setDetectedTemplate(trackingId);
+
+  // Short-circuit override writing if the user already has mappings —
+  // never overwrite user customisation. Banner update above still happens.
+  const existing = _getAPIFieldOverrides();
+  if (existing && Object.keys(existing).length > 0) {
+    // Backfill exception: tp1_rr / tp2_rr / tp3_rr were added to the
+    // Flipping templates after the initial release. Profiles synced
+    // before that release have the rest of the mapping but no TP keys.
+    // Write just those (never overwrite an existing value) so the user
+    // doesn't have to Reset all overrides to get Multi TP pre-mapped.
+    if (mapping) {
+      const backfillKeys = ['tp1_rr', 'tp2_rr', 'tp3_rr'];
+      const merged = { ...existing };
+      let didBackfill = false;
+      for (const k of backfillKeys) {
+        if (!(k in existing) && mapping[k]) {
+          merged[k] = mapping[k];
+          didBackfill = true;
+        }
+      }
+      if (didBackfill) {
+        _saveAPIFieldOverrides(merged);
+        const autoSet = _getAutoMappedDims();
+        for (const k of backfillKeys) {
+          if (merged[k] && !(k in existing)) autoSet.add(k);
+        }
+        _setAutoMappedDims(autoSet);
+        debugLog('[TplDetect] backfilled multi-tp keys for existing profile:', backfillKeys.filter(k => !(k in existing) && merged[k]));
+      }
+    }
+    return trackingId;
+  }
+
   if (!mapping || !Object.keys(mapping).length) return null;
   _saveAPIFieldOverrides({ ...mapping });
-  _setDetectedTemplate(trackingId);
   // Tag every dim as "auto-mapped" so the Mapping panel renders them green
   // (is-auto-mapped) instead of blue (is-remapped). The flag is per-dim:
   // when the user manually pencil-picks a dim, its key is removed from the
   // set in `pickAPIField`, which flips it back to is-remapped (blue).
   _setAutoMappedDims(new Set(Object.keys(mapping)));
+  if (mismatchToast && typeof showThemeToast === 'function') showThemeToast(mismatchToast, false);
   debugLog('[TplDetect] bucket:', bucket, '· detected:', detected, '· applied:', trackingId, '· wrote', Object.keys(mapping).length, 'overrides');
   return trackingId;
 }
@@ -28205,9 +28284,34 @@ function _isDimExplicitlyNoMapped(dimKey) {
   return _isNoMappingValue(_csvColumnOverrides?.[dimKey]);
 }
 
+// True when the dim has ANY override (mapped to a real column OR explicitly
+// __NO_MAPPING__) — i.e. the user has already taken a decision about it.
+// Widgets whose dim is in that state should never raise the "X to fix"
+// attention badge, even when the column has zero populated values: the
+// per-widget empty state handles the no-data case, and forcing the user
+// to act on a column they intentionally left empty is noise.
+function _hasDimDecidedMapping(dimKey) {
+  if (!dimKey) return false;
+  const dsMode = localStorage.getItem(DS_KEY) || 'demo';
+  if (dsMode === 'api') {
+    const ov = (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride(dimKey) : null;
+    return !!ov;  // any non-empty value, including __NO_MAPPING__
+  }
+  const ov = (_csvColumnOverrides && _csvColumnOverrides[dimKey]) || null;
+  return !!ov;
+}
+
 function _isWidgetSuppressedByNoMapping(widgetId) {
+  // Heatmap is multi-dim (session + day) — WIDGET_DIM_KEY records it as
+  // null because the single-key remap UI doesn't apply. For suppression
+  // purposes, treat it as decided when BOTH constituent dims have a
+  // decided mapping (either real column or __NO_MAPPING__). If only one
+  // is decided we still flag (the heatmap genuinely cannot render).
+  if (widgetId === 'w-heatmap') {
+    return _hasDimDecidedMapping('session') && _hasDimDecidedMapping('day');
+  }
   const dimKey = WIDGET_DIM_KEY[widgetId];
-  return _isDimExplicitlyNoMapped(dimKey);
+  return _hasDimDecidedMapping(dimKey);
 }
 
 // Wipe the include/exclude sets + mode for a dim's chip filter. Used after a
@@ -28492,16 +28596,36 @@ function _updateDataSetupHero() {
   // honest (those are opt-in extras, not part of the canonical 23).
   let totalDims = 0, mappedDims = 0;
   try {
+    // Pre-compute the per-profile override map + auto-mapped set so we can
+    // skip template-auto no-mapping dims from the coverage denominator (they
+    // are irrelevant for the active template — see _renderMappingSectionsHtml).
+    const apiOverridesForCov = (isAPI && typeof _getAPIFieldOverrides === 'function') ? (_getAPIFieldOverrides() || {}) : {};
+    const autoMappedForCov   = (isAPI && typeof _getAutoMappedDims === 'function')    ? _getAutoMappedDims() : new Set();
     for (const dim of JOURNAL_DIMS) {
       if (dim.overrideOnly === true) continue;
-      // Skip multi-tp tier dims when not in Multi-TP mode (avoids penalising
-      // single-TP users for "missing" TP2/TP3 fields they don't need).
-      if (dim.tier === 'multi-tp' && !(appState.ui?.tpConfig?.mode === 'multi')) continue;
+      // Multi-TP is bonus territory — always excluded from the coverage
+      // denominator regardless of the active TP mode. Users who have no
+      // multi-TP properties in their journal shouldn't see their coverage
+      // pulled down by tp1/tp2/tp3 they intentionally don't track.
+      if (dim.tier === 'multi-tp') continue;
+      // Skip ANY no-mapping dim (auto OR user manual) so the ring matches
+      // what the Mapping panel actually shows (Optional 11/11, not 11/14).
+      if (isAPI && typeof _isNoMappingValue === 'function' && _isNoMappingValue(apiOverridesForCov[dim.key])) continue;
       totalDims++;
       if (isCSV) {
         if (typeof _resolvedHeaderFor === 'function' && _resolvedHeaderFor(dim.key)) mappedDims++;
-      } else {
-        if (typeof _inspectDimInTrades === 'function') {
+      } else if (isAPI) {
+        // Match Mapping section semantics: a dim counts as mapped iff it has
+        // a valid override (user OR template auto) OR — when no override is
+        // set — the canonical name is auto-detected via populated trades.
+        // A mapped column with zero populated trades still counts as mapped;
+        // the per-widget empty state handles the no-data case. This keeps the
+        // hero ring in lockstep with section counts (no more 15/16 when every
+        // section reads 3/3 + 10/10 + 3/3).
+        const ov = apiOverridesForCov[dim.key];
+        if (ov) {
+          mappedDims++;
+        } else if (typeof _inspectDimInTrades === 'function') {
           const r = _inspectDimInTrades(dim.key);
           if (r && r.populated > 0) mappedDims++;
         }
@@ -28515,17 +28639,13 @@ function _updateDataSetupHero() {
   if (mappedEl) mappedEl.textContent = totalDims ? `${mappedDims}/${totalDims}` : '—';
 
   // ── Locked features count (from FEATURE_REQS) ───────────────────────
+  // Multi-TP is bonus — never contributes to the locked count even when
+  // the user has Multi TP mode selected with missing tp dims. Only
+  // Personalised-TP gates a "locked" pill here.
   let lockedCount = 0;
   try {
     if (typeof FEATURE_REQS !== 'undefined') {
       const cfg = appState.ui?.tpConfig || {};
-      // Multi-TP locked iff mode is multi and not all required dims mapped
-      if (cfg.mode === 'multi' && FEATURE_REQS['multi-tp']) {
-        const tpCount = cfg.multi?.tpCount === 3 ? 3 : 2;
-        const { complete } = (typeof _getMultiMappingStatus === 'function') ? _getMultiMappingStatus(tpCount) : { complete: true };
-        if (!complete) lockedCount++;
-      }
-      // Personalised-TP locked iff selected and not complete
       if (cfg.mode === 'personalised' && FEATURE_REQS['personalised-tp']) {
         const { complete } = (typeof _getPersonalisedMappingStatus === 'function') ? _getPersonalisedMappingStatus() : { complete: true };
         if (!complete) lockedCount++;
@@ -28943,19 +29063,24 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     let mapped = 0, total = 0;
     const missingDims = [];
     const otherDims = [];
-    const hiddenDims = [];  // is-no-mapping: irrelevant for the active template
+    const hiddenDims = [];  // is-no-mapping (USER manual): revealed via footer toggle
     for (const dim of sectDims) {
       const st = getStatusForDim(dim);
       if (!st) continue;
+      // Template-auto no-mapping → fully invisible. The dim is irrelevant
+      // for this template (e.g. session/hour/M15 obstacles on an H4 profile)
+      // so we don't render it, don't count it, don't expose a toggle for it.
+      // Reset all overrides will resurrect it if the user changes template.
+      if (st.status === 'is-auto-no-mapping') continue;
       total++;
       if (st.status === 'is-ok' || st.status === 'is-remapped' || st.status === 'is-auto-mapped') {
         mapped++;
         otherDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
       } else if (st.status === 'is-missing') {
         missingDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
-      } else if (st.status === 'is-no-mapping' || st.status === 'is-auto-no-mapping') {
-        // Hidden by default — these rows are explicit no-mapping (either user
-        // intent or template-auto-applied). A footer toggle reveals them.
+      } else if (st.status === 'is-no-mapping') {
+        // User manually set "No Mapping" via pencil — footer toggle reveals
+        // it so the user can revert without losing other overrides.
         hiddenDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
       } else {
         otherDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
@@ -29013,14 +29138,22 @@ function _renderMappingSectionsHtml(getStatusForDim) {
       + renderHiddenFooter(sect.tier, hiddenHtml, hiddenDims.length);
     if (!groupsHtml) return '';
 
-    const hasMissing = missingLabels.length > 0;
+    // Multi-TP is bonus territory — never marked as missing/incomplete in
+    // the accordion visuals. Required/Optional/Screenshots can still flash
+    // red/orange when fields are missing; Multi-TP stays neutral so users
+    // who don't track tp1/tp2/tp3 properties don't see false-positive
+    // warnings on a feature they haven't opted into.
+    const isMultiTpTier = sect.tier === 'multi-tp';
+    const hasMissing = !isMultiTpTier && missingLabels.length > 0;
     const isOpen = _openMappingTiers.has(sect.tier);
 
     // Mini progress bar + count chip — same visual language as the Phase 1
     // hero ring (mapped vs total) so the summary reads at a glance.
     const pct = total ? Math.round((mapped / total) * 100) : 0;
     const fillClass = (total && mapped === total) ? ' is-full' : '';
-    const countClass = (mapped === total) ? 'is-full' : (mapped === 0 ? 'is-bad' : 'is-partial');
+    const countClass = isMultiTpTier
+      ? 'is-bonus'
+      : ((mapped === total) ? 'is-full' : (mapped === 0 ? 'is-bad' : 'is-partial'));
     const tierBar = `<div class="ljp-tier-bar"><div class="ljp-tier-bar-fill${fillClass}" style="width:${pct}%"></div></div>`;
     const tierCount = `<span class="ljp-tier-count ${countClass}">${mapped} / ${total}</span>`;
 
