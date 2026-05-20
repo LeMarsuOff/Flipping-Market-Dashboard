@@ -3586,11 +3586,18 @@ function _normalizeJournalProfile(profile = {}) {
   const notionTradeCount    = Number.isFinite(notionTradeCountRaw) && notionTradeCountRaw >= 0 ? notionTradeCountRaw : 0;
   const notionErrorCode     = String(profile.notionErrorCode || '').trim();
   const notionErrorMessage  = String(profile.notionErrorMessage || '').trim();
+  // Template choice frozen at profile creation — drives first-sync layout
+  // (TEMPLATE_LAYOUTS) + mapping bucket constraint. Existing profiles
+  // (created before the chooser shipped) have no field → default to 'other'
+  // (no override). Unknown values normalised to 'other' too.
+  const templateChoiceRaw  = String(profile.templateChoice || '').trim().toLowerCase();
+  const templateChoice     = ['m15', 'h4', 'other'].includes(templateChoiceRaw) ? templateChoiceRaw : 'other';
   return {
     id, name, type, apiUrl, source,
     notionDatabaseId, notionDatabaseTitle, notionWorkspaceName, connectionType,
     notionSyncState, notionLastSync, notionTradeCount,
     notionErrorCode, notionErrorMessage,
+    templateChoice,
   };
 }
 function _getStoredJournalProfilesRaw() {
@@ -4694,6 +4701,12 @@ function _getJournalProfileEditorDraft() {
   const notionWorkspaceName = _notionIntegrationWorkspace
     || String(document.getElementById('jp-notion-workspace-input')?.value || '').trim();
   const connectionType      = _journalProfileEditorConnectionType || 'notion';
+  // Template choice — only present in create-mode markup; reading the
+  // element in edit/rename mode returns undefined → defaults to 'other'
+  // (the safe no-op). `_saveJournalProfileEditor` preserves the previous
+  // value on edit so this default doesn't clobber a legitimate prior choice.
+  const templateChoiceRaw  = String(document.getElementById('journal-profile-template-input')?.value || 'other').trim().toLowerCase();
+  const templateChoice     = ['m15', 'h4', 'other'].includes(templateChoiceRaw) ? templateChoiceRaw : 'other';
   return {
     name,
     type: (type === 'm15' || type === 'h4' || type === 'custom') ? type : 'custom',
@@ -4702,6 +4715,7 @@ function _getJournalProfileEditorDraft() {
     notionDatabaseTitle,
     notionWorkspaceName,
     connectionType,
+    templateChoice,
     source: 'api',
   };
 }
@@ -4917,7 +4931,22 @@ function _renderJournalProfileEditorMarkup(mode = 'create') {
       <div class="jp-conn-section jp-conn-section--visible" id="jp-notion-section">
         ${(() => {
           if (_notionIntegrationStatus === 'connected') {
+            // Template selector — create mode only. Drives the layout
+            // applied on first sync (via TEMPLATE_LAYOUTS) AND the mapping
+            // bucket constraint passed to _maybeAutoApplyTemplateMapping.
+            // Hidden in edit mode because the choice is immutable
+            // post-creation (same architectural rule as the database).
+            const templateField = !isEdit ? `
+              <label class="account-field" id="jp-template-field">
+                <span class="account-field-label">Template</span>
+                <select class="account-input" id="journal-profile-template-input">
+                  <option value="m15">Flipping M15</option>
+                  <option value="h4">Flipping H4</option>
+                  <option value="other" selected>Other</option>
+                </select>
+              </label>` : '';
             return `${integration.renderEditor()}
+              ${templateField}
               <div class="account-actions">
                 <button class="account-secondary-btn" type="button" id="journal-profile-save-btn" data-action="journal-profile-save-editor">${isEdit ? 'Save changes' : 'Create profile'}</button>
                 <button class="account-secondary-btn" type="button" data-action="journal-profile-cancel-editor">Cancel</button>
@@ -5570,6 +5599,13 @@ function _saveJournalProfileEditor() {
     id: _journalProfileEditorMode === 'edit' ? _journalProfileEditingId : _makeJournalProfileId(),
     ...draft,
     apiUrl: draft.apiUrl || previousProfile?.apiUrl || API_URL_DEFAULT,
+    // Template choice is immutable post-creation. On edit, preserve the
+    // previously-stored value — the form doesn't expose the field in edit
+    // mode, so draft.templateChoice would be 'other' (the default reader
+    // fallback when the element is absent), which would silently clobber.
+    templateChoice: editorMode === 'edit'
+      ? (previousProfile?.templateChoice || 'other')
+      : draft.templateChoice,
   });
   if (previousProfile
       && previousProfile.connectionType === nextProfile.connectionType
@@ -6124,6 +6160,21 @@ const TEMPLATE_MAPPINGS = {
     positionType: 'Position type', direction: 'Order',
     rrMax: 'RR max', badFeeling: 'Bad feeling', notionUrl: 'Notion URL',
     img_m15: '__NO_MAPPING__', img_h4_before: 'URL H4 Before', img_m15_after: 'URL H4 After',
+  },
+  // "Other" bucket — partial mapping, only the dims the user explicitly
+  // opted out of. Chunk B will run the existing _detectTemplate first; if
+  // it matches one of the 5 Flipping templates above, that template's
+  // mapping is applied, THEN these exclusions overlay on top so the 4
+  // opted-out dims always end up __NO_MAPPING__ regardless. If detect
+  // returns null, only these exclusions are written (the user pencils the
+  // rest manually). Aligned with TEMPLATE_LAYOUTS.other which removes the
+  // widgets that consume these 3 dims (w-hour, w-m15, w-h4) — badFeeling
+  // has no widget but is excluded by user request too.
+  other: {
+    obstacles:    '__NO_MAPPING__',
+    h4:           '__NO_MAPPING__',
+    badFeeling:   '__NO_MAPPING__',
+    hour:         '__NO_MAPPING__',
   },
 };
 
@@ -11441,10 +11492,34 @@ let _lbData = [], _lbTradeIdx = 0, _lbStep = 'm15Before';
 let _lbKeyHandler = null;
 
 const _LB_STEPS       = ['h4Before', 'm15Before', 'm15After'];
-const _LB_STEP_LABELS = { h4Before: 'H4 Before', m15Before: 'M15 Before', m15After: 'M15 After' };
+const _LB_STEP_LABELS = { h4Before: 'TV Image 1', m15Before: 'TV Image 2', m15After: 'TV Image 3' };
+// Lightbox step → JOURNAL_DIMS key. Used by _getTradeMediaStepLabel to look
+// up the mapped Notion column name and surface it as the modal title (e.g.
+// "URL H4 Before" instead of the generic "TV Image 1") — same auto-rename
+// pattern as _getJournalDimLabel for the Mapping panel.
+const _LB_STEP_TO_DIM_KEY = { h4Before: 'img_h4_before', m15Before: 'img_m15', m15After: 'img_m15_after' };
 
 function _getTradeMediaStepLabel(step) {
-  if (step === 'm15After' && _isH4ApiMode()) return 'H4 After';
+  // Override wins: when the user (or template auto-mapping) has set a
+  // Notion / CSV column name for this screenshot dim, surface that name as
+  // the modal title + tradelog button tooltip — regardless of where the
+  // file is currently hosted (Notion-original OR migrated to Supabase).
+  // The mapping is the canonical identifier of the screenshot slot; the
+  // hosting URL is just the data. Generic "TV Image N" fallback only when
+  // no override is configured at all.
+  const dimKey = _LB_STEP_TO_DIM_KEY[step];
+  if (dimKey) {
+    const mode = localStorage.getItem(DS_KEY);
+    let override = '';
+    if (mode === 'api' && typeof _getEffectiveApiOverride === 'function') {
+      override = _getEffectiveApiOverride(dimKey) || '';
+    } else if (mode === 'csv' && typeof _csvColumnOverrides !== 'undefined') {
+      override = _csvColumnOverrides?.[dimKey] || '';
+    }
+    if (override && !_isNoMappingValue(override) && String(override).trim()) {
+      return String(override).trim();
+    }
+  }
   return _LB_STEP_LABELS[step] || step;
 }
 
@@ -27684,13 +27759,13 @@ const JOURNAL_DIMS = [
   // Values may be Notion Files&Media URLs or TradingView /x/<ID>/ share URLs.
   // widgets:[] because there is no dedicated widget — they surface via the
   // trade-table / drawer / selection-table 📷 buttons.
-  { key: 'img_m15',        label: 'M15 Before screenshot', tier: 'screenshot', propType: 'url', defaults: {
+  { key: 'img_m15',        label: 'TV Image 2', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'M15 Before', pro: 'M15 Before', beginner: 'M15 Before',
   }, widgets: [], desc: 'M15 chart screenshot before entry.<br>Accepts a Notion <code>Files &amp; media</code> property or a plain URL.<br>TradingView share URLs auto-convert to S3 snapshots.' },
-  { key: 'img_h4_before',  label: 'H4 Before screenshot', tier: 'screenshot', propType: 'url', defaults: {
+  { key: 'img_h4_before',  label: 'TV Image 1', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'H4 Before', pro: 'H4 Before', beginner: 'H4 Before',
   }, widgets: [], desc: 'H4 chart screenshot before entry.<br>Same format as <code>M15 Before</code>.' },
-  { key: 'img_m15_after',  label: 'M15 After screenshot', tier: 'screenshot', propType: 'url', defaults: {
+  { key: 'img_m15_after',  label: 'TV Image 3', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'M15 After', pro: 'M15 After', beginner: 'M15 After',
   }, widgets: [], desc: 'M15 chart screenshot after the trade closes.<br>Same format as <code>M15 Before</code>.' },
   // ── Multi TP mode fields (Phase 3) ──
@@ -27733,14 +27808,30 @@ const MAPPING_PROP_TYPE_LABELS = {
 
 function _getJournalDimLabel(dimOrKey) {
   const key = typeof dimOrKey === 'string' ? dimOrKey : dimOrKey?.key;
+  // Screenshot dims auto-rename based on the mapped Notion / CSV column name
+  // when one is set, so the Mapping panel + lightbox modal show the property
+  // the user actually configured (e.g. "URL H4 Before" instead of the generic
+  // "TV Image 1"). Falls back to the canonical "TV Image N" label declared in
+  // JOURNAL_DIMS when no override is active. Covers what the previous
+  // hardcoded H4-mode relabel did, but generically — the override path
+  // already returns 'URL H4 After' on H4-template profiles, no special case
+  // needed.
+  const isScreenshot = key === 'img_m15' || key === 'img_h4_before' || key === 'img_m15_after';
+  if (isScreenshot) {
+    const mode = localStorage.getItem(DS_KEY);
+    let override = '';
+    if (mode === 'api' && typeof _getEffectiveApiOverride === 'function') {
+      override = _getEffectiveApiOverride(key) || '';
+    } else if (mode === 'csv' && typeof _csvColumnOverrides !== 'undefined') {
+      override = _csvColumnOverrides?.[key] || '';
+    }
+    if (override && !_isNoMappingValue(override) && String(override).trim()) {
+      return String(override).trim();
+    }
+  }
   const baseLabel = typeof dimOrKey === 'string'
     ? (JOURNAL_DIMS.find(d => d.key === dimOrKey)?.label || dimOrKey)
     : (dimOrKey?.label || '');
-  // In API + H4 mode, the img_m15_after slot is relabelled to reflect that it
-  // maps the H4-after screenshot property instead of the M15-after one.
-  if (key === 'img_m15_after' && localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === 'h4') {
-    return 'H4 After screenshot';
-  }
   return baseLabel;
 }
 
@@ -34568,6 +34659,134 @@ _liveSectionLayouts = {
 };
 
 const BEGINNER_LAYOUT = {"w-equity":{"x":0,"y":17,"w":9,"h":40},"w-outcome":{"x":9,"y":17,"w":3,"h":27},"w-selection":{"x":0,"y":57,"w":6,"h":43},"w-stats":{"x":0,"y":0,"w":12,"h":17},"w-monthly":{"x":6,"y":57,"w":6,"h":43},"w-setup":{"x":0,"y":100,"w":5,"h":31},"w-session":{"x":5,"y":259,"w":4,"h":30},"w-day":{"x":5,"y":100,"w":3,"h":31},"w-pair":{"x":8,"y":100,"w":4,"h":31},"w-heatmap":{"x":0,"y":342,"w":12,"h":25},"w-m15":{"x":0,"y":131,"w":12,"h":63},"w-h4":{"x":0,"y":289,"w":12,"h":53},"w-tradelog":{"x":0,"y":194,"w":12,"h":65}};
+
+// ──────────────────────────────────────────────────────────────────────
+// TEMPLATE_LAYOUTS — per-template canonical layouts applied on first
+// connect when the user explicitly picks "Flipping M15" or "Flipping H4"
+// in the Add profile dialog (see ROADMAP "Template chooser" item).
+//
+// Storage shape mirrors a "slot" payload (_loadSectionSlot): one
+// per-section map of {x,y,w,h,minW,minH} per widget id, plus the
+// hiddenWidgets sidecar — at apply time we MUST write both the full
+// payload to `gs_layout_active_<profileId>_<htf>` AND the hidden map to
+// `gs_hidden_widgets_<profileId>_<htf>`, because _loadSectionSlot
+// intentionally ignores the embedded hiddenWidgets (per the comment in
+// that fn — the dedicated key is the single source of truth).
+//
+// "Other" is intentionally absent — the chooser maps that choice to the
+// existing default-empty-LS path (SECTION_LAYOUTS), no override.
+//
+// Captured 2026-05-21 from Max's 2 canonical test profiles
+// (jp_9lquor69 for M15, jp_py071k45 for H4).
+// ──────────────────────────────────────────────────────────────────────
+const TEMPLATE_LAYOUTS = {
+  m15: {
+    global: {
+      'w-stats':            { x: 0, y: 0,   w: 12, h: 20, minW: 4, minH: 12 },
+      'w-equity':           { x: 0, y: 20,  w: 12, h: 42, minW: 4, minH: 16 },
+      'w-selection':        { x: 0, y: 62,  w: 7,  h: 44, minW: 4, minH: 14 },
+      'w-outcome':          { x: 7, y: 62,  w: 5,  h: 44, minW: 3, minH: 14 },
+      'w-monthly':          { x: 0, y: 106, w: 12, h: 41, minW: 4, minH: 16 },
+      'w-pair':             { x: 0, y: 147, w: 4,  h: 39, minW: 2, minH: 14 },
+      'w-session':          { x: 4, y: 147, w: 4,  h: 39, minW: 2, minH: 14 },
+      'w-day':              { x: 8, y: 147, w: 4,  h: 39, minW: 2, minH: 14 },
+      'w-setup':            { x: 0, y: 186, w: 5,  h: 79, minW: 2, minH: 14 },
+      'w-calendar':         { x: 5, y: 186, w: 7,  h: 79, minW: 5, minH: 50 },
+      'w-hour':             { x: 0, y: 265, w: 5,  h: 82, minW: 2, minH: 14 },
+      'w-pair-session':     { x: 5, y: 265, w: 7,  h: 41, minW: 4, minH: 20 },
+      'w-heatmap':          { x: 5, y: 306, w: 7,  h: 41, minW: 4, minH: 14 },
+      'w-m15':              { x: 0, y: 347, w: 12, h: 82, minW: 3, minH: 14 },
+      'w-h4':               { x: 0, y: 429, w: 12, h: 50, minW: 3, minH: 14 },
+      'w-recovery':         { x: 0, y: 479, w: 6,  h: 51, minW: 2, minH: 14 },
+      'w-streak-analytics': { x: 6, y: 479, w: 6,  h: 51, minW: 2, minH: 14 },
+      'w-tradelog':         { x: 0, y: 530, w: 12, h: 51, minW: 4, minH: 16 },
+    },
+    'optimal-rr': {
+      'w-optimal-rr':       { x: 0, y: 0,   w: 12, h: 77,  minW: 4, minH: 30 },
+      'w-montecarlo':       { x: 0, y: 77,  w: 12, h: 82,  minW: 4, minH: 80 },
+    },
+    partials: {
+      'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 200, minW: 8, minH: 100 },
+    },
+    // M15 template keeps all widgets visible by default.
+    hiddenWidgets: {},
+  },
+  h4: {
+    global: {
+      'w-stats':            { x: 0, y: 0,   w: 12, h: 20,  minW: 4, minH: 12 },
+      'w-equity':           { x: 0, y: 20,  w: 12, h: 42,  minW: 4, minH: 16 },
+      'w-selection':        { x: 0, y: 62,  w: 7,  h: 44,  minW: 4, minH: 14 },
+      'w-outcome':          { x: 7, y: 62,  w: 5,  h: 44,  minW: 3, minH: 14 },
+      'w-monthly':          { x: 0, y: 106, w: 12, h: 41,  minW: 4, minH: 16 },
+      'w-day':              { x: 0, y: 147, w: 4,  h: 33,  minW: 2, minH: 14 },
+      'w-session':          { x: 4, y: 147, w: 4,  h: 33,  minW: 2, minH: 14 },
+      'w-hour':             { x: 8, y: 147, w: 4,  h: 33,  minW: 2, minH: 14 },
+      'w-pair':             { x: 0, y: 180, w: 5,  h: 103, minW: 2, minH: 14 },
+      'w-calendar':         { x: 5, y: 180, w: 7,  h: 67,  minW: 5, minH: 50 },
+      'w-heatmap':          { x: 5, y: 247, w: 7,  h: 36,  minW: 4, minH: 14 },
+      'w-pair-session':     { x: 0, y: 283, w: 12, h: 41,  minW: 4, minH: 20 },
+      'w-setup':            { x: 0, y: 324, w: 5,  h: 59,  minW: 2, minH: 14 },
+      'w-h4':               { x: 5, y: 324, w: 7,  h: 59,  minW: 3, minH: 14 },
+      // w-m15 (M15 Obstacles) deliberately omitted — the dim does not
+      // exist in any H4 template variant. Not in the layout AND not in
+      // hiddenWidgets either, so the widget is "totally" excluded from
+      // this template's initial state. User can still bring it back later
+      // via the mini-sidebar's add-widget flow if needed.
+      'w-recovery':         { x: 0, y: 383, w: 6,  h: 51,  minW: 2, minH: 14 },
+      'w-streak-analytics': { x: 6, y: 383, w: 6,  h: 51,  minW: 2, minH: 14 },
+      'w-tradelog':         { x: 0, y: 434, w: 12, h: 51,  minW: 4, minH: 16 },
+    },
+    'optimal-rr': {
+      'w-optimal-rr':       { x: 0, y: 0,   w: 12, h: 77,  minW: 4, minH: 30 },
+      'w-montecarlo':       { x: 0, y: 77,  w: 12, h: 82,  minW: 4, minH: 80 },
+    },
+    partials: {
+      'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 196, minW: 8, minH: 100 },
+    },
+    // H4 template: no widget pre-hidden by default. w-m15 is fully
+    // excluded above (not in layout + not here), so the dashboard never
+    // tries to render it for an H4 profile.
+    hiddenWidgets: {},
+  },
+  // "Other" — non-Flipping users with custom Notion templates. Layout
+  // matches the canonical default minus 3 widgets the user opted out of:
+  //   - w-hour (Hour-of-day breakdown — irrelevant without intraday data)
+  //   - w-m15  (M15 Obstacles — Flipping-specific dim)
+  //   - w-h4   (H4 Obstacles — same)
+  // w-heatmap kept (defaults to Day×Session mode). w-pair-session also kept.
+  // All other widgets present so the dashboard feels complete for a generic
+  // trader who hasn't picked a specific template.
+  other: {
+    global: {
+      'w-stats':            { x: 0, y: 0,   w: 12, h: 20, minW: 4, minH: 12 },
+      'w-equity':           { x: 0, y: 20,  w: 12, h: 42, minW: 4, minH: 16 },
+      'w-selection':        { x: 0, y: 62,  w: 7,  h: 44, minW: 4, minH: 14 },
+      'w-outcome':          { x: 7, y: 62,  w: 5,  h: 44, minW: 3, minH: 14 },
+      'w-monthly':          { x: 0, y: 106, w: 12, h: 41, minW: 4, minH: 16 },
+      'w-pair':             { x: 0, y: 147, w: 4,  h: 39, minW: 2, minH: 14 },
+      'w-session':          { x: 4, y: 147, w: 4,  h: 39, minW: 2, minH: 14 },
+      'w-day':              { x: 8, y: 147, w: 4,  h: 39, minW: 2, minH: 14 },
+      'w-setup':            { x: 0, y: 186, w: 5,  h: 79, minW: 2, minH: 14 },
+      'w-calendar':         { x: 5, y: 186, w: 7,  h: 79, minW: 5, minH: 50 },
+      'w-pair-session':     { x: 0, y: 265, w: 6,  h: 41, minW: 4, minH: 20 },
+      'w-heatmap':          { x: 6, y: 265, w: 6,  h: 41, minW: 4, minH: 14 },
+      'w-recovery':         { x: 0, y: 306, w: 6,  h: 51, minW: 2, minH: 14 },
+      'w-streak-analytics': { x: 6, y: 306, w: 6,  h: 51, minW: 2, minH: 14 },
+      'w-tradelog':         { x: 0, y: 357, w: 12, h: 51, minW: 4, minH: 16 },
+    },
+    'optimal-rr': {
+      'w-optimal-rr':       { x: 0, y: 0,   w: 12, h: 77,  minW: 4, minH: 30 },
+      'w-montecarlo':       { x: 0, y: 77,  w: 12, h: 82,  minW: 4, minH: 80 },
+    },
+    partials: {
+      'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 200, minW: 8, minH: 100 },
+    },
+    // No widgets pre-hidden. The 3 excluded widgets (w-hour, w-m15, w-h4)
+    // are fully absent from the layout — user can still add them later
+    // via the mini-sidebar's add-widget flow.
+    hiddenWidgets: {},
+  },
+};
 let _csvFormat = null; // tracks last imported CSV format
 
 
