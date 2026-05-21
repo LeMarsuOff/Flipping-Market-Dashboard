@@ -2563,60 +2563,6 @@ body.layout-edit-mode #layout-toolbar * {
   --r3: rgba(232,135,42,.16) !important;
 }
 
-/* ── Onboarding banner (demo-mode first-visit hint) ── */
-.onboard-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 22px;
-  background: color-mix(in srgb, var(--gold) 6%, var(--surface-1));
-  border-bottom: 1px solid color-mix(in srgb, var(--gold) 20%, var(--border-subtle));
-}
-.onboard-banner.is-hidden { display: none; }
-.onboard-banner-content {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.onboard-banner-title {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--gold);
-  white-space: nowrap;
-}
-.onboard-banner-steps {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.onboard-pill {
-  font-family: 'DM Mono', monospace;
-  font-size: 10px;
-  color: var(--text-muted);
-  padding: 4px 10px;
-  border-radius: var(--rad-pill);
-  background: var(--surface-3);
-  border: 1px solid var(--border-subtle);
-  white-space: nowrap;
-}
-.onboard-banner-close {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--rad-sm);
-  transition: color var(--ease-normal);
-}
-.onboard-banner-close:hover {
-  color: var(--text-primary);
-}
-
 #filter-context-strip {
   background: color-mix(in srgb, var(--gold) 6%, var(--app-bg));
   border-bottom: 1px solid color-mix(in srgb, var(--gold) 25%, var(--border-subtle));
@@ -9436,6 +9382,49 @@ body.ms-sidebar-open .view-tabs {
   border-color: color-mix(in srgb, var(--r) 58%, transparent);
   color: color-mix(in srgb, var(--r) 92%, white);
 }
+/* Inline "Sure? Yes No" delete confirm for a journal profile — replaces
+   what used to be the "Delete source" button in the row's ⋯ menu. Inherits
+   the menu-item box (padding, height, font) via .journal-profile-row-menu-item
+   so the morph is visually seamless. Text + Yes button (red, primary action)
+   + No button (neutral) split half-and-half. */
+.jp-del-armed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+.jp-del-armed-text {
+  flex: 1;
+  color: var(--r);
+  font-weight: 600;
+  letter-spacing: .3px;
+}
+.jp-del-armed-btn {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  border-radius: 3px;
+  border: 1px solid var(--line2);
+  background: var(--bg3);
+  color: var(--body);
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-micro-size);
+  letter-spacing: .4px;
+  cursor: pointer;
+  transition: all .1s;
+}
+.jp-del-armed-yes {
+  background: color-mix(in srgb, var(--r) 16%, var(--bg1));
+  border-color: color-mix(in srgb, var(--r) 50%, transparent);
+  color: color-mix(in srgb, var(--r) 85%, white);
+}
+.jp-del-armed-yes:hover {
+  background: color-mix(in srgb, var(--r) 28%, var(--bg1));
+  border-color: color-mix(in srgb, var(--r) 65%, transparent);
+}
+.jp-del-armed-no:hover {
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  color: var(--white);
+}
 
 /* ── Themed confirm modal for layout slot deletion ── */
 .layout-confirm-backdrop {
@@ -15144,6 +15133,13 @@ body.ms-sidebar-open .view-tabs {
   color: var(--text-muted);
   letter-spacing: 0.3px;
   display: block;
+}
+.dsh-meta-line {
+  display: block;
+}
+.dsh-meta-db {
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 .dsh-stats {
   display: flex;

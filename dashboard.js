@@ -2182,23 +2182,20 @@ function handleActionClick(event) {
     case 'journal-profile-cancel-editor': _closeJournalProfileEditor(); break;
     case 'journal-profile-test-connection': _testJournalProfileEditorConnection(); break;
     case 'journal-profile-connect-notion': _handleNotionConnectClick(); break;
-    case 'journal-profile-row-switch': _handleJournalProfileSelectChange(actionEl.dataset.profileId || ''); break;
-    case 'journal-profile-row-switch-demo': setDataSource('demo'); _syncJournalProfileUI(); break;
+    case 'journal-profile-row-switch': _journalProfileRowMenuOpenId = ''; _handleJournalProfileSelectChange(actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-row-switch-demo': _journalProfileRowMenuOpenId = ''; setDataSource('demo'); _syncJournalProfileUI(); break;
     case 'journal-profile-row-menu-toggle': event.stopPropagation(); _toggleJournalProfileRowMenu(actionEl); break;
     case 'journal-profile-row-edit': event.stopPropagation(); _openJournalProfileEditor('edit', actionEl.dataset.profileId || ''); break;
     case 'journal-profile-row-rename': event.stopPropagation(); _openJournalProfileEditor('rename', actionEl.dataset.profileId || ''); break;
-    case 'journal-profile-row-delete': event.stopPropagation(); _deleteJournalProfileById(actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-row-delete': event.stopPropagation(); _armJournalProfileDelete(actionEl.dataset.profileId || ''); break;
+    case 'journal-profile-delete-confirm': event.stopPropagation(); { const pid = actionEl.dataset.profileId || ''; _journalProfileRowDeleteArmedId = ''; _deleteJournalProfileById(pid); } break;
+    case 'journal-profile-delete-cancel': event.stopPropagation(); _disarmJournalProfileDelete(); break;
     case 'journal-profile-reset-mapping': event.stopPropagation(); _handleJournalProfileResetMapping(actionEl.dataset.profileId || ''); break;
     case 'notion-db-picker-open':    event.stopPropagation(); _handleNotionDbPickerOpen(actionEl.dataset.profileId || ''); break;
     case 'notion-db-picker-close':   event.stopPropagation(); _handleNotionDbPickerClose(); break;
     case 'notion-db-picker-confirm': event.stopPropagation(); _handleNotionDbPickerConfirm(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-sync-now':  event.stopPropagation(); _handleNotionProfileSyncNow(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-full-resync': event.stopPropagation(); _handleNotionProfileFullResync(actionEl.dataset.profileId || ''); break;
-    case 'dismiss-onboard': {
-      document.getElementById('onboard-banner')?.classList.add('is-hidden');
-      try { localStorage.setItem('onboard_dismissed', '1'); } catch(e) {}
-      break;
-    }
     case 'toggle-more-menu': {
       const menu = document.getElementById('topbar-more-menu');
       if (!menu) break;
@@ -2295,7 +2292,7 @@ function handleActionClick(event) {
       break;
     }
     case 'reset-csv-overrides':    event.stopPropagation(); _resetAllCsvOverrides(); break;
-    case 'reset-api-overrides':    event.stopPropagation(); _resetAPIFieldOverrides(); break;
+    case 'reapply-template-defaults': event.stopPropagation(); _reapplyTemplateMapping(); break;
     case 'refresh-api-fields':     event.stopPropagation(); _refreshAPIFieldsFromPicker(actionEl); break;
     case 'toggle-theme-panel': toggleThemePanel(); document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
     case 'toggle-tpm-panel':   toggleTpmPanel();   document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
@@ -3809,6 +3806,12 @@ let _journalProfileEditorOpen = false;
 let _journalProfileEditorMode = 'create';
 let _journalProfileEditingId = '';
 let _journalProfileRowMenuOpenId = '';
+// Armed-delete state for the inline "Sure? Yes No" confirm — when this
+// matches a profile.id, the row menu renders the confirm row in place of
+// the "Delete source" button. Mirrors the _npPendingDeleteId pattern used
+// for Notion custom property delete. Cleared by Yes (after delete), No,
+// or any outside click (see the mousedown listener near _syncJournalProfileUI).
+let _journalProfileRowDeleteArmedId = '';
 let _journalProfileSwitcherOpen = false;
 let _journalProfileCheckState = 'idle';
 let _journalProfileCheckResetTimer = null;
@@ -4534,6 +4537,18 @@ async function _handleNotionDbPickerOpen(profileId) {
   }
 
   _syncJournalProfileUI();
+
+  // Auto-fill the Template select from the first DB's title, mirroring what
+  // the change handler at handleActionChange ('jp-editor-notion-db-select')
+  // does on manual DB picks. The browser auto-selects the first <option> at
+  // render time without firing 'change', so the existing infer logic never
+  // ran for the default — leaving Template stuck on 'other' even when the
+  // first DB title was clearly an m15/h4 template. Dispatch a synthetic
+  // 'change' event so we don't duplicate the inference code path.
+  if (_notionDbPickerState === 'loaded' && _notionDbPickerDatabases.length) {
+    const sel = document.getElementById('jp-editor-notion-db-select');
+    if (sel) sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 }
 
 function _handleNotionDbPickerClose() {
@@ -5327,7 +5342,13 @@ function _renderJournalProfileSwitchList() {
                      See ROADMAP "Template chooser" architectural decision. */ ''}
                 ${profile.connectionType === 'notion' ? `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-full-resync" data-profile-id="${pid}" title="Reload every trade from Notion. Detects deletions and removes ghost rows."${canSync ? '' : ' disabled'}>Full resync</button>` : ''}
                 <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-rename" data-profile-id="${_escapeHtml(profile.id)}">Rename</button>
-                <button class="journal-profile-row-menu-item journal-profile-row-menu-item--danger" type="button" data-action="journal-profile-row-delete" data-profile-id="${_escapeHtml(profile.id)}">Delete source</button>
+                ${_journalProfileRowDeleteArmedId === profile.id
+                  ? `<div class="journal-profile-row-menu-item journal-profile-row-menu-item--danger jp-del-armed">
+                      <span class="jp-del-armed-text">Sure?</span>
+                      <button class="jp-del-armed-btn jp-del-armed-yes" type="button" data-action="journal-profile-delete-confirm" data-profile-id="${_escapeHtml(profile.id)}">Yes</button>
+                      <button class="jp-del-armed-btn jp-del-armed-no" type="button" data-action="journal-profile-delete-cancel" data-profile-id="${_escapeHtml(profile.id)}">No</button>
+                    </div>`
+                  : `<button class="journal-profile-row-menu-item journal-profile-row-menu-item--danger" type="button" data-action="journal-profile-row-delete" data-profile-id="${_escapeHtml(profile.id)}">Delete source</button>`}
               </div>
             </div>
           </div>
@@ -5663,6 +5684,12 @@ function _saveJournalProfileEditor() {
   if (shouldActivate) _applyActiveJournalProfile(created, { forceFetch: true });
   else _syncJournalProfileUI();
 }
+// Hard-delete a profile from storage. Confirmation is handled UPSTREAM by
+// the inline "Sure? Yes No" morph on the Delete source menu item (see
+// `_armJournalProfileDelete` + the row markup at the menu render) — this
+// function trusts the caller and proceeds immediately. The native confirm()
+// modal that used to live here stole focus and clashed with the rest of
+// the dashboard UI.
 function _deleteJournalProfileById(id) {
   const profiles = getJournalProfiles();
   // No floor on the profile count — Demo is a global data-source mode
@@ -5673,11 +5700,6 @@ function _deleteJournalProfileById(id) {
   // became the last one, surprising the user.
   const target = _getJournalProfileById(id);
   if (!target) return;
-  const wouldBeLast = profiles.length === 1;
-  const confirmMsg = wouldBeLast
-    ? `Delete profile "${target.name}"?\n\nThis is your last profile — the dashboard will switch to Demo data.`
-    : `Delete profile "${target.name}"?`;
-  if (!confirm(confirmMsg)) return;
   debugLog('[JournalProfilesUI] delete source:', { id: target.id, name: target.name });
   const active = getActiveJournalProfile();
   const wasActive = active?.id === target.id;
@@ -6672,17 +6694,29 @@ function _reapplyAPIOverrides() {
   return true;
 }
 
-function _resetAPIFieldOverrides() {
+// Re-seed the template's auto-mapping from scratch, as if the profile had
+// just been synced for the first time. Wipes the user's overrides, clears
+// the auto-mapped flag set + the detected-template marker, then re-runs
+// _maybeAutoApplyTemplateMapping so the template's canonical defaults
+// (TEMPLATE_MAPPINGS[bucket]) are written cleanly and every dim is tagged
+// is-auto-mapped (green) in the Mapping panel.
+//
+// Use case: user pencil-picked a few dims, regrets, wants to go back to
+// the template baseline without recreating the profile. Destructive — any
+// manual override is overwritten.
+function _reapplyTemplateMapping() {
   _saveAPIFieldOverrides({});
-  // Clear the detected-template marker too — otherwise the Mapping panel
-  // banner keeps showing "Auto-detected: <label>" between reset and the next
-  // sync (the auto-apply hook only fires when overrides are empty AND a
-  // template is detected, so the banner would lie about applied state).
   _setDetectedTemplate(null);
-  // Wipe the auto-mapped dim flags too — without this, after Reset + re-sync
-  // the new auto-applied overrides would render green (via stale flags) even
-  // for dims that the auto-detect failed on. Fresh slate every reset.
   _clearAutoMappedDims();
+  // Re-run the template auto-mapping. The function reads the active
+  // profile's templateChoice + notionDatabaseTitle, picks the matching
+  // mapping from TEMPLATE_MAPPINGS, writes it to gs_api_field_overrides_<id>,
+  // and tags every key in the auto-mapped set. rawTrades param is
+  // unused inside (kept for signature stability) so we pass undefined.
+  if (typeof _maybeAutoApplyTemplateMapping === 'function') {
+    try { _maybeAutoApplyTemplateMapping(); }
+    catch (e) { console.error('[ReapplyTemplate] auto-map failed:', e); }
+  }
   _reapplyAPIOverrides();
   updateJournalPanel();
 }
@@ -8164,12 +8198,6 @@ function setDataSource(mode) {
   // NOT carry the previous slot's filter chips into it.
   const profileSlotChanged = (mode === 'demo') !== (prevMode === 'demo');
 
-  // Dismiss the onboarding banner as soon as the user connects a real source.
-  if (mode === 'csv' || mode === 'api') {
-    document.getElementById('onboard-banner')?.classList.add('is-hidden');
-    try { localStorage.setItem('onboard_dismissed', '1'); } catch (e) {}
-  }
-
   // Save current filter state to restore after the source switch. Skip when
   // the profile slot changed — the new slot owns its own filter state.
   const savedState = profileSlotChanged ? null : _saveFilterState();
@@ -9360,14 +9388,6 @@ async function initDataSource() {
     const _persistedActiveId = persistedSidebar?.activePreset ?? null;
     if (_persistedActiveId !== appState.presets.activeId) {
       applyPreset(_persistedActiveId);
-    }
-  } catch (e) {}
-
-  // Onboarding banner: starts hidden in HTML to avoid a flash for returning
-  // users. Reveal it only when the user has never dismissed it.
-  try {
-    if (!localStorage.getItem('onboard_dismissed')) {
-      document.getElementById('onboard-banner')?.classList.remove('is-hidden');
     }
   } catch (e) {}
 
@@ -22811,7 +22831,6 @@ const _PO_DEFAULT_INTERNAL_LAYOUT = {
   equity:  { x: 6,  y: 165, w: 6,  h: 60  },
   presets: { x: 1,  y: 225, w: 12, h: 56  },
 };
-let _poInternalEditBound = false;
 
 function _poInternalCloneLayout(layout) {
   return Object.fromEntries(Object.entries(layout).map(([k, v]) => [k, { ...v }]));
@@ -22929,10 +22948,16 @@ function _poInternalApplyLayout(layoutOverride) {
   });
 }
 function _poInternalInitEdit() {
-  if (_poInternalEditBound) return;
   const grid = document.getElementById('po-body');
   if (!grid) return;
-  _poInternalEditBound = true;
+  // Rebindable on every call. Two re-entry vectors must both work:
+  //   1) Edit-mode toggle (existing) — handles already in DOM, just re-bind.
+  //   2) _poBuildScaffold rebuilds the inner DOM lazily the first time the
+  //      user lands on the Partials section. If edit mode was already ON
+  //      when that happens, the old handle nodes are gone and the new ones
+  //      are unbound — so _poBuildScaffold also calls us at its tail.
+  // Using property-assignment (el.onpointerdown = …) keeps rebinding safe:
+  // each assignment overwrites the previous handler, no leak.
 
   const getGridMetrics = () => {
     const rect = grid.getBoundingClientRect();
@@ -23198,6 +23223,11 @@ function _poBuildScaffold() {
   // PR-5: apply saved/default internal layout right after the scaffold mounts.
   _poInternalApplyLayout();
   _poWireScaffold();
+  // Re-bind the drag/resize handles in case edit mode was already toggled
+  // before the scaffold existed (user enabled edit mode on Global, then
+  // switched to Partials — without this, the freshly built handles stay
+  // unbound and the outer GridStack grabs the click).
+  _poInternalInitEdit();
 }
 
 function _poWireScaffold() {
@@ -28560,7 +28590,6 @@ function _updateDataSetupHero() {
     if (dotEl) dotEl.className = 'dsh-dot is-offline';
   } else if (profile) {
     if (nameEl) nameEl.textContent = String(profile.name || '').trim() || 'Untitled Journal';
-    const htf = (String(profile.type || '').toLowerCase() === 'h4') ? 'H4' : 'M15';
     const sync = profile.notionSyncState;
     let syncLabel = 'not synced';
     if (sync === 'synced')      syncLabel = `synced ${_formatNotionSyncAgoCompact ? _formatNotionSyncAgoCompact(profile.notionLastSync) : 'recently'}`;
@@ -28570,7 +28599,13 @@ function _updateDataSetupHero() {
     // Connection label resolved via the integrations registry so new types
     // (mt5 / ctrader / …) automatically get the right display name.
     const conn = getIntegration(profile).label;
-    if (metaEl) metaEl.textContent = `${conn} · ${syncLabel} · ${htf}`;
+    const dbTitle = String(profile.notionDatabaseTitle || '').trim();
+    if (metaEl) {
+      const line1 = `${_escapeHtml(conn)} · ${_escapeHtml(syncLabel)}`;
+      metaEl.innerHTML = dbTitle
+        ? `<span class="dsh-meta-line">${line1}</span><span class="dsh-meta-line dsh-meta-db">${_escapeHtml(dbTitle)}</span>`
+        : `<span class="dsh-meta-line">${line1}</span>`;
+    }
     if (dotEl) {
       const stateClass = sync === 'synced' ? 'is-live'
                        : sync === 'syncing' ? 'is-syncing'
@@ -29276,8 +29311,8 @@ function updateJournalPanel() {
   if (resetBtn) {
     if (isAPI) {
       resetBtn.style.display = hasAPIOverrides ? '' : 'none';
-      resetBtn.textContent = '↺ Reset API overrides';
-      resetBtn.dataset.action = 'reset-api-overrides';
+      resetBtn.textContent = '↺ Re-apply template defaults';
+      resetBtn.dataset.action = 'reapply-template-defaults';
     } else {
       resetBtn.style.display = 'none';
       resetBtn.textContent = '↺ Reset all overrides';
@@ -35088,10 +35123,18 @@ const TEMPLATE_LAYOUTS = {
     partials: {
       'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 196, minW: 8, minH: 100 },
     },
-    // H4 template: no widget pre-hidden by default. w-m15 is fully
-    // excluded above (not in layout + not here), so the dashboard never
-    // tries to render it for an H4 profile.
-    hiddenWidgets: {},
+    // H4 template hides w-m15 by default. The widget element is in the
+    // HTML and _loadSectionSlot always merges with GLOBAL_OVERVIEW_LAYOUT
+    // defaults — leaving w-m15 out of the layout map alone doesn't keep
+    // it off the dashboard, the default merge re-injects it. Declaring
+    // it as hidden here makes the seed write gs_hidden_widgets_<id> on
+    // profile creation, so _applySectionFilter places it in display:none
+    // and out of the grid. User can still unhide it from the popover if
+    // they really want M15 obstacles on an H4 journal — defaulting to
+    // hidden is the right UX, not an enforced exclusion.
+    hiddenWidgets: {
+      'w-m15': { w: 12, h: 82 },
+    },
   },
   // "Other" — non-Flipping users with custom Notion templates. Layout
   // matches the canonical default minus 3 widgets the user opted out of:
@@ -35126,10 +35169,17 @@ const TEMPLATE_LAYOUTS = {
     partials: {
       'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 200, minW: 8, minH: 100 },
     },
-    // No widgets pre-hidden. The 3 excluded widgets (w-hour, w-m15, w-h4)
-    // are fully absent from the layout — user can still add them later
-    // via the mini-sidebar's add-widget flow.
-    hiddenWidgets: {},
+    // Same reason as h4 above: _loadSectionSlot merges with the canonical
+    // defaults, so widgets absent from `global` get re-injected. Declaring
+    // the 3 excluded widgets as hidden here makes the seed persist them
+    // in gs_hidden_widgets_<id> at creation — _applySectionFilter then
+    // sends them to display:none / out-of-grid. User can unhide any of
+    // them later via the popover.
+    hiddenWidgets: {
+      'w-hour': { w:  5, h: 82 },
+      'w-m15':  { w: 12, h: 82 },
+      'w-h4':   { w: 12, h: 50 },
+    },
   },
 };
 let _csvFormat = null; // tracks last imported CSV format
@@ -35364,14 +35414,37 @@ function _onHidePopoverOutsideClick(e) {
   document.removeEventListener('click', _onHidePopoverOutsideClick, true);
 }
 
+// Widget ids that the active profile's template considers fully excluded —
+// not "hidden by default with an unhide path", but conceptually nonexistent.
+// Derived from TEMPLATE_LAYOUTS[choice].hiddenWidgets: those entries do
+// double duty as both "hide on creation" (read by _applyTemplateLayoutsForProfile
+// to seed gs_hidden_widgets_<id>) AND "filter out of every widget-picker UI"
+// (read here). The two consumers below — _collectAllManagedWidgets (hide
+// popover) and _msGetSectionWidgetIds (mini-sidebar parking) — skip these
+// ids so the user can't accidentally bring an excluded widget back. Empty
+// set when there's no active profile or templateChoice='m15' (M15 keeps
+// every widget visible by default).
+function _getTemplateExcludedWidgetIds() {
+  try {
+    const profile = (typeof getActiveJournalProfile === 'function') ? getActiveJournalProfile() : null;
+    const choice = profile?.templateChoice;
+    const tpl = (typeof TEMPLATE_LAYOUTS !== 'undefined') ? TEMPLATE_LAYOUTS[choice] : null;
+    return new Set(Object.keys(tpl?.hiddenWidgets || {}));
+  } catch { return new Set(); }
+}
+
 // Collect every managed widget across all 3 sections — id, label (from the
 // .cc-title text), the section it belongs to, and its (x, y) layout coords
 // (used to sort the popover in dashboard reading order). Used by the popover.
+// Template-excluded widgets (per _getTemplateExcludedWidgetIds) are skipped
+// so the unhide popover never lists them on profiles whose template treats
+// the widget as nonexistent (e.g. w-m15 on an H4 profile).
 function _collectAllManagedWidgets() {
   const out = [];
+  const excluded = _getTemplateExcludedWidgetIds();
   document.querySelectorAll('#gs-container .grid-stack-item').forEach(item => {
     const id = item.getAttribute('gs-id');
-    if (!id) return;
+    if (!id || excluded.has(id)) return;
     const widgetEl = item.querySelector('.gs-widget[data-section]');
     const section  = widgetEl?.dataset.section || '—';
     const titleEl  = item.querySelector('.cc-title');
@@ -35559,6 +35632,35 @@ function _onDeleteConfirmOutsideClick(e) {
   _closeDeleteConfirm();
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// JOURNAL-PROFILE DELETE CONFIRM — inline "Sure? Yes No" in place of the
+// Delete source menu item. Mirrors the _npPendingDeleteId pattern used for
+// Notion custom property delete — no detached popover, no z-index dance
+// with the Data Setup panel. The menu row simply morphs.
+// ──────────────────────────────────────────────────────────────────────────
+function _armJournalProfileDelete(id) {
+  if (!id) return;
+  // Toggle: clicking Delete source again on the already-armed row disarms.
+  _journalProfileRowDeleteArmedId = (_journalProfileRowDeleteArmedId === id) ? '' : id;
+  _syncJournalProfileUI();
+}
+
+function _disarmJournalProfileDelete() {
+  if (!_journalProfileRowDeleteArmedId) return;
+  _journalProfileRowDeleteArmedId = '';
+  _syncJournalProfileUI();
+}
+
+// Outside-click disarm — any mousedown that isn't on the armed row or the
+// trigger button clears the armed state. Capture phase so it fires before
+// other handlers might re-render and lose the target ref.
+document.addEventListener('mousedown', e => {
+  if (!_journalProfileRowDeleteArmedId) return;
+  if (e.target.closest && e.target.closest('.jp-del-armed')) return;
+  if (e.target.closest && e.target.closest('[data-action="journal-profile-row-delete"]')) return;
+  _disarmJournalProfileDelete();
+});
+
 function _positionWidgetConfirmPopup(anchorEl, pop, gap = 6) {
   if (!anchorEl || !pop) return;
   const anchorRect = anchorEl.getBoundingClientRect();
@@ -35733,10 +35835,11 @@ function _msComputeUnmappedSet() {
 // layout. Drives the parking zone.
 function _msGetSectionWidgetIds(section) {
   const out = [];
+  const excluded = _getTemplateExcludedWidgetIds();
   document.querySelectorAll('#gs-container .grid-stack-item').forEach(item => {
     const sec = item.querySelector('.gs-widget[data-section]')?.dataset.section;
     const id  = item.getAttribute('gs-id');
-    if (sec === section && id) out.push(id);
+    if (sec === section && id && !excluded.has(id)) out.push(id);
   });
   return out;
 }
