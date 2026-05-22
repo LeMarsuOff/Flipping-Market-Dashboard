@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=224">
+<link rel="stylesheet" href="dashboard.css?v=225">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -164,6 +164,10 @@
     </label>
     <div class="csv-status" id="csv-status"></div>
     <div class="csv-format-hint csv-format-hint-inline">
+      <div class="csv-fh-template-cta">
+        <strong>No Notion journal yet?</strong> <a href="https://www.notion.so/Flipping-Market-Templates-3118c28c443680c2b36cf952b0a34595?source=copy_link" target="_blank" rel="noopener">Download one of our templates</a> to get started — the property names will match the list below automatically.
+      </div>
+
       <div class="csv-fh-intro">
         <strong class="csv-format-highlight">How the importer reads your file</strong>
         <p>These are the Notion properties the dashboard reads from your CSV. Required properties are mandatory; optional ones unlock additional widgets and filters.</p>
@@ -173,7 +177,7 @@
         <div class="csv-doc-callout-icon" aria-hidden="true">!</div>
         <div class="csv-doc-callout-content">
           <span class="csv-doc-callout-title">Property naming — read this first</span>
-          <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — click the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, open the <strong>Mapping</strong> tab, then hit the <code>✏</code> pencil next to the dimension you want to remap. Missing a required field? The <strong>Health</strong> tab lists them with the same pencil affordance. The dashboard only cares about the data inside, not the column label.</div>
+          <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — click the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, open the <strong>Mapping</strong> tab, then hit the <code>✏</code> pencil next to the dimension you want to remap. The dashboard only cares about the data inside, not the column label.</div>
         </div>
       </div>
 
@@ -413,7 +417,7 @@
           <div class="csv-doc-callout-icon" aria-hidden="true">!</div>
           <div class="csv-doc-callout-content">
             <span class="csv-doc-callout-title">Property naming — read this first</span>
-            <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — click the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, open the <strong>Mapping</strong> tab, then hit the <code>✏</code> pencil next to the dimension you want to remap. Missing a required field? The <strong>Health</strong> tab lists them with the same pencil affordance. The dashboard only cares about the data inside, not the column label.</div>
+            <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — click the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, open the <strong>Mapping</strong> tab, then hit the <code>✏</code> pencil next to the dimension you want to remap. The dashboard only cares about the data inside, not the column label.</div>
           </div>
         </div>
 
@@ -750,11 +754,15 @@
       <div class="lgp-sub">Every Notion property the dashboard reads from your CSV. Required ones are mandatory; optional ones unlock additional widgets and filters.</div>
 
       <div class="csv-format-hint lgp-callout-host">
+        <div class="csv-fh-template-cta">
+          <strong>No Notion journal yet?</strong> <a href="https://www.notion.so/Flipping-Market-Templates-3118c28c443680c2b36cf952b0a34595?source=copy_link" target="_blank" rel="noopener">Download one of our templates</a> to get started — the property names will match the list below automatically.
+        </div>
+
         <div class="csv-doc-callout">
           <div class="csv-doc-callout-icon" aria-hidden="true">!</div>
           <div class="csv-doc-callout-content">
             <span class="csv-doc-callout-title">Property naming — read this first</span>
-            <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — open the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, then use the <strong>Mapping</strong> tab (for every dimension) or the <strong>Health</strong> tab (for missing required fields) and hit the <code>✏</code> pencil to remap. The dashboard only cares about the data inside, not the column label.</div>
+            <div class="csv-doc-callout-body">Your Notion property names should match <strong>exactly</strong> the names below for automatic detection. Using a custom name? No problem — open the <span class="csv-doc-btn-replica" aria-label="Data Setup button"><span class="csv-doc-btn-replica-icon" aria-hidden="true">▤</span><span class="csv-doc-btn-replica-label">Data</span></span> button next to the <em>Flipping Research</em> logo, open the <strong>Mapping</strong> tab and hit the <code>✏</code> pencil next to the dimension you want to remap. The dashboard only cares about the data inside, not the column label.</div>
           </div>
         </div>
       </div>
@@ -2889,6 +2897,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=449"></script>
+<script src="dashboard.js?v=477"></script>
 </body>
 </html>

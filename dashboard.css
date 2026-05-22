@@ -12983,6 +12983,31 @@ body.ms-sidebar-open .view-tabs {
 }
 
 /* ── CSV documentation tables (empty state) ── */
+/* Templates CTA — green-tinted intro that points to the Notion templates hub
+   for users who don't have a journal yet. Sits above the property-naming
+   callout (the gold/warning rule below) so the positive next-step affordance
+   reads before the rules. */
+.csv-format-hint .csv-fh-template-cta {
+  background: color-mix(in srgb, var(--g) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--g) 30%, transparent);
+  border-radius: var(--rad);
+  padding: 10px 12px;
+  margin: 0 0 14px;
+  font-size: var(--typo-micro-size);
+  line-height: 1.55;
+  font-family: 'DM Mono', monospace;
+  color: var(--body);
+}
+.csv-format-hint .csv-fh-template-cta strong {
+  color: var(--white);
+}
+.csv-format-hint .csv-fh-template-cta a {
+  color: var(--g);
+  text-decoration: underline;
+  font-weight: 600;
+}
+.csv-format-hint .csv-fh-template-cta a:hover { opacity: .85; }
+
 .csv-format-hint .csv-doc-callout {
   display: flex;
   gap: 10px;

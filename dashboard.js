@@ -712,6 +712,12 @@ function _loadCustomWidgetDefs() {
 function _saveCustomWidgetDefs(defs) {
   _customWidgetDefsCache = defs;
   try { localStorage.setItem(getProfileScopedKey(CUSTOM_WIDGETS_LS_KEY), JSON.stringify(defs)); } catch {}
+  // Refresh the Data Setup hero "Widgets created" counter immediately — without
+  // this, creating/deleting a widget while the Data Hub panel is already open
+  // leaves the count stale until the user closes & re-opens the panel
+  // (toggleDataHub is the only other call site of _updateDataSetupHero).
+  // No-op when the hero DOM isn't present (boot, panel never opened).
+  try { if (typeof _updateDataSetupHero === 'function') _updateDataSetupHero(); } catch (e) {}
 }
 
 function _normalizeCustomWidgetDef(def) {
@@ -980,7 +986,7 @@ let _customPropsCache = null;
 function loadCustomProps() {
   if (_customPropsCache) return _customPropsCache;
   try {
-    const raw = localStorage.getItem(CUSTOM_PROPS_LS_KEY);
+    const raw = localStorage.getItem(getProfileScopedKey(CUSTOM_PROPS_LS_KEY));
     const parsed = raw ? JSON.parse(raw) : [];
     _customPropsCache = (Array.isArray(parsed) ? parsed : [])
       .filter(p => p && typeof p === 'object' && p.id && p.key)
@@ -994,10 +1000,14 @@ function loadCustomProps() {
 function _saveCustomProps(props) {
   _customPropsCache = props.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   try {
-    localStorage.setItem(CUSTOM_PROPS_LS_KEY, JSON.stringify(_customPropsCache));
+    localStorage.setItem(getProfileScopedKey(CUSTOM_PROPS_LS_KEY), JSON.stringify(_customPropsCache));
   } catch (e) {
     console.warn('[customProps] persist failed:', e.message);
   }
+  // Same staleness fix as _saveCustomWidgetDefs — refresh the hero so the
+  // "Custom fields" counter reflects add/remove/edit immediately while the
+  // Data Hub panel is open.
+  try { if (typeof _updateDataSetupHero === 'function') _updateDataSetupHero(); } catch (e) {}
 }
 
 function validateCustomPropName(name) {
@@ -2168,9 +2178,21 @@ function handleActionClick(event) {
       _notionIntegrationManageOpen = false;
       _handleNotionIntegrationDisconnect();
       break;
+    case 'notion-integration-download-template':
+      // Open the Notion templates hub in a new tab. `noopener,noreferrer`
+      // prevents the new tab from accessing window.opener (security best-
+      // practice for any external link triggered programmatically).
+      _notionIntegrationManageOpen = false;
+      window.open(NOTION_TEMPLATES_URL, '_blank', 'noopener,noreferrer');
+      _syncJournalProfileUI();
+      break;
     case 'notion-integration-manage-toggle':
       event.stopPropagation();
       _toggleNotionIntegrationManageMenu();
+      break;
+    case 'csv-integration-manage-toggle':
+      event.stopPropagation();
+      _toggleCsvIntegrationManageMenu();
       break;
     case 'notion-integration-view-permissions':
       event.stopPropagation();
@@ -2184,6 +2206,30 @@ function handleActionClick(event) {
     case 'journal-profile-connect-notion': _handleNotionConnectClick(); break;
     case 'journal-profile-row-switch': _journalProfileRowMenuOpenId = ''; _handleJournalProfileSelectChange(actionEl.dataset.profileId || ''); break;
     case 'journal-profile-row-switch-demo': _journalProfileRowMenuOpenId = ''; setDataSource('demo'); _syncJournalProfileUI(); break;
+    case 'journal-profile-row-switch-csv': {
+      // Smart CSV button handler — three states:
+      //   (1) Currently active in CSV mode  → open guided overlay (replace)
+      //   (2) CSV is cached but not active  → switch via setDataSource (no overlay)
+      //   (3) No CSV cached                 → open guided overlay (first import)
+      // The guided overlay (#csv-overlay) bundles the drop-zone + the full
+      // property reference table, so the user sees which columns the dashboard
+      // expects BEFORE picking a file. This matters most on first import; on
+      // replace, the same overlay is reused for consistency. The cached-switch
+      // branch is a pure mode flip and skips the overlay (already configured).
+      _journalProfileRowMenuOpenId = '';
+      // Close the CSV manage menu too — the Import item lives inside it.
+      _csvIntegrationManageOpen = false;
+      const csvActive = (localStorage.getItem(DS_KEY) || 'demo') === 'csv';
+      const hasCache  = !!(_cachedCSVTrades && _cachedCSVTrades.length);
+      if (csvActive || !hasCache) {
+        if (typeof openCsvOverlay === 'function') openCsvOverlay();
+        else document.getElementById('csv-file-input')?.click();
+      } else {
+        setDataSource('csv');
+        _syncJournalProfileUI();
+      }
+      break;
+    }
     case 'journal-profile-row-menu-toggle': event.stopPropagation(); _toggleJournalProfileRowMenu(actionEl); break;
     case 'journal-profile-row-edit': event.stopPropagation(); _openJournalProfileEditor('edit', actionEl.dataset.profileId || ''); break;
     case 'journal-profile-row-rename': event.stopPropagation(); _openJournalProfileEditor('rename', actionEl.dataset.profileId || ''); break;
@@ -3906,10 +3952,22 @@ function _hasNotionProfileSyncError() {
 }
 function _toggleNotionIntegrationManageMenu() {
   _notionIntegrationManageOpen = !_notionIntegrationManageOpen;
+  // Mutually-exclusive with the CSV manage menu — opening one closes the
+  // other so the UI never shows two ⋯ menus stacked open simultaneously.
+  if (_notionIntegrationManageOpen) _csvIntegrationManageOpen = false;
   debugLog('[Integrations] manage menu opened:', {
     open: _notionIntegrationManageOpen,
     status: _notionIntegrationStatus
   });
+  _syncJournalProfileUI();
+}
+
+// CSV integration manage-menu state — mirrors the Notion pattern. Module-local
+// so the markup-render path in _renderCsvIntegrationCard can read it.
+let _csvIntegrationManageOpen = false;
+function _toggleCsvIntegrationManageMenu() {
+  _csvIntegrationManageOpen = !_csvIntegrationManageOpen;
+  if (_csvIntegrationManageOpen) _notionIntegrationManageOpen = false;
   _syncJournalProfileUI();
 }
 function _handleNotionIntegrationViewPermissions() {
@@ -4019,7 +4077,42 @@ async function _checkNotionIntegrationStatus() {
 function _renderIntegrationsSection() {
   return `<div class="int-list">
     ${_renderNotionIntegrationCard()}
+    ${_renderCsvIntegrationCard()}
     ${_renderPlannedIntegrationCards()}
+  </div>`;
+}
+
+// Local-file CSV — surfaced in Integrations as a first-class entry so users
+// can discover the import flow without hunting for the empty-state CTA or
+// the mobile-only import button.
+//
+// UI structure mirrors the Notion card: header (name + optional badge) +
+// footer (description + ⋯ manage menu). Empty state shows NO badge — only
+// a "🟢 File connected" badge appears once a CSV is cached. All flows route
+// through `journal-profile-row-switch-csv` (the smart 3-state handler) so
+// the single "Import CSV file" menu item covers first import, replace, and
+// (rarely) switch-back-to-csv depending on current state.
+function _renderCsvIntegrationCard() {
+  const hasCache = Array.isArray(_cachedCSVTrades) && _cachedCSVTrades.length > 0;
+  const headerRight = hasCache
+    ? '<span class="int-badge int-badge--connected">🟢 File connected</span>'
+    : '';
+  const menuMarkup = `<div class="int-manage-wrap">
+    <button class="int-ellipsis-btn" type="button" data-action="csv-integration-manage-toggle" aria-expanded="${_csvIntegrationManageOpen ? 'true' : 'false'}" aria-label="More options">⋯</button>
+    ${_csvIntegrationManageOpen ? `
+      <div class="int-manage-menu" role="menu">
+        <button class="int-manage-item" type="button" role="menuitem" data-action="journal-profile-row-switch-csv">Import CSV file</button>
+      </div>` : ''}
+  </div>`;
+  return `<div class="int-row csv-integration-card">
+    <div class="int-compact-header">
+      <span class="int-name"><span class="int-icon int-icon--csv" aria-hidden="true">${INTEGRATION_ICONS.csv}</span> CSV File</span>
+      ${headerRight}
+    </div>
+    <div class="int-compact-footer">
+      <span class="int-description">Upload a CSV exported from your Notion journal — no account required.</span>
+      ${menuMarkup}
+    </div>
   </div>`;
 }
 
@@ -4044,6 +4137,7 @@ function _renderNotionIntegrationCard() {
         ${_notionIntegrationManageOpen ? `
           <div class="int-manage-menu" role="menu">
             <button class="int-manage-item" type="button" role="menuitem" data-action="notion-integration-manage-access">Manage page access</button>
+            <button class="int-manage-item" type="button" role="menuitem" data-action="notion-integration-download-template">Download Notion Template</button>
             <button class="int-manage-item int-manage-item--danger" type="button" role="menuitem" data-action="notion-integration-disconnect">Disconnect</button>
           </div>` : ''}
       </div>`;
@@ -4876,10 +4970,15 @@ const INTEGRATION_ICONS = {
   mt5:     '<img src="assets/logos/mt5.png"     alt="" loading="lazy" decoding="async" />',
   mt4:     '<img src="assets/logos/mt4.png"     alt="" loading="lazy" decoding="async" />',
   ctrader: '<img src="assets/logos/ctrader.png" alt="" loading="lazy" decoding="async" />',
+  csv:     '<img src="assets/logos/csv.png"     alt="" loading="lazy" decoding="async" />',
   // Custom API (legacy) — no brand logo, use a generic </> SVG glyph that
   // inherits currentColor from the parent .int-icon--api rule.
   api:     '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.3 6.3L2.6 12l5.7 5.7L9.7 16 5.4 12l4.3-4.3L8.3 6.3zm7.4 0L14.3 7.7 18.6 12l-4.3 4 1.4 1.7L21.4 12l-5.7-5.7z"/></svg>',
 };
+
+// Notion templates hub — surfaced from both the CSV import guide intro and the
+// Notion integration's "Download Notion Template" manage-menu action.
+const NOTION_TEMPLATES_URL = 'https://www.notion.so/Flipping-Market-Templates-3118c28c443680c2b36cf952b0a34595?source=copy_link';
 
 // Returns the registry entry matching a profile's connectionType (or a raw
 // type string). Unknown / missing types fall back to 'notion' rather than
@@ -5706,6 +5805,11 @@ function _deleteJournalProfileById(id) {
   const remaining = profiles.filter(profile => profile.id !== target.id);
   debugLog('[JournalProfilesUI] profiles after delete —', remaining.length, 'remaining:', remaining.map(p => ({ id: p.id, name: p.name })));
   _markPendingDeletedJournalProfileId(target.id);
+  // Purge profile-scoped LS slots so the next time a profile is created with
+  // the same id (collision unlikely but possible after a wipe/restore) it
+  // starts from a clean slate, and to avoid orphan rows (audit M2).
+  try { localStorage.removeItem(`${CUSTOM_PROPS_LS_KEY}_${target.id}`); } catch (e) {}
+  try { localStorage.removeItem(`${CUSTOM_WIDGETS_LS_KEY}_${target.id}`); } catch (e) {}
   const nextActive = remaining[0] || null;
   if (wasActive) {
     try {
@@ -7584,6 +7688,9 @@ function _reloadProfileScopedState() {
   // up the new profile's slot. Without this, profile switches would leak the
   // previous profile's widget list.
   _customWidgetDefsCache = null;
+  // Same for the custom Notion properties cache — declared per-profile via
+  // getProfileScopedKey(CUSTOM_PROPS_LS_KEY).
+  _customPropsCache = null;
   // ── 1. Reset + reload all preset in-memory state for the new slot ──
   Object.keys(presetOverrides).forEach(k => delete presetOverrides[k]);
   // Reset PRESETS to defaults first so that if the new slot has no saved
@@ -7639,6 +7746,12 @@ function _reloadProfileScopedState() {
   // synchronously inside the data-injection branch (line 6884) which would
   // immediately undo our restore. Callers must invoke the restore AFTER their
   // data-injection step (see setHTFSource / setDataSource / _applyActiveJournalProfile).
+
+  // Refresh the Custom Fields tab if the Data Hub is open — without this the
+  // panel keeps showing the previous profile's "Added filters" list until the
+  // user toggles it. Cheap no-op when the panel DOM isn't present.
+  try { if (typeof _renderNotionPropsPanel === 'function') _renderNotionPropsPanel(); } catch (e) {}
+  try { if (typeof _updateDataSetupHero === 'function') _updateDataSetupHero(); } catch (e) {}
 }
 
 function setHTFSource(source) {
@@ -11261,6 +11374,20 @@ function buildChips(containerId, items, filterKey, labelFn) {
 
   // Sync the 3 mode buttons (NEUTRE/EXCLURE/INCLURE) for this filter group
   _syncChipModeButtons(filterKey);
+
+  // Auto-hide the entire .filter-group parent when the dim is mapped to
+  // __NO_MAPPING__ (template exclusion or manual user "No Mapping" pick).
+  // The group has zero data by construction (normalize step skips the
+  // column) so showing it as a list of zero-count chips is pure noise.
+  // Skips custom chips (filterKey starts with 'custom:') — those are
+  // user-declared via Custom Fields and outside the JOURNAL_DIMS system.
+  if (typeof filterKey === 'string' && !filterKey.startsWith('custom:')) {
+    const dimKey = _FILTER_KEY_TO_DIM_KEY[filterKey];
+    if (dimKey) {
+      const parent = container.closest('.filter-group');
+      if (parent) parent.style.display = _isDimNoMapping(dimKey) ? 'none' : '';
+    }
+  }
 }
 
 // 3-state chip cycle (per-key click-mode): if the group's mode is 'neutral',
@@ -25954,6 +26081,10 @@ function injectParsedTrades(parsed, filename, csvFormat) {
   // Sync data source state to CSV after a successful import
   localStorage.setItem(DS_KEY, 'csv');
   updateSourceUI('csv');
+  // Refresh the Data & Integrations switch list so the CSV virtual row
+  // flips to is-active immediately when the panel is open during import
+  // (otherwise it stays stale until the next panel interaction).
+  try { if (typeof _syncJournalProfileUI === 'function') _syncJournalProfileUI(); } catch (e) {}
 }
 
 // Dynamic dimension rebuild after CSV import
@@ -27771,9 +27902,18 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('click', e => {
   if (!_notionIntegrationManageOpen) return;
-  if (e.target.closest('.int-manage-wrap')) return;
+  // Scope the in-wrap check to Notion's own card so a click inside the CSV
+  // card's manage menu doesn't keep Notion's menu open as a side-effect.
+  if (e.target.closest('.notion-integration-card .int-manage-wrap')) return;
   if (e.target.closest('[data-action="notion-integration-manage-toggle"]')) return;
   _notionIntegrationManageOpen = false;
+  _syncJournalProfileUI();
+});
+document.addEventListener('click', e => {
+  if (!_csvIntegrationManageOpen) return;
+  if (e.target.closest('.csv-integration-card .int-manage-wrap')) return;
+  if (e.target.closest('[data-action="csv-integration-manage-toggle"]')) return;
+  _csvIntegrationManageOpen = false;
   _syncJournalProfileUI();
 });
 
@@ -28018,77 +28158,75 @@ const WIDGET_DIM_KEY = {
 // 'multi-tp' (only relevant in Multi-TP mode).
 // `propType` matches the Notion property pill classes used by the CSV Guide:
 // 'select' / 'multiselect' / 'number' / 'date' / 'checkbox' / 'url' / 'formula'.
-// `desc` is plain-text HTML rendered inside the Description column of the
-// mapping tables (same prose pattern as the CSV Guide).
 const JOURNAL_DIMS = [
   // ── Required dims (CSV import refuses to ingest without these,
   //    BUT Phase 2 of this PR adds a degraded mode) ──
   { key: 'outcome', label: 'Position Result', required: true, tier: 'required', propType: 'select', defaults: {
     flipping: 'Résultat TP 1', pro: 'Position Result', beginner: 'Position Result',
-  }, widgets: [], desc: 'Trade outcome:<br><code>Take profit</code>, <code>Stop loss</code>, <code>BE - TP</code>, <code>BE - SL</code>, etc.<br>Rows missing this are skipped.' },
+  }, widgets: [] },
   { key: 'r', label: 'RR TP 1', required: true, tier: 'required', propType: 'number', defaults: {
     flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
-  }, widgets: [], desc: 'Realized R on first take profit:<br>e.g. <code>2.4</code> or <code>-1</code>.<br>Feeds equity, expectancy, drawdown.' },
+  }, widgets: [] },
   { key: 'date', label: 'Date', required: true, tier: 'required', propType: 'date', defaults: {
     flipping: 'Date', pro: 'Date', beginner: 'Date',
-  }, widgets: [], desc: 'Trade date.<br>Format: <code>Month DD, YYYY</code> or <code>YYYY-MM-DD</code>.' },
+  }, widgets: [] },
   { key: 'pair',     label: 'Pair', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Paire', pro: 'Pair', beginner: 'Pair',
-  }, widgets: ['w-pair', 'w-pair-session'], desc: 'Currency pair traded:<br>e.g. <code>EURUSD</code>.' },
+  }, widgets: ['w-pair', 'w-pair-session'] },
   { key: 'setup',     label: 'Setup', tier: 'optional', propType: 'select', defaults: {
     flipping: 'M15 Confirmation / Continuation',
     pro:      'M15 Confirmation / Continuation',
     beginner: 'M15 Confirmation / Continuation',
-  }, widgets: ['w-setup'], desc: 'High-level setup family:<br>e.g. <code>Continuation</code>, <code>Reversal</code>.<br>Drives the Setup Performance widget.' },
+  }, widgets: ['w-setup'] },
   { key: 'setupDetail', label: 'Setup detail', tier: 'optional', propType: 'select', defaults: {
     flipping: 'M15 Type Détail', pro: 'M15 Type Detailed', beginner: 'M15 Type Detailed',
-  }, widgets: [], desc: 'Detailed setup variant:<br>e.g. <code>Internal Continuation</code>, <code>External Reversal</code>.' },
+  }, widgets: [] },
   { key: 'session',   label: 'Session', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Session', pro: 'Session', beginner: '—',
-  }, widgets: ['w-session', 'w-heatmap', 'w-pair-session'], desc: 'Trading session:<br>e.g. <code>London KZ</code>, <code>New York KZ</code>.' },
+  }, widgets: ['w-session', 'w-heatmap', 'w-pair-session'] },
   { key: 'day',       label: 'Day of Week', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Jour', pro: 'Day', beginner: 'Day',
-  }, widgets: ['w-day', 'w-heatmap'], desc: 'Day of week, full English name:<br><code>Monday</code> … <code>Sunday</code>.' },
+  }, widgets: ['w-day', 'w-heatmap'] },
   { key: 'obstacles', label: 'M15 Obstacles', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'Obstacles M15', pro: 'M15 Obstacles', beginner: 'M15 Obstacles',
-  }, widgets: ['w-m15'], desc: 'M15 obstacle tags, comma-separated:<br>e.g. <code>Big Volume</code>, <code>Range Sweep</code>.' },
+  }, widgets: ['w-m15'] },
   { key: 'h4',        label: 'H4 Obstacles', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'Obstacles H4', pro: 'H4 Obstacles', beginner: '—',
-  }, widgets: ['w-h4'], desc: 'H4 obstacle tags, comma-separated.<br>Powers the H4 No-Sweep filter.' },
+  }, widgets: ['w-h4'] },
   { key: 'beManagement', label: 'BE Management', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'BE Management', pro: 'BE Management', beginner: 'BE Management',
-  }, widgets: [], desc: 'BE management tags, comma-separated:<br>e.g. <code>TP Direct</code>, <code>BE si set à 1RR</code>, <code>No BE available</code>.<br>Drives BE-aware classification.' },
+  }, widgets: [] },
   { key: 'hour',      label: 'Hour', tier: 'optional', propType: 'select', defaults: {
     flipping: '(auto-detect)', pro: '(auto-detect)', beginner: '(auto-detect)',
-  }, widgets: ['w-hour'], desc: 'Entry hour:<br><code>HHh</code> format (e.g. <code>10h</code>) or integer 0–23.<br>Auto-detected from <code>Time</code>.' },
+  }, widgets: ['w-hour'] },
   { key: 'positionType', label: 'Position Type', tier: 'optional', propType: 'multiselect', defaults: {
     flipping: 'Type de trade', pro: 'Position Type', beginner: 'Position Type',
-  }, widgets: [], desc: 'Trade classification:<br><code>BackTest</code>, <code>Live</code>, <code>Invalid</code>.' },
+  }, widgets: [] },
   { key: 'direction',    label: 'Order (direction)', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Order', pro: 'Order', beginner: 'Order',
-  }, widgets: [], desc: 'Trade direction:<br><code>Buy</code> (long) or <code>Sell</code> (short).' },
+  }, widgets: [] },
   { key: 'rrMax',        label: 'RR Max', tier: 'optional', propType: 'number', defaults: {
     flipping: 'RR Max', pro: 'RR Max', beginner: 'RR Max',
-  }, widgets: [], desc: 'Hypothetical peak R the trade could have reached if left open.<br>Drives the Partial Optimizer.' },
+  }, widgets: [] },
   { key: 'badFeeling',   label: 'Bad feeling', tier: 'optional', propType: 'checkbox', defaults: {
     flipping: 'Bad feeling', pro: 'Bad feeling', beginner: 'Bad feeling',
-  }, widgets: [], desc: 'Checkbox flag for emotion-marked trades.<br>Lets you filter them out.' },
+  }, widgets: [] },
   { key: 'notionUrl',    label: 'Notion URL', tier: 'optional', propType: 'formula', defaults: {
     flipping: 'Notion URL', pro: 'Notion URL', beginner: 'Notion URL',
-  }, widgets: [], desc: 'Deep link to the Notion page.<br>Adds the 🔗 button on each trade row.<br>Use a Notion formula: <code>"https://www.notion.so/" + id()</code>.' },
+  }, widgets: [] },
   // ── Screenshot URL columns (TradingView snapshot feature) ──
   // Values may be Notion Files&Media URLs or TradingView /x/<ID>/ share URLs.
   // widgets:[] because there is no dedicated widget — they surface via the
   // trade-table / drawer / selection-table 📷 buttons.
   { key: 'img_m15',        label: 'TV Image 2', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'M15 Before', pro: 'M15 Before', beginner: 'M15 Before',
-  }, widgets: [], desc: 'M15 chart screenshot before entry.<br>Accepts a Notion <code>Files &amp; media</code> property or a plain URL.<br>TradingView share URLs auto-convert to S3 snapshots.' },
+  }, widgets: [] },
   { key: 'img_h4_before',  label: 'TV Image 1', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'H4 Before', pro: 'H4 Before', beginner: 'H4 Before',
-  }, widgets: [], desc: 'H4 chart screenshot before entry.<br>Same format as <code>M15 Before</code>.' },
+  }, widgets: [] },
   { key: 'img_m15_after',  label: 'TV Image 3', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'M15 After', pro: 'M15 After', beginner: 'M15 After',
-  }, widgets: [], desc: 'M15 chart screenshot after the trade closes.<br>Same format as <code>M15 Before</code>.' },
+  }, widgets: [] },
   // ── Multi TP mode fields (Phase 3) ──
   // Per-tier realized R. Nullable: null = tier not hit (value-presence = hit flag).
   // Defaults follow standard Notion conventions ('RR TP N'); the maps below
@@ -28098,13 +28236,13 @@ const JOURNAL_DIMS = [
   // MISSING_DATA_META.
   { key: 'tp1_rr',       label: 'TP 1 realized R', tier: 'multi-tp', propType: 'number', defaults: {
     flipping: 'RR TP 1', pro: 'RR TP 1', beginner: 'RR TP 1',
-  }, widgets: [], desc: 'Realized R at the first take-profit tier.<br><code>null</code> if TP1 was not hit.' },
+  }, widgets: [] },
   { key: 'tp2_rr',       label: 'TP 2 realized R', tier: 'multi-tp', propType: 'number', defaults: {
     flipping: 'RR TP 2', pro: 'RR TP 2', beginner: 'RR TP 2',
-  }, widgets: [], desc: 'Realized R at the second take-profit tier.<br><code>null</code> if TP2 was not hit.' },
+  }, widgets: [] },
   { key: 'tp3_rr',       label: 'TP 3 realized R', tier: 'multi-tp', propType: 'number', defaults: {
     flipping: 'RR TP 3', pro: 'RR TP 3', beginner: 'RR TP 3',
-  }, widgets: [], desc: 'Realized R at the third take-profit tier.<br>Only required for 3-tier setups.<br><code>null</code> if TP3 was not hit.' },
+  }, widgets: [] },
 ];
 
 // Section metadata for the Mapping tab — order, title, badge text, optional note.
@@ -28313,6 +28451,34 @@ function _isDimExplicitlyNoMapped(dimKey) {
   }
   return _isNoMappingValue(_csvColumnOverrides?.[dimKey]);
 }
+
+// True when the dim is explicitly mapped to __NO_MAPPING__ (template exclusion
+// or manual user "No Mapping" pick). Used by buildChips() to auto-hide the
+// corresponding .filter-group from the sidebar: a dim the user declared
+// non-existent should not pollute the UI with a perpetually-empty chip group.
+function _isDimNoMapping(dimKey) {
+  if (!dimKey) return false;
+  const dsMode = localStorage.getItem(DS_KEY) || 'demo';
+  if (dsMode === 'api') {
+    const ov = (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride(dimKey) : null;
+    return _isNoMappingValue(ov);
+  }
+  if (dsMode === 'csv') {
+    return _isNoMappingValue((_csvColumnOverrides || {})[dimKey]);
+  }
+  return false; // demo mode has no overrides
+}
+
+// Filter chip key (passed to buildChips) → JOURNAL_DIMS / template-override
+// key. Most are identical; only `h4obs` maps to dim `h4` (legacy chip naming).
+// `hour` is intentionally absent — there is no chips-hour container in the
+// sidebar (hour filtering surfaces through the bubble UI elsewhere).
+const _FILTER_KEY_TO_DIM_KEY = {
+  outcome: 'outcome', setup: 'setup', session: 'session', day: 'day',
+  pair: 'pair', direction: 'direction', obstacles: 'obstacles',
+  h4obs: 'h4', tradeType: 'tradeType', beManagement: 'beManagement',
+  badFeeling: 'badFeeling',
+};
 
 // True when the dim has ANY override (mapped to a real column OR explicitly
 // __NO_MAPPING__) — i.e. the user has already taken a decision about it.
@@ -32936,6 +33102,23 @@ function _runCustomWidgetsProfileScopeMigration() {
   }
 }
 
+// Pre-scope cleanup for `flipping_notion_properties`: the legacy key was
+// global, leaking the same "Added filters" list across every Notion profile.
+// Per-profile semantics introduced this revision intentionally reset every
+// profile to an empty list (no copy/migration of the legacy payload — the
+// user expectation is a fresh, profile-scoped slate). One-shot guard avoids
+// re-wiping freshly-written scoped slots on subsequent boots.
+function _runCustomPropsProfileScopeMigration() {
+  const FLAG = 'flipping_notion_properties_profile_migration_v1';
+  try {
+    if (localStorage.getItem(FLAG)) return;
+    try { localStorage.removeItem(CUSTOM_PROPS_LS_KEY); } catch (e) {}
+    localStorage.setItem(FLAG, '1');
+  } catch (e) {
+    console.warn('[custom-props-profile-migration-v1] failed:', e?.message);
+  }
+}
+
 window.addEventListener('load', () => {
   // One-shot migration MUST run before any preset / layout load so the new
   // per-profile scoping reads from clean slots.
@@ -32943,6 +33126,9 @@ window.addEventListener('load', () => {
   // Copy legacy global custom widget defs into the active profile's slot
   // before any _loadCustomWidgetDefs() reader fires.
   _runCustomWidgetsProfileScopeMigration();
+  // One-shot purge of the legacy global custom-props slot so every profile
+  // starts from a fresh per-profile slate.
+  _runCustomPropsProfileScopeMigration();
 
   // Load custom presets BEFORE static chrome rendering so the preset list
   // reflects user-created presets (and respects deletes/renames).
