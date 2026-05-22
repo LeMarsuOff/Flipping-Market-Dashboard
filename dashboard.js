@@ -4748,6 +4748,12 @@ function _clearNotionProfileMappings(profileId) {
   keys.forEach(key => {
     try { localStorage.removeItem(key); } catch {}
   });
+  // The override-delete above bypasses _saveAPIFieldOverrides (which is
+  // where the cache-invalidation hook lives), so wipe the parsed cache
+  // directly here. _commitNotionDatabaseChange follows up with a forced
+  // _loadNotionTrades, but the explicit wipe keeps state consistent if a
+  // future caller doesn't immediately re-sync.
+  try { _invalidateNormalizedTradesCache(id, 'db-changed'); } catch (e) {}
   debugLog('[DatabaseChange] cleared mappings:', keys);
   return keys;
 }
@@ -5601,9 +5607,22 @@ async function _reloadJournalProfileSelection(options = {}) {
 
   if (!forceFetch && localStorage.getItem(DS_KEY) === 'api') {
     const raw = _getRawAPICache();
-    if (raw && raw.length && _reapplyAPIOverrides()) {
-      _syncJournalProfileUI();
-      return;
+    if (raw && raw.length) {
+      // Boot path is a chance to correct stale screenshot overrides without
+      // a full Notion sync. Template defaults can point to columns the user's
+      // DB doesn't have (e.g. 'URL H4 Before' on a Flipping Market H4 DB
+      // whose actual property is the Files & Media field 'H4 Before'),
+      // leaving screenshots silently broken until the next sync or Re-apply
+      // click. Running the auto-detect here means every page reload that
+      // still has the raw cache in sessionStorage re-checks for live F&M
+      // candidates and swaps stale URL overrides over to them. Safe and
+      // idempotent — the helper short-circuits when the existing override
+      // is already F&M or no better candidate exists.
+      try { _autoMapScreenshotsByRawKeys(raw, _getCurrentHTFSource()); } catch (e) {}
+      if (_reapplyAPIOverrides()) {
+        _syncJournalProfileUI();
+        return;
+      }
     }
   }
 
@@ -6146,6 +6165,50 @@ function _saveAPIFieldOverrides(obj) {
   try { safeSetLocalStorage(key, JSON.stringify(obj || {}), { kind: 'apiFieldOverrides' }); }
   catch (e) { console.warn('[DS] API overrides save failed:', e.message); }
   try { _clearNotionSyncCursor(); } catch (e) {}
+  // Mapping just changed — the parsed-trades cache was normalized against
+  // the previous mapping and is now stale. Wipe it so callers that follow
+  // up with _reapplyAPIOverrides() / _loadNotionTrades rewrite it fresh,
+  // and so future boots that find no cache fall through to a fresh sync
+  // instead of rendering stale normalization (the legacy-profile bug from
+  // 2026-05-21: profiles synced before a template fix kept h4: [] until a
+  // manual force-sync). All current callers re-render synchronously, so
+  // the invalidate-then-rewrite window is microseconds in the happy path.
+  try { _invalidateNormalizedTradesCache(null, 'overrides-saved'); } catch (e) {}
+}
+
+// Wipe the parsed-trades cache (LS + sessionStorage + in-memory) for a
+// profile across both HTF sources. Hooked from _saveAPIFieldOverrides so
+// every mapping change — template auto-mapping, manual pencil-pick,
+// Re-apply template defaults, TP backfill, screenshot auto-map — leaves
+// the cache state consistent with the new mapping. _clearNotionProfileMappings
+// also calls it directly for the database-change path (which bypasses
+// _saveAPIFieldOverrides by deleting the LS key directly).
+//
+// Re-render is the caller's job. _reapplyAPIOverrides (pickAPIField path,
+// _reapplyTemplateMapping) re-normalizes from in-memory raw trades and
+// rewrites the cache immediately. _loadNotionTrades does the same in the
+// sync path. If neither runs (e.g. user closes the tab between an override
+// write and any re-render), the next boot's getCachedAPIData() returns null
+// and the boot path falls through to a fresh sync — the desired self-heal.
+function _invalidateNormalizedTradesCache(profileId = null, reason = 'mapping-change') {
+  const id = String(profileId || _getJournalProfileCacheContext()?.profileId || '').trim();
+  if (!id) return;
+  const sources = ['m15', 'h4'];
+  let purged = 0;
+  for (const src of sources) {
+    const lsKey = `apiTradesCache_v2_rrmax_${id}_${src}`;
+    try {
+      if (localStorage.getItem(lsKey) !== null) {
+        localStorage.removeItem(lsKey);
+        purged++;
+      }
+    } catch (e) {}
+    const sessKey = `apiTradesSessionCache_v1_${id}_${src}`;
+    try { sessionStorage.removeItem(sessKey); } catch (e) {}
+    const slot = `${src}_${id}`;
+    if (_parsedAPICacheMemory[slot]) _parsedAPICacheMemory[slot] = null;
+  }
+  if (purged) debugLog('[CacheInvalidation] parsed cache purged for profile', id, '· reason:', reason, '· slots:', purged);
 }
 
 // Collect every top-level key ever observed across the raw trades.
@@ -6524,12 +6587,21 @@ function _detectTemplateFromTitle(title) {
 // profile that was first-synced before a detection-logic fix kept the
 // stale template id forever (the banner lied about what the DB actually
 // looks like today).
-function _maybeAutoApplyTemplateMapping(rawTrades) {
+function _maybeAutoApplyTemplateMapping(rawTrades, profileOverride = null) {
   // Respect the explicit bucket the user picked at profile creation. Three
   // possible values on profile.templateChoice : 'm15' / 'h4' / 'other'.
   // Existing profiles created before the chooser default to 'other' via
   // _normalizeJournalProfile (no change to behavior).
-  const profile = getActiveJournalProfile();
+  //
+  // profileOverride is THE essential argument when called from inside
+  // _loadNotionTrades — without it, this function would read
+  // getActiveJournalProfile() which can race when the user switches profiles
+  // mid-sync (fetch resolves AFTER the user has moved on, helper would
+  // happily apply the now-active profile's template choice to the old
+  // profile's overrides, corrupting both). The override is null for
+  // user-driven callers (_reapplyTemplateMapping) where getActiveJournalProfile
+  // is the truly-correct source.
+  const profile = profileOverride || getActiveJournalProfile();
   const bucket = profile?.templateChoice || 'other';
   // Title-based detection — see _detectTemplateFromTitle. The rawTrades
   // param is preserved for signature stability (some call sites still
@@ -6657,42 +6729,207 @@ function _maybeAutoApplyTemplateMapping(rawTrades) {
 const _SCREENSHOT_CAMEL_ALIASES = {
   img_m15:       ['imgM15', 'm15Before', 'm15Image', 'imageM15'],
   img_h4_before: ['imgH4Before', 'h4Before', 'h4Image', 'imageH4'],
-  img_m15_after: ['imgM15After', 'm15After', 'm15AfterImage'],
+  // img_m15_after carries the "After" screenshot. M15 profiles get the
+  // M15-flavored camel aliases first; H4 profiles repurpose this slot for
+  // the H4 After screenshot (see useH4AfterInImgM15After in _normalizeAPITrade)
+  // so we also list the H4-flavored aliases. The find() short-circuits on the
+  // first alias with data, so M15 profiles still pick the M15 variant and
+  // H4 profiles transparently pick the H4 one.
+  img_m15_after: ['imgM15After', 'm15After', 'm15AfterImage', 'imgH4After', 'h4After', 'h4AfterImage', 'imageH4After', 'h4ImageAfter'],
 };
-function _autoMapScreenshotsByRawKeys(rawTrades) {
+// Detect what shape a sample value carries:
+//   'fm'   = Notion Files & Media — array of { file?: {url}, external?: {url} }.
+//            Most reliable source: Notion stores the file, the proxy resigns
+//            URLs each fetch, and _mediaQueue migrates Notion S3 URLs to
+//            permanent Supabase storage so they survive after the 1h expiry.
+//   'url'  = plain URL string (or array of URL strings). Less reliable for
+//            screenshots that aren't permanent — but the only viable source
+//            when the user pastes a TradingView /x/ share link.
+//   null   = neither; ignore for screenshot mapping.
+function _classifyScreenshotValue(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (Array.isArray(v)) {
+    if (!v.length) return null;
+    const item = v[0];
+    if (typeof item === 'string') return /^https?:\/\//i.test(item.trim()) ? 'url' : null;
+    if (item && typeof item === 'object') {
+      if ((item.file && typeof item.file.url === 'string') ||
+          (item.external && typeof item.external.url === 'string') ||
+          typeof item.url === 'string') return 'fm';
+    }
+    return null;
+  }
+  if (typeof v === 'string') return /^https?:\/\//i.test(v.trim()) ? 'url' : null;
+  if (typeof v === 'object') {
+    if ((v.file && typeof v.file.url === 'string') ||
+        (v.external && typeof v.external.url === 'string') ||
+        typeof v.url === 'string') return 'fm';
+  }
+  return null;
+}
+
+// Per-dim semantic hints used by the name-keyword pass below. Position keys
+// are matched as substrings of the lowercased property name. Negative position
+// = automatic disqualifier (a "Before" property cannot fill the After slot).
+// img_m15_after carries the After slot for both M15 and H4 profiles, so
+// the primary keyword set is source-dependent (H4 profiles bias toward 'h4'
+// matches first, M15 profiles toward 'm15').
+function _getScreenshotDimHints(dimKey, source) {
+  if (dimKey === 'img_m15') {
+    return { primary: ['m15'], positive: ['before', 'avant'], negative: ['after', 'apres', 'après'] };
+  }
+  if (dimKey === 'img_h4_before') {
+    return { primary: ['h4'], positive: ['before', 'avant'], negative: ['after', 'apres', 'après'] };
+  }
+  if (dimKey === 'img_m15_after') {
+    const prim = source === 'h4' ? ['h4', 'm15'] : ['m15', 'h4'];
+    return { primary: prim, positive: ['after', 'apres', 'après'], negative: ['before', 'avant'] };
+  }
+  return null;
+}
+
+// Best-candidate name search. Iterates sample properties, classifies each as
+// F&M/URL/none, filters by primary keyword (m15/h4) and disqualifies on the
+// negative position keyword (before/after). Scores: F&M (100) >> URL (10),
+// + bonus for matching the positive position keyword, + bonus for matching
+// the source-preferred primary on the After slot. Returns null if no
+// candidate qualifies — caller then falls back to the camel-alias pass.
+function _findScreenshotCandidateByName(sample, dimKey, source) {
+  const hints = _getScreenshotDimHints(dimKey, source);
+  if (!hints) return null;
+  let best = null;
+  for (const [key, val] of Object.entries(sample)) {
+    const kind = _classifyScreenshotValue(val);
+    if (!kind) continue;
+    const lowKey = key.toLowerCase();
+    const primaryIdx = hints.primary.findIndex(k => lowKey.includes(k));
+    if (primaryIdx === -1) continue;
+    if (hints.negative.some(k => lowKey.includes(k))) continue;
+    let score = (kind === 'fm') ? 100 : 10;
+    if (hints.positive.some(k => lowKey.includes(k))) score += 5;
+    // Source bias for img_m15_after: primary[0] is the source-preferred keyword
+    if (dimKey === 'img_m15_after' && primaryIdx === 0) score += 3;
+    if (!best || score > best.score) best = { key, score, kind, primaryIdx };
+  }
+  return best;
+}
+
+// Build a "merged sample" by walking every raw trade and recording the FIRST
+// non-empty screenshot-classifiable value seen per property name. Without this,
+// users whose first trade happens to be missing the H4 After screenshot (but
+// later trades have it) would fail the auto-detect: the single-sample scan
+// would see an empty array and classify the property as non-screenshot.
+// Surfaced 2026-05-22 when Max's H4 perso profile auto-mapped H4 Before
+// correctly but left H4 After stuck on the stale 'URL H4 After' template
+// default — his first sync'd trade had a Before file but no After file.
+// Falls back to the first valid trade's keys for property-existence checks
+// (so _overrideIsLiveInSample still recognises empty-but-present columns).
+function _buildScreenshotMergedSample(rawTrades) {
+  const merged = {};
+  const firstTrade = rawTrades.find(t => t && typeof t === 'object' && !Array.isArray(t));
+  if (!firstTrade) return null;
+  // Pass 1: scan every trade, record first classifiable value per key
+  for (const trade of rawTrades) {
+    if (!trade || typeof trade !== 'object' || Array.isArray(trade)) continue;
+    for (const [key, val] of Object.entries(trade)) {
+      if (key in merged) continue;
+      if (_classifyScreenshotValue(val)) merged[key] = val;
+    }
+  }
+  // Pass 2: backfill empty-but-present keys from first trade so existence
+  // checks still work (used by validation logic to spot stale overrides
+  // pointing to columns that exist but never have data).
+  for (const key of Object.keys(firstTrade)) {
+    if (!(key in merged)) merged[key] = firstTrade[key];
+  }
+  return merged;
+}
+
+function _autoMapScreenshotsByRawKeys(rawTrades, source = null) {
   if (!Array.isArray(rawTrades) || !rawTrades.length) return;
-  const sample = rawTrades.find(t => t && typeof t === 'object' && !Array.isArray(t));
+  const sample = _buildScreenshotMergedSample(rawTrades);
   if (!sample) return;
+  const effectiveSource = String(source || _getCurrentHTFSource() || 'm15').toLowerCase();
   const overrides = _getAPIFieldOverrides();
   const newAutoKeys = [];
   let changed = false;
-  for (const [dimKey, camelAliases] of Object.entries(_SCREENSHOT_CAMEL_ALIASES)) {
-    // Skip dims with an existing override (user pencil-pick or template
-    // auto-detect already set something — don't second-guess them).
-    if (overrides[dimKey] && String(overrides[dimKey]).trim()) continue;
-    // Find the first camelCase alias that holds non-empty data in the sample.
-    const camelKey = camelAliases.find(k => {
-      if (!(k in sample)) return false;
-      const v = sample[k];
-      if (v === null || v === undefined || v === '') return false;
-      if (Array.isArray(v) && !v.length) return false;
-      return true;
-    });
-    if (!camelKey) continue;
-    // Match the camelCase value against every space-containing raw key
-    // to find the original Notion column. JSON.stringify handles arrays
-    // of file objects (which are equal-content but separate references
-    // post-JSON.parse on the Vercel response).
-    const camelValStr = JSON.stringify(sample[camelKey]);
-    const sourceKey = Object.keys(sample).find(k =>
-      k !== camelKey && /\s/.test(k) && JSON.stringify(sample[k]) === camelValStr
-    );
-    if (!sourceKey) continue;
-    overrides[dimKey] = sourceKey;
+
+  // Two-stage decision per dim:
+  //   1) Name-keyword + F&M-preferred pass (handles users with custom DB
+  //      schemas, where a Notion Files & Media property carries the actual
+  //      screenshot file). F&M wins over URL when both exist for the slot,
+  //      because F&M is permanent (via Supabase migration) whereas URL
+  //      strings can rot when the TV chart is deleted.
+  //   2) Legacy camel-alias pass (proxy-generated aliases like imgM15After /
+  //      h4Before). Acts as the fallback when the user's DB uses property
+  //      names that don't contain m15/h4 + before/after keywords.
+  // Existing override behaviour:
+  //   - __NO_MAPPING__ → never touched (intentional opt-out).
+  //   - Live F&M override → kept (already the best shape).
+  //   - Live URL override → replaced ONLY if a better F&M candidate exists
+  //     (the F&M property gives Supabase-backed permanence; the URL might be
+  //     a transient TV link).
+  //   - Stale override (points to nothing in sample) → replaced freely.
+  for (const dimKey of Object.keys(_SCREENSHOT_CAMEL_ALIASES)) {
+    const existing = String(overrides[dimKey] || '').trim();
+    if (_isNoMappingValue(existing)) continue;
+
+    const existingKind = existing && Object.prototype.hasOwnProperty.call(sample, existing)
+      ? _classifyScreenshotValue(sample[existing])
+      : null;
+
+    const nameCandidate = _findScreenshotCandidateByName(sample, dimKey, effectiveSource);
+
+    // Decide which property to use for this dim
+    let chosen = null;
+    let reason = '';
+    if (nameCandidate && nameCandidate.kind === 'fm') {
+      // F&M candidate found — wins over any URL override or stale override.
+      // Only skip the replace if existing is ALREADY this exact F&M property.
+      if (existing === nameCandidate.key) continue;
+      chosen = nameCandidate.key;
+      reason = `kind: fm, score: ${nameCandidate.score}`;
+    } else if (existingKind) {
+      // No F&M candidate, but existing override is live (URL or otherwise).
+      // Keep it — the user picked a URL property or the template wrote one
+      // that exists. Falling back to camel-alias detection could replace a
+      // working URL override with a different URL override pointing to the
+      // same data, which is pointless churn.
+      continue;
+    } else if (nameCandidate && nameCandidate.kind === 'url') {
+      // No F&M, no live existing — use the URL candidate found by name.
+      if (existing === nameCandidate.key) continue;
+      chosen = nameCandidate.key;
+      reason = `kind: url, score: ${nameCandidate.score}`;
+    } else {
+      // Name search found nothing. Fall back to camel-alias detection.
+      const camelAliases = _SCREENSHOT_CAMEL_ALIASES[dimKey] || [];
+      const camelKey = camelAliases.find(k => {
+        if (!(k in sample)) return false;
+        return _classifyScreenshotValue(sample[k]) !== null;
+      });
+      if (!camelKey) continue;
+      const camelValStr = JSON.stringify(sample[camelKey]);
+      const sourceKey = Object.keys(sample).find(k =>
+        k !== camelKey && /\s/.test(k) && JSON.stringify(sample[k]) === camelValStr
+      );
+      if (!sourceKey || sourceKey === existing) continue;
+      chosen = sourceKey;
+      reason = `camel alias: ${camelKey} (legacy fallback)`;
+    }
+
+    if (!chosen) continue;
+    const wasReplaced = existing && existing !== chosen;
+    overrides[dimKey] = chosen;
     newAutoKeys.push(dimKey);
     changed = true;
-    debugLog('[ScreenshotAutoMap] dim', dimKey, '→', sourceKey, '(camel alias:', camelKey + ')');
+    debugLog(
+      '[ScreenshotAutoMap] dim', dimKey, '→', chosen,
+      `(${reason})`,
+      wasReplaced ? `(replaced override: "${existing}")` : ''
+    );
   }
+
   if (changed) {
     _saveAPIFieldOverrides(overrides);
     const existingSet = _getAutoMappedDims();
@@ -6788,7 +7025,20 @@ function _reapplyAPIOverrides() {
   const autoMapped = _applyNotionAutoMap(processed, _getCurrentHTFSource());
   _getOutcomeValueReport(autoMapped, _getCurrentHTFSource());
   _resetOutcomeDebugCounts();
-  const parsed = autoMapped.map((t, i) => _normalizeAPITrade(t, i)).filter(Boolean);
+  const parsed = autoMapped.map((t, i) => {
+    const norm = _normalizeAPITrade(t, i);
+    // Preserve _notionId across re-normalization — same fallback chain as the
+    // sync path at line 9456. Without this, every Reapply call would strip
+    // _notionId from cached trades, breaking the media queue's ability to
+    // match Supabase migrations back to the correct trade. Surfaced when
+    // Max's Reapply on H4 Perso wiped _notionId and the post-refresh merge
+    // of session media URLs failed because byNotionId.get returned undefined.
+    if (norm) {
+      const notionId = t._notionId || t.notionId || t.id || '';
+      if (notionId) norm._notionId = notionId;
+    }
+    return norm;
+  }).filter(Boolean);
   _flushOutcomeDebugCounts();
   setCachedAPIData(parsed);
   if (localStorage.getItem(DS_KEY) === 'api') {
@@ -6809,6 +7059,50 @@ function _reapplyAPIOverrides() {
 // the template baseline without recreating the profile. Destructive — any
 // manual override is overwritten.
 function _reapplyTemplateMapping() {
+  // ── Safety guard: empty raw cache means we can't re-derive screenshots ─────
+  // After a page refresh the raw cache is wiped (no sessionStorage persistence
+  // by design — _persistRawAPIToSession is a no-op). If Reapply runs in that
+  // state and _reapplyAPIOverrides early-returns (no raw to normalise), the
+  // invalidate-from-`_saveAPIFieldOverrides({})` purge of LS + session parsed
+  // caches has already happened — leaving the user with an empty dashboard.
+  // Block the Reapply with a toast pointing at Sync, which is the only path
+  // that can refill raw cache.
+  const rawForCheck = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : null;
+  if (!Array.isArray(rawForCheck) || !rawForCheck.length) {
+    if (typeof showThemeToast === 'function') {
+      showThemeToast('Click Sync first — Re-apply needs fresh data from Notion.', true);
+    }
+    console.warn('[ReapplyTemplate] aborted — no raw cache, sync required first.');
+    return;
+  }
+
+  // ── Preserve screenshot overrides across Reapply ───────────────────────────
+  // Max's request 2026-05-23: Re-apply template defaults should NOT touch the
+  // screenshot mappings (img_m15 / img_h4_before / img_m15_after). For users
+  // with custom Notion DBs (e.g. H4 Perso with Files & Media properties named
+  // 'H4 Before' / 'H4 After' instead of the template's 'URL H4 Before' /
+  // 'URL H4 After'), the user manually pencil-picked or the auto-detect ran
+  // and found the correct F&M property. Reapply would otherwise wipe these
+  // and re-write the template's URL defaults, which point to columns that
+  // don't exist in custom DBs → "no value detected" until manual fix again.
+  //
+  // Strategy: snapshot the 3 screenshot overrides + their auto-mapped flags
+  // BEFORE the wipe, then restore them AFTER `_maybeAutoApplyTemplateMapping`
+  // has written the rest of the template defaults. Net effect: every NON-
+  // screenshot dim is reset to template baseline; screenshots stay as the
+  // user / previous auto-detect resolved them. If the user explicitly wants
+  // to reset a screenshot mapping, they can still pencil-pick the dim back
+  // to the template default (or 'No Mapping').
+  const SCREENSHOT_DIMS = ['img_m15', 'img_h4_before', 'img_m15_after'];
+  const overridesBefore = _getAPIFieldOverrides();
+  const autoSetBefore = _getAutoMappedDims();
+  const preservedOverrides = {};
+  const preservedAutoSet = new Set();
+  for (const k of SCREENSHOT_DIMS) {
+    if (overridesBefore[k]) preservedOverrides[k] = overridesBefore[k];
+    if (autoSetBefore.has(k)) preservedAutoSet.add(k);
+  }
+
   _saveAPIFieldOverrides({});
   _setDetectedTemplate(null);
   _clearAutoMappedDims();
@@ -6821,6 +7115,23 @@ function _reapplyTemplateMapping() {
     try { _maybeAutoApplyTemplateMapping(); }
     catch (e) { console.error('[ReapplyTemplate] auto-map failed:', e); }
   }
+
+  // Restore the preserved screenshot overrides (and their auto-mapped flags)
+  // AFTER template defaults have been written, so they win the merge.
+  const afterTemplate = _getAPIFieldOverrides();
+  const merged = { ...afterTemplate, ...preservedOverrides };
+  _saveAPIFieldOverrides(merged);
+  const finalAutoSet = _getAutoMappedDims();
+  for (const k of preservedAutoSet) finalAutoSet.add(k);
+  _setAutoMappedDims(finalAutoSet);
+
+  // If the user has NO existing screenshot overrides (fresh profile, or all
+  // 3 are __NO_MAPPING__), run the auto-detect against raw to populate them
+  // from F&M / camel-alias candidates. Existing overrides are preserved by
+  // the helper's "live override + F&M-prefers" decision tree.
+  try { _autoMapScreenshotsByRawKeys(rawForCheck, _getCurrentHTFSource()); }
+  catch (e) { console.error('[ReapplyTemplate] screenshot auto-detect failed:', e); }
+
   _reapplyAPIOverrides();
   updateJournalPanel();
 }
@@ -7028,10 +7339,40 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     // retains the original TV page URL (or '') for lightbox error fallback.
     // In API+H4 mode, the img_m15_after slot is repurposed to carry H4-after.
     ...(() => {
+      // Extract a single URL string from any of the shapes a screenshot
+      // property can arrive in. Three valid sources, in priority order:
+      //   1) Notion Files & Media — array of { name, type:'file'|'external',
+      //      file?: { url, expiry_time }, external?: { url } }. The signed
+      //      Amazon URL inside `file.url` expires after ~1h, which is why
+      //      _mediaQueue migrates these to Supabase Storage in the background
+      //      (see _isNotionFileUrl below). External files use `external.url`.
+      //   2) Pre-flattened object/array from the Vercel proxy or template —
+      //      { url: '...' } or [ 'https://...' ] or [{ url: '...' }]. We
+      //      keep this for backward compat with older Vercel proxy versions.
+      //   3) Plain string URL — typical for "URL <slot>" text properties
+      //      holding a TradingView /x/ share link (later normalised to a
+      //      permanent S3 PNG by _normalizeTvImageUrl).
+      // Returning '[object Object]' (the old default-stringify path) was a
+      // silent bug that broke F&M-based H4 profiles entirely.
       const _rawUrl = raw => {
         if (!raw) return '';
-        if (Array.isArray(raw)) return raw.length ? (raw[0].url || String(raw[0]) || '') : '';
-        if (typeof raw === 'object' && raw !== null) return raw.url || '';
+        if (Array.isArray(raw)) {
+          if (!raw.length) return '';
+          const item = raw[0];
+          if (typeof item === 'string') return item;
+          if (item && typeof item === 'object') {
+            if (item.file && typeof item.file.url === 'string') return item.file.url;
+            if (item.external && typeof item.external.url === 'string') return item.external.url;
+            if (typeof item.url === 'string') return item.url;
+          }
+          return '';
+        }
+        if (typeof raw === 'object' && raw !== null) {
+          if (raw.file && typeof raw.file.url === 'string') return raw.file.url;
+          if (raw.external && typeof raw.external.url === 'string') return raw.external.url;
+          if (typeof raw.url === 'string') return raw.url;
+          return '';
+        }
         return String(raw);
       };
       const useH4AfterInImgM15After = activeSource === 'h4';
@@ -8875,6 +9216,14 @@ function _enqueueMediaForCachedNotionTrades(trades, userId, source, profileIdOve
 // notionDatabaseId. Fetches all pages from the Notion database via the backend
 // proxy (/api/notion/query), flattens them, runs _normalizeAPITrade, and injects
 // the result exactly as loadFromAPI does for the legacy /api/trades endpoint.
+//
+// Per-profile mutex (_notionSyncInFlight): a 2nd call targeting a profile that
+// is already syncing is skipped with a debug log. Cross-profile concurrent
+// syncs are intentionally allowed — caches are profile-scoped so they cannot
+// corrupt each other, and serializing them would force the user to wait on a
+// slow profile before they can sync a fast one. Mirrors the existing
+// _otherSourceFetching pattern used by _fetchOtherSourceBackground below.
+const _notionSyncInFlight = new Set();
 async function _loadNotionTrades(profile, options = {}) {
   const { silent = false, force = false, syncNow = false, background = false } = options;
   // Background reconcile = fired by the ghost-sync auto-trigger after a normal
@@ -8966,6 +9315,23 @@ async function _loadNotionTrades(profile, options = {}) {
     }
   }
 
+  // ── Per-profile in-flight mutex (duplicate-skip) ─────────────────────────
+  // A 2nd call targeting a profile already syncing returns immediately. Placed
+  // AFTER the cache-hit path (a duplicate that would have been a cache-hit
+  // still gets to re-render — idempotent and good UX) but BEFORE any state
+  // mutation (cache-context pin, loading flag, syncState write), so the skip
+  // is a clean return with nothing to undo. Cross-profile concurrent syncs
+  // stay allowed: caches are profile-scoped so they cannot corrupt each
+  // other, and serializing them would force the user to wait on a slow
+  // profile before they can sync a fast one. Mirrors the _otherSourceFetching
+  // pattern below. Mutex acquired just before the network try-block, released
+  // in the matching finally so every exit path (success / error / await race)
+  // clears it.
+  if (profileId && _notionSyncInFlight.has(profileId)) {
+    debugLog('[NotionSync] skipped duplicate — already in flight for profile', profileId);
+    return;
+  }
+
   // ── Pin cache scope to THIS profile for the whole fetch + processing run.
   // Covers existingCache / existingRawCache / sync-cursor reads below AND every
   // write inside the fetch try-block. Restored in the outer finally.
@@ -8990,6 +9356,8 @@ async function _loadNotionTrades(profile, options = {}) {
   // indicators belong to the user's current view, not the background target.
   // Also skip for background reconcile (ghost-sync auto-trigger): the prior
   // incremental already gave the user a "live" state, no need to flash it.
+
+  if (profileId) _notionSyncInFlight.add(profileId);
 
   try {
     const queryStartedAt = new Date().toISOString();
@@ -9052,6 +9420,22 @@ async function _loadNotionTrades(profile, options = {}) {
     }
     const json = await resp.json();
 
+    // ── Race-fix: re-pin cache-context override ──────────────────────────────
+    // The override was pinned to profileId at the top of this function, BEFORE
+    // the await. A concurrent profile switch (_applyActiveJournalProfile) may
+    // have stolen the override during our network round-trip, in which case
+    // every override read/write below (LS field overrides, parsed-cache writes,
+    // sync cursor, auto-mapped dim flags) would hit the wrong profile's slot —
+    // contaminating mappings, purging the wrong parsed cache (via
+    // _saveAPIFieldOverrides → _invalidateNormalizedTradesCache), and producing
+    // the "16/16 vs 14/14" mapped-count drift Max reproduced on 2026-05-22.
+    // Re-pinning here is safe: JS is single-threaded, so the synchronous
+    // post-fetch block below runs atomically — no further await can interleave
+    // until _mediaQueue.enqueue / _maybeQueueGhostSyncReconcile at the tail,
+    // both of which schedule background work via setTimeout(0). The outer
+    // finally still restores _prevCacheCtx as before.
+    _journalProfileCacheContextOverride = profileId;
+
     debugLog('[NotionLoad] response — count:', json.count, 'trades:', json.trades?.length);
     if (json.trades?.length) {
       debugLog('[NotionLoad] trade[0] keys:', Object.keys(json.trades[0]));
@@ -9100,11 +9484,16 @@ async function _loadNotionTrades(profile, options = {}) {
     // If matched and the user has no existing field overrides for this
     // profile, write the canonical mapping into apiFieldOverrides_v1 BEFORE
     // _applyNotionAutoMap runs — so this very sync benefits from the new
-    // aliases (no second-round-trip required).
-    try { _maybeAutoApplyTemplateMapping(fetchedRawTrades); } catch (e) {}
+    // aliases (no second-round-trip required). Pass `profile` explicitly:
+    // the helper reads templateChoice + notionDatabaseTitle off it, and
+    // falling back to getActiveJournalProfile() would race with concurrent
+    // switches the same way the cache-context override does.
+    try { _maybeAutoApplyTemplateMapping(fetchedRawTrades, profile); } catch (e) {}
     // Backfill screenshot overrides from raw column names — handles users
     // with Files & Media properties not named like the canonical templates.
-    try { _autoMapScreenshotsByRawKeys(fetchedRawTrades); } catch (e) {}
+    // Reads/writes overrides only via the cache-context override above, no
+    // direct active-profile lookup, so no explicit profile param needed.
+    try { _autoMapScreenshotsByRawKeys(fetchedRawTrades, source); } catch (e) {}
 
     // Pre-inject user-mapped outcome, then auto-map unmapped Notion fields to
     // the aliases expected by _normalizeAPITrade (without touching that function).
@@ -9118,7 +9507,17 @@ async function _loadNotionTrades(profile, options = {}) {
         const norm = _normalizeAPITrade(t, i, source);
         // Carry _notionId through normalization so the media queue can patch
         // trade objects in-place after background uploads complete.
-        if (norm && t._notionId) norm._notionId = t._notionId;
+        // The Vercel proxy exposes the Notion page UUID under different names
+        // depending on the endpoint version: `_notionId` on newer responses,
+        // `notionId` on some variants, and `id` (raw Notion page id, used at
+        // line 7155 to build notionUrl) as the universal fallback. Without
+        // this fallback chain, F&M-screenshot users see [MediaQueue] missing
+        // notionId on 100% of trades, the Supabase migration never runs, and
+        // after refresh the parsed cache (which intentionally strips signed
+        // Notion S3 URLs to fit the 2MB LS guard) has empty screenshot URLs
+        // forever. Surfaced 2026-05-23 on Max's H4 Perso profile.
+        const notionId = t._notionId || t.notionId || t.id || '';
+        if (norm && notionId) norm._notionId = notionId;
         return norm;
       }
       catch (e) {
@@ -9267,6 +9666,10 @@ async function _loadNotionTrades(profile, options = {}) {
       try { updateJournalPanel(); } catch (e) {}
     }
     _diagAssertProfileTradeAlignment('post-_loadNotionTrades');
+    // Release the per-profile mutex. The inner try wraps the network fetch
+    // and all post-fetch processing — the mutex is acquired right before
+    // that try-block, so release here mirrors that scope exactly.
+    if (profileId) _notionSyncInFlight.delete(profileId);
   }
 }
 
@@ -33119,6 +33522,37 @@ function _runCustomPropsProfileScopeMigration() {
   }
 }
 
+// One-shot migration to recover Notion profiles whose parsed-trades cache was
+// written before the screenshot pipeline fix (2026-05-22): _rawUrl couldn't
+// extract URLs from Notion Files & Media properties (returned '[object
+// Object]'), so cached parsed trades have empty imgM15 / imgH4Before /
+// imgM15After fields. The cache-hit boot path injects those stale trades
+// as-is without re-normalising, leaving screenshots silently broken until a
+// manual Sync. Purging the parsed cache here forces the boot path to either
+// re-normalise from the in-memory raw cache (if present) or fall through to
+// a fresh Notion sync — both paths use the new _rawUrl + the F&M-preferred
+// auto-detect. Guard via a one-shot LS flag so the migration runs exactly
+// once per machine. No data loss — raw caches are untouched.
+function _runScreenshotPipelineV2Migration() {
+  const FLAG = 'flipping_screenshot_pipeline_v2_migration';
+  try {
+    if (localStorage.getItem(FLAG)) return;
+    const profiles = (typeof getJournalProfiles === 'function') ? getJournalProfiles() : [];
+    let purged = 0;
+    for (const p of profiles) {
+      if (p?.connectionType !== 'notion' || !p?.notionDatabaseId) continue;
+      if (typeof _invalidateNormalizedTradesCache === 'function') {
+        _invalidateNormalizedTradesCache(p.id, 'screenshot-pipeline-v2-migration');
+        purged++;
+      }
+    }
+    localStorage.setItem(FLAG, '1');
+    if (purged) console.log('[screenshot-pipeline-v2] purged', purged, 'parsed cache(s) — boot will re-derive');
+  } catch (e) {
+    console.warn('[screenshot-pipeline-v2-migration] failed:', e?.message);
+  }
+}
+
 window.addEventListener('load', () => {
   // One-shot migration MUST run before any preset / layout load so the new
   // per-profile scoping reads from clean slots.
@@ -33129,6 +33563,10 @@ window.addEventListener('load', () => {
   // One-shot purge of the legacy global custom-props slot so every profile
   // starts from a fresh per-profile slate.
   _runCustomPropsProfileScopeMigration();
+  // One-shot purge of stale parsed-trades caches written before the screenshot
+  // pipeline fix (2026-05-22). Forces the next boot for each Notion profile
+  // to either re-normalise from raw or fetch fresh data with the new code.
+  _runScreenshotPipelineV2Migration();
 
   // Load custom presets BEFORE static chrome rendering so the preset list
   // reflects user-created presets (and respects deletes/renames).
