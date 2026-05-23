@@ -793,6 +793,86 @@ const _SW = (() => {
       }
     },
 
+    // ── Raw Notion blob — cross-device propagation of the unparsed Notion
+    //    response payload (Task #3.10). Same bucket as the parsed blob, sibling
+    //    path `<uid>/<profile>_<src>_raw.json.gz`. The raw payload feeds
+    //    _bakeCustomWidgetExtrasIntoCache (widget creation) and
+    //    _reapplyAPIOverrides (mapping change) — both of which previously
+    //    needed a full Sync on every fresh device because the raw cache was
+    //    in-memory only. With the raw blob, a fresh device hydrates raw
+    //    in parallel with parsed and both flows work without a Sync click.
+    //
+    //    Image URL strategy: caller is expected to pre-process the rawTrades
+    //    via _substitutePermanentImageUrls before upload — Notion S3 signed
+    //    URLs expire in ~1h, so we swap them for permanent Supabase Storage
+    //    URLs (read from the media cache) before serialization. Trades with
+    //    no media cache entry get their image properties stripped to [] to
+    //    avoid polluting the bucket with dead URLs (option a fallback).
+    async uploadRawTradesBlob(profileId, source, rawTrades) {
+      const c = _getClient();
+      if (!c) return { skipped: 'no-client' };
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? _user?.id;
+      if (!uid) return { skipped: 'no-uid' };
+      if (!profileId) return { skipped: 'no-profile' };
+      if (!Array.isArray(rawTrades)) return { skipped: 'invalid-trades' };
+      const src = (source === 'h4') ? 'h4' : 'm15';
+      try {
+        const json = JSON.stringify(rawTrades);
+        const blob = await _compressString(json);
+        const path = `${uid}/${profileId}_${src}_raw.json.gz`;
+        const { error } = await c.storage.from('notion-trades').upload(path, blob, {
+          contentType: 'application/gzip',
+          upsert: true,
+          cacheControl: '0',
+        });
+        if (error) {
+          console.warn('[RawBlob] upload failed:', error.message);
+          return { error: error.message };
+        }
+        debugLog('[RawBlob] uploaded', { profileId, source: src, bytes: blob.size, count: rawTrades.length });
+        return { uploaded: true, bytes: blob.size, count: rawTrades.length };
+      } catch (e) {
+        console.warn('[RawBlob] upload exception:', e?.message || e);
+        return { error: String(e?.message || e) };
+      }
+    },
+
+    async downloadRawTradesBlob(profileId, source) {
+      const c = _getClient();
+      if (!c) return { skipped: 'no-client' };
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? _user?.id;
+      if (!uid) return { skipped: 'no-uid' };
+      if (!profileId) return { skipped: 'no-profile' };
+      const src = (source === 'h4') ? 'h4' : 'm15';
+      try {
+        const path = `${uid}/${profileId}_${src}_raw.json.gz`;
+        const { data, error } = await c.storage.from('notion-trades').download(path);
+        if (error) {
+          const msg = String(error.message || '');
+          const isMissing = error.statusCode === '404'
+            || error.statusCode === 404
+            || /not\s*found/i.test(msg);
+          if (isMissing) {
+            debugLog('[RawBlob] no blob yet for profile', profileId);
+            return { notFound: true };
+          }
+          console.warn('[RawBlob] download failed:', msg);
+          return { error: msg };
+        }
+        if (!data) return { notFound: true };
+        const json = await _decompressBlob(data);
+        const trades = JSON.parse(json);
+        if (!Array.isArray(trades)) return { error: 'invalid-payload' };
+        debugLog('[RawBlob] downloaded', { profileId, source: src, count: trades.length });
+        return { trades, count: trades.length };
+      } catch (e) {
+        console.warn('[RawBlob] download exception:', e?.message || e);
+        return { error: String(e?.message || e) };
+      }
+    },
+
     async clearLegacyJournalProfilesFromRemote() {
       const c = _getClient();
       if (!c) return false;
@@ -1010,6 +1090,43 @@ window._SW = _SW;
 // but `getCachedAPIData()` uses the *active* profile context, so we cannot
 // safely re-read for a specific (profileId, source) pair without rebuilding
 // the cache key — trade array snapshot is the simplest correct option.
+// Raw-blob debounce scheduler (Task #3.10). Mirrors _scheduleBlobUpload below,
+// but for the unparsed Notion payload. Fires from _setRawAPICache after every
+// sync / merge / fetch — that single hook covers every code path that updates
+// _rawAPICacheMemory (full sync, incremental sync, other-source background
+// fetch, _reapplyAPIOverrides re-bake). At fire time we snapshot the freshest
+// raw cache via _getRawAPICache(src) and pre-process via
+// _substitutePermanentImageUrls before upload so the bucket only ever holds
+// permanent Supabase URLs (no expiring Notion S3 signatures).
+const _rawBlobUploadTimers = new Map();
+const _RAW_BLOB_UPLOAD_DEBOUNCE_MS = 1500;
+function _scheduleRawBlobUpload(profileId, source) {
+  if (!profileId || !source) return;
+  const src = (source === 'h4') ? 'h4' : 'm15';
+  const key = `${profileId}_${src}`;
+  const existing = _rawBlobUploadTimers.get(key);
+  if (existing) clearTimeout(existing.timer);
+  // Reconstruct the in-memory slot key explicitly from the captured profileId
+  // so the fire-time lookup hits this profile's slot regardless of whether
+  // the user has switched profiles during the debounce window. Slot shape
+  // matches getProfileScopedKey(source) at line 6582: `<source>_<profileId>`
+  // (the m15/h4 source string is never matched by the `_(m15|h4)$` regex
+  // because it lacks the leading prefix).
+  const slot = `${src}_${profileId}`;
+  const timer = setTimeout(async () => {
+    _rawBlobUploadTimers.delete(key);
+    try {
+      const fresh = Array.isArray(_rawAPICacheMemory[slot]) ? _rawAPICacheMemory[slot] : [];
+      if (!fresh.length) return;
+      const preprocessed = _withJournalProfileCacheContext(profileId, () => _substitutePermanentImageUrls(fresh, src));
+      await window._SW.uploadRawTradesBlob(profileId, src, preprocessed);
+    } catch (e) {
+      console.warn('[RawBlob] scheduled upload failed:', e?.message || e);
+    }
+  }, _RAW_BLOB_UPLOAD_DEBOUNCE_MS);
+  _rawBlobUploadTimers.set(key, { timer });
+}
+
 const _blobUploadTimers = new Map();
 const _BLOB_UPLOAD_DEBOUNCE_MS = 1500;
 function _scheduleBlobUpload(profileId, source, trades) {
@@ -6197,6 +6314,97 @@ async function _reloadJournalProfileSelection(options = {}) {
     }
   }
 
+  // Raw cache fire-and-forget hydration (Task #3.10). Runs BEFORE the parsed
+  // LS-cache early-return below so the raw cache is populated even when first
+  // paint comes from LS (no Notion fetch on this boot). The parsed cache
+  // hydrates the UI synchronously from LS; the raw cache is only needed for
+  // custom widget creation and mapping changes, both of which happen seconds
+  // later — perfectly fine to await asynchronously while the dashboard is
+  // already interactive. We DON'T await this Promise so first paint stays
+  // unblocked. The fromBlobDownload flag prevents the just-downloaded raw
+  // from immediately re-uploading itself.
+  if (isNotionWithDb && activeProfile?.id) {
+    const rawSrc = _getCurrentHTFSource();
+    const rawProfileId = activeProfile.id;
+    (async () => {
+      try {
+        // Skip if raw cache is already populated for this slot (e.g. a sync
+        // ran during boot and beat the download). Avoids overwriting fresher
+        // in-memory data with the blob version.
+        const slot = `${rawSrc}_${rawProfileId}`;
+        if (Array.isArray(_rawAPICacheMemory[slot]) && _rawAPICacheMemory[slot].length) return;
+        const rawResult = await _SW.downloadRawTradesBlob(rawProfileId, rawSrc);
+        if (!rawResult?.trades || !rawResult.trades.length) return;
+        // Re-check after the await — if a sync filled raw in the meantime,
+        // don't clobber it with the (potentially older) blob payload.
+        if (Array.isArray(_rawAPICacheMemory[slot]) && _rawAPICacheMemory[slot].length) return;
+        _withJournalProfileCacheContext(rawProfileId, () => {
+          _setRawAPICache(rawResult.trades, rawSrc, { fromBlobDownload: true });
+        });
+        debugLog('[RawBlob] hydrated from blob (background)', {
+          profile: rawProfileId,
+          source: rawSrc,
+          count: rawResult.trades.length,
+        });
+        // ── Post-hydration bake catch-up (Task #3.10 follow-up) ──
+        // First-paint comes from the parsed LS cache via _injectTrades, which
+        // runs synchronously BEFORE this IIFE's await resolves. If a custom
+        // widget was created on a previous boot when raw was empty (or was
+        // created during this boot before raw hydration completed), its
+        // extras were never baked. Without this catch-up, the widget renders
+        // empty and the user has to manually Sync to populate. Re-bake every
+        // custom widget def now that raw is available; the bake updates
+        // appState.trades.items[].extras + _parsedAPICacheMemory[slot] + LS,
+        // then we trigger a render to surface the fresh data. Idempotent —
+        // bake skips widgets whose extras are already populated.
+        try {
+          if (typeof _loadCustomWidgetDefs === 'function' && typeof _bakeCustomWidgetExtrasIntoCache === 'function') {
+            const defs = _withJournalProfileCacheContext(rawProfileId, () => _loadCustomWidgetDefs());
+            if (Array.isArray(defs) && defs.length) {
+              const slot = `${rawSrc}_${rawProfileId}`;
+              _withJournalProfileCacheContext(rawProfileId, () => {
+                for (const def of defs) {
+                  try { _bakeCustomWidgetExtrasIntoCache(def); } catch (e) {
+                    console.warn('[RawBlob] post-hydration bake failed for', def?.id, e?.message || e);
+                  }
+                }
+              });
+              // Force LS persistence. The bake's internal setCachedAPIData call
+              // is gated by a `changed` flag that only flips when Loop 2 (the
+              // parsed-cache loop) writes new extras. When appState.trades.items
+              // and _parsedAPICacheMemory[slot] hold the same references (the
+              // common case after _injectTrades), Loop 1 mutates extras in place
+              // so Loop 2's hasOwnProperty check passes and changed stays false
+              // — meaning the in-memory cache has the new extras but LS does
+              // not. On the next hard refresh, the LS-derived parsed cache
+              // returns empty extras and widgets render with no data. Forcing
+              // the write here closes that gap.
+              const parsedMem = _parsedAPICacheMemory[slot];
+              if (Array.isArray(parsedMem) && parsedMem.length) {
+                try {
+                  _withJournalProfileCacheContext(rawProfileId, () => {
+                    setCachedAPIData(parsedMem, rawSrc, { fromBlobDownload: true });
+                  });
+                } catch (e) {
+                  console.warn('[RawBlob] post-hydration LS persist failed:', e?.message || e);
+                }
+              }
+              // Re-render so the widgets reflect the newly-baked extras.
+              if (typeof render === 'function') {
+                try { render(); } catch (e) {}
+              }
+              debugLog('[RawBlob] post-hydration bake completed for', defs.length, 'widgets');
+            }
+          }
+        } catch (e) {
+          console.warn('[RawBlob] post-hydration bake threw:', e?.message || e);
+        }
+      } catch (e) {
+        console.warn('[RawBlob] background hydration failed:', e?.message || e);
+      }
+    })();
+  }
+
   const cached = getCachedAPIData();
   if (cached && cached.length && !forceFetch) {
     _injectTrades(cached, 'Notion Live', null);
@@ -6216,17 +6424,19 @@ async function _reloadJournalProfileSelection(options = {}) {
   if (isNotionWithDb && activeProfile?.id) {
     const source = _getCurrentHTFSource();
     try {
-      const result = await _SW.downloadTradesBlob(activeProfile.id, source);
-      if (result?.trades && result.trades.length) {
+      const parsedResult = await _SW.downloadTradesBlob(activeProfile.id, source);
+      if (parsedResult?.trades && parsedResult.trades.length) {
         // fromBlobDownload:true prevents the setCachedAPIData hook from
-        // immediately re-uploading what we just downloaded (no loop).
-        setCachedAPIData(result.trades, source, { fromBlobDownload: true });
-        _injectTrades(result.trades, 'Notion Live', null);
+        // immediately re-uploading what we just downloaded (no loop). Raw
+        // hydration is handled by the fire-and-forget Promise launched
+        // earlier in this function — no need to re-download it here.
+        setCachedAPIData(parsedResult.trades, source, { fromBlobDownload: true });
+        _injectTrades(parsedResult.trades, 'Notion Live', null);
         _syncJournalProfileUI();
         debugLog('[BlobBoot] hydrated from blob', {
           profile: activeProfile.id,
           source,
-          count: result.trades.length,
+          count: parsedResult.trades.length,
         });
         return;
       }
@@ -6681,7 +6891,7 @@ function _getRawAPICache(source = null) {
   }
   return [];
 }
-function _setRawAPICache(rawTrades, source = null) {
+function _setRawAPICache(rawTrades, source = null, options = {}) {
   const src = source || _getCurrentHTFSource();
   const slot = _getProfileScopedSourceSlot(src);
   if (Array.isArray(rawTrades)) {
@@ -6701,6 +6911,22 @@ function _setRawAPICache(rawTrades, source = null) {
     // page reload (raw cache was in-memory only — widgets showed "no data"
     // after refresh because _getRawAPICache() returned empty).
     _persistRawAPIToSession(rawTrades, src);
+    // ── Cross-device propagation (Task #3.10) ──
+    // Schedule a debounced upload of the raw payload to Supabase Storage so a
+    // fresh device can hydrate _rawAPICacheMemory at boot without a Sync.
+    // options.fromBlobDownload skips the upload to avoid the immediate-loop
+    // we'd get when the raw was JUST downloaded from the bucket. We resolve
+    // the profile id via _getJournalProfileCacheContext (NOT via
+    // getActiveJournalProfile) so the scheduler's later slot lookup
+    // (_rawAPICacheMemory[`<src>_<profileId>`]) hits the same slot we just
+    // wrote to (via _getProfileScopedSourceSlot above). Skips for `__demo`
+    // — demo data never crosses devices.
+    if (!options.fromBlobDownload && rawTrades.length) {
+      const { profileId: ctxProfileId } = _getJournalProfileCacheContext();
+      if (ctxProfileId && ctxProfileId !== '__demo') {
+        _scheduleRawBlobUpload(ctxProfileId, src);
+      }
+    }
   }
   // If the Journal panel is open, refresh its field count right away so the
   // "loading fields…" placeholder never sticks after a background API fetch.
@@ -8078,6 +8304,105 @@ function _extractMediaCache(trades) {
     imgH4BeforeOrig: keepPermanent(t.imgH4BeforeOrig),
     imgM15AfterOrig: keepPermanent(t.imgM15AfterOrig),
   }));
+}
+
+// ── Raw-blob URL substitution (Task #3.10) ─────────────────────────────────
+// Notion's File & Media properties carry signed S3 URLs that expire in ~1h.
+// Uploading them verbatim into the cross-device raw blob would pollute the
+// Storage bucket with dead URLs that consumers (mapping change re-normalize)
+// would try to read on a fresh device. We swap each Notion URL for the
+// permanent Supabase Storage URL that the media queue already migrated
+// (looked up by `_notionId` + slot via the current field overrides). When
+// no media cache entry exists for a (notionId, slot) pair — typically a
+// trade synced <30s ago, before the media queue had a chance to migrate —
+// the property is stripped to `[]` rather than left as a Notion URL.
+// Trade-off: that one trade renders an empty screenshot on the next mapping
+// change on a fresh device until the next Sync, but the bucket stays clean.
+function _readPermanentMediaCacheMap(source) {
+  // Returns Map<notionId, {imgM15, imgH4Before, imgM15After}> of permanent
+  // (non-Notion) URLs. Reads from the same sessionStorage slot that
+  // _persistMediaCache writes to in setCachedAPIData.
+  const src = (source === 'h4') ? 'h4' : 'm15';
+  const map = new Map();
+  try {
+    const rawValue = _readFirstSessionStorageValue(`apiTradesMedia_v1_${src}`);
+    if (!rawValue) return map;
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) return map;
+    for (const entry of parsed) {
+      const id = String(entry?._notionId || '').trim();
+      if (!id) continue;
+      map.set(id, {
+        imgM15: String(entry.imgM15 || ''),
+        imgH4Before: String(entry.imgH4Before || ''),
+        imgM15After: String(entry.imgM15After || ''),
+      });
+    }
+  } catch {}
+  return map;
+}
+
+function _substitutePermanentImageUrls(rawTrades, source) {
+  if (!Array.isArray(rawTrades) || !rawTrades.length) return rawTrades || [];
+  const src = (source === 'h4') ? 'h4' : 'm15';
+  const overrides = (typeof _getAPIFieldOverrides === 'function') ? _getAPIFieldOverrides(src) : {};
+  const slotProps = [
+    ['imgM15', overrides.img_m15],
+    ['imgH4Before', overrides.img_h4_before],
+    ['imgM15After', overrides.img_m15_after],
+  ].filter(([, propName]) => propName && propName !== NO_MAPPING_VALUE);
+  if (!slotProps.length) return rawTrades;
+  const mediaMap = _readPermanentMediaCacheMap(src);
+  if (!mediaMap.size) {
+    // No media cache yet — fall back to stripping every screenshot prop so
+    // we never upload expired Notion S3 URLs. Re-render of widgets still
+    // works (they ignore image fields); mapping change on a fresh device
+    // shows empty screenshots until the next Sync, same as option (a).
+    debugLog('[RawBlob] no media cache yet — stripping screenshot props from raw upload');
+  }
+  let substituted = 0;
+  let stripped = 0;
+  const result = rawTrades.map(t => {
+    if (!t || typeof t !== 'object') return t;
+    const notionId = String(t._notionId || t.notionId || t.id || '').trim();
+    const perm = notionId ? mediaMap.get(notionId) : null;
+    let copy = null;
+    for (const [slot, propName] of slotProps) {
+      const original = t[propName];
+      if (!Array.isArray(original) || !original.length) continue;
+      // Only act if at least one entry carries a Notion URL — otherwise the
+      // prop already holds external/permanent links and we leave it untouched.
+      const hasNotionUrl = original.some(item => {
+        const u = String(
+          (item && typeof item === 'object' && item.file && item.file.url) ||
+          (item && typeof item === 'object' && item.external && item.external.url) ||
+          (item && typeof item === 'object' && item.url) ||
+          ''
+        );
+        return u && _isNotionFileUrl(u);
+      });
+      if (!hasNotionUrl) continue;
+      if (!copy) copy = { ...t };
+      const permUrl = perm ? String(perm[slot] || '') : '';
+      if (permUrl) {
+        // Preserve the first entry's `name` for UI labels, otherwise default
+        // to a synthetic name. The `file.url` shape is the canonical form
+        // `_rawUrl` reads from; we drop `expiry_time` since Supabase URLs
+        // don't expire.
+        const firstName = (original[0] && original[0].name) || 'screenshot.png';
+        copy[propName] = [{ name: firstName, file: { url: permUrl } }];
+        substituted++;
+      } else {
+        copy[propName] = [];
+        stripped++;
+      }
+    }
+    return copy || t;
+  });
+  if (substituted || stripped) {
+    debugLog('[RawBlob] image URL pre-process:', { substituted, stripped, trades: rawTrades.length });
+  }
+  return result;
 }
 function _storageBytes(raw) {
   try {
