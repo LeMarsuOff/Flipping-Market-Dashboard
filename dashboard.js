@@ -5967,6 +5967,38 @@ async function _reloadJournalProfileSelection(options = {}) {
     _syncJournalProfileUI();
     return;
   }
+
+  // Cross-device fast path (Task #3.4): try Supabase Storage blob before
+  // hitting Notion. Inserted here so LS caches still win when present (no
+  // round-trip needed), but a brand-new device / fresh install / post-wipe
+  // gets its trades from the blob in one HTTP GET (~34 KB compressed for
+  // ~600 trades) instead of a full Notion query (slower, requires the user's
+  // Notion DB access). Manual Sync still hits Notion through its own path
+  // (_handleNotionSyncProfile → _loadNotionTrades directly), so the user can
+  // always force fresh data. Falls through to Notion if blob is missing
+  // (404), invalid, or any other download error.
+  if (isNotionWithDb && activeProfile?.id) {
+    const source = _getCurrentHTFSource();
+    try {
+      const result = await _SW.downloadTradesBlob(activeProfile.id, source);
+      if (result?.trades && result.trades.length) {
+        // fromBlobDownload:true prevents the setCachedAPIData hook from
+        // immediately re-uploading what we just downloaded (no loop).
+        setCachedAPIData(result.trades, source, { fromBlobDownload: true });
+        _injectTrades(result.trades, 'Notion Live', null);
+        _syncJournalProfileUI();
+        debugLog('[BlobBoot] hydrated from blob', {
+          profile: activeProfile.id,
+          source,
+          count: result.trades.length,
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn('[BlobBoot] download failed, falling back to Notion:', e?.message || e);
+    }
+  }
+
   _syncJournalProfileUI();
   await loadFromAPI({ force: true });
 }
@@ -8187,12 +8219,18 @@ function _serializeTradesForStorage(trades, mode = 'full') {
     })),
   };
 }
-function setCachedAPIData(trades, source = null) {
+function setCachedAPIData(trades, source = null, options = {}) {
   // appState.settings.dataSource.cachedTrades is the single source of truth for
   // display. Populate it FIRST, then attempt the localStorage persistence. A
   // quota failure on the LS write must NOT leave appState inconsistent — the
   // app continues working for the current session; on next reload with no
   // cache key, initDataSource triggers a fresh fetch automatically.
+  //
+  // options.fromBlobDownload (Task #3.4): when true, suppresses the trailing
+  // _scheduleBlobUpload trigger. Used by the boot blob-download path so we
+  // don't immediately re-upload what we just downloaded (a no-op loop that
+  // would still cost network + compute). Other callers pass nothing → default
+  // false → upload as usual.
   const src = source || _getCurrentHTFSource();
   const slot = _getProfileScopedSourceSlot(src);
   const cacheKey = _cacheKeyFor(src);
@@ -8319,8 +8357,10 @@ function setCachedAPIData(trades, source = null) {
   // normalization (_reapplyAPIOverrides), and custom widget extras bake
   // (_bakeCustomWidgetExtrasIntoCache) without needing 3 separate call-site
   // hooks. The debounce coalesces rapid drag-induced re-renders. Skips if
-  // no profile context (demo mode) or no trades (empty cache reset).
-  if (activeProfileId && Array.isArray(trades) && trades.length) {
+  // no profile context (demo mode), empty trades (cache reset), or the
+  // write originates from a blob download itself (would loop the data back
+  // to the bucket immediately — wasteful, see options.fromBlobDownload).
+  if (activeProfileId && Array.isArray(trades) && trades.length && !options.fromBlobDownload) {
     _scheduleBlobUpload(activeProfileId, src, trades);
   }
 }
