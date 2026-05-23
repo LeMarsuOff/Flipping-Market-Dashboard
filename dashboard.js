@@ -1142,6 +1142,53 @@ function _bakeCustomWidgetExtrasIntoCache(def) {
   }
 }
 
+// Task #3.9 — when a new widget is created on a device whose raw cache is
+// incomplete (typically post-blob-load: parsed cache hydrated from the gzipped
+// Storage blob but raw cache stays empty by design), the bake above can only
+// populate extras for trades that exist in the current raw cache. Subsequent
+// incremental Notion syncs only fetch trades modified since the last cursor
+// (often 2-5 of 595), so the bake never fills in the historical bulk. The
+// widget shows ~zero data on the first device that has this state, and after
+// any hard refresh that does a blob-load instead of a fresh Notion fetch.
+//
+// Fix: detect the incompleteness right after the bake and fire a background
+// full sync. force:true bypasses the incremental cursor and re-fetches the
+// full Notion dataset. background:true keeps the existing user-visible sync
+// indicator quiet (no "syncing..." toast / spinner storm). The bake re-runs
+// inside that full sync, populates extras across the entire dataset, then
+// triggers a blob upload with the complete extras payload — so the next
+// hard refresh on any device sees the widget with full data.
+function _maybeTriggerFullSyncAfterWidgetCreate(cwDef) {
+  try {
+    const profile = (typeof getActiveJournalProfile === 'function') ? getActiveJournalProfile() : null;
+    if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
+    if (profile.notionSyncState === 'disconnected') return;
+    const rawCache = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : [];
+    const parsedCount = (appState?.trades?.items?.length || 0);
+    const rawCount = Array.isArray(rawCache) ? rawCache.length : 0;
+    // Only fire when raw is meaningfully smaller than parsed — eg post-blob-load
+    // (raw=0 vs parsed=595) or stale incremental state. When raw is fresh and
+    // matches parsed, bake already covered the dataset, no need to re-fetch.
+    if (rawCount >= parsedCount && rawCount > 0) return;
+    debugLog('[WidgetCreate] raw incomplete (raw=', rawCount, 'parsed=', parsedCount, ') — firing background full sync for', cwDef?.id);
+    // 0ms setTimeout to break out of the synchronous widget-creation flow,
+    // letting the user see the widget appear immediately (with "no data") and
+    // the full sync runs in the background tick that follows.
+    setTimeout(() => {
+      try {
+        if (typeof _loadNotionTrades === 'function') {
+          _loadNotionTrades(profile, { force: true, background: true })
+            .catch(e => console.warn('[WidgetCreate] background full sync failed:', e?.message || e));
+        }
+      } catch (e) {
+        console.warn('[WidgetCreate] background sync schedule failed:', e?.message || e);
+      }
+    }, 0);
+  } catch (e) {
+    console.warn('[WidgetCreate] _maybeTriggerFullSyncAfterWidgetCreate threw:', e?.message || e);
+  }
+}
+
 function _createCustomBarsWidget({ field, label, propertySource = 'mapped', inferredType = 'text', createdFrom = 'mapping-card' }) {
   if (!field) return null;
   const cwId = 'w-cust-' + Math.random().toString(36).slice(2, 9);
@@ -1162,6 +1209,7 @@ function _createCustomBarsWidget({ field, label, propertySource = 'mapped', infe
   _addCustomWidgetDef(cwDef);
   _bakeCustomWidgetExtrasIntoCache(cwDef);
   _injectNewCustomWidget(cwDef);
+  _maybeTriggerFullSyncAfterWidgetCreate(cwDef);
   return cwDef;
 }
 
@@ -1184,6 +1232,7 @@ function _createCustomDonutWidget({ field, label, propertySource = 'mapped', inf
   _addCustomWidgetDef(cwDef);
   _bakeCustomWidgetExtrasIntoCache(cwDef);
   _injectNewCustomWidget(cwDef);
+  _maybeTriggerFullSyncAfterWidgetCreate(cwDef);
   return cwDef;
 }
 
@@ -1226,6 +1275,7 @@ function _createCustomHeatmapWidget({
   _addCustomWidgetDef(cwDef);
   _bakeCustomWidgetExtrasIntoCache(cwDef);
   _injectNewCustomWidget(cwDef);
+  _maybeTriggerFullSyncAfterWidgetCreate(cwDef);
   return cwDef;
 }
 
