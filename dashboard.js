@@ -475,6 +475,11 @@ const _SW = (() => {
         // later, the second flush is a no-op (queue empty) and the second
         // reconcile is bulk-SELECT idempotent (skips already-synced rows).
         if (_user) {
+          // Task #3.14: recover any pending/orphan custom widget defs that
+          // got written before the active profile was known. Must run BEFORE
+          // reconcile so the recovered scoped-key value is what reconcile
+          // pushes to Supabase.
+          try { if (typeof window._recoverPendingCustomWidgetDefs === 'function') window._recoverPendingCustomWidgetDefs(); } catch (e) {}
           try { if (typeof window._flushPendingSyncWrites === 'function') window._flushPendingSyncWrites(); } catch (e) {}
           try {
             const sw = window._SW || _SW;
@@ -1137,7 +1142,23 @@ function _loadCustomWidgetDefs() {
 
 function _saveCustomWidgetDefs(defs) {
   _customWidgetDefsCache = defs;
-  try { localStorage.setItem(getProfileScopedKey(CUSTOM_WIDGETS_LS_KEY), JSON.stringify(defs)); } catch {}
+  // Task #3.14: when getProfileScopedKey returns the raw (unsuffixed) key,
+  // the active profile context isn't resolved yet (typically: boot timing
+  // race on Safari with slow auth, or during a profile switch transient).
+  // Writing to the unsuffixed key would orphan the data — that key isn't in
+  // _SYNC_KEY_PREFIXES, so monkey-patch _isSync returns false, no upsert,
+  // and the data stays local-only forever. Instead, write to a `_pending_`
+  // namespaced key. Boot-time recovery (_recoverPendingCustomWidgetDefs)
+  // moves the pending data into the active profile's scoped slot as soon
+  // as the profile is resolved on the next reload.
+  const scopedKey = getProfileScopedKey(CUSTOM_WIDGETS_LS_KEY);
+  const targetKey = (scopedKey === CUSTOM_WIDGETS_LS_KEY)
+    ? '_pending_' + CUSTOM_WIDGETS_LS_KEY
+    : scopedKey;
+  try { localStorage.setItem(targetKey, JSON.stringify(defs)); } catch {}
+  if (targetKey !== scopedKey) {
+    console.warn('[CustomWidgets] saved to pending (no profile context) →', targetKey);
+  }
   // Refresh the Data Setup hero "Widgets created" counter immediately — without
   // this, creating/deleting a widget while the Data Hub panel is already open
   // leaves the count stale until the user closes & re-opens the panel
@@ -1145,6 +1166,54 @@ function _saveCustomWidgetDefs(defs) {
   // No-op when the hero DOM isn't present (boot, panel never opened).
   try { if (typeof _updateDataSetupHero === 'function') _updateDataSetupHero(); } catch (e) {}
 }
+
+// Task #3.14 recovery: moves any pending or orphan unsuffixed custom-widget
+// payload into the active profile's scoped key. Runs at boot, on profile
+// activation, and on auth resolve. Idempotent — skips already-recovered
+// payloads (the source key is deleted after a successful recovery).
+function _recoverPendingCustomWidgetDefs() {
+  try {
+    const activeId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '').trim();
+    if (!activeId || !/^jp_[A-Za-z0-9_]+$/.test(activeId)) return;
+    const scopedKey = CUSTOM_WIDGETS_LS_KEY + '_' + activeId;
+    // Sources to recover from: pending namespace + the legacy unsuffixed key.
+    const sources = ['_pending_' + CUSTOM_WIDGETS_LS_KEY, CUSTOM_WIDGETS_LS_KEY];
+    for (const src of sources) {
+      const raw = localStorage.getItem(src);
+      if (!raw) continue;
+      let pendingDefs;
+      try { pendingDefs = JSON.parse(raw); } catch { localStorage.removeItem(src); continue; }
+      if (!Array.isArray(pendingDefs)) { localStorage.removeItem(src); continue; }
+      if (!pendingDefs.length) { localStorage.removeItem(src); continue; }
+      // Merge into the scoped key.
+      let scopedDefs = [];
+      try {
+        const scopedRaw = localStorage.getItem(scopedKey);
+        if (scopedRaw) scopedDefs = JSON.parse(scopedRaw);
+        if (!Array.isArray(scopedDefs)) scopedDefs = [];
+      } catch {}
+      const seenIds = new Set(scopedDefs.map(d => d?.id).filter(Boolean));
+      let added = 0;
+      for (const def of pendingDefs) {
+        if (!def?.id || seenIds.has(def.id)) continue;
+        scopedDefs.push(def);
+        seenIds.add(def.id);
+        added++;
+      }
+      if (added > 0) {
+        try { localStorage.setItem(scopedKey, JSON.stringify(scopedDefs)); } catch {}
+        // Invalidate in-memory cache so next read sees the merged list.
+        _customWidgetDefsCache = null;
+        console.log('[CustomWidgets] recovered', added, 'orphan defs from', src, '→', scopedKey);
+      }
+      // Always drop the source after processing.
+      try { localStorage.removeItem(src); } catch {}
+    }
+  } catch (e) {
+    console.warn('[CustomWidgets] recovery failed:', e?.message || e);
+  }
+}
+window._recoverPendingCustomWidgetDefs = _recoverPendingCustomWidgetDefs;
 
 function _normalizeCustomWidgetDef(def) {
   if (!def || typeof def !== 'object') return def;
@@ -8601,6 +8670,11 @@ function _diagAssertProfileTradeAlignment(callSite) {
 //   - Idempotent: safe to call multiple times in a row.
 //   - Does NOT touch trade data: callers handle data injection separately.
 function _reloadProfileScopedState() {
+  // Task #3.14 recovery: if any pending/orphan custom widget defs are sitting
+  // at unsuffixed or _pending_ keys (from a write that happened with no
+  // active profile context), move them into the active profile's scoped key
+  // now that we know which profile it is.
+  try { if (typeof _recoverPendingCustomWidgetDefs === 'function') _recoverPendingCustomWidgetDefs(); } catch (e) {}
   // Invalidate the in-memory custom widget defs cache so the next reader picks
   // up the new profile's slot. Without this, profile switches would leak the
   // previous profile's widget list.
