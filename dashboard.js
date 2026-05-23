@@ -30874,6 +30874,15 @@ function getApiAvailableProperties(apiTrades) {
       label: k,
     })),
   };
+  // When raw cache is empty (typical post-blob-load on a new device, OR any
+  // post-refresh state since the raw cache lives in memory only), the per-
+  // property coverageCount is always 0 → the existing filter would strip
+  // every property and show an empty Create Widget list. Bypass the filter
+  // in that case so the user still sees the property names (sourced from
+  // the synced apiFieldNames_v1_<id> via _listAPIKeys fallback) — they can
+  // create the widget, and the data populates at the next Sync click via
+  // the existing _bakeCustomWidgetExtrasIntoCache flow.
+  const hasRaw = ctx.rawRows.length > 0;
   return (ctx.availableColumns || []).map(column => {
     const stats = _getSourceColumnStats(ctx, column.key, column.label);
     return {
@@ -30890,7 +30899,7 @@ function getApiAvailableProperties(apiTrades) {
       isRecommended: stats.isRecommended,
       sourceBadge: 'API',
     };
-  }).filter(prop => prop.coverageCount > 0);
+  }).filter(prop => !hasRaw || prop.coverageCount > 0);
 }
 
 function getAvailableWidgetProperties() {
