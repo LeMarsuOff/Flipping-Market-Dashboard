@@ -265,25 +265,49 @@ const _SYNC_KEYS = new Set([
   'flipping_bar_view','flipping_bar_color_mode','flipping_typo_mode',
   'flipping_orr_sim_mode','notionOpenMode','colorblind_mode',
   'warningThreshold','filters_display_order_v1',
-  'fr_csv_col_overrides_v1'
+  'fr_csv_col_overrides_v1',
+  // htfSource toggle (M15 vs H4 view) was local-only — meant each browser/PC
+  // could be on a different view of the same profile, and runtime reads of
+  // _htfKey(...) would point at different LS keys (gs_hidden_widgets_<id> on
+  // m15 vs gs_hidden_widgets_<id>_h4 on h4), causing layout + hidden widgets
+  // to render differently across devices for the same user. Synced 2026-05-23.
+  'htfSource'
 ]);
 
 // Profile-scoped keys whose LS name is `<prefix><profileId>` (+ optional `_<htf>`
-// suffix for the api-* ones). Closes audit M1 — without these, mappings,
-// custom widgets, custom Notion props and outcome-value remaps stay local
-// to each browser/PC and the user re-configures from scratch after switching
-// devices. The HTF dimension keeps using _dashId('h4') / normKey strip — so
-// e.g. `apiFieldOverrides_v1_<id>_h4` lands as (dashboard_id=h4, key=…_<id>)
-// in user_data, and `…_m15` (or any non-h4 suffix) keeps the full key under
-// the default dashboard_id. Round-trip preserves the original LS key on pull.
+// suffix for the api-* ones, and the gs_layout_active_ / gs_hidden_widgets_
+// ones below). Closes audit M1 — without these, mappings, custom widgets,
+// custom Notion props and outcome-value remaps stay local to each browser/PC
+// and the user re-configures from scratch after switching devices. The HTF
+// dimension keeps using _dashId('h4') / normKey strip — so e.g.
+// `apiFieldOverrides_v1_<id>_h4` lands as (dashboard_id=h4, key=…_<id>) in
+// user_data, and `…_m15` (or any non-h4 suffix) keeps the full key under the
+// default dashboard_id. Round-trip preserves the original LS key on pull.
+//
+// gs_layout_active_<profileId>[_h4] + gs_hidden_widgets_<profileId>[_h4]
+// were added 2026-05-23 (Session 3 of the cross-device overhaul) to cross-
+// device the GridStack layout (widget positions/sizes) and the hidden-widgets
+// sidecar (which template widgets are display:none — eg H4 hides w-session,
+// w-hour, w-heatmap, w-pair-session, w-m15 by default). Without these synced,
+// signing in on a second device showed all template widgets including the
+// ones that should have been hidden, and custom widgets appeared in the count
+// but not in the layout (definition synced, position not).
 const _SYNC_KEY_PREFIXES = [
   'apiFieldOverrides_v1_',
   'apiFieldNames_v1_',
   'outcomeValueMapping_v1_',
   'flipping_notion_properties_',
   'flipping_custom_widgets_',
+  'gs_layout_active_',
+  'gs_hidden_widgets_',
 ];
-const _PROFILE_SCOPED_SYNC_MIGRATION_FLAG = 'flipping_profile_scoped_sync_migration_v1';
+// Bumped v1 → v2 when gs_layout_active_ + gs_hidden_widgets_ were added to
+// _SYNC_KEY_PREFIXES so the migration re-runs once on every device and pushes
+// users' existing layout customisations to Supabase. Without the bump, users
+// who had the v1 flag set never push their pre-existing layouts and signing
+// in on a second device after the deploy shows the template default layout
+// instead of their customised one.
+const _PROFILE_SCOPED_SYNC_MIGRATION_FLAG = 'flipping_profile_scoped_sync_migration_v2';
 // Match `<prefix><profileId>` where profileId is `jp_<chars>` (real journal
 // profile) or `__demo` (synthetic demo profile). Used by the storage wrapper
 // to decide whether a write should be mirrored to Supabase, and by the boot
