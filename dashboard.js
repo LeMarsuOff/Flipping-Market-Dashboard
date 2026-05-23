@@ -38252,6 +38252,15 @@ function initGridstack() {
       partials:     { ...PARTIAL_PLANNERS_LAYOUT },
     };
   }
+  // Defensive cache invalidation before reading custom widget defs (Task #3.8):
+  // some earlier boot code paths could have called _loadCustomWidgetDefs() with
+  // an unresolved profile context (eg before activeJournalProfileId_v1 was
+  // hydrated from Supabase) and cached an empty/wrong array. _injectCustomWidgetHTML
+  // would then create no widget content, _buildGridDOM would wrap nothing,
+  // and the user's custom widget would silently disappear after a hard refresh
+  // until they re-Sync or re-create. Forcing a fresh LS read here guarantees
+  // _injectCustomWidgetHTML sees the current profile's defs.
+  _customWidgetDefsCache = null;
   _injectCustomWidgetHTML(); // inject user-created widgets before DOM is wrapped
   _buildGridDOM();
 
@@ -38329,6 +38338,24 @@ function initGridstack() {
   // slot loaded above; without this flag, _syncGridToLive would overwrite it
   // with the DEFAULT_LAYOUT positions that _buildGridDOM just wrote.
   _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
+
+  // Safety net (Task #3.8): re-run _ensureCustomWidgetInGrid for every custom
+  // widget def. If _injectCustomWidgetHTML missed any (eg cache was stale at
+  // read time, or a def was added between _customWidgetDefsCache invalidation
+  // and _injectCustomWidgetHTML), this catches them and creates the DOM at
+  // the saved layout position. Idempotent — skips any widget already in the
+  // grid. Belt-and-suspenders against the "widget vanishes after hard refresh"
+  // class of bugs.
+  if (typeof _loadCustomWidgetDefs === 'function' && typeof _ensureCustomWidgetInGrid === 'function') {
+    try {
+      _customWidgetDefsCache = null; // force fresh LS read
+      for (const def of _loadCustomWidgetDefs()) {
+        _ensureCustomWidgetInGrid(def);
+      }
+    } catch (e) {
+      console.warn('[CustomWidget] initGridstack ensure DOM loop failed:', e?.message || e);
+    }
+  }
 
   // Full render after GridStack has settled — redraws canvases AND all HTML
   // widgets (the initial render() at window.load runs before GridStack moves
