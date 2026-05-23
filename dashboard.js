@@ -1445,6 +1445,104 @@ function _bakeCustomWidgetExtrasIntoCache(def) {
   }
 }
 
+// ── Eager bake: ALL detected Notion props → extras (Task #3.11) ───────────
+// The per-widget `_bakeCustomWidgetExtrasIntoCache` above is lazy: it only
+// touches properties referenced by an existing custom widget def. This means
+// creating a new widget on a property that isn't yet referenced requires
+// either (a) the raw cache to be populated (so the bake at creation can
+// extract the value) or (b) waiting for a Sync. Cross-device with a fresh
+// device, neither is guaranteed — the parsed blob ferries trades but only
+// carries extras for properties the source device had bake'd before upload.
+//
+// Eager bake: walk every raw property for every trade, flatten the value,
+// write to `t.extras[propName]`. Standard-dim properties (pair, outcome,
+// setup, h4 etc., mapped via field overrides) are intentionally INCLUDED so
+// a custom widget on those still works. Skipped: system keys (id, _notionId,
+// timestamps), Notion File & Media shapes (image URLs already routed through
+// the dedicated parsed.imgM15/imgH4Before/imgM15After + media cache pipeline,
+// no point doubling the payload), and oversized text values (>2KB caps the
+// extras payload). Empty values delete the extras key (same semantics as
+// `_repopulateExtrasForProp` for the user-chips path) so a Notion column
+// being cleared doesn't leave stale extras around.
+//
+// Called from 3 hot paths so every device ends up with the same extras
+// regardless of how it got its trades:
+//   1. `_loadNotionTrades` after parsed is built — bake before
+//      setCachedAPIData so the LS cache + blob upload carry the extras.
+//   2. `_injectTrades` when raw is available — covers boot from LS cache.
+//   3. The fire-and-forget IIFE in `_reloadJournalProfileSelection` after
+//      raw is downloaded from the blob — covers cross-device first paint.
+const _NOTION_EXTRAS_SYSTEM_KEYS = new Set([
+  'id', '_notionId', 'notionId',
+  'created_time', 'last_edited_time',
+  'created_by', 'last_edited_by',
+  'icon', 'cover', 'parent', 'archived',
+  'url', 'public_url', 'object',
+  'in_trash',
+]);
+const _NOTION_EXTRAS_MAX_VALUE_LENGTH = 2048;
+
+function _isNotionFileAndMediaShape(value) {
+  if (!Array.isArray(value) || !value.length) return false;
+  const first = value[0];
+  if (!first || typeof first !== 'object') return false;
+  return (
+    (first.file && typeof first.file === 'object' && 'url' in first.file) ||
+    (first.external && typeof first.external === 'object' && 'url' in first.external) ||
+    first.type === 'file' || first.type === 'external'
+  );
+}
+
+function _bakeAllDetectedPropsToExtras(trades, rawCache, source) {
+  if (!Array.isArray(trades) || !trades.length) return { baked: 0, deleted: 0 };
+  if (!Array.isArray(rawCache) || !rawCache.length) return { baked: 0, deleted: 0 };
+  // Resolve which prop names are already mapped to standard dims — we still
+  // bake them into extras so widgets on those props work, but we use this
+  // set to avoid re-baking screenshot dims (image URLs are routed elsewhere).
+  const overrides = (typeof _getAPIFieldOverrides === 'function') ? _getAPIFieldOverrides(source) : {};
+  const screenshotDimProps = new Set();
+  for (const slotKey of ['img_m15', 'img_h4_before', 'img_m15_after']) {
+    const propName = overrides[slotKey];
+    if (propName && propName !== NO_MAPPING_VALUE) screenshotDimProps.add(propName);
+  }
+
+  let baked = 0;
+  let deleted = 0;
+  for (const t of trades) {
+    const rowIndex = t?._rawRowIndex;
+    if (typeof rowIndex !== 'number') continue;
+    const rawRow = rawCache[rowIndex];
+    if (!rawRow || typeof rawRow !== 'object') continue;
+    for (const propName of Object.keys(rawRow)) {
+      if (_NOTION_EXTRAS_SYSTEM_KEYS.has(propName)) continue;
+      if (screenshotDimProps.has(propName)) continue;
+      const rawValue = rawRow[propName];
+      if (_isNotionFileAndMediaShape(rawValue)) continue;
+      const flat = _extractWidgetValueForExtras(rawValue);
+      if (flat === undefined || flat === null || flat === '' || (Array.isArray(flat) && !flat.length)) {
+        if (t.extras && t.extras[propName] !== undefined) {
+          delete t.extras[propName];
+          deleted++;
+        }
+        continue;
+      }
+      const stringVal = String(flat);
+      if (stringVal.length > _NOTION_EXTRAS_MAX_VALUE_LENGTH) {
+        // Skip oversized values to keep the parsed blob lean. Custom widget
+        // creation on this property will still work if the user adds it as a
+        // filter chip (separate per-prop persistence path).
+        continue;
+      }
+      t.extras = t.extras || {};
+      if (t.extras[propName] !== flat) {
+        t.extras[propName] = flat;
+        baked++;
+      }
+    }
+  }
+  return { baked, deleted };
+}
+
 // Task #3.9 — when a new widget is created on a device whose raw cache is
 // incomplete (typically post-blob-load: parsed cache hydrated from the gzipped
 // Storage blob but raw cache stays empty by design), the bake above can only
@@ -6358,43 +6456,41 @@ async function _reloadJournalProfileSelection(options = {}) {
         // then we trigger a render to surface the fresh data. Idempotent —
         // bake skips widgets whose extras are already populated.
         try {
-          if (typeof _loadCustomWidgetDefs === 'function' && typeof _bakeCustomWidgetExtrasIntoCache === 'function') {
-            const defs = _withJournalProfileCacheContext(rawProfileId, () => _loadCustomWidgetDefs());
-            if (Array.isArray(defs) && defs.length) {
-              const slot = `${rawSrc}_${rawProfileId}`;
+          // Eager bake all detected Notion props (Task #3.11) — supersedes
+          // the per-widget bake that used to run here. Walks every raw prop
+          // for every trade and writes to t.extras. Guarantees that any
+          // widget created later — including ones referencing props that
+          // weren't yet used by any widget on the source device — has data
+          // immediately on this fresh device, without forcing a Sync.
+          const slot = `${rawSrc}_${rawProfileId}`;
+          const parsedMem = _parsedAPICacheMemory[slot];
+          if (Array.isArray(parsedMem) && parsedMem.length && typeof _bakeAllDetectedPropsToExtras === 'function') {
+            let bakeStats = null;
+            _withJournalProfileCacheContext(rawProfileId, () => {
+              try {
+                bakeStats = _bakeAllDetectedPropsToExtras(parsedMem, rawResult.trades, rawSrc);
+              } catch (e) {
+                console.warn('[RawBlob] post-hydration eager bake failed:', e?.message || e);
+              }
+            });
+            // Force LS persist. The eager bake mutates parsedMem entries in
+            // place but setCachedAPIData below is what writes LS via the
+            // canonical serialize+safeSetLocalStorage path. fromBlobDownload
+            // prevents an immediate parsed-blob re-upload (the just-baked
+            // extras DO need to upload eventually — that fires from the
+            // user's next Sync or from the debounced upload path).
+            try {
               _withJournalProfileCacheContext(rawProfileId, () => {
-                for (const def of defs) {
-                  try { _bakeCustomWidgetExtrasIntoCache(def); } catch (e) {
-                    console.warn('[RawBlob] post-hydration bake failed for', def?.id, e?.message || e);
-                  }
-                }
+                setCachedAPIData(parsedMem, rawSrc, { fromBlobDownload: true });
               });
-              // Force LS persistence. The bake's internal setCachedAPIData call
-              // is gated by a `changed` flag that only flips when Loop 2 (the
-              // parsed-cache loop) writes new extras. When appState.trades.items
-              // and _parsedAPICacheMemory[slot] hold the same references (the
-              // common case after _injectTrades), Loop 1 mutates extras in place
-              // so Loop 2's hasOwnProperty check passes and changed stays false
-              // — meaning the in-memory cache has the new extras but LS does
-              // not. On the next hard refresh, the LS-derived parsed cache
-              // returns empty extras and widgets render with no data. Forcing
-              // the write here closes that gap.
-              const parsedMem = _parsedAPICacheMemory[slot];
-              if (Array.isArray(parsedMem) && parsedMem.length) {
-                try {
-                  _withJournalProfileCacheContext(rawProfileId, () => {
-                    setCachedAPIData(parsedMem, rawSrc, { fromBlobDownload: true });
-                  });
-                } catch (e) {
-                  console.warn('[RawBlob] post-hydration LS persist failed:', e?.message || e);
-                }
-              }
-              // Re-render so the widgets reflect the newly-baked extras.
-              if (typeof render === 'function') {
-                try { render(); } catch (e) {}
-              }
-              debugLog('[RawBlob] post-hydration bake completed for', defs.length, 'widgets');
+            } catch (e) {
+              console.warn('[RawBlob] post-hydration LS persist failed:', e?.message || e);
             }
+            // Re-render so the widgets reflect the newly-baked extras.
+            if (typeof render === 'function') {
+              try { render(); } catch (e) {}
+            }
+            debugLog('[RawBlob] post-hydration eager bake', bakeStats);
           }
         } catch (e) {
           console.warn('[RawBlob] post-hydration bake threw:', e?.message || e);
@@ -9165,6 +9261,26 @@ function _injectTrades(parsed, totalLabel, savedState) {
     for (const p of loadCustomProps()) _repopulateExtrasForProp(p, { silent: true });
   }
 
+  // Eager bake (Task #3.11): walk every detected Notion property into extras
+  // before the lazy widget bake below. This is the path that fires when boot
+  // hydrates from LS cache (post-refresh) — without it, the cached parsed
+  // trades only carry extras for props the previous device chose to bake. By
+  // re-baking all detected props now (when raw is available, either from a
+  // sync or from the post-IIFE hydration), we guarantee every Notion column
+  // is queryable by a brand-new custom widget without forcing a Sync click.
+  // The lazy widget bake below still runs for backward compat / on-creation.
+  if (typeof _bakeAllDetectedPropsToExtras === 'function' && typeof _getRawAPICache === 'function') {
+    const _injectRaw = _getRawAPICache();
+    if (Array.isArray(_injectRaw) && _injectRaw.length) {
+      try {
+        const _ebStats = _bakeAllDetectedPropsToExtras(appState.trades.items, _injectRaw, _getCurrentHTFSource());
+        debugLog('[EagerBake] inject', _ebStats);
+      } catch (e) {
+        console.warn('[EagerBake] inject failed:', e?.message || e);
+      }
+    }
+  }
+
   // Backfill extras for any existing custom widgets whose API fields haven't
   // been baked yet (e.g. widgets created before this fix, or in a session where
   // the raw cache is still warm). Only runs when the raw cache is available.
@@ -10587,6 +10703,24 @@ async function _loadNotionTrades(profile, options = {}) {
     debugLog('[IncrementalSync] updated trades:', parsedMerge.updated);
     debugLog('[IncrementalSync] merged total:', mergedParsed.length);
     debugLog('[IncrementalSync] new cursor:', nextCursor || '(none)');
+
+    // Eager bake: walk every detected Notion property into extras before the
+    // cache write below. Closes the "I see the prop in Notion but my custom
+    // widget shows no data" gap — without this, only widget-referenced props
+    // were baked, so a fresh device's parsed blob omitted any property not
+    // already used by a widget on the source device. Now the parsed blob
+    // carries everything cross-device. See _bakeAllDetectedPropsToExtras
+    // at line ~1450 for the skip list (system keys, screenshot dims,
+    // oversized text).
+    const _bakeFullRaw = mergedRaw.length ? mergedRaw : fetchedRawTrades;
+    if (Array.isArray(_bakeFullRaw) && _bakeFullRaw.length) {
+      try {
+        const _bakeStats = _bakeAllDetectedPropsToExtras(mergedParsed, _bakeFullRaw, source);
+        debugLog('[EagerBake] sync', _bakeStats);
+      } catch (e) {
+        console.warn('[EagerBake] sync failed:', e?.message || e);
+      }
+    }
 
     // Inject trades immediately — do not wait for screenshot uploads.
     // _mediaQueue picks up Notion-hosted file URLs in the background and patches
