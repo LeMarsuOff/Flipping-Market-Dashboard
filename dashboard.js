@@ -9143,6 +9143,47 @@ function _reloadProfileScopedState() {
   // removing those from the live grid automatically (reads _isWidgetHidden).
   _loadHiddenWidgets();
 
+  // ── 3.4. Remove stale custom widget DOM from previous profile ───────────
+  // Profile A's custom widgets live in the GridStack DOM as
+  // `.grid-stack-item[gs-id="w-cust-..."]`. Switching to Profile B invalidates
+  // the def cache (line 9102) and reloads B's defs, but the DOM elements from
+  // A stay attached to `#gs-container`. Result: B's grid shows B's widgets +
+  // A's leftover widgets, even though A's defs aren't in B's LS slot.
+  // _ensureCustomWidgetInGrid below is additive only — it never removes.
+  // Walk the DOM, identify custom widgets (data-cw-id / .cw-widget — standard
+  // widgets like w-equity / w-monthly stay regardless of profile), and remove
+  // any whose gs-id isn't in the new profile's def list. The next inject loop
+  // then rebuilds whatever the new profile actually owns.
+  if (_grid && typeof _loadCustomWidgetDefs === 'function') {
+    try {
+      const currentDefIds = new Set(_loadCustomWidgetDefs().map(d => d.id));
+      const gsContainer = document.getElementById('gs-container');
+      if (gsContainer) {
+        const customDoms = gsContainer.querySelectorAll('.grid-stack-item[gs-id]');
+        let removed = 0;
+        for (const item of customDoms) {
+          const gsId = item.getAttribute('gs-id') || '';
+          if (!gsId) continue;
+          // Identify custom widgets via the markers _ensureCustomWidgetInGrid
+          // / _injectNewCustomWidget set up: `data-cw-id` attribute on the
+          // content child, or `.cw-widget` class. Anything without these is
+          // a standard widget and is profile-agnostic — never remove.
+          const isCustom = !!(item.querySelector('[data-cw-id]') || item.querySelector('.cw-widget'));
+          if (!isCustom) continue;
+          if (currentDefIds.has(gsId)) continue;
+          if (item.gridstackNode) _grid.removeWidget(item, true);
+          else item.remove();
+          removed++;
+        }
+        if (removed > 0) {
+          debugLog('[CustomWidget] removed', removed, 'stale custom widget DOM elements on profile switch');
+        }
+      }
+    } catch (e) {
+      console.warn('[CustomWidget] stale DOM cleanup failed:', e?.message || e);
+    }
+  }
+
   // ── 3.5. Ensure custom widget DOM matches the loaded layout (Task #3.6) ──
   // When a custom widget def was synced via M1 (flipping_custom_widgets_<id>)
   // but the widget was never CREATED on this device, no grid-stack-item DOM
