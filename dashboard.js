@@ -358,6 +358,35 @@ function _clearPendingDeletedJournalProfileIds(ids = []) {
   } catch {}
 }
 
+// ── Gzip helpers for the trades blob (used by _SW.uploadTradesBlob /
+//    downloadTradesBlob). CompressionStream is Chromium 80+ / Safari 16+ —
+//    older browsers fall back to uncompressed (still functional, ~6× bigger
+//    payload). _decompressBlob sniffs the gzip magic bytes so mixed compressed
+//    + uncompressed bucket contents both round-trip cleanly.
+async function _compressString(str) {
+  const encoder = new TextEncoder();
+  const inputBytes = encoder.encode(String(str ?? ''));
+  if (typeof CompressionStream === 'undefined') {
+    return new Blob([inputBytes], { type: 'application/octet-stream' });
+  }
+  const stream = new Blob([inputBytes]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Response(stream).blob();
+}
+async function _decompressBlob(blob) {
+  const buffer = await blob.arrayBuffer();
+  const view = new Uint8Array(buffer);
+  // Gzip magic bytes: 0x1f 0x8b. Anything else = uncompressed fallback payload.
+  const isGzipped = view.length >= 2 && view[0] === 0x1f && view[1] === 0x8b;
+  if (!isGzipped) {
+    return new TextDecoder().decode(view);
+  }
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('DecompressionStream unsupported but blob is gzipped');
+  }
+  const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).text();
+}
+
 const _SW = (() => {
   const _lsSet    = localStorage.setItem.bind(localStorage);
   const _lsRemove = localStorage.removeItem.bind(localStorage);
@@ -599,6 +628,91 @@ const _SW = (() => {
       return { pushed, skipped, failed, total: matching.length };
     },
 
+    // ── Trades blob — Supabase Storage cross-device sync (Session 2 / Task #3) ──
+    // Parsed trades persisted as a gzipped JSON file in the `notion-trades`
+    // bucket, path `<user_id>/<profile_id>.json.gz`. Lets a fresh device pull
+    // the full trade set in one HTTP GET (~50 KB compressed for 600 trades)
+    // without re-querying Notion. Keeps Notion as the source of truth for
+    // edits — the bouton Sync still hits Notion — but Supabase Storage as the
+    // cross-device propagation layer. Free tier (1 GB Storage) covers ~6000
+    // profiles at typical size, no DB quota impact (rows in user_data stay
+    // small for metadata only).
+    //
+    // Compression: CompressionStream API (gzip) — supported by Chromium 80+
+    // and Safari 16+. Falls back to uncompressed plain JSON on older browsers
+    // (still works, just larger). The decompressor sniffs the gzip magic
+    // bytes (0x1f 0x8b) and routes accordingly so a mix of compressed and
+    // uncompressed blobs in the bucket all round-trip cleanly.
+    async uploadTradesBlob(profileId, source, trades) {
+      const c = _getClient();
+      if (!c) return { skipped: 'no-client' };
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? _user?.id;
+      if (!uid) return { skipped: 'no-uid' };
+      if (!profileId) return { skipped: 'no-profile' };
+      if (!Array.isArray(trades)) return { skipped: 'invalid-trades' };
+      const src = (source === 'h4') ? 'h4' : 'm15';
+      try {
+        const json = JSON.stringify(trades);
+        const blob = await _compressString(json);
+        const path = `${uid}/${profileId}_${src}.json.gz`;
+        const { error } = await c.storage.from('notion-trades').upload(path, blob, {
+          contentType: 'application/gzip',
+          upsert: true,
+          cacheControl: '0',
+        });
+        if (error) {
+          console.warn('[TradesBlob] upload failed:', error.message);
+          return { error: error.message };
+        }
+        debugLog('[TradesBlob] uploaded', { profileId, source: src, bytes: blob.size, count: trades.length });
+        return { uploaded: true, bytes: blob.size, count: trades.length };
+      } catch (e) {
+        console.warn('[TradesBlob] upload exception:', e?.message || e);
+        return { error: String(e?.message || e) };
+      }
+    },
+
+    async downloadTradesBlob(profileId, source) {
+      const c = _getClient();
+      if (!c) return { skipped: 'no-client' };
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? _user?.id;
+      if (!uid) return { skipped: 'no-uid' };
+      if (!profileId) return { skipped: 'no-profile' };
+      const src = (source === 'h4') ? 'h4' : 'm15';
+      try {
+        const path = `${uid}/${profileId}_${src}.json.gz`;
+        const { data, error } = await c.storage.from('notion-trades').download(path);
+        if (error) {
+          // 404 = no blob yet for this profile (first-time pull). Not an error,
+          // just a signal to fall back to the Notion fetch path. Supabase JS
+          // returns the error as a StorageError with `statusCode: '404'` or a
+          // message containing 'not found' / 'Object not found' depending on
+          // version, so we accept any of those shapes.
+          const msg = String(error.message || '');
+          const isMissing = error.statusCode === '404'
+            || error.statusCode === 404
+            || /not\s*found/i.test(msg);
+          if (isMissing) {
+            debugLog('[TradesBlob] no blob yet for profile', profileId);
+            return { notFound: true };
+          }
+          console.warn('[TradesBlob] download failed:', msg);
+          return { error: msg };
+        }
+        if (!data) return { notFound: true };
+        const json = await _decompressBlob(data);
+        const trades = JSON.parse(json);
+        if (!Array.isArray(trades)) return { error: 'invalid-payload' };
+        debugLog('[TradesBlob] downloaded', { profileId, source: src, count: trades.length });
+        return { trades, count: trades.length };
+      } catch (e) {
+        console.warn('[TradesBlob] download exception:', e?.message || e);
+        return { error: String(e?.message || e) };
+      }
+    },
+
     async clearLegacyJournalProfilesFromRemote() {
       const c = _getClient();
       if (!c) return false;
@@ -804,6 +918,53 @@ const _SW = (() => {
   };
 })();
 window._SW = _SW;
+
+// ── Trades blob debounce scheduler (Session 2 / Task #3) ──
+// Coalesces rapid setCachedAPIData calls (eg multiple re-bakes during widget
+// creation, or back-to-back syncs) into a single upload per (profileId,
+// source) pair. The debounce window is short enough to feel snappy but long
+// enough that a user clicking Sync + then immediately editing a widget
+// produces only one upload at the tail. The timer captures the trades array
+// at scheduling time — if a later call replaces the timer, the LATER trades
+// win (most-recent-state-wins). LS reads inside the timer would be tempting
+// but `getCachedAPIData()` uses the *active* profile context, so we cannot
+// safely re-read for a specific (profileId, source) pair without rebuilding
+// the cache key — trade array snapshot is the simplest correct option.
+const _blobUploadTimers = new Map();
+const _BLOB_UPLOAD_DEBOUNCE_MS = 1500;
+function _scheduleBlobUpload(profileId, source, trades) {
+  if (!profileId || !source) return;
+  if (!Array.isArray(trades)) return;
+  const src = (source === 'h4') ? 'h4' : 'm15';
+  const key = `${profileId}_${src}`;
+  const existing = _blobUploadTimers.get(key);
+  if (existing) clearTimeout(existing.timer);
+  // Snapshot the trades length only — we want the freshest LS state at fire
+  // time, not the array at schedule time. The cache key is reconstructable
+  // from (profileId, src) without needing the active-profile context.
+  const cacheKey = `apiTradesCache_v2_rrmax_${profileId}_${src}`;
+  const timer = setTimeout(async () => {
+    _blobUploadTimers.delete(key);
+    try {
+      // Re-read LS at fire time to capture the freshest cache. Falls back to
+      // the snapshot we received if LS is empty (eg cache was purged between
+      // scheduling and firing).
+      let payload = trades;
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length) payload = parsed;
+        }
+      } catch (e) {}
+      if (!Array.isArray(payload) || !payload.length) return;
+      await window._SW.uploadTradesBlob(profileId, src, payload);
+    } catch (e) {
+      console.warn('[BlobUpload] scheduled upload failed:', e?.message || e);
+    }
+  }, _BLOB_UPLOAD_DEBOUNCE_MS);
+  _blobUploadTimers.set(key, { timer });
+}
 
 /* ─── LOCALSTORAGE MONKEY-PATCH ─────────────────────────────────────────── */
 ((() => {
@@ -8151,6 +8312,17 @@ function setCachedAPIData(trades, source = null) {
     const c = getCachedAPIData(src);
     if (!c || !c.length) return;
   }, 60500);
+
+  // Trigger Supabase Storage blob upload — debounced per (profile, source).
+  // Every centralized cache write funnels through setCachedAPIData, so this
+  // single hook covers Notion sync (_loadNotionTrades), mapping change re-
+  // normalization (_reapplyAPIOverrides), and custom widget extras bake
+  // (_bakeCustomWidgetExtrasIntoCache) without needing 3 separate call-site
+  // hooks. The debounce coalesces rapid drag-induced re-renders. Skips if
+  // no profile context (demo mode) or no trades (empty cache reset).
+  if (activeProfileId && Array.isArray(trades) && trades.length) {
+    _scheduleBlobUpload(activeProfileId, src, trades);
+  }
 }
 function _getCacheAge(source = null) {
   try {
