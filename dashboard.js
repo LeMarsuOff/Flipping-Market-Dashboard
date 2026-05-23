@@ -463,6 +463,26 @@ const _SW = (() => {
         _user = data?.session?.user ?? null;
         _accountView = _getDefaultAccountView();
         _renderAccountPanelAuthState();
+        // Task #3.13 — Safari ITP workaround: in some browser contexts (notably
+        // Safari with default privacy settings) onAuthStateChange may never
+        // fire INITIAL_SESSION / SIGNED_IN even though the session is restored
+        // via getSession() here. Without the event, the SIGNED_IN/INITIAL_SESSION
+        // handlers above never run → flushPendingSyncWrites + reconcile never
+        // fire → LS-only writes from the previous session stay invisible
+        // cross-device. Hooking the flush + reconcile here as well guarantees
+        // both run as soon as the session is restored, regardless of which
+        // code path detected it. Idempotent — if the event handler also fires
+        // later, the second flush is a no-op (queue empty) and the second
+        // reconcile is bulk-SELECT idempotent (skips already-synced rows).
+        if (_user) {
+          try { if (typeof window._flushPendingSyncWrites === 'function') window._flushPendingSyncWrites(); } catch (e) {}
+          try {
+            const sw = window._SW || _SW;
+            if (sw && typeof sw.migrateProfileScopedKeys === 'function') {
+              sw.migrateProfileScopedKeys().catch(e => console.warn('[SyncReconcile] getSession path failed:', e?.message || e));
+            }
+          } catch (e) {}
+        }
       });
     }
     return _client;
