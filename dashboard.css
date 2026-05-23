@@ -9382,6 +9382,43 @@ body.ms-sidebar-open .view-tabs {
   border-color: color-mix(in srgb, var(--r) 58%, transparent);
   color: color-mix(in srgb, var(--r) 92%, white);
 }
+/* Re-apply "Resync needed" popover — non-destructive action, so use gold
+   accent (warning, not danger) for the popup border + the Yes button.
+   z-index bumped above --z-panel (2000) so it surfaces above the Data
+   Setup panel that anchors it; the base .gs-hide-confirm-popup sits at
+   1100 which is fine for widgets in the main grid but is occluded by
+   the data-hub-panel when this variant is used. */
+.ds-reapply-resync-popup {
+  z-index: 2100;
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--line2));
+  box-shadow: 0 10px 24px rgba(0,0,0,.55), 0 0 0 1px color-mix(in srgb, var(--gold) 12%, transparent);
+}
+.ds-reapply-resync-title {
+  margin-bottom: 8px;
+  color: var(--r);
+  font-weight: 600;
+  letter-spacing: .3px;
+}
+.ds-reapply-resync-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ds-reapply-resync-prompt {
+  color: var(--body);
+  letter-spacing: .3px;
+}
+.gs-hide-confirm-btn.ds-reapply-resync-ok {
+  background: color-mix(in srgb, var(--gold) 14%, var(--bg1));
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  color: color-mix(in srgb, var(--gold) 85%, white);
+}
+.gs-hide-confirm-btn.ds-reapply-resync-ok:hover {
+  background: color-mix(in srgb, var(--gold) 26%, var(--bg1));
+  border-color: color-mix(in srgb, var(--gold) 65%, transparent);
+  color: color-mix(in srgb, var(--gold) 95%, white);
+}
 /* Inline "Sure? Yes No" delete confirm for a journal profile — replaces
    what used to be the "Delete source" button in the row's ⋯ menu. Inherits
    the menu-item box (padding, height, font) via .journal-profile-row-menu-item

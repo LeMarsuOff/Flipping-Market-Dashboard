@@ -2339,6 +2339,16 @@ function handleActionClick(event) {
     }
     case 'reset-csv-overrides':    event.stopPropagation(); _resetAllCsvOverrides(); break;
     case 'reapply-template-defaults': event.stopPropagation(); _reapplyTemplateMapping(); break;
+    case 'reapply-resync-cancel':  event.stopPropagation(); _closeReapplyResyncConfirm(); break;
+    case 'reapply-resync-confirm': {
+      event.stopPropagation();
+      _closeReapplyResyncConfirm();
+      const _activeProfile = (typeof getActiveJournalProfile === 'function') ? getActiveJournalProfile() : null;
+      if (_activeProfile && _activeProfile.id && typeof _handleNotionProfileFullResync === 'function') {
+        _handleNotionProfileFullResync(_activeProfile.id);
+      }
+      break;
+    }
     case 'refresh-api-fields':     event.stopPropagation(); _refreshAPIFieldsFromPicker(actionEl); break;
     case 'toggle-theme-panel': toggleThemePanel(); document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
     case 'toggle-tpm-panel':   toggleTpmPanel();   document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
@@ -7069,10 +7079,27 @@ function _reapplyTemplateMapping() {
   // that can refill raw cache.
   const rawForCheck = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : null;
   if (!Array.isArray(rawForCheck) || !rawForCheck.length) {
-    if (typeof showThemeToast === 'function') {
-      showThemeToast('Click Sync first — Re-apply needs fresh data from Notion.', true);
-    }
+    _openReapplyResyncConfirm();
     console.warn('[ReapplyTemplate] aborted — no raw cache, sync required first.');
+    return;
+  }
+
+  // ── Safety guard: partial raw cache (post-refresh + incremental sync) ──────
+  // After refresh, raw cache is in-memory only so it starts empty. A subsequent
+  // incremental Sync only fetches trades modified since the last cursor — often
+  // 0-5 of the user's 500+ trades. The LS parsed cache still holds the full
+  // set (merged in _loadNotionTrades), but raw now has only the few fetched
+  // rows. If Reapply runs here, `_reapplyAPIOverrides` re-normalises just those
+  // few trades and overwrites the LS parsed cache with that small set — on the
+  // next refresh, the user's dashboard goes nearly empty (500+ trades vanish,
+  // their screenshots with them). Repro path Max confirmed 2026-05-23: refresh
+  // → Sync → Reapply → refresh = screenshots gone.
+  // Fix: detect raw < cached and abort with a toast pointing at Full resync,
+  // which is the only path that refills raw to parity with the parsed cache.
+  const cachedForCheck = (typeof getCachedAPIData === 'function') ? (getCachedAPIData() || []) : [];
+  if (cachedForCheck.length && rawForCheck.length < cachedForCheck.length) {
+    _openReapplyResyncConfirm();
+    console.warn('[ReapplyTemplate] aborted — raw cache partial (', rawForCheck.length, 'trades) vs cached parsed (', cachedForCheck.length, '). Full resync required.');
     return;
   }
 
@@ -36254,6 +36281,63 @@ function _onDeleteConfirmOutsideClick(e) {
   if (pop.contains(e.target)) return;
   if (e.target.closest && e.target.closest('[data-action="layout-delete-widget-confirm"]')) return;
   _closeDeleteConfirm();
+}
+
+// ── Re-apply template defaults → "Resync needed" inline confirm ────────────
+// Surfaces under the #ljp-reset-btn when _reapplyTemplateMapping aborts
+// because raw cache is empty (post-refresh, no sync) or partial (post-
+// refresh + incremental sync only). Clicking Yes fires a Full resync on
+// the active profile; user re-clicks Re-apply after the sync completes.
+// Reuses .gs-hide-confirm-popup styling so the DA stays coherent.
+function _openReapplyResyncConfirm() {
+  const anchorEl = document.getElementById('ljp-reset-btn');
+  if (!anchorEl) return;
+  _closeReapplyResyncConfirm();
+  const pop = document.createElement('div');
+  pop.id = 'ds-reapply-resync-popup';
+  pop.className = 'gs-hide-confirm-popup ds-reapply-resync-popup';
+  pop.innerHTML = `
+    <div class="ds-reapply-resync-title">Resync needed</div>
+    <div class="ds-reapply-resync-row">
+      <span class="ds-reapply-resync-prompt">Resync ?</span>
+      <div class="gs-hide-confirm-actions">
+        <button class="gs-hide-confirm-btn gs-hide-confirm-cancel" data-action="reapply-resync-cancel" type="button">No</button>
+        <button class="gs-hide-confirm-btn gs-hide-confirm-ok ds-reapply-resync-ok" data-action="reapply-resync-confirm" type="button">Yes</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(pop);
+  // Position directly below the Reapply button (or above if no room).
+  const a = anchorEl.getBoundingClientRect();
+  const p = pop.getBoundingClientRect();
+  const sx = window.scrollX || window.pageXOffset || 0;
+  const sy = window.scrollY || window.pageYOffset || 0;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const margin = 8, gap = 6;
+  const canBelow = a.bottom + gap + p.height <= vh - margin;
+  let top = canBelow ? a.bottom + gap : a.top - p.height - gap;
+  let left = a.left;
+  left = Math.min(Math.max(margin, left), vw - p.width - margin);
+  top  = Math.min(Math.max(margin, top),  vh - p.height - margin);
+  pop.style.position = 'absolute';
+  pop.style.left = `${Math.round(left + sx)}px`;
+  pop.style.top  = `${Math.round(top  + sy)}px`;
+  setTimeout(() => document.addEventListener('click', _onReapplyResyncOutsideClick, true), 0);
+}
+
+function _closeReapplyResyncConfirm() {
+  const pop = document.getElementById('ds-reapply-resync-popup');
+  if (pop) pop.remove();
+  document.removeEventListener('click', _onReapplyResyncOutsideClick, true);
+}
+
+function _onReapplyResyncOutsideClick(e) {
+  const pop = document.getElementById('ds-reapply-resync-popup');
+  if (!pop) { document.removeEventListener('click', _onReapplyResyncOutsideClick, true); return; }
+  if (pop.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('[data-action="reapply-template-defaults"]')) return;
+  _closeReapplyResyncConfirm();
 }
 
 // ──────────────────────────────────────────────────────────────────────────
