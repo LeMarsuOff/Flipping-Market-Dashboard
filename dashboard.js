@@ -502,6 +502,13 @@ const _SW = (() => {
       if (_isSync(key) && _user) {
         const c = _getClient();
         if (!c) return;
+        // .catch added 2026-05-23 (Task #3.12). The previous .then-only handler
+        // surfaced Supabase {error} responses but silently swallowed promise
+        // rejections (network errors, CORS, aborted fetch). Adding .catch
+        // makes any failure visible in the console — paired with the self-
+        // healing reconcile in migrateProfileScopedKeys (no longer gated by
+        // the v2 flag), so any silent failure here is retried at the next
+        // sign-in / refresh.
         c.from('user_data').upsert({
           user_id     : _user.id,
           dashboard_id: _dashId(key),
@@ -512,7 +519,8 @@ const _SW = (() => {
         }, { onConflict: 'user_id,dashboard_id,key' })
         .then(({ error }) => {
           if (error) console.warn('[SW] write error', key, error.message);
-        });
+        })
+        .catch(err => console.warn('[SW] upsert threw for', key, err?.message || err));
       }
     },
 
@@ -568,15 +576,27 @@ const _SW = (() => {
       return merged;
     },
 
-    // One-shot bootstrap: walk localStorage for any profile-scoped key
-    // matching _SYNC_KEY_PREFIXES and push it to Supabase, but ONLY when the
-    // remote doesn't already hold a row for that key. The remote-not-empty
-    // guard protects the cross-device "last-write-wins" semantics —
-    // syncFromRemote runs first and already pulled whatever the other device
-    // had, so anything still local-only is genuinely a write to push.
-    // Guarded by an LS flag so it fires once per device, then never again.
+    // Self-healing reconcile (Task #3.12, was one-shot pre-2026-05-23):
+    // Walk localStorage for any profile-scoped key matching _SYNC_KEY_PREFIXES
+    // and push any that's missing from Supabase. Used to be flag-gated so it
+    // ran once per device, but the silent upsert failures from the monkey-
+    // patch path (network blips, transient RLS hiccups, the auth-not-ready
+    // race partially addressed by Task #3.11) meant that writes lost to those
+    // failures were permanently local-only — invisible cross-device, lost on
+    // any LS wipe. Removing the gate makes the function idempotent and safe
+    // to run on every sign-in / page-refresh, so any silent failure is
+    // auto-retried.
+    //
+    // Performance: single bulk SELECT (1 query) replaces N per-key SELECTs.
+    // For a typical user with ~50 profile-scoped keys this turns ~50 round-
+    // trips into 1. The subsequent UPSERTs still run serially per missing
+    // key, but missing keys are usually 0 (steady-state).
+    //
+    // Side effect deprecated: the v2 flag is no longer needed for correctness
+    // but kept written for backward debugability (so we can tell which
+    // devices have completed a reconcile cycle at least once). Reading the
+    // flag is now a no-op gate — the function runs regardless.
     async migrateProfileScopedKeys() {
-      try { if (localStorage.getItem(_PROFILE_SCOPED_SYNC_MIGRATION_FLAG)) return { skipped: true }; } catch {}
       const c = _getClient();
       if (!c) return { skipped: 'no-client' };
       const { data: sessionData } = await c.auth.getSession();
@@ -601,22 +621,42 @@ const _SW = (() => {
         return { pushed: 0, skipped: 0, failed: 0, total: 0 };
       }
 
+      // Build the (dashboard_id, key) tuples we need to check on remote.
+      const tuples = matching.map(k => ({
+        lsKey: k,
+        dashId: k.endsWith('_h4') ? 'h4' : _dbId,
+        normKey: k.replace(/_h4$/, ''),
+      }));
+
+      // Single bulk SELECT — fetches every (user_id, dashboard_id, key) that
+      // already exists on remote. We then filter local matches against this
+      // set to find what needs upserting. Far cheaper than N round-trips.
+      let existingSet = new Set();
+      try {
+        const normKeys = [...new Set(tuples.map(t => t.normKey))];
+        const { data: existing, error: selErr } = await c.from('user_data')
+          .select('dashboard_id, key')
+          .eq('user_id', uid)
+          .in('key', normKeys);
+        if (selErr) {
+          console.warn('[SyncReconcile] bulk select failed:', selErr.message);
+          return { pushed: 0, skipped: 0, failed: matching.length, total: matching.length, error: selErr.message };
+        }
+        for (const row of (existing || [])) {
+          existingSet.add(`${row.dashboard_id}|${row.key}`);
+        }
+      } catch (e) {
+        console.warn('[SyncReconcile] bulk select threw:', e?.message || e);
+        return { pushed: 0, skipped: 0, failed: matching.length, total: matching.length, error: String(e?.message || e) };
+      }
+
       let pushed = 0, skipped = 0, failed = 0;
-      for (const key of matching) {
-        const value = localStorage.getItem(key);
+      for (const { lsKey, dashId, normKey } of tuples) {
+        const value = localStorage.getItem(lsKey);
         if (!value || value === 'null') { skipped++; continue; }
-        const dashId = key.endsWith('_h4') ? 'h4' : _dbId;
-        const normKey = key.replace(/_h4$/, '');
+        if (existingSet.has(`${dashId}|${normKey}`)) { skipped++; continue; }
+        const parsed = (() => { try { return JSON.parse(value); } catch { return { _raw: value }; } })();
         try {
-          const { data: existing, error: selErr } = await c.from('user_data')
-            .select('key')
-            .eq('user_id', uid)
-            .eq('dashboard_id', dashId)
-            .eq('key', normKey)
-            .maybeSingle();
-          if (selErr) { failed++; console.warn('[SyncMigration] select failed for', key, selErr.message); continue; }
-          if (existing) { skipped++; continue; }
-          const parsed = (() => { try { return JSON.parse(value); } catch { return { _raw: value }; } })();
           const { error: upErr } = await c.from('user_data').upsert({
             user_id: uid,
             dashboard_id: dashId,
@@ -624,20 +664,22 @@ const _SW = (() => {
             value: parsed,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'user_id,dashboard_id,key' });
-          if (upErr) { failed++; console.warn('[SyncMigration] upsert failed for', key, upErr.message); }
+          if (upErr) { failed++; console.warn('[SyncReconcile] upsert failed for', lsKey, upErr.message); }
           else pushed++;
         } catch (e) {
           failed++;
-          console.warn('[SyncMigration] error for', key, e?.message || e);
+          console.warn('[SyncReconcile] upsert threw for', lsKey, e?.message || e);
         }
       }
-      // Only mark the flag if every key was handled cleanly — partial failure
-      // means we should retry next boot rather than silently leave local data
-      // unsynced forever.
+      // Mark the flag for debugability (no longer used as gate).
       if (failed === 0) {
         try { localStorage.setItem(_PROFILE_SCOPED_SYNC_MIGRATION_FLAG, '1'); } catch {}
       }
-      console.log('[SyncMigration] profile-scoped: pushed', pushed, '· skipped', skipped, '· failed', failed, '· total', matching.length);
+      // Only log when there's something noteworthy (push happened or failure
+      // occurred). Routine "all skipped" reconcile passes stay quiet.
+      if (pushed > 0 || failed > 0) {
+        console.log('[SyncReconcile] pushed', pushed, '· skipped', skipped, '· failed', failed, '· total', matching.length);
+      }
       return { pushed, skipped, failed, total: matching.length };
     },
 
