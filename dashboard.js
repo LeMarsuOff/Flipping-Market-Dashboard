@@ -257,8 +257,8 @@ const _SYNC_KEYS = new Set([
   'flipping_presets','flipping_preset_snapshots_v2','presetLiveFilters_v1',
   'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets',
   'flipping_notion_properties',
-  // `flipping_custom_widgets` is now per-profile (see _runCustomWidgetsProfileScopeMigration).
-  // Profile-scoped keys are intentionally out of sync (see ROADMAP audit M1).
+  // `flipping_custom_widgets` is now per-profile (see _runCustomWidgetsProfileScopeMigration)
+  // and synced via the `_SYNC_KEY_PREFIXES` mechanism below.
   'flipping_dashboard_theme','flipping_active_theme_meta',
   'flipping_builtin_overrides','flipping_user_themes',
   'flipping_sidebar_state','flipping_be_mode','flipping_bar_mode',
@@ -267,6 +267,39 @@ const _SYNC_KEYS = new Set([
   'warningThreshold','filters_display_order_v1',
   'fr_csv_col_overrides_v1'
 ]);
+
+// Profile-scoped keys whose LS name is `<prefix><profileId>` (+ optional `_<htf>`
+// suffix for the api-* ones). Closes audit M1 — without these, mappings,
+// custom widgets, custom Notion props and outcome-value remaps stay local
+// to each browser/PC and the user re-configures from scratch after switching
+// devices. The HTF dimension keeps using _dashId('h4') / normKey strip — so
+// e.g. `apiFieldOverrides_v1_<id>_h4` lands as (dashboard_id=h4, key=…_<id>)
+// in user_data, and `…_m15` (or any non-h4 suffix) keeps the full key under
+// the default dashboard_id. Round-trip preserves the original LS key on pull.
+const _SYNC_KEY_PREFIXES = [
+  'apiFieldOverrides_v1_',
+  'apiFieldNames_v1_',
+  'outcomeValueMapping_v1_',
+  'flipping_notion_properties_',
+  'flipping_custom_widgets_',
+];
+const _PROFILE_SCOPED_SYNC_MIGRATION_FLAG = 'flipping_profile_scoped_sync_migration_v1';
+// Match `<prefix><profileId>` where profileId is `jp_<chars>` (real journal
+// profile) or `__demo` (synthetic demo profile). Used by the storage wrapper
+// to decide whether a write should be mirrored to Supabase, and by the boot
+// migration to filter candidate LS keys. Add new profileId shapes here when
+// they ship (e.g. `mt5_<id>` once the MT5 integration lands).
+function _isProfileScopedSyncKey(key) {
+  if (!key) return false;
+  for (const prefix of _SYNC_KEY_PREFIXES) {
+    if (!key.startsWith(prefix)) continue;
+    const remainder = key.slice(prefix.length);
+    if (!remainder) continue;
+    if (remainder === '__demo') return true;
+    if (/^jp_[A-Za-z0-9_]+$/.test(remainder)) return true;
+  }
+  return false;
+}
 
 // Keys HTF-dupliquées (existent en base + base_h4)
 const _HTF_KEYS = new Set([
@@ -334,6 +367,10 @@ const _SW = (() => {
             _SW.syncFromRemote().then(merged => {
               debugLog('[DashboardDebug]');
               if (typeof _signedInHook === 'function') _signedInHook(merged || 0);
+              // Chained AFTER syncFromRemote so any cross-device data the
+              // other browser/PC already pushed lands in local LS first;
+              // migrateProfileScopedKeys then only uploads truly-local data.
+              _SW.migrateProfileScopedKeys().catch(e => console.warn('[SyncMigration] failed:', e?.message || e));
             });
             // Resolve the Notion integration badge as soon as auth is ready —
             // covers the case where the user logs in with Data & Integrations
@@ -347,6 +384,13 @@ const _SW = (() => {
             // the integration check immediately so the badge resolves without
             // waiting for the user to toggle tabs.
             try { if (typeof _checkNotionIntegrationStatus === 'function') _checkNotionIntegrationStatus(); } catch (e) {}
+            // Also fire the profile-scoped sync migration on page-refresh
+            // paths. INITIAL_SESSION doesn't trigger syncFromRemote (existing
+            // design), but migrateProfileScopedKeys is per-key-guarded so it
+            // skips anything already on remote — safe to run without a prior
+            // pull. Closes the gap for users who never sign-out/sign-in
+            // between the fix landing and their next session.
+            _SW.migrateProfileScopedKeys().catch(e => console.warn('[SyncMigration] failed:', e?.message || e));
           }
       });
       _client.auth.getSession().then(({ data }) => {
@@ -361,7 +405,14 @@ const _SW = (() => {
   function _isSync(key) {
     // Gère les keys HTF (base + base_h4)
     const base = key.replace(/_h4$/, '');
-    return _SYNC_KEYS.has(key) || _SYNC_KEYS.has(base);
+    if (_SYNC_KEYS.has(key) || _SYNC_KEYS.has(base)) return true;
+    // Profile-scoped keys: prefix + a valid profileId. profileId is either
+    // `jp_<chars>` (regular journal profile, see line ~3757 / ~4619) or
+    // `__demo` (synthetic demo profile, line ~3951). The positive id-shape
+    // match prevents unrelated LS bookkeeping keys (e.g.
+    // `flipping_custom_widgets_profile_migration_v1`) from being treated as
+    // profile-scoped data and accidentally uploaded to Supabase.
+    return _isProfileScopedSyncKey(key) || _isProfileScopedSyncKey(base);
   }
 
   function _dashId(key) {
@@ -449,6 +500,79 @@ const _SW = (() => {
       }
       debugLog('[SW] syncFromRemote done —', merged, 'keys merged');
       return merged;
+    },
+
+    // One-shot bootstrap: walk localStorage for any profile-scoped key
+    // matching _SYNC_KEY_PREFIXES and push it to Supabase, but ONLY when the
+    // remote doesn't already hold a row for that key. The remote-not-empty
+    // guard protects the cross-device "last-write-wins" semantics —
+    // syncFromRemote runs first and already pulled whatever the other device
+    // had, so anything still local-only is genuinely a write to push.
+    // Guarded by an LS flag so it fires once per device, then never again.
+    async migrateProfileScopedKeys() {
+      try { if (localStorage.getItem(_PROFILE_SCOPED_SYNC_MIGRATION_FLAG)) return { skipped: true }; } catch {}
+      const c = _getClient();
+      if (!c) return { skipped: 'no-client' };
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? _user?.id;
+      if (!uid) return { skipped: 'no-uid' };
+
+      const matching = [];
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (!k) continue;
+          // Use the same shape check as _isSync — accepts the HTF-stripped
+          // base too so `apiFieldOverrides_v1_jp_xxx_h4` qualifies.
+          if (_isProfileScopedSyncKey(k) || _isProfileScopedSyncKey(k.replace(/_h4$/, ''))) {
+            matching.push(k);
+          }
+        }
+      } catch {}
+
+      if (!matching.length) {
+        try { localStorage.setItem(_PROFILE_SCOPED_SYNC_MIGRATION_FLAG, '1'); } catch {}
+        return { pushed: 0, skipped: 0, failed: 0, total: 0 };
+      }
+
+      let pushed = 0, skipped = 0, failed = 0;
+      for (const key of matching) {
+        const value = localStorage.getItem(key);
+        if (!value || value === 'null') { skipped++; continue; }
+        const dashId = key.endsWith('_h4') ? 'h4' : _dbId;
+        const normKey = key.replace(/_h4$/, '');
+        try {
+          const { data: existing, error: selErr } = await c.from('user_data')
+            .select('key')
+            .eq('user_id', uid)
+            .eq('dashboard_id', dashId)
+            .eq('key', normKey)
+            .maybeSingle();
+          if (selErr) { failed++; console.warn('[SyncMigration] select failed for', key, selErr.message); continue; }
+          if (existing) { skipped++; continue; }
+          const parsed = (() => { try { return JSON.parse(value); } catch { return { _raw: value }; } })();
+          const { error: upErr } = await c.from('user_data').upsert({
+            user_id: uid,
+            dashboard_id: dashId,
+            key: normKey,
+            value: parsed,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id,dashboard_id,key' });
+          if (upErr) { failed++; console.warn('[SyncMigration] upsert failed for', key, upErr.message); }
+          else pushed++;
+        } catch (e) {
+          failed++;
+          console.warn('[SyncMigration] error for', key, e?.message || e);
+        }
+      }
+      // Only mark the flag if every key was handled cleanly — partial failure
+      // means we should retry next boot rather than silently leave local data
+      // unsynced forever.
+      if (failed === 0) {
+        try { localStorage.setItem(_PROFILE_SCOPED_SYNC_MIGRATION_FLAG, '1'); } catch {}
+      }
+      console.log('[SyncMigration] profile-scoped: pushed', pushed, '· skipped', skipped, '· failed', failed, '· total', matching.length);
+      return { pushed, skipped, failed, total: matching.length };
     },
 
     async clearLegacyJournalProfilesFromRemote() {
@@ -2591,6 +2715,22 @@ function handleActionClick(event) {
         preserveOrder: true,
         groupByCol: tableSort.col,
       });
+      break;
+    }
+    case 'open-mapping-missing-trades': {
+      event.stopPropagation();
+      const dimKey = actionEl.dataset.dimKey || '';
+      const extract = _JOURNAL_DIM_EXTRACTORS[dimKey];
+      if (!extract) break;
+      const items = (appState.trades && appState.trades.items) || [];
+      if (!items.length) break;
+      const missing = items.filter(t => {
+        const v = extract(t);
+        return !(v && String(v).trim());
+      });
+      if (!missing.length) break;
+      const dimLabel = (typeof _getJournalDimLabel === 'function') ? _getJournalDimLabel(dimKey) : dimKey;
+      openWidgetDrawer(`Missing ${dimLabel}`, `Trades without a ${dimLabel} value`, missing, null);
       break;
     }
     case 'close-widget-drawer': closeWidgetDrawer(); break;
@@ -7785,24 +7925,30 @@ function _debugH4MediaState(label, trades, rawRows = null) {
 }
 const _STORAGE_COMPACT_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
-  'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
+  'obstacles','h4','beManagement','outcome','outcomeRaw','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
   'imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig',
   'imgM15AfterOrig','notionUrl','extras','_notionId','_lastEditedTime'
 ];
+// `extras` was previously omitted from MINIMAL/ULTRA to keep the LS payload
+// small. It's the only place where custom-widget field values + custom
+// filter chip values live for API-source props, so dropping it broke both
+// features after a page refresh on heavy datasets (signed-URL screenshots
+// force the persist path through MINIMAL/ULTRA — see _hasHeavyImageFields).
+// Keeping extras adds ~50-500 bytes/trade in practice, well within quota.
 const _STORAGE_MINIMAL_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
-  'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
+  'obstacles','h4','beManagement','outcome','outcomeRaw','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
   'imgM15','imgM15Orig','imgH4Before','imgH4BeforeOrig','imgM15After','imgM15AfterOrig',
-  'notionUrl','_notionId','_lastEditedTime'
+  'notionUrl','extras','_notionId','_lastEditedTime'
 ];
 const _STORAGE_ULTRA_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
-  'obstacles','h4','beManagement','outcome','r','rrMax','tp1_rr','tp2_rr',
+  'obstacles','h4','beManagement','outcome','outcomeRaw','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour',
   'imgM15','imgM15Orig','imgH4Before','imgH4BeforeOrig','imgM15After','imgM15AfterOrig',
-  'notionUrl','_notionId','_lastEditedTime'
+  'notionUrl','extras','_notionId','_lastEditedTime'
 ];
 function _deserializeTradesFromStorage(payload) {
   if (!payload) return null;
@@ -15675,7 +15821,13 @@ function _orderHeatmapAxisValues(values, axisKey = '') {
     return DAY_ORDER.filter(v => list.includes(v))
       .concat(list.filter(v => !DAY_ORDER.includes(v)).sort());
   }
-  return list.sort();
+  // Default: numeric ascending when every value is numeric ("2" before "10"),
+  // alphabetical otherwise. Custom heatmaps with numeric axes (e.g. Hour, RR
+  // Max) ended up lexicographically sorted before this branch.
+  const allNumeric = list.length > 0 && list.every(v => v !== '' && Number.isFinite(Number(v)));
+  return allNumeric
+    ? list.sort((a, b) => Number(a) - Number(b))
+    : list.sort();
 }
 
 function _formatHeatmapAxisLabel(value, axisKey = '', short = false) {
@@ -18505,7 +18657,7 @@ function renderOptimalRRWidget(trades) {
   window._orrTradesWithoutRRMax = tradesWithoutRRMax;
   const missingBtnHtml = tradesWithoutRRMax.length
     ? `<div class="orr-missing-row">
-         <button class="orr-missing-btn" onclick="_orrOpenMissingRRMax()">⚠ ${tradesWithoutRRMax.length} sans rrMax</button>
+         <button class="orr-missing-btn" onclick="_orrOpenMissingRRMax()">⚠ ${tradesWithoutRRMax.length} missing RR Max</button>
        </div>`
     : '';
 
@@ -29985,10 +30137,19 @@ function updateJournalPanel() {
     // Coverage ("100/100 trades") lives in its own grid column so the
     // counts align vertically across rows — easier to scan completeness.
     // Partial coverage (populated < total) gets an orange tint so the
-    // user spots non-exact counts at a glance.
+    // user spots non-exact counts at a glance, AND becomes a clickable
+    // button that opens the drawer with the missing trades listed.
     const isPartialCoverage = ok && items.length > 0 && populated < items.length;
-    const coverageHtml = `<span class="ljp-mapping-coverage${isPartialCoverage ? ' is-partial' : ''}">${_escapeHtml(coverage)}</span>`;
-    const outcomeReport = (isAPI && dim.key === 'outcome' && rawReady)
+    const missingCount = isPartialCoverage ? (items.length - populated) : 0;
+    const coverageHtml = isPartialCoverage
+      ? `<button type="button" class="ljp-mapping-coverage is-partial is-clickable" data-action="open-mapping-missing-trades" data-dim-key="${_escapeHtml(dim.key)}" title="Show the ${missingCount} trade${missingCount > 1 ? 's' : ''} without a value for this property">${_escapeHtml(coverage)}</button>`
+      : `<span class="ljp-mapping-coverage">${_escapeHtml(coverage)}</span>`;
+    // Outcome value-mapping UI: render whenever we're in API mode and the
+    // dim is Position Result. `_renderOutcomeValueReportHTML` self-gates on
+    // empty detected values, and `_getOutcomeValueReport` falls back to the
+    // parsed-trades cache (outcomeRaw) when the in-memory raw cache is empty,
+    // so the UI survives a page refresh without requiring a Sync first.
+    const outcomeReport = (isAPI && dim.key === 'outcome')
       ? _renderOutcomeValueReportHTML(rawCache)
       : '';
     const pencilHtml = canRemap
@@ -30109,6 +30270,20 @@ function _flattenApiWidgetValue(raw) {
     return raw.map(_flattenApiWidgetValue).filter(Boolean).join(', ');
   }
   if (typeof raw === 'object') {
+    // Notion formula / rollup wrappers — recurse into the inner discriminated
+    // union so the type-tagged value is unwrapped:
+    //   { type: 'formula', formula: { type: 'string', string: 'foo' } }
+    //   { type: 'rollup',  rollup:  { type: 'number', number: 42 } }
+    if (raw.formula && typeof raw.formula === 'object') return _flattenApiWidgetValue(raw.formula);
+    if (raw.rollup  && typeof raw.rollup  === 'object') return _flattenApiWidgetValue(raw.rollup);
+    // Notion formula/rollup leaf values keyed by their primitive type
+    // (string/number/boolean/date). Checked BEFORE the generic `name`/`text`
+    // handlers because a formula's inner shape never carries those keys but
+    // does carry `string` / `number` / etc. directly.
+    if (typeof raw.string === 'string')  return raw.string.trim();
+    if (typeof raw.number === 'number'   && Number.isFinite(raw.number))  return String(raw.number);
+    if (typeof raw.boolean === 'boolean') return raw.boolean ? 'true' : 'false';
+    if (raw.date && typeof raw.date === 'object' && typeof raw.date.start === 'string') return raw.date.start;
     if ('name' in raw) return _flattenApiWidgetValue(raw.name);
     if ('plain_text' in raw) return _flattenApiWidgetValue(raw.plain_text);
     if ('text' in raw) return _flattenApiWidgetValue(raw.text);
@@ -30214,13 +30389,27 @@ function _getOutcomeValueReport(rawRows = null, source = null) {
   const mapping = _loadOutcomeValueMapping();
   let skippedEmpty = 0;
   const outcomeField = _findOutcomeRawFieldInRows(rows, source);
-  for (const row of rows || []) {
-    const values = _resolveOutcomeRawValues(row, source, outcomeField);
-    if (!values.length) {
-      skippedEmpty++;
-      continue;
+  if (rows && rows.length && outcomeField) {
+    for (const row of rows) {
+      const values = _resolveOutcomeRawValues(row, source, outcomeField);
+      if (!values.length) {
+        skippedEmpty++;
+        continue;
+      }
+      values.forEach(value => { counts[value] = (counts[value] || 0) + 1; });
     }
-    values.forEach(value => { counts[value] = (counts[value] || 0) + 1; });
+  } else {
+    // Fallback: raw Notion cache wiped (page refresh — _persistRawAPIToSession
+    // is a no-op by design, signed image URLs blow the LS quota). Walk the
+    // parsed trades cache instead: `outcomeRaw` is persisted in the storage
+    // key arrays so it survives across refreshes. Keeps the Position Result
+    // value-mapping UI alive without forcing the user to click Sync first.
+    const items = (appState && appState.trades && appState.trades.items) || [];
+    for (const t of items) {
+      const raw = String((t && t.outcomeRaw) || '').trim();
+      if (!raw) { skippedEmpty++; continue; }
+      counts[raw] = (counts[raw] || 0) + 1;
+    }
   }
   const autoMapState = _applyOutcomeAutoMapping(Object.keys(counts), mapping);
   const effectiveMapping = autoMapState.mapping;
@@ -30797,16 +30986,21 @@ function _handleCreateWidgetContinue() {
     const xSelected = _getCreateWidgetSelectionById(_cwCreateFlowState.xSelectedId);
     const ySelected = _getCreateWidgetSelectionById(_cwCreateFlowState.ySelectedId);
     if (!xSelected || !ySelected || xSelected.id === ySelected.id) return;
+    // Heatmap axis convention: rowKey renders vertically (Y axis), colKey
+    // renders horizontally (X axis). _renderSharedHeatmapGrid maps
+    // def.field → rowKey and def.field2 → colKey, so the user's X pick
+    // must land in field2 (and Y in field) to match the visual axes.
+    // Label kept as "X × Y" — user-facing reading order.
     _createCustomHeatmapWidget({
-      field: xSelected.key,
-      field2: ySelected.key,
+      field: ySelected.key,
+      field2: xSelected.key,
       label: `${xSelected.label} × ${ySelected.label}`,
-      fieldLabel: xSelected.label,
-      field2Label: ySelected.label,
-      fieldSource: xSelected.source,
-      field2Source: ySelected.source,
+      fieldLabel: ySelected.label,
+      field2Label: xSelected.label,
+      fieldSource: ySelected.source,
+      field2Source: xSelected.source,
       propertySource: xSelected.source === ySelected.source ? xSelected.source : 'mixed',
-      inferredType: xSelected.inferredType,
+      inferredType: ySelected.inferredType,
       createdFrom: 'widget-builder',
     });
   }
@@ -30840,8 +31034,10 @@ function _renderCreateWidgetList() {
     const isDonut   = def.type === 'donut';
     const icon = isHeatmap ? '▦' : isDonut ? '◕' : '▮';
     const label = _escHTML(def.label || def.field || def.id);
+    // Heatmap row shows "X × Y" — field2 holds the X-axis dim (colKey) and
+    // field holds the Y-axis dim (rowKey), per the create-widget convention.
     const sub   = isHeatmap
-      ? `${_escHTML(def.fieldLabel || def.field || '?')} × ${_escHTML(def.field2Label || def.field2 || '?')}`
+      ? `${_escHTML(def.field2Label || def.field2 || '?')} × ${_escHTML(def.fieldLabel || def.field || '?')}`
       : _escHTML(def.fieldLabel || def.field || '?');
     const typeBadge = isHeatmap ? 'Heatmap' : isDonut ? 'Donut' : 'Bar Chart';
     const typeClass = isHeatmap ? 'cw-list-type-heatmap' : isDonut ? 'cw-list-type-donut' : 'cw-list-type-bars';
@@ -33170,13 +33366,18 @@ function _scanUniqueValuesFor(prop) {
 
   const total = set.size;
   if (total > 100) return { values: [], total, overLimit: true };
-  // checkbox: stable [false, true] order; everything else alphabetical.
+  // checkbox: stable [false, true] order; numeric values: ascending
+  // numeric order ("2" before "10"); everything else alphabetical.
   let values;
   if (prop.type === 'checkbox') {
     const preferred = ['false', 'true'];
     values = preferred.filter(v => set.has(v)).concat([...set].filter(v => !preferred.includes(v)));
   } else {
-    values = [...set].sort((a, b) => a.localeCompare(b));
+    const arr = [...set];
+    const allNumeric = arr.length > 0 && arr.every(v => v !== '' && Number.isFinite(Number(v)));
+    values = allNumeric
+      ? arr.sort((a, b) => Number(a) - Number(b))
+      : arr.sort((a, b) => a.localeCompare(b));
   }
   return { values, total, overLimit: false };
 }
@@ -35743,48 +35944,51 @@ const TEMPLATE_LAYOUTS = {
     hiddenWidgets: {},
   },
   h4: {
+    // Captured 2026-05-23 from Max's live H4 layout via the
+    // `_serializeSectionLayouts()` console export. Hidden widgets
+    // (w-m15, w-session, w-hour, w-heatmap, w-pair-session) are
+    // stripped from the `global` block and live only in the
+    // `hiddenWidgets` sidecar below — see the doc comment there.
     global: {
       'w-stats':            { x: 0, y: 0,   w: 12, h: 20,  minW: 4, minH: 12 },
       'w-equity':           { x: 0, y: 20,  w: 12, h: 42,  minW: 4, minH: 16 },
       'w-selection':        { x: 0, y: 62,  w: 7,  h: 44,  minW: 4, minH: 14 },
       'w-outcome':          { x: 7, y: 62,  w: 5,  h: 44,  minW: 3, minH: 14 },
       'w-monthly':          { x: 0, y: 106, w: 12, h: 41,  minW: 4, minH: 16 },
-      'w-day':              { x: 0, y: 147, w: 4,  h: 33,  minW: 2, minH: 14 },
-      'w-session':          { x: 4, y: 147, w: 4,  h: 33,  minW: 2, minH: 14 },
-      'w-hour':             { x: 8, y: 147, w: 4,  h: 33,  minW: 2, minH: 14 },
-      'w-pair':             { x: 0, y: 180, w: 5,  h: 103, minW: 2, minH: 14 },
-      'w-calendar':         { x: 5, y: 180, w: 7,  h: 67,  minW: 5, minH: 50 },
-      'w-heatmap':          { x: 5, y: 247, w: 7,  h: 36,  minW: 4, minH: 14 },
-      'w-pair-session':     { x: 0, y: 283, w: 12, h: 41,  minW: 4, minH: 20 },
-      'w-setup':            { x: 0, y: 324, w: 5,  h: 59,  minW: 2, minH: 14 },
-      'w-h4':               { x: 5, y: 324, w: 7,  h: 59,  minW: 3, minH: 14 },
-      // w-m15 (M15 Obstacles) deliberately omitted — the dim does not
-      // exist in any H4 template variant. Not in the layout AND not in
-      // hiddenWidgets either, so the widget is "totally" excluded from
-      // this template's initial state. User can still bring it back later
-      // via the mini-sidebar's add-widget flow if needed.
-      'w-recovery':         { x: 0, y: 383, w: 6,  h: 51,  minW: 2, minH: 14 },
-      'w-streak-analytics': { x: 6, y: 383, w: 6,  h: 51,  minW: 2, minH: 14 },
-      'w-tradelog':         { x: 0, y: 434, w: 12, h: 51,  minW: 4, minH: 16 },
+      'w-pair':             { x: 0, y: 147, w: 5,  h: 131, minW: 2, minH: 14 },
+      'w-setup':            { x: 5, y: 147, w: 4,  h: 48,  minW: 2, minH: 14 },
+      'w-day':              { x: 9, y: 147, w: 3,  h: 48,  minW: 2, minH: 14 },
+      'w-calendar':         { x: 5, y: 195, w: 7,  h: 83,  minW: 5, minH: 50 },
+      'w-h4':               { x: 0, y: 278, w: 12, h: 58,  minW: 3, minH: 14 },
+      'w-recovery':         { x: 0, y: 336, w: 6,  h: 51,  minW: 2, minH: 14 },
+      'w-streak-analytics': { x: 6, y: 336, w: 6,  h: 51,  minW: 2, minH: 14 },
+      'w-tradelog':         { x: 0, y: 387, w: 12, h: 51,  minW: 4, minH: 16 },
     },
     'optimal-rr': {
       'w-optimal-rr':       { x: 0, y: 0,   w: 12, h: 77,  minW: 4, minH: 30 },
       'w-montecarlo':       { x: 0, y: 77,  w: 12, h: 82,  minW: 4, minH: 80 },
     },
     partials: {
-      'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 196, minW: 8, minH: 100 },
+      'w-partial-optimizer':{ x: 2, y: 0,   w: 9,  h: 196, minW: 8, minH: 100 },
     },
-    // H4 template hides w-m15 by default. The widget element is in the
-    // HTML and _loadSectionSlot always merges with GLOBAL_OVERVIEW_LAYOUT
-    // defaults — leaving w-m15 out of the layout map alone doesn't keep
-    // it off the dashboard, the default merge re-injects it. Declaring
-    // it as hidden here makes the seed write gs_hidden_widgets_<id> on
-    // profile creation, so _applySectionFilter places it in display:none
-    // and out of the grid. User can still unhide it from the popover if
-    // they really want M15 obstacles on an H4 journal — defaulting to
-    // hidden is the right UX, not an enforced exclusion.
+    // H4 template hides 5 widgets by default:
+    //   - w-m15 (M15 Obstacles) — irrelevant on H4 journals
+    //   - w-session, w-hour — H4 journals don't track intraday data
+    //   - w-heatmap (Day × Session), w-pair-session — both depend on the
+    //     Session dim, which is __NO_MAPPING__ in the h4-pro / h4-beg
+    //     TEMPLATE_MAPPINGS entries.
+    // _loadSectionSlot always merges with GLOBAL_OVERVIEW_LAYOUT defaults,
+    // so leaving a widget out of the layout map alone won't keep it off the
+    // dashboard. Declaring it as hidden here makes the seed write
+    // gs_hidden_widgets_<id> on profile creation, so _applySectionFilter
+    // places the widget in display:none and out of the grid. User can still
+    // unhide any of them via the mini-sidebar popover.
     hiddenWidgets: {
-      'w-m15': { w: 12, h: 82 },
+      'w-m15':          { w: 12, h: 82 },
+      'w-session':      { w: 4,  h: 33 },
+      'w-hour':         { w: 4,  h: 33 },
+      'w-heatmap':      { w: 7,  h: 36 },
+      'w-pair-session': { w: 12, h: 41 },
     },
   },
   // "Other" — non-Flipping users with custom Notion templates. Layout

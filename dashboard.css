@@ -1953,6 +1953,28 @@ body.layout-edit-mode #layout-toolbar * {
 #ljp-list .ljp-mapping-coverage.is-partial {
   color: var(--color-warning);
 }
+/* Clickable variant — orange chip becomes a button that opens the trades
+   drawer with the missing-value list. Dotted underline signals "actionable"
+   without adding a separate icon. */
+#ljp-list .ljp-mapping-coverage.is-clickable {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--color-warning);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: opacity .12s ease;
+}
+#ljp-list .ljp-mapping-coverage.is-clickable:hover { opacity: .8; }
+#ljp-list .ljp-mapping-coverage.is-clickable:focus-visible {
+  outline: 1px solid var(--color-warning);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 #ljp-list .ljp-chip-action-col {
   display: inline-flex;
   justify-content: flex-end;
@@ -12346,6 +12368,22 @@ body.ms-sidebar-open .view-tabs {
   color: var(--a);
   font-weight: 700;
   font-style: normal;
+}
+/* Red data-quality warning surfaced at the TOP of widget info-tooltips. Used
+   in the Optimal RR Analysis + Partial Optimizer tooltips to flag that empty
+   RR Max values will produce inaccurate results — both widgets depend on
+   rrMax to simulate exits at higher TP levels. */
+.tt-data-warn {
+  color: var(--r);
+  font-weight: 600;
+  line-height: 1.5;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.tt-data-warn strong {
+  color: var(--r);
+  font-weight: 700;
 }
 
 .pp-head-n {

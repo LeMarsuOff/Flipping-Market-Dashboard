@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=228">
+<link rel="stylesheet" href="dashboard.css?v=230">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -2739,6 +2739,7 @@
               <div class="orr-sim-mode-info-pop" role="tooltip">
                 <div class="orr-sim-mode-info-title">Simulation mode</div>
                 <div class="orr-sim-mode-info-body">
+                  <div class="tt-data-warn">⚠ If <strong>RR Max</strong> is empty on some trades — especially TPs — this widget's output will be inaccurate. Make sure RR Max is populated for every trade.</div>
                   <p><strong>BE Fallback</strong> (default): when a winning trade reached TP1 (2.4R) but not the simulated TP, it is <strong>removed from the dataset</strong> (treated as a break-even exit) and counted only in the BE Trades KPI. If the trade didn't even reach TP1, it's counted as a loss in the simulation.</p>
                   <p><strong>Strict Loss</strong>: any winning trade that didn't reach the simulated TP is counted as a full loss (−1R), remaining in the dataset. More realistic when simulating a fixed SL at −1R with no BE management.</p>
                   <p>BE Fallback reduces the effective sample size above TP1 and is optimistic. Strict Loss preserves the sample and is conservative.</p>
@@ -2772,6 +2773,7 @@
               <div class="pp-be-info-pop" role="tooltip">
                 <div class="pp-be-info-title">Simulator assumptions</div>
                 <div class="pp-be-info-body">
+                  <div class="tt-data-warn">⚠ If <strong>RR Max</strong> is empty on some trades — especially TPs — these results will be inaccurate. Make sure RR Max is populated for every trade.</div>
                   <ul>
                     <li><strong>Fixed SL at −1R</strong> (R-multiples convention)</li>
                     <li>BE armed after <strong>TP1 hit</strong> (universal, non-disableable)</li>
@@ -2897,6 +2899,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=509"></script>
+<script src="dashboard.js?v=534"></script>
 </body>
 </html>
