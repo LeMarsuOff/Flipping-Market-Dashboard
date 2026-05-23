@@ -8481,6 +8481,25 @@ function _reloadProfileScopedState() {
   // removing those from the live grid automatically (reads _isWidgetHidden).
   _loadHiddenWidgets();
 
+  // ── 3.5. Ensure custom widget DOM matches the loaded layout (Task #3.6) ──
+  // When a custom widget def was synced via M1 (flipping_custom_widgets_<id>)
+  // but the widget was never CREATED on this device, no grid-stack-item DOM
+  // exists. The layout from blob/LS references the gs-id but the grid renders
+  // nothing because there's no DOM element to render into. The user had to
+  // refresh to hit initGridstack → _injectCustomWidgetHTML → _buildGridDOM
+  // which rebuilds everything. This loop bridges the gap: for each custom
+  // def in LS, create the DOM at the saved layout position and register with
+  // GridStack. Idempotent — skips any widget already in the DOM.
+  if (typeof _loadCustomWidgetDefs === 'function' && typeof _ensureCustomWidgetInGrid === 'function') {
+    try {
+      for (const def of _loadCustomWidgetDefs()) {
+        _ensureCustomWidgetInGrid(def);
+      }
+    } catch (e) {
+      console.warn('[CustomWidget] ensure DOM loop failed:', e?.message || e);
+    }
+  }
+
   // ── 4. Apply layout + hidden state to the live grid ──
   if (_grid) {
     _applySectionFilter(appState?.ui?.activeSection || 'global', { skipSync: true });
@@ -37921,6 +37940,130 @@ function _injectNewCustomWidget(def) {
   else if (def.type === 'donut')   renderCustomDonut(def, filtered);
 
   if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
+}
+
+// Companion to _injectNewCustomWidget for the cross-device profile-switch
+// path (Task #3.6). When a custom widget's definition arrives via M1 sync
+// (syncFromRemote pulls flipping_custom_widgets_<id> into LS) but the widget
+// was never CREATED on this device, _injectNewCustomWidget was never called
+// and no grid-stack-item DOM exists. The layout from the synced blob holds
+// the widget's position, but the grid renders nothing because the gs-id has
+// no corresponding DOM element. The user had to refresh the whole page to
+// hit initGridstack → _injectCustomWidgetHTML → _buildGridDOM which rebuilds
+// everything from scratch.
+//
+// Difference from _injectNewCustomWidget: this function reads the saved
+// position from _liveSectionLayouts.global (rather than computing a fresh
+// max-bottom). It also skips the _liveSectionLayouts mutation and
+// _saveActiveSlotLive call — those would only matter for a brand-new widget
+// the user just created, not for one that already has a known position.
+function _ensureCustomWidgetInGrid(def) {
+  if (!_grid || !def?.id) return false;
+  const gsContainer = document.getElementById('gs-container');
+  if (!gsContainer) return false;
+  if (document.querySelector(`#gs-container .grid-stack-item[gs-id="${CSS.escape(def.id)}"]`)) return false;
+  const layoutGlobal = (_liveSectionLayouts && _liveSectionLayouts.global) || {};
+  const pos = layoutGlobal[def.id];
+  if (!pos) {
+    // No saved position — the widget was synced (def in LS) but the layout
+    // upload from the creating device hadn't completed yet, or the layout
+    // got reset since. Skip silently. The user can re-add a position by
+    // dragging the widget into the grid via the mini-sidebar later.
+    return false;
+  }
+  // Build the widget content (same structure as _injectNewCustomWidget).
+  const widget = document.createElement('div');
+  widget.className = 'chart-card gs-widget cw-widget';
+  widget.setAttribute('data-gs-id', def.id);
+  widget.setAttribute('data-section', 'global');
+  widget.setAttribute('data-cw-id', def.id);
+  if (def.type === 'bars') {
+    widget.innerHTML = `
+      <div class="cc-head">
+        <span class="cc-title">${_escapeHtml(def.label)}</span>
+      </div>
+      ${_renderCustomBarSortToolbarHTML(def.id)}
+      <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
+  } else if (def.type === 'donut') {
+    widget.innerHTML = `
+      <div class="cc-head cc-head-spaced">
+        <span class="cc-title">${_escapeHtml(def.label)}</span>
+      </div>
+      <div class="donut-wrap donut-wrap-centered">
+        <div class="donut-canvas-wrap"><canvas id="donutCanvas-${_escapeAttr(def.id)}"></canvas></div>
+        <div class="donut-legend" id="donut-legend-${_escapeAttr(def.id)}"></div>
+      </div>`;
+  } else {
+    widget.innerHTML = `
+      <div class="cc-head">
+        <span class="cc-title">${_escapeHtml(def.label)}</span>
+        ${_renderSharedHeatmapToolbarHTML('sd', def)}
+      </div>
+      <div id="heatmap-${_escapeAttr(def.id)}" class="cw-hm-wrap"></div>`;
+  }
+  // Build the grid-stack-item wrapper.
+  const item = document.createElement('div');
+  item.className = 'grid-stack-item';
+  item.setAttribute('gs-id', def.id);
+  const content = document.createElement('div');
+  content.className = 'grid-stack-item-content';
+  const handle = document.createElement('div');
+  handle.className = 'gs-drag-handle';
+  handle.innerHTML = '⠿⠿⠿';
+  handle.title = 'Drag to move';
+  const hideBtn = document.createElement('button');
+  hideBtn.type = 'button';
+  hideBtn.className = 'gs-hide-btn';
+  hideBtn.title = 'Hide this widget';
+  hideBtn.setAttribute('data-action', 'layout-hide-widget-confirm');
+  hideBtn.setAttribute('data-gs-id', def.id);
+  hideBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  const deleteWrap = document.createElement('div');
+  deleteWrap.innerHTML = _buildCustomWidgetDeleteButtonHTML(def.id);
+  content.appendChild(handle);
+  content.appendChild(hideBtn);
+  if (deleteWrap.firstElementChild) content.appendChild(deleteWrap.firstElementChild);
+  content.appendChild(widget);
+  item.appendChild(content);
+  // Apply the SAVED position (vs maxBottom in _injectNewCustomWidget).
+  item.setAttribute('gs-x', pos.x ?? 0);
+  item.setAttribute('gs-y', pos.y ?? 0);
+  item.setAttribute('gs-w', pos.w ?? 6);
+  item.setAttribute('gs-h', pos.h ?? 39);
+  item.setAttribute('gs-min-w', pos.minW ?? 2);
+  item.setAttribute('gs-min-h', pos.minH ?? 14);
+  gsContainer.appendChild(item);
+  // Hide if widget is in the current hidden set (matches initGridstack /
+  // _applySectionFilter behavior).
+  if (typeof _isWidgetHidden === 'function' && _isWidgetHidden(def.id)) {
+    item.style.display = 'none';
+    return true; // DOM created but not registered with grid (matches hidden semantics)
+  }
+  // Register with GridStack only if the active section is 'global' (custom
+  // widgets always live in 'global' currently). Other sections leave the item
+  // detached, matching the existing pattern in _injectNewCustomWidget /
+  // _applySectionFilter.
+  const activeSec = appState?.ui?.activeSection || 'global';
+  if (activeSec === 'global') {
+    try {
+      _grid.batchUpdate();
+      try { _grid.makeWidget(item); } finally { _grid.commit(); }
+    } catch (e) {
+      console.warn('[CustomWidget] makeWidget failed for', def.id, e?.message || e);
+    }
+  } else {
+    item.style.display = 'none';
+  }
+  // Render content immediately so the widget shows data on first paint.
+  try {
+    const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
+    if (def.type === 'bars' && typeof renderCustomBars === 'function') renderCustomBars(def, filtered);
+    else if (def.type === 'heatmap' && typeof renderCustomHeatmap === 'function') renderCustomHeatmap(def, filtered);
+    else if (def.type === 'donut' && typeof renderCustomDonut === 'function') renderCustomDonut(def, filtered);
+  } catch (e) {
+    console.warn('[CustomWidget] initial render failed for', def.id, e?.message || e);
+  }
+  return true;
 }
 
 // Remove a custom widget from DOM, grid, layout, and defs storage.
