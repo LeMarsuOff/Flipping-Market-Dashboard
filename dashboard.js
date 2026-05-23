@@ -417,6 +417,12 @@ const _SW = (() => {
             _accountView = 'signed_in';
             _setAccountAlert();
             _clearAccountForms();
+            // Flush any LS writes that were queued before auth resolved
+            // (Task #3.11). Must run BEFORE syncFromRemote so pending writes
+            // land on Supabase first, then the remote pull won't overwrite
+            // them with stale state. Idempotent — upsert with onConflict
+            // tolerates duplicate flushes if auth fires twice in quick succession.
+            try { if (typeof window._flushPendingSyncWrites === 'function') window._flushPendingSyncWrites(); } catch (e) {}
             _SW.syncFromRemote().then(merged => {
               debugLog('[DashboardDebug]');
               if (typeof _signedInHook === 'function') _signedInHook(merged || 0);
@@ -432,6 +438,13 @@ const _SW = (() => {
           }
         if (event === 'INITIAL_SESSION' && session?.user) {
             debugLog('[DashboardDebug]');
+            // Flush queued pre-auth LS writes (Task #3.11). Catches the
+            // common hard-refresh race where the user creates a widget /
+            // changes a mapping in the window between page load and the
+            // INITIAL_SESSION event firing. Without this flush, those writes
+            // are forever local-only — invisible cross-device, and lost on
+            // any LS wipe.
+            try { if (typeof window._flushPendingSyncWrites === 'function') window._flushPendingSyncWrites(); } catch (e) {}
             if (typeof _signedInHook === 'function') _signedInHook(0);
             // Page refresh path: a stored Supabase session is restored. Fire
             // the integration check immediately so the badge resolves without
@@ -967,6 +980,37 @@ function _scheduleBlobUpload(profileId, source, trades) {
 }
 
 /* ─── LOCALSTORAGE MONKEY-PATCH ─────────────────────────────────────────── */
+// Pending writes queue (Task #3.11). LS writes that occur BEFORE Supabase
+// auth has resolved (typically very early in boot, or during a brief window
+// right after a hard refresh where INITIAL_SESSION hasn't fired yet) used
+// to silently no-op the Supabase upsert because window._SW.getUser() returned
+// null. The LS got the value but Supabase never did — and since the cache
+// was set in memory, no subsequent re-write triggered a fresh sync. Result:
+// the user's widget def / mapping override / layout was permanent on the
+// device but invisible cross-device. Repro path Max hit: hard refresh →
+// create widget within ~50-500ms of refresh → LS has def, Supabase doesn't.
+// Fix: when the user is null at write time, queue the (key, value) pair.
+// When auth fires (SIGNED_IN or INITIAL_SESSION), flush the queue by
+// upserting every pending entry. Idempotent — Supabase upsert with
+// onConflict handles duplicate flushes cleanly.
+const _pendingSyncWrites = [];
+function _flushPendingSyncWrites() {
+  if (!window._SW?.set || !window._SW?.getUser?.()) return;
+  let flushed = 0;
+  while (_pendingSyncWrites.length) {
+    const { key, value, kind } = _pendingSyncWrites.shift();
+    try {
+      if (kind === 'remove') window._SW.remove(key);
+      else window._SW.set(key, value);
+      flushed++;
+    } catch (e) {
+      console.warn('[PendingWrites] flush failed for', key, e?.message || e);
+    }
+  }
+  if (flushed) debugLog('[PendingWrites] flushed', flushed, 'queued writes');
+}
+window._flushPendingSyncWrites = _flushPendingSyncWrites;
+
 ((() => {
   const _origSet    = localStorage.setItem.bind(localStorage);
   const _origRemove = localStorage.removeItem.bind(localStorage);
@@ -976,6 +1020,13 @@ function _scheduleBlobUpload(profileId, source, trades) {
     if (!value || value === 'null') return;
     if (window._SW && window._SW.getUser && window._SW.getUser()) {
       window._SW.set(key, value);
+    } else if (window._SW && window._SW.set) {
+      // Auth not yet resolved — queue for flush on next SIGNED_IN /
+      // INITIAL_SESSION. Limit queue to ~200 entries to prevent unbounded
+      // memory growth in pathological cases (eg auth never fires).
+      if (_pendingSyncWrites.length < 200) {
+        _pendingSyncWrites.push({ key, value, kind: 'set' });
+      }
     }
   };
 
@@ -983,6 +1034,10 @@ function _scheduleBlobUpload(profileId, source, trades) {
     _origRemove(key);
     if (window._SW && window._SW.getUser && window._SW.getUser()) {
       window._SW.remove(key);
+    } else if (window._SW && window._SW.remove) {
+      if (_pendingSyncWrites.length < 200) {
+        _pendingSyncWrites.push({ key, value: null, kind: 'remove' });
+      }
     }
   };
 }))();
