@@ -13,8 +13,6 @@ _(nothing — Refacto Total shipped 2026-05-24 in 2 commits, see Done below)_
 
 ## TODO — Active
 
-- [ ] **Delete Supabase edge functions `diag-blob-peek` + `diag-bake-fix`** — surfaced 2026-05-24 at end of Refacto Total. Functions deployed during the marathon debug session; refacto made them obsolete but no MCP delete tool exists. Manual step in Supabase web UI: Project → Edge Functions → delete each. ~30 seconds.
-
 - [ ] **Migrate remaining ~26 inline `connectionType === 'notion'` checks to `INTEGRATIONS` registry** — Strangler Fig follow-up to the 2026-05-19 registry refactor. One micro-fix done at [dashboard.js:5336](dashboard.js:5336) (`_reloadJournalProfileSelection` `isNotionWithDb` now uses `getIntegration(p).isReady(p)`). Rest deferred until MT5 ships — abstracting from a single concrete implementation risks getting the methods wrong.
 
 ---
