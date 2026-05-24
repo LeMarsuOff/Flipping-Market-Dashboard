@@ -7990,10 +7990,11 @@ function _reapplyAPIOverrides() {
     return norm;
   }).filter(Boolean);
   _flushOutcomeDebugCounts();
-  setCachedAPIData(parsed);
+  const preserved = _preservePermanentImageUrls(parsed);
+  setCachedAPIData(preserved);
   if (localStorage.getItem(DS_KEY) === 'api') {
     const savedState = (typeof _saveFilterState === 'function') ? _saveFilterState() : null;
-    _injectTrades(parsed, 'Notion Live', savedState);
+    _injectTrades(preserved, 'Notion Live', savedState);
   }
   return true;
 }
@@ -8501,6 +8502,73 @@ function _substitutePermanentImageUrls(rawTrades, source) {
   });
   if (substituted || stripped) {
     debugLog('[RawBlob] image URL pre-process:', { substituted, stripped, trades: rawTrades.length });
+  }
+  return result;
+}
+
+// ── Preserve permanent Supabase image URLs across re-sync ─────────────────────
+// Notion's File & Media properties carry signed S3 URLs that expire in ~1h.
+// The media queue uploads each Notion image to Supabase Storage in the
+// background and patches the trade refs in-place with the permanent URL.
+// Without this helper, every fresh sync would overwrite the trades' (already
+// permanent) Supabase URLs back to fresh Notion S3 URLs, exposing the user to
+// expired-URL "broken image" rendering on the very next session because the
+// LS persist strips Notion URLs to '' (see _serializeTradesForStorage).
+//
+// Strategy: build a notionId -> permanent-URL lookup from prior trades (current
+// in-memory appState + LS cache, OR an explicit priorTrades arg) and, for each
+// fresh trade whose image fields are still Notion S3 URLs, swap to the cached
+// permanent URL when available. Returns a new array with shallow-copies for
+// swapped trades and same refs for untouched trades.
+function _preservePermanentImageUrls(freshParsed, source = null, priorTrades = null) {
+  if (!Array.isArray(freshParsed) || !freshParsed.length) return freshParsed;
+  const IMG_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig'];
+  const lookup = new Map();
+  const addToLookup = (trades) => {
+    if (!Array.isArray(trades)) return;
+    for (const t of trades) {
+      if (!t || !t._notionId) continue;
+      const id = String(t._notionId);
+      const existing = lookup.get(id) || {};
+      for (const field of IMG_FIELDS) {
+        if (existing[field]) continue;
+        const url = String(t[field] || '');
+        if (url && !_isNotionFileUrl(url)) existing[field] = url;
+      }
+      if (Object.keys(existing).length) lookup.set(id, existing);
+    }
+  };
+  if (Array.isArray(priorTrades)) {
+    addToLookup(priorTrades);
+  } else {
+    try { addToLookup(appState?.trades?.items); } catch {}
+    try {
+      const src = source || _getCurrentHTFSource();
+      const rawLS = _readFirstLocalStorageValue(`apiTradesCache_v2_rrmax_${src}`);
+      const prior = rawLS ? _deserializeTradesFromStorage(JSON.parse(rawLS)) : null;
+      addToLookup(prior);
+    } catch {}
+  }
+  if (!lookup.size) return freshParsed;
+  let patched = 0;
+  const result = freshParsed.map(t => {
+    if (!t || !t._notionId) return t;
+    const old = lookup.get(String(t._notionId));
+    if (!old) return t;
+    let copy = null;
+    for (const field of IMG_FIELDS) {
+      const freshUrl = String(t[field] || '');
+      const oldUrl = String(old[field] || '');
+      if (freshUrl && _isNotionFileUrl(freshUrl) && oldUrl) {
+        if (!copy) copy = { ...t };
+        copy[field] = oldUrl;
+        patched++;
+      }
+    }
+    return copy || t;
+  });
+  if (patched > 0) {
+    debugLog('[PreservePermImg] swapped', patched, 'Notion S3 -> Supabase permanent URLs, source:', source || '?');
   }
   return result;
 }
@@ -9447,15 +9515,16 @@ async function loadFromAPI(options = {}) {
         return null;
       }
     }).filter(Boolean);
-    setCachedAPIData(parsed, requestSource);           // persist normalized cache
+    const preserved = _preservePermanentImageUrls(parsed, requestSource);
+    setCachedAPIData(preserved, requestSource);           // persist normalized cache
     if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
-      _injectTrades(parsed, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
+      _injectTrades(preserved, 'Notion Live', appState.settings.dataSource.pendingRestoreState);
       appState.settings.dataSource.pendingRestoreState = null;
 
 
       debugDataSource('loadFromAPI:success', { count: appState.trades.items.length, source: requestSource });
     } else {
-      debugDataSource('loadFromAPI:success-stale-source', { count: parsed.length, source: requestSource, currentSource: _getCurrentHTFSource() });
+      debugDataSource('loadFromAPI:success-stale-source', { count: preserved.length, source: requestSource, currentSource: _getCurrentHTFSource() });
     }
 
   } catch (err) {
@@ -10010,7 +10079,8 @@ async function _fetchAPICacheSilently(options = {}) {
         return null;
       }
     }).filter(Boolean);
-    setCachedAPIData(parsed, requestSource);
+    const preserved = _preservePermanentImageUrls(parsed, requestSource);
+    setCachedAPIData(preserved, requestSource);
     if (localStorage.getItem(DS_KEY) === 'api' && _getCurrentHTFSource() === requestSource) {
       // Preserve filter state across the silent refresh: when
       // pendingRestoreState is null (the standalone "Notion Live" reload
@@ -10019,11 +10089,11 @@ async function _fetchAPICacheSilently(options = {}) {
       // Mirrors the _reapplyAPIOverrides pattern (see line 2376).
       const savedState = appState.settings.dataSource.pendingRestoreState
                        ?? (typeof _saveFilterState === 'function' ? _saveFilterState() : null);
-      _injectTrades(parsed, 'Notion Live', savedState);
+      _injectTrades(preserved, 'Notion Live', savedState);
       appState.settings.dataSource.pendingRestoreState = null;
     } else {
     }
-    debugDataSource('fetchAPICacheSilently:success', { count: parsed.length, source: requestSource, currentSource: _getCurrentHTFSource() });
+    debugDataSource('fetchAPICacheSilently:success', { count: preserved.length, source: requestSource, currentSource: _getCurrentHTFSource() });
   } catch (err) {
     _lastAPIFetchError = err?.message || err?.name || 'fetch failed';
     console.warn('[DS] Background API cache refresh failed:', err.name, err.message);
@@ -10704,9 +10774,15 @@ async function _loadNotionTrades(profile, options = {}) {
       return;
     }
 
+    // Preserve Supabase permanent URLs from existingCache before the LWW merge:
+    // fresh `parsed` carries Notion S3 URLs (~1h expiry) that would otherwise
+    // overwrite the permanent URLs the media queue uploaded in a previous
+    // session. Pass existingCache explicitly so the lookup is exhaustive even
+    // when appState is still empty (cold start before injection).
+    const preservedParsed = _preservePermanentImageUrls(parsed, source, existingCache);
     const parsedMerge = fullSync
-      ? { merged: parsed, added: parsed.length, updated: 0 }
-      : _mergeTradesByNotionId(existingCache, parsed);
+      ? { merged: preservedParsed, added: preservedParsed.length, updated: 0 }
+      : _mergeTradesByNotionId(existingCache, preservedParsed);
     const mergedParsed = parsedMerge.merged;
     const mergedRaw = fullSync
       ? fetchedRawTrades
@@ -10808,7 +10884,11 @@ async function _loadNotionTrades(profile, options = {}) {
 
     // Start background media sync — newest trades first so screenshots for
     // currently visible rows become permanent before older months.
-    _mediaQueue.enqueue(parsed, source, user.id, profileId);
+    // Use preservedParsed so trades already carrying Supabase URLs (swapped
+    // in from existingCache) are skipped — the queue only needs to upload
+    // truly-new Notion S3 URLs (new trades, or trades whose images were
+    // never migrated before).
+    _mediaQueue.enqueue(preservedParsed, source, user.id, profileId);
 
     // ── Ghost-sync auto-trigger ──
     // After a successful non-force sync, fire a background full sync if the
