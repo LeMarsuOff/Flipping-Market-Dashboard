@@ -300,14 +300,26 @@ const _SYNC_KEY_PREFIXES = [
   'flipping_custom_widgets_',
   'gs_layout_active_',
   'gs_hidden_widgets_',
+  // Refacto Total 2026-05-24 follow-up: presets are stored at
+  // `<htfBase>_<profileId>` via _htfKey (e.g. `flipping_presets_jp_abc`,
+  // `flipping_presets_jp_abc_h4`). The literal entries in _SYNC_KEYS only
+  // matched the unsuffixed legacy form, so per-profile presets were never
+  // syncing to Supabase — created presets were lost across browsers/devices
+  // and vulnerable to any LS wipe. Adding the per-profile prefixes here
+  // closes the gap. `_isSync` handles the `_h4` strip, so both the m15 and
+  // h4 variants match a single prefix entry each.
+  'flipping_presets_',
+  'flipping_preset_snapshots_v2_',
+  'presetLiveFilters_v1_',
+  'flipping_preset_overrides_',
+  'gs_active_preset_',
+  'flipping_active_filter_preset_id_',
 ];
-// Bumped v1 → v2 when gs_layout_active_ + gs_hidden_widgets_ were added to
-// _SYNC_KEY_PREFIXES so the migration re-runs once on every device and pushes
-// users' existing layout customisations to Supabase. Without the bump, users
-// who had the v1 flag set never push their pre-existing layouts and signing
-// in on a second device after the deploy shows the template default layout
-// instead of their customised one.
-const _PROFILE_SCOPED_SYNC_MIGRATION_FLAG = 'flipping_profile_scoped_sync_migration_v2';
+// Bumped v2 → v3 when the preset prefixes were added — the reconcile pass
+// in migrateProfileScopedKeys re-runs on every device and pushes pre-existing
+// per-profile presets to Supabase. Without the bump, users whose v2 flag was
+// already set wouldn't push their pre-existing presets.
+const _PROFILE_SCOPED_SYNC_MIGRATION_FLAG = 'flipping_profile_scoped_sync_migration_v3';
 // Match `<prefix><profileId>` where profileId is `jp_<chars>` (real journal
 // profile) or `__demo` (synthetic demo profile). Used by the storage wrapper
 // to decide whether a write should be mirrored to Supabase, and by the boot
