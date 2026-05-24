@@ -3514,7 +3514,11 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  /* Auto so when the user drags the property column wider than the widget,
+     a horizontal scrollbar appears instead of silently clipping the right
+     side. At default state (no user-set min-width) the table always fits
+     inside the widget so this is a no-op. */
+  overflow-x: auto;
 }
 .cw-table {
   width: 100%;
@@ -3542,7 +3546,16 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   white-space: nowrap;
   transition: color .12s, background .12s;
 }
-.cw-th-label { text-align: left; }
+.cw-th-label {
+  text-align: left;
+  /* Anchor for the absolute-positioned .cw-col-resize-handle. */
+  position: relative;
+  /* Honour the user-set property column minimum width. CSS variable lives
+     on the parent <table> element; falls back to 0 so default behaviour
+     is identical to the pre-feature state. Matching rule on .cw-td-label
+     below keeps body rows in lockstep with the header. */
+  min-width: var(--cw-label-min, 0);
+}
 .cw-th-num   { text-align: right; }
 .cw-th-bar   { text-align: right; min-width: 90px; }
 .cw-th:hover { color: var(--body); background: color-mix(in srgb, var(--gold) 5%, transparent); }
@@ -3566,6 +3579,8 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   overflow: hidden;
   text-overflow: ellipsis;
   width: 1%;
+  /* Picks up the user-set property column minimum (see .cw-th-label above). */
+  min-width: var(--cw-label-min, 0);
 }
 .cw-td-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
 .cw-td-count { color: var(--dim); font-weight: 400; }
@@ -3575,6 +3590,46 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   font-family: 'DM Mono', monospace;
   font-size: var(--typo-chart-axis-size);
   color: var(--dim);
+}
+
+/* Property-column drag handle — visible only on hover or while dragging.
+   Lives inside the .cw-th-label header (anchored absolutely on the right
+   edge). Doesn't intercept clicks for sort because the global mousedown
+   handler swallows them and the global capture-phase click listener stops
+   propagation up to the <th>. */
+.cw-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+.cw-col-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  left: 50%;
+  width: 1px;
+  height: 50%;
+  background: transparent;
+  transition: background .12s;
+}
+.cw-col-resize-handle:hover::after,
+.cw-col-resize-handle.is-dragging::after {
+  background: color-mix(in srgb, var(--gold) 70%, transparent);
+}
+.cw-col-resize-handle.is-dragging::after {
+  top: 0;
+  height: 100%;
+}
+/* While a drag is in flight, lock the cursor + suppress text selection
+   across the entire page so the user doesn't accidentally select rows. */
+body.cw-col-resizing,
+body.cw-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* Data-bar mode — horizontal gradient on the Total R column. The gradient

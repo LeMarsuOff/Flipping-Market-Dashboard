@@ -1449,12 +1449,22 @@ function _normalizeCustomWidgetDef(def) {
     const barsMode = explicitBarsMode !== null
       ? explicitBarsMode
       : (legacyStyle === 'compact' || legacyStyle === 'cards' ? false : true);
+    // User-set minimum width (px) for the label/property column. Acts as
+    // a floor on top of the existing auto-layout (which already lets the
+    // label absorb leftover space). When set, the table can grow past the
+    // widget width → horizontal scroll. Clamped against an obviously
+    // bogus payload.
+    const rawLabelMin = Number(settings.labelMinWidth);
+    const labelMinWidth = (Number.isFinite(rawLabelMin) && rawLabelMin >= 40 && rawLabelMin <= 1600)
+      ? Math.round(rawLabelMin)
+      : null;
     return {
       ...def,
       settings: {
         sortKey: validKeys.includes(settings.sortKey) ? settings.sortKey : 'total',
         sortDir: settings.sortDir === 'asc' ? 'asc' : 'desc',
         barsMode,
+        labelMinWidth,
       },
     };
   }
@@ -14563,16 +14573,18 @@ function _renderCustomTableToolbarHTML(def) {
 // then all tables re-render in lockstep. Turning sync off commits the
 // current master state to every widget's def.settings.
 let _customTableSyncEnabled = false;
-let _customTableMasterSettings = { sortKey: 'total', sortDir: 'desc', barsMode: true };
+let _customTableMasterSettings = { sortKey: 'total', sortDir: 'desc', barsMode: true, labelMinWidth: null };
 
-// Resolve the effective sort + bars settings for a table widget, accounting
-// for sync mode. Returns { sortKey, sortDir, barsMode }.
+// Resolve the effective sort + bars + label-min-width settings for a table
+// widget, accounting for sync mode. Returns { sortKey, sortDir, barsMode,
+// labelMinWidth }.
 function _getCustomTableEffectiveSettings(def) {
   if (_customTableSyncEnabled) {
     return {
       sortKey: _customTableMasterSettings.sortKey,
       sortDir: _customTableMasterSettings.sortDir,
       barsMode: _customTableMasterSettings.barsMode === true,
+      labelMinWidth: _customTableMasterSettings.labelMinWidth ?? null,
     };
   }
   const s = def?.settings || {};
@@ -14580,6 +14592,7 @@ function _getCustomTableEffectiveSettings(def) {
     sortKey: s.sortKey || 'total',
     sortDir: s.sortDir === 'asc' ? 'asc' : 'desc',
     barsMode: s.barsMode !== false,
+    labelMinWidth: Number.isFinite(Number(s.labelMinWidth)) ? Number(s.labelMinWidth) : null,
   };
 }
 
@@ -14624,23 +14637,28 @@ function toggleCustomTableSync(cwId) {
       sortKey: seed.sortKey || 'total',
       sortDir: seed.sortDir === 'asc' ? 'asc' : 'desc',
       barsMode: seed.barsMode !== false,
+      labelMinWidth: Number.isFinite(Number(seed.labelMinWidth)) ? Number(seed.labelMinWidth) : null,
     };
     _customTableSyncEnabled = true;
   } else {
     // Commit master state to every table def before breaking the chain.
     const defs = _loadCustomWidgetDefs();
+    const masterLabelMin = _customTableMasterSettings.labelMinWidth ?? null;
     let changed = false;
     for (const def of defs) {
       if (def?.type !== 'table') continue;
       const prev = def.settings || {};
+      const prevLabelMin = Number.isFinite(Number(prev.labelMinWidth)) ? Number(prev.labelMinWidth) : null;
       if (prev.sortKey === _customTableMasterSettings.sortKey
           && prev.sortDir === _customTableMasterSettings.sortDir
-          && (prev.barsMode !== false) === (_customTableMasterSettings.barsMode === true)) continue;
+          && (prev.barsMode !== false) === (_customTableMasterSettings.barsMode === true)
+          && prevLabelMin === masterLabelMin) continue;
       def.settings = {
         ...prev,
         sortKey: _customTableMasterSettings.sortKey,
         sortDir: _customTableMasterSettings.sortDir,
         barsMode: _customTableMasterSettings.barsMode === true,
+        labelMinWidth: masterLabelMin,
       };
       changed = true;
     }
@@ -14708,7 +14726,7 @@ function renderCustomTable(def, trades) {
   // Effective settings — pulled from the sync master if the chain is active,
   // else from this widget's own def.settings.
   const eff = _getCustomTableEffectiveSettings(def);
-  const { sortKey, sortDir, barsMode } = eff;
+  const { sortKey, sortDir, barsMode, labelMinWidth } = eff;
 
   const cmpFn = {
     label: (a, b) => String(a.label).localeCompare(String(b.label)),
@@ -14741,21 +14759,35 @@ function renderCustomTable(def, trades) {
 
   const arrow = k => sortKey !== k ? '' : (sortDir === 'desc' ? ' ▼' : ' ▲');
   const headerLabel = _escapeHtml(def.fieldLabel || def.label || def.field);
+  // The label header carries the drag handle. Other headers stay verbatim
+  // so the rest of the table behaviour is identical to the pre-feature
+  // state.
   const headerCell = (key, text, alignClass = 'cw-th-num') => `
     <th class="cw-th ${alignClass}${sortKey === key ? ' is-active' : ''}"
         data-action="set-table-sort" data-cw-id="${cwIdAttr}" data-sort-key="${key}"
         title="Sort by ${text.replace(/['"<>&]/g, '')}">${text}${arrow(key)}</th>`;
+  const labelHeaderCell = `
+    <th class="cw-th cw-th-label${sortKey === 'label' ? ' is-active' : ''}"
+        data-action="set-table-sort" data-cw-id="${cwIdAttr}" data-sort-key="label"
+        title="Sort by ${String(headerLabel).replace(/['"<>&]/g, '')}">${headerLabel}${arrow('label')}<span class="cw-col-resize-handle" data-cw-id="${cwIdAttr}" title="Drag to widen the property column · double-click to reset"></span></th>`;
 
   // Bar magnitude relative to max |sumR|. Guard against all-zero rows (e.g.
   // BE-only categories) by clamping the denominator.
   const maxAbs = barsMode ? Math.max(...rows.map(r => Math.abs(r.sumR)), 0.0001) : 0;
 
+  // CSS variable expressing the user-set minimum width for the label column.
+  // Read by the .cw-th-label / .cw-td-label rules added in dashboard.css.
+  // No variable → fallback to 0 → no effect, identical to legacy behaviour.
+  const tableStyle = (labelMinWidth != null && labelMinWidth > 0)
+    ? ` style="--cw-label-min:${labelMinWidth}px"`
+    : '';
+
   host.innerHTML = `
     <div class="cw-table-scroll">
-      <table class="cw-table${barsMode ? ' cw-table-bars' : ''}">
+      <table class="cw-table${barsMode ? ' cw-table-bars' : ''}"${tableStyle}>
         <thead>
           <tr>
-            ${headerCell('label', headerLabel, 'cw-th-label')}
+            ${labelHeaderCell}
             ${headerCell('total', 'Total R', barsMode ? 'cw-th-bar' : 'cw-th-num')}
             ${headerCell('wr',    'WR')}
             ${headerCell('avg',   'Avg R')}
@@ -14792,6 +14824,113 @@ function renderCustomTable(def, trades) {
       </table>
     </div>`;
 }
+
+// ── Property-column resize for custom Table widgets ────────────────────────
+// Adds a user-controllable minimum width to the label column only — every
+// other column keeps its existing auto behaviour. State lives in module
+// scope for the duration of one drag (mousedown → mousemove → mouseup) and
+// is persisted to def.settings.labelMinWidth (or _customTableMasterSettings
+// when sync is ON). Double-click resets to "no minimum" (the original auto
+// flex behaviour where the label absorbs leftover space).
+let _cwLabelResizeState = null;
+
+function _cwOnLabelResizeMove(e) {
+  const st = _cwLabelResizeState;
+  if (!st) return;
+  const dx = e.clientX - st.startX;
+  const next = Math.max(60, Math.min(1600, st.startWidth + dx));
+  st.currentWidth = next;
+  // Live preview: write the CSS variable on the matching table(s) so the
+  // label cells reflect the drag in real time. In sync mode, every table
+  // is updated; otherwise only the table being dragged.
+  const tables = _customTableSyncEnabled
+    ? document.querySelectorAll('.gs-widget[data-cw-id] table.cw-table')
+    : document.querySelectorAll(`.gs-widget[data-cw-id="${CSS.escape(st.cwId)}"] table.cw-table`);
+  tables.forEach(t => t.style.setProperty('--cw-label-min', next + 'px'));
+}
+
+function _cwOnLabelResizeEnd() {
+  const st = _cwLabelResizeState;
+  if (!st) return;
+  document.body.classList.remove('cw-col-resizing');
+  st.handleEl?.classList.remove('is-dragging');
+  document.removeEventListener('mousemove', _cwOnLabelResizeMove);
+  document.removeEventListener('mouseup', _cwOnLabelResizeEnd);
+  if (st.currentWidth !== st.startWidth) {
+    const finalPx = Math.round(st.currentWidth);
+    if (_customTableSyncEnabled) {
+      _customTableMasterSettings.labelMinWidth = finalPx;
+    } else {
+      _updateCustomWidgetDef(st.cwId, (cur) => ({
+        ...cur,
+        settings: { ...(cur.settings || {}), labelMinWidth: finalPx },
+      }));
+    }
+    // Re-render so a hard refresh picks up the new persisted state. We
+    // intentionally don't await — render is cheap.
+    _rerenderAllCustomTables();
+  }
+  _cwLabelResizeState = null;
+}
+
+function _cwStartLabelResize(handleEl, e) {
+  if (!handleEl) return;
+  const cwId = handleEl.getAttribute('data-cw-id');
+  if (!cwId) return;
+  const th = handleEl.closest('.cw-th');
+  if (!th) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const rect = th.getBoundingClientRect();
+  _cwLabelResizeState = {
+    cwId,
+    handleEl,
+    startX: e.clientX,
+    startWidth: rect.width,
+    currentWidth: rect.width,
+  };
+  handleEl.classList.add('is-dragging');
+  document.body.classList.add('cw-col-resizing');
+  document.addEventListener('mousemove', _cwOnLabelResizeMove);
+  document.addEventListener('mouseup', _cwOnLabelResizeEnd);
+}
+
+function _cwResetLabelWidth(handleEl) {
+  if (!handleEl) return;
+  const cwId = handleEl.getAttribute('data-cw-id');
+  if (!cwId) return;
+  if (_customTableSyncEnabled) {
+    _customTableMasterSettings.labelMinWidth = null;
+  } else {
+    _updateCustomWidgetDef(cwId, (cur) => ({
+      ...cur,
+      settings: { ...(cur.settings || {}), labelMinWidth: null },
+    }));
+  }
+  _rerenderAllCustomTables();
+}
+
+document.addEventListener('mousedown', (e) => {
+  const handle = e.target?.closest?.('.cw-col-resize-handle');
+  if (!handle) return;
+  _cwStartLabelResize(handle, e);
+});
+// The handle sits inside a <th> that has its own click→sort handler.
+// Without these capture-phase guards every drag (and any benign click on
+// the handle) would also flip the sort.
+document.addEventListener('click', (e) => {
+  const handle = e.target?.closest?.('.cw-col-resize-handle');
+  if (!handle) return;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+document.addEventListener('dblclick', (e) => {
+  const handle = e.target?.closest?.('.cw-col-resize-handle');
+  if (!handle) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _cwResetLabelWidth(handle);
+}, true);
 
 function renderBarsSplit(containerId, items, small, chart) {
   const container = document.getElementById(containerId);
@@ -32322,6 +32461,15 @@ function _renderCreateWidgetBuilder() {
   const host = document.getElementById('cw-inline-builder-host');
   if (!host) return;
   _syncCreateWidgetTypeButtons();
+  // The search input lives inside `host` and is swapped out by innerHTML on
+  // every re-render — without restoring focus the user loses the caret after
+  // every keystroke. Snapshot focus + caret position now so we can re-apply
+  // after the swap below.
+  const _prevSearch = document.getElementById('cw-create-search');
+  const _searchHadFocus = !!_prevSearch && document.activeElement === _prevSearch;
+  const _searchCaret = _searchHadFocus
+    ? { start: _prevSearch.selectionStart, end: _prevSearch.selectionEnd }
+    : null;
   if (!_cwCreateFlowState.open || !['bars', 'heatmap', 'table'].includes(_cwCreateFlowState.type)) {
     host.innerHTML = '';
     return;
@@ -32485,6 +32633,13 @@ function _renderCreateWidgetBuilder() {
         <button type="button" class="cw-create-secondary" data-action="cw-create-close">Cancel</button>
       </div>
     </div>`;
+  if (_searchHadFocus) {
+    const _newSearch = document.getElementById('cw-create-search');
+    if (_newSearch) {
+      _newSearch.focus();
+      try { _newSearch.setSelectionRange(_searchCaret.start, _searchCaret.end); } catch (_) {}
+    }
+  }
 }
 
 function _openCreateWidgetModal(type) {
@@ -32547,12 +32702,21 @@ function _setCreateWidgetHeatmapAxis(axis, optionId) {
   if (!_cwCreateFlowState.open || _cwCreateFlowState.type !== 'heatmap' || !['x', 'y'].includes(axis)) return;
   const match = _getCreateWidgetSelectionById(optionId);
   if (!match) return;
-  if (axis === 'x') {
-    _cwCreateFlowState.xSelectedId = _cwCreateFlowState.xSelectedId === match.id ? '' : match.id;
-    if (_cwCreateFlowState.ySelectedId === _cwCreateFlowState.xSelectedId && _cwCreateFlowState.xSelectedId) _cwCreateFlowState.ySelectedId = '';
+  const thisKey  = axis === 'x' ? 'xSelectedId' : 'ySelectedId';
+  const otherKey = axis === 'x' ? 'ySelectedId' : 'xSelectedId';
+  const currentThis  = _cwCreateFlowState[thisKey];
+  const currentOther = _cwCreateFlowState[otherKey];
+  // Toggle off when re-clicking the same axis.
+  if (currentThis === match.id) {
+    _cwCreateFlowState[thisKey] = '';
+  } else if (currentOther === match.id) {
+    // Promoting the OTHER axis's property onto this one → swap, so the
+    // previously-selected partner moves into the now-vacated slot instead of
+    // being silently discarded.
+    _cwCreateFlowState[thisKey]  = match.id;
+    _cwCreateFlowState[otherKey] = currentThis;
   } else {
-    _cwCreateFlowState.ySelectedId = _cwCreateFlowState.ySelectedId === match.id ? '' : match.id;
-    if (_cwCreateFlowState.xSelectedId === _cwCreateFlowState.ySelectedId && _cwCreateFlowState.ySelectedId) _cwCreateFlowState.xSelectedId = '';
+    _cwCreateFlowState[thisKey] = match.id;
   }
   _renderCreateWidgetBuilder();
 }
