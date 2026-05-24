@@ -10959,6 +10959,18 @@ async function initDataSource() {
       source: startupSource,
       profileId: activeProfile?.id || '',
     });
+    // Refacto Total 2026-05-24 — step 4 follow-up: the LS inject above gives
+    // a fast first paint, but LS may carry pre-refacto extras (keyed under
+    // old prop.name instead of notionSourceName). Fire-and-forget the blob-
+    // first path immediately so the canonical server payload re-injects on
+    // top within ~200-500 ms. Without this, custom filter chips show empty
+    // until the user switches profiles (which is what Max kept hitting).
+    if (activeProfile?.connectionType === 'notion' && getIntegration(activeProfile).isReady(activeProfile)) {
+      (async () => {
+        try { await _reloadJournalProfileSelection({}); }
+        catch (e) { console.warn('[boot] blob refresh failed:', e?.message || e); }
+      })();
+    }
   } else if (restoreCSV && csvCache) {
     // Re-parse through the normal path with preserveState so sidebar state
     // (filters, presets, BE toggle, temporal range) is re-applied on top of
