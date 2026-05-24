@@ -1130,26 +1130,12 @@ function _scheduleRawBlobUpload(profileId, source) {
 const _blobUploadTimers = new Map();
 const _BLOB_UPLOAD_DEBOUNCE_MS = 1500;
 
-// Anti-corruption guard for blob upload: returns true if the payload looks
-// "healthy enough" to be uploaded. The Notion eager-bake should populate ~50-150
-// extras keys per trade in steady state; if we're about to upload trades whose
-// extras are almost universally empty, something upstream broke (eager-bake
-// skipped, raw cache empty at injection, etc.) and uploading would clobber
-// a perfectly good server-side blob with garbage. Better to skip silently and
-// let the next clean cycle re-upload. Threshold: at least 30% of the (up to 50)
-// sample trades must carry ≥ 3 extras keys. New-profile users have empty raw
-// → empty payload → array length check above blocks anyway, so this only
-// trips on bona-fide corruption.
-function _blobPayloadIsHealthy(trades) {
-  if (!Array.isArray(trades) || !trades.length) return false;
-  const sampleSize = Math.min(50, trades.length);
-  let healthy = 0;
-  for (let i = 0; i < sampleSize; i++) {
-    const ex = trades[i]?.extras;
-    if (ex && typeof ex === 'object' && Object.keys(ex).length >= 3) healthy++;
-  }
-  return (healthy / sampleSize) >= 0.3;
-}
+// Refacto Total 2026-05-24 — step 5: anti-corruption `_blobPayloadIsHealthy`
+// guard deleted. With the deterministic write pipeline (single writer via
+// `_bakeAllDetectedPropsToExtras` at every sync, no race between sync inject
+// and async IIFE at boot), an "extras-sparse" payload simply can't reach this
+// point unless the user genuinely has empty extras (new DB, no detected
+// props). The guard was paranoia papering over a non-deterministic pipeline.
 
 function _scheduleBlobUpload(profileId, source, trades) {
   if (!profileId || !source) return;
@@ -1179,16 +1165,6 @@ function _scheduleBlobUpload(profileId, source, trades) {
         }
       } catch (e) {}
       if (!Array.isArray(payload) || !payload.length) return;
-      // Anti-corruption guard: refuse to overwrite the server blob with a
-      // payload that looks like the eager-bake didn't run. See
-      // `_blobPayloadIsHealthy` for rationale.
-      if (!_blobPayloadIsHealthy(payload)) {
-        console.warn('[BlobUpload] skipped — payload extras suspiciously sparse, refusing to overwrite server blob', {
-          tradesCount: payload.length,
-          sampleExtrasKeys: payload[0]?.extras ? Object.keys(payload[0].extras).length : 0,
-        });
-        return;
-      }
       await window._SW.uploadTradesBlob(profileId, src, payload);
     } catch (e) {
       console.warn('[BlobUpload] scheduled upload failed:', e?.message || e);
@@ -1889,85 +1865,12 @@ function addCustomProp({ name, key, type, showInFilters, notionSourceName }) {
   // Prepend the new prop so it appears at the top of the declared list, then
   // re-normalize the `order` field so the existing entries shift down by one.
   _saveCustomProps([newProp, ...props].map((p, i) => ({ ...p, order: i })));
-  // Recovery hook (2026-05-24): if the trades in memory don't already carry
-  // this prop in their extras (e.g. the eager bake at boot was skipped
-  // because the raw cache was empty), fire an explicit recovery: download
-  // the raw blob and re-bake. Solves the "+ Add → 0/N" symptom for users
-  // whose LS cache predates Task #3.11's eager bake. Async, non-blocking.
-  if (typeof _ensureExtrasForNewProp === 'function') {
-    try { _ensureExtrasForNewProp(newProp); } catch (e) {
-      console.warn('[addCustomProp] recovery hook threw:', e?.message || e);
-    }
-  }
+  // Refacto Total 2026-05-24 — step 5: recovery hook `_ensureExtrasForNewProp`
+  // deleted. Post-refacto: blob-first boot guarantees the parsed cache always
+  // carries canonical extras (baked at the source device's sync), so a
+  // newly-declared prop already has data in `t.extras[notionSourceName]`
+  // when the user clicks +Add. No async catch-up needed.
   return { ok: true, prop: newProp };
-}
-
-// Recovery helper for the "+ Add → empty chip" symptom. Runs async so the
-// caller (addCustomProp) returns immediately. Strategy:
-//   1. If extras already populated for this prop → no-op.
-//   2. If raw cache is in memory → bake right now, persist, render.
-//   3. Otherwise → download the raw blob, bake, persist, render.
-// Idempotent + cheap to call (early-exit on populated extras).
-async function _ensureExtrasForNewProp(prop) {
-  if (!prop || !prop.name) return;
-  const items = appState?.trades?.items || [];
-  if (!items.length) return;
-  const sampleSize = Math.min(20, items.length);
-  let populated = 0;
-  for (let i = 0; i < sampleSize; i++) {
-    const v = items[i]?.extras?.[prop.name];
-    if (v !== undefined && v !== null && v !== '') populated++;
-  }
-  // Already healthy: at least 1 in 3 trades carry the prop → eager bake ran.
-  if ((populated / sampleSize) >= 0.3) return;
-
-  const src = _getCurrentHTFSource();
-  const profile = getActiveJournalProfile();
-  if (!profile?.id) return;
-  if ((localStorage.getItem(DS_KEY) || 'demo') !== 'api') return;
-
-  // Try in-memory raw first.
-  let raw = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : null;
-  if (!Array.isArray(raw) || !raw.length) {
-    // Download the raw blob — same path the boot IIFE uses.
-    try {
-      const dl = await window._SW.downloadRawTradesBlob(profile.id, src);
-      if (!dl?.trades || !dl.trades.length) {
-        console.warn('[AddCustomProp] no raw blob available for recovery — chip will populate after next Sync');
-        return;
-      }
-      raw = dl.trades;
-      _withJournalProfileCacheContext(profile.id, () => {
-        _setRawAPICache(raw, src, { fromBlobDownload: true });
-      });
-    } catch (e) {
-      console.warn('[AddCustomProp] raw blob download failed:', e?.message || e);
-      return;
-    }
-  }
-
-  // Run the full eager bake — populates extras for ALL detected props, not
-  // just this one. Keeps subsequent Add calls instant (extras already there).
-  if (typeof _bakeAllDetectedPropsToExtras !== 'function') return;
-  const stats = _bakeAllDetectedPropsToExtras(items, raw, src);
-  debugLog('[AddCustomProp] recovery bake', { prop: prop.name, ...stats });
-
-  // Also bake into the parsedMem slot so LS persist picks up the change.
-  const slot = `${src}_${profile.id}`;
-  const parsedMem = _parsedAPICacheMemory[slot];
-  if (Array.isArray(parsedMem) && parsedMem !== items) {
-    _bakeAllDetectedPropsToExtras(parsedMem, raw, src);
-  }
-
-  // Persist + invalidate + render. fromBlobDownload:true would suppress the
-  // upload trigger, but we WANT this state to upload so other devices get
-  // the freshly-baked extras. So omit the flag.
-  try { setCachedAPIData(parsedMem || items, src); } catch (e) {}
-  try { invalidateFilterCache(); } catch (e) {}
-  try { if (typeof render === 'function') render(); } catch (e) {}
-  // Sidebar Custom Fields chips aren't included in render(); re-render
-  // explicitly so the chip the user just added picks up the baked values.
-  try { if (typeof renderCustomFilterChips === 'function') renderCustomFilterChips(); } catch (e) {}
 }
 
 /** Patch an existing property. If `key` changes, runs _migrateCustomKey to keep
@@ -6530,178 +6433,85 @@ async function _reloadJournalProfileSelection(options = {}) {
     }
   }
 
-  // Raw cache fire-and-forget hydration (Task #3.10). Runs BEFORE the parsed
-  // LS-cache early-return below so the raw cache is populated even when first
-  // paint comes from LS (no Notion fetch on this boot). The parsed cache
-  // hydrates the UI synchronously from LS; the raw cache is only needed for
-  // custom widget creation and mapping changes, both of which happen seconds
-  // later — perfectly fine to await asynchronously while the dashboard is
-  // already interactive. We DON'T await this Promise so first paint stays
-  // unblocked. The fromBlobDownload flag prevents the just-downloaded raw
-  // from immediately re-uploading itself.
+  // Refacto Total 2026-05-24 — step 4: single boot entry point.
+  //
+  // Old design had two concurrent boot paths writing to the same slot:
+  //   (A) synchronous LS-first path (`getCachedAPIData()` + `_injectTrades`)
+  //   (B) asynchronous IIFE that downloaded the raw blob, baked extras into
+  //       parsedMem + appState, and called `setCachedAPIData` again
+  // The two paths could interleave with the debounced blob upload and the
+  // anti-stale guard, producing the non-deterministic "124 extras → 0
+  // extras across two refreshes" symptom.
+  //
+  // New design: blob is the canonical source. Boot tries the parsed blob
+  // first (it already carries baked extras from the source device's sync).
+  // Falls back to LS only when offline / blob 404, falls back to Notion
+  // fetch only when neither LS nor blob has anything. The raw blob still
+  // hydrates fire-and-forget (only needed for later widget-create + mapping
+  // change flows; no post-hydration bake or render — the parsed blob's
+  // extras are already canonical).
   if (isNotionWithDb && activeProfile?.id) {
-    const rawSrc = _getCurrentHTFSource();
+    const source = _getCurrentHTFSource();
     const rawProfileId = activeProfile.id;
+    // Fire-and-forget raw blob hydration. Used by widget-create + mapping
+    // change paths later in the session. No catch-up bake — the parsed blob
+    // we're about to inject already carries the canonical extras.
     (async () => {
       try {
-        // Skip if raw cache is already populated for this slot (e.g. a sync
-        // ran during boot and beat the download). Avoids overwriting fresher
-        // in-memory data with the blob version.
-        const slot = `${rawSrc}_${rawProfileId}`;
+        const slot = `${source}_${rawProfileId}`;
         if (Array.isArray(_rawAPICacheMemory[slot]) && _rawAPICacheMemory[slot].length) return;
-        const rawResult = await _SW.downloadRawTradesBlob(rawProfileId, rawSrc);
+        const rawResult = await _SW.downloadRawTradesBlob(rawProfileId, source);
         if (!rawResult?.trades || !rawResult.trades.length) return;
-        // Re-check after the await — if a sync filled raw in the meantime,
-        // don't clobber it with the (potentially older) blob payload.
         if (Array.isArray(_rawAPICacheMemory[slot]) && _rawAPICacheMemory[slot].length) return;
         _withJournalProfileCacheContext(rawProfileId, () => {
-          _setRawAPICache(rawResult.trades, rawSrc, { fromBlobDownload: true });
+          _setRawAPICache(rawResult.trades, source, { fromBlobDownload: true });
         });
         debugLog('[RawBlob] hydrated from blob (background)', {
-          profile: rawProfileId,
-          source: rawSrc,
-          count: rawResult.trades.length,
+          profile: rawProfileId, source, count: rawResult.trades.length,
         });
-        // ── Post-hydration bake catch-up (Task #3.10 follow-up) ──
-        // First-paint comes from the parsed LS cache via _injectTrades, which
-        // runs synchronously BEFORE this IIFE's await resolves. If a custom
-        // widget was created on a previous boot when raw was empty (or was
-        // created during this boot before raw hydration completed), its
-        // extras were never baked. Without this catch-up, the widget renders
-        // empty and the user has to manually Sync to populate. Re-bake every
-        // custom widget def now that raw is available; the bake updates
-        // appState.trades.items[].extras + _parsedAPICacheMemory[slot] + LS,
-        // then we trigger a render to surface the fresh data. Idempotent —
-        // bake skips widgets whose extras are already populated.
-        try {
-          // Eager bake all detected Notion props (Task #3.11) — supersedes
-          // the per-widget bake that used to run here. Walks every raw prop
-          // for every trade and writes to t.extras. Guarantees that any
-          // widget created later — including ones referencing props that
-          // weren't yet used by any widget on the source device — has data
-          // immediately on this fresh device, without forcing a Sync.
-          const slot = `${rawSrc}_${rawProfileId}`;
-          const parsedMem = _parsedAPICacheMemory[slot];
-          if (Array.isArray(parsedMem) && parsedMem.length && typeof _bakeAllDetectedPropsToExtras === 'function') {
-            let bakeStats = null;
-            _withJournalProfileCacheContext(rawProfileId, () => {
-              try {
-                bakeStats = _bakeAllDetectedPropsToExtras(parsedMem, rawResult.trades, rawSrc);
-                // CRITICAL (2026-05-24): also bake appState.trades.items, NOT
-                // just parsedMem. _injectTrades clones the trade objects via
-                // `{...t}` so appState items have their own object identity;
-                // mutating parsedMem doesn't propagate. The bake is idempotent
-                // — running it twice is fine. Without this, extras lives in
-                // _parsedAPICacheMemory but appState (what readers consume)
-                // stays empty, producing the "0/658 even though data is in
-                // memory" symptom Max kept hitting.
-                if (appState?.trades?.items?.length && appState.trades.items !== parsedMem) {
-                  _bakeAllDetectedPropsToExtras(appState.trades.items, rawResult.trades, rawSrc);
-                }
-              } catch (e) {
-                console.warn('[RawBlob] post-hydration eager bake failed:', e?.message || e);
-              }
-            });
-            // Force LS persist. The eager bake mutates parsedMem entries in
-            // place but setCachedAPIData below is what writes LS via the
-            // canonical serialize+safeSetLocalStorage path. fromBlobDownload
-            // prevents an immediate parsed-blob re-upload (the just-baked
-            // extras DO need to upload eventually — that fires from the
-            // user's next Sync or from the debounced upload path).
-            try {
-              _withJournalProfileCacheContext(rawProfileId, () => {
-                setCachedAPIData(parsedMem, rawSrc, { fromBlobDownload: true });
-              });
-            } catch (e) {
-              console.warn('[RawBlob] post-hydration LS persist failed:', e?.message || e);
-            }
-            // Re-render so the widgets reflect the newly-baked extras.
-            if (typeof render === 'function') {
-              try { render(); } catch (e) {}
-            }
-            // CRITICAL (2026-05-24): render() doesn't include the sidebar
-            // Custom Fields chips. Without this explicit call, the first-paint
-            // sidebar (rendered before extras arrive via this IIFE) shows
-            // "0/N" / "No values found" permanently for every declared
-            // customProp, even though appState.trades.items now carries the
-            // extras. Re-rendering the chips here makes them pick up the
-            // freshly-baked values.
-            if (typeof renderCustomFilterChips === 'function') {
-              try { renderCustomFilterChips(); } catch (e) {}
-            }
-            debugLog('[RawBlob] post-hydration eager bake', bakeStats);
-          }
-        } catch (e) {
-          console.warn('[RawBlob] post-hydration bake threw:', e?.message || e);
-        }
       } catch (e) {
         console.warn('[RawBlob] background hydration failed:', e?.message || e);
       }
     })();
-  }
 
-  const cached = getCachedAPIData();
-  // Anti-stale guard (2026-05-24): a prior client may have persisted a degraded
-  // LS cache (extras nearly empty) while the server blob holds the healthy,
-  // freshly-baked state. Without this guard the boot would commit to the bad
-  // LS payload and never consult the blob. The guard samples up to 50 trades:
-  // if < 30% carry ≥ 3 extras keys, we treat LS as stale and fall through to
-  // the blob download path below, which will hydrate from the authoritative
-  // server payload. Mirrors `_blobPayloadIsHealthy` used on the upload path.
-  let lsIsHealthy = true;
-  if (cached && cached.length) {
-    const sampleSize = Math.min(50, cached.length);
-    let healthy = 0;
-    for (let i = 0; i < sampleSize; i++) {
-      const ex = cached[i]?.extras;
-      if (ex && typeof ex === 'object' && Object.keys(ex).length >= 3) healthy++;
-    }
-    lsIsHealthy = (healthy / sampleSize) >= 0.3;
-    if (!lsIsHealthy) {
-      console.warn('[BootCache] LS payload looks degraded — falling through to blob download', {
-        sampleSize, healthy, profileId: activeProfile?.id, source: _getCurrentHTFSource(),
-      });
-    }
-  }
-  if (cached && cached.length && !forceFetch && lsIsHealthy) {
-    _injectTrades(cached, 'Notion Live', null);
-    _syncJournalProfileUI();
-    return;
-  }
-
-  // Cross-device fast path (Task #3.4): try Supabase Storage blob before
-  // hitting Notion. Inserted here so LS caches still win when present (no
-  // round-trip needed), but a brand-new device / fresh install / post-wipe
-  // gets its trades from the blob in one HTTP GET (~34 KB compressed for
-  // ~600 trades) instead of a full Notion query (slower, requires the user's
-  // Notion DB access). Manual Sync still hits Notion through its own path
-  // (_handleNotionSyncProfile → _loadNotionTrades directly), so the user can
-  // always force fresh data. Falls through to Notion if blob is missing
-  // (404), invalid, or any other download error.
-  if (isNotionWithDb && activeProfile?.id) {
-    const source = _getCurrentHTFSource();
-    try {
-      const parsedResult = await _SW.downloadTradesBlob(activeProfile.id, source);
-      if (parsedResult?.trades && parsedResult.trades.length) {
-        // fromBlobDownload:true prevents the setCachedAPIData hook from
-        // immediately re-uploading what we just downloaded (no loop). Raw
-        // hydration is handled by the fire-and-forget Promise launched
-        // earlier in this function — no need to re-download it here.
-        setCachedAPIData(parsedResult.trades, source, { fromBlobDownload: true });
-        _injectTrades(parsedResult.trades, 'Notion Live', null);
-        _syncJournalProfileUI();
-        debugLog('[BlobBoot] hydrated from blob', {
-          profile: activeProfile.id,
-          source,
-          count: parsedResult.trades.length,
-        });
-        return;
+    // Primary path: parsed blob from Supabase Storage. Single GET, ~34 KB
+    // compressed for ~600 trades, no Notion round-trip needed. The blob's
+    // extras are already baked (the source device's `_loadNotionTrades`
+    // ran the eager bake before uploading). fromBlobDownload:true prevents
+    // an immediate re-upload of what we just downloaded.
+    if (!forceFetch) {
+      try {
+        const parsedResult = await _SW.downloadTradesBlob(activeProfile.id, source);
+        if (parsedResult?.trades && parsedResult.trades.length) {
+          setCachedAPIData(parsedResult.trades, source, { fromBlobDownload: true });
+          _injectTrades(parsedResult.trades, 'Notion Live', null);
+          _syncJournalProfileUI();
+          debugLog('[BlobBoot] hydrated from blob', {
+            profile: activeProfile.id, source, count: parsedResult.trades.length,
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('[BlobBoot] download failed, falling back to LS / Notion:', e?.message || e);
       }
-    } catch (e) {
-      console.warn('[BlobBoot] download failed, falling back to Notion:', e?.message || e);
     }
   }
 
+  // Offline fallback: LS cache (or non-Notion modes that never had a blob).
+  // Reached only when (a) blob download failed / 404, (b) we're in
+  // non-Notion mode and have a CSV/Demo cache to inject, or (c) forceFetch.
+  if (!forceFetch) {
+    const cached = getCachedAPIData();
+    if (cached && cached.length) {
+      _injectTrades(cached, 'Notion Live', null);
+      _syncJournalProfileUI();
+      return;
+    }
+  }
+
+  // Last resort: full Notion fetch. Happens on fresh devices with no LS
+  // and no blob, on forceFetch (manual Sync click), or when both prior
+  // paths failed.
   _syncJournalProfileUI();
   await loadFromAPI({ force: true });
 }
