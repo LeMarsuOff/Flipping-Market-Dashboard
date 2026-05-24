@@ -2584,23 +2584,21 @@ function setActivePreset(presetId) {
 
 // Restore the previously-active preset for the current profile slot.
 //   - If a persisted id exists and is still a valid preset → applyPreset(it)
-//   - If a persisted value of `null` exists (user explicitly cleared) → respect it
-//   - If nothing is persisted (fresh profile, never visited) → default to P0
+//   - Otherwise (null persisted, no value, stale id) → default to RAW Baseline (P0)
+// Refacto Total 2026-05-24 — Max invariant: the user is NEVER on "no preset".
+// Even after deleting the previously-active preset (which sets activeId=null),
+// the next refresh lands on P0 rather than respecting the null.
 function _restoreActivePresetForCurrentSlot() {
-  let raw = null;
-  try { raw = localStorage.getItem(_htfKey(ACTIVE_FILTER_PRESET_LS_KEY)); } catch (e) {}
-  if (raw !== null) {
-    let parsed = null;
-    try { parsed = JSON.parse(raw); } catch (e) { raw = null; }
-    if (raw !== null) {
-      if (parsed === null || PRESETS.some(p => p.id === parsed)) {
-        try { applyPreset(parsed); } catch (e) { console.warn('[restore-preset] applyPreset failed:', e?.message); }
-        return;
-      }
-      // Stale (preset id no longer exists in this slot's PRESETS) — fall through.
-    }
+  let parsed = null;
+  try {
+    const raw = localStorage.getItem(_htfKey(ACTIVE_FILTER_PRESET_LS_KEY));
+    if (raw !== null) parsed = JSON.parse(raw);
+  } catch (e) {}
+  if (parsed !== null && PRESETS.some(p => p.id === parsed)) {
+    try { applyPreset(parsed); } catch (e) { console.warn('[restore-preset] applyPreset failed:', e?.message); }
+    return;
   }
-  // No persisted state for this profile yet → default to RAW Baseline (P0).
+  // null persisted, nothing persisted, or stale id → RAW Baseline (P0).
   if (PRESETS.some(p => p.id === 0)) {
     try { applyPreset(0); } catch (e) { console.warn('[restore-preset] applyPreset(0) failed:', e?.message); }
   }
@@ -10965,10 +10963,21 @@ async function initDataSource() {
     // first path immediately so the canonical server payload re-injects on
     // top within ~200-500 ms. Without this, custom filter chips show empty
     // until the user switches profiles (which is what Max kept hitting).
+    //
+    // After the blob re-inject, restore the active preset again — _injectTrades
+    // resets appState.presets.activeId to null in its first-load branch and
+    // the outer boot path's _restoreActivePresetForCurrentSlot already fired
+    // before the async re-inject landed. Without this re-call the user ends
+    // up on "no preset" after every refresh.
     if (activeProfile?.connectionType === 'notion' && getIntegration(activeProfile).isReady(activeProfile)) {
       (async () => {
-        try { await _reloadJournalProfileSelection({}); }
-        catch (e) { console.warn('[boot] blob refresh failed:', e?.message || e); }
+        try {
+          await _reloadJournalProfileSelection({});
+          try { _restoreActivePresetForCurrentSlot(); } catch (e) {}
+          try { if (typeof render === 'function') render(); } catch (e) {}
+        } catch (e) {
+          console.warn('[boot] blob refresh failed:', e?.message || e);
+        }
       })();
     }
   } else if (restoreCSV && csvCache) {
