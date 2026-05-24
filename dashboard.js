@@ -1040,6 +1040,7 @@ const _SW = (() => {
         notion_sync_state     : ['idle', 'syncing', 'synced', 'error', 'disconnected'].includes(p.notionSyncState) ? p.notionSyncState : 'idle',
         notion_last_sync      : p.notionLastSync || null,
         notion_trade_count    : Number.isFinite(Number(p.notionTradeCount)) ? Number(p.notionTradeCount) : 0,
+        template_choice       : ['m15', 'h4', 'other'].includes(p.templateChoice) ? p.templateChoice : null,
         is_active             : p.id === String(activeId || ''),
         sort_order            : i,
         updated_at            : new Date().toISOString()
@@ -1110,7 +1111,7 @@ const _SW = (() => {
       if (legacyErr) console.warn('[JournalProfilesSource] user_data journalProfiles_v1 read error:', legacyErr.message);
       debugLog('[JournalProfilesSource] user_data journalProfiles_v1:', legacyRows || []);
       const { data, error } = await c.from('journal_profiles')
-        .select('id,name,type,api_url,source,notion_database_id,notion_database_title,notion_workspace_name,connection_type,notion_sync_state,notion_last_sync,notion_trade_count,is_active,sort_order')
+        .select('id,name,type,api_url,source,notion_database_id,notion_database_title,notion_workspace_name,connection_type,notion_sync_state,notion_last_sync,notion_trade_count,template_choice,is_active,sort_order')
         .eq('user_id', uid)
         .order('sort_order', { ascending: true });
       if (error) {
@@ -1140,6 +1141,7 @@ const _SW = (() => {
           notionSyncState     : r.notion_sync_state     || 'idle',
           notionLastSync      : r.notion_last_sync      || 0,
           notionTradeCount    : r.notion_trade_count    || 0,
+          templateChoice      : r.template_choice       || '',
         };
         debugLog('[DashboardDebug]');
         return profile;
@@ -4697,6 +4699,12 @@ async function hydrateJournalProfilesFromRemote(mergedFromSync) {
         return {
           ...profile,
           notionDatabaseTitle: profile.notionDatabaseTitle || local.notionDatabaseTitle || '',
+          // Preserve local templateChoice when remote NULL — covers profiles
+          // created before the template_choice column shipped (2026-05-24).
+          // Without this, the local 'm15'/'h4' choice gets clobbered to ''
+          // → _normalizeJournalProfile falls back to 'other' → Reapply hides
+          // 4 dims via the TEMPLATE_MAPPINGS.other overlay.
+          templateChoice: profile.templateChoice || local.templateChoice || '',
         };
       })
       // 2026-05-24: drop the legacy "M15 Personnel" auto-seed (matches
@@ -7774,7 +7782,17 @@ function _maybeAutoApplyTemplateMapping(rawTrades, profileOverride = null) {
   // (is-auto-mapped) instead of blue (is-remapped). The flag is per-dim:
   // when the user manually pencil-picks a dim, its key is removed from the
   // set in `pickAPIField`, which flips it back to is-remapped (blue).
-  _setAutoMappedDims(new Set(Object.keys(mapping)));
+  // EXCLUSION: never tag __NO_MAPPING__ values as auto-mapped. A dim with
+  // status `is-auto-no-mapping` is rendered FULLY invisible by
+  // _renderMappingSectionsHtml — no row, no footer toggle, no resurrect.
+  // For the TEMPLATE_MAPPINGS.other overlay (obstacles/h4/badFeeling/hour
+  // forced to __NO_MAPPING__), this meant those 4 dims vanished after every
+  // Reapply on a templateChoice='other' profile. Excluding NO_MAPPING from
+  // the auto-mapped set demotes them to `is-no-mapping`, which is hidden by
+  // default but resurrectable via the "Show N no-mapping fields" footer
+  // toggle in each tier section. Repro: Max 2026-05-24.
+  const autoMappedKeys = Object.keys(mapping).filter(k => !_isNoMappingValue(mapping[k]));
+  _setAutoMappedDims(new Set(autoMappedKeys));
   if (mismatchToast && typeof showThemeToast === 'function') showThemeToast(mismatchToast, false);
   debugLog('[TplDetect] bucket:', bucket, '· detected:', detected, '· applied:', trackingId, '· wrote', Object.keys(mapping).length, 'overrides');
   return trackingId;
@@ -13714,6 +13732,113 @@ function _normalizeTvImageUrl(raw) {
   };
 }
 
+// ── Supabase Storage fallback for expired Notion S3 URLs ──────────────────────
+// Notion file URLs expire ~1h after they're minted by the OAuth proxy. The
+// media queue uploads them to Supabase Storage at sync-time and patches the
+// in-memory trade with the permanent URL, but if (a) the upload silently
+// failed, (b) a later re-sync clobbered the patched URL before the
+// `_preservePermanentImageUrls` helper shipped (2026-05-24), or (c) the user
+// has not re-synced since the helper deployed, the in-memory trade can still
+// carry an expired Notion URL while a permanent one sits in Supabase.
+//
+// Recovery is deterministic: storage path is
+//   notion-screenshots/<notion_id>_<slot>.png
+// (bucket is public-read, no auth needed). When the lightbox <img> fails to
+// load AND the failed URL is a Notion S3 URL, we test-load the Supabase URL.
+// On 200 we swap imgEl.src AND patch appState.trades.items so subsequent
+// renders of this trade skip straight to the permanent URL — one click
+// rescues the trade for the rest of the session.
+//
+// _notionId resolution: _lbData rows don't carry _notionId (lightbox keys on
+// pair+date+URL only), so we match back to the trade in appState by the same
+// triple. Slot resolution: m15After is profile-source-dependent (h4_after on
+// H4 profiles vs m15_after on M15), per _fieldToSlot in _mediaQueue.
+const _SUPABASE_SCREENSHOTS_BASE = 'https://pjkilmmltbyugjxbvyvh.supabase.co/storage/v1/object/public/notion-screenshots';
+const _LB_STEP_TO_SLOT = { h4Before: 'h4_before', m15Before: 'm15_before' };
+const _LB_STEP_TO_TRADE_FIELD = { h4Before: 'imgH4Before', m15Before: 'imgM15', m15After: 'imgM15After' };
+function _resolveLbStepSlot(step) {
+  return _LB_STEP_TO_SLOT[step] || ((_getCurrentHTFSource() === 'h4') ? 'h4_after' : 'm15_after');
+}
+function _findTradeForLbRow(tr, url) {
+  // Match a _lbData row back to its source trade in appState by pair+date+URL.
+  // URL match across all 6 image fields (current + Orig) to cover the case
+  // where the user clicks the H4 Before slot but pair+date alone isn't unique.
+  if (!tr) return null;
+  const items = appState?.trades?.items;
+  if (!Array.isArray(items) || !items.length) return null;
+  return items.find(t => {
+    if (t.pair !== tr.pair || t.date !== tr.date) return false;
+    return !url || t.imgM15 === url || t.imgH4Before === url || t.imgM15After === url
+        || t.imgM15Orig === url || t.imgH4BeforeOrig === url || t.imgM15AfterOrig === url;
+  }) || null;
+}
+// Pre-resolve a (potentially expired) Notion S3 URL to its deterministic
+// Supabase Storage equivalent BEFORE setting imgEl.src — eliminates the ~1s
+// "Lien TradingView invalide" placeholder flash that would otherwise occur
+// while waiting for the Notion 403. Returns '' when no swap is possible
+// (URL not Notion S3, no matching trade, no _notionId on the trade).
+function _resolveLightboxImageUrl(url, tr, step) {
+  if (!url || !_isNotionFileUrl(url)) return '';
+  const matched = _findTradeForLbRow(tr, url);
+  if (!matched?._notionId) return '';
+  return `${_SUPABASE_SCREENSHOTS_BASE}/${matched._notionId}_${_resolveLbStepSlot(step)}.png`;
+}
+function _patchTradeAndLbRowToSupabase(tr, step, supabaseUrl, originalUrl) {
+  if (!tr || !step || !supabaseUrl || !originalUrl) return;
+  if (tr[step] === originalUrl) tr[step] = supabaseUrl;
+  const tradeField = _LB_STEP_TO_TRADE_FIELD[step] || 'imgM15After';
+  const items = appState?.trades?.items;
+  if (!Array.isArray(items)) return;
+  const matched = items.find(t => t.pair === tr.pair && t.date === tr.date && (
+    t.imgM15 === originalUrl || t.imgH4Before === originalUrl || t.imgM15After === originalUrl ||
+    t.imgM15Orig === originalUrl || t.imgH4BeforeOrig === originalUrl || t.imgM15AfterOrig === originalUrl
+  ));
+  if (!matched) return;
+  if (matched[tradeField] === originalUrl) matched[tradeField] = supabaseUrl;
+  const origField = tradeField + 'Orig';
+  if (matched[origField] === originalUrl) matched[origField] = supabaseUrl;
+}
+function _tryRescueFromSupabase(imgEl, failedUrl) {
+  if (!imgEl || !failedUrl || !_isNotionFileUrl(failedUrl)) return false;
+  const tr = _lbData[_lbTradeIdx];
+  if (!tr) return false;
+  const items = appState?.trades?.items;
+  if (!Array.isArray(items) || !items.length) return false;
+  // Match by pair+date+URL across all 6 image fields (current + Orig).
+  const matchedItem = items.find(t => {
+    if (t.pair !== tr.pair || t.date !== tr.date) return false;
+    return t.imgM15 === failedUrl || t.imgH4Before === failedUrl || t.imgM15After === failedUrl
+        || t.imgM15Orig === failedUrl || t.imgH4BeforeOrig === failedUrl || t.imgM15AfterOrig === failedUrl;
+  });
+  const notionId = matchedItem?._notionId;
+  if (!notionId) return false;
+  const step = _lbStep;
+  const slot = _LB_STEP_TO_SLOT[step] || ((_getCurrentHTFSource() === 'h4') ? 'h4_after' : 'm15_after');
+  const supabaseUrl = `${_SUPABASE_SCREENSHOTS_BASE}/${notionId}_${slot}.png`;
+  const tradeField = _LB_STEP_TO_TRADE_FIELD[step] || 'imgM15After';
+  // Test-load asynchronously. On success we swap the lightbox img, patch the
+  // trade in-memory (self-healing for this session), and remove the
+  // placeholder if the generic fallback already inserted one.
+  const test = new Image();
+  test.onload = () => {
+    if (imgEl.src === failedUrl || _isNotionFileUrl(imgEl.src)) {
+      imgEl.src = supabaseUrl;
+      imgEl.style.display = '';
+    }
+    if (matchedItem[tradeField] === failedUrl) matchedItem[tradeField] = supabaseUrl;
+    const origField = tradeField + 'Orig';
+    if (matchedItem[origField] === failedUrl) matchedItem[origField] = supabaseUrl;
+    // Also patch the _lbData row so navigation within the same lightbox
+    // session doesn't re-trigger the same broken-URL path.
+    if (tr[step] === failedUrl) tr[step] = supabaseUrl;
+    const parent = imgEl.parentElement;
+    if (parent) parent.querySelectorAll('.tv-img-placeholder').forEach(n => n.remove());
+    debugLog('[ImgRescue] swapped expired Notion → Supabase:', notionId, slot);
+  };
+  test.src = supabaseUrl;
+  return true;
+}
+
 // Idempotent onerror swap: replaces a broken <img> with a placeholder card.
 // Reads the original share URL from imgEl.dataset.tvOrig — empty means non-TV
 // source (expired Notion S3, custom host, typo), so we drop the "Open on TV"
@@ -13722,10 +13847,38 @@ function _normalizeTvImageUrl(raw) {
 function _installTvImageFallback(imgEl) {
   if (!imgEl || imgEl.dataset.tvFallbackInstalled === '1') return;
   imgEl.dataset.tvFallbackInstalled = '1';
+  // On successful load: if we pre-swapped Notion → Supabase at _lbShow time
+  // (notionFallback dataset is set), persist the swap into _lbData + appState
+  // so the rest of the app sees the permanent URL. Avoids re-resolving on
+  // every navigation and keeps the trade consistent across renders.
+  imgEl.addEventListener('load', function _onTvLoad() {
+    const notionFallback = imgEl.dataset.notionFallback || '';
+    if (!notionFallback) return;
+    if (!imgEl.src.startsWith(_SUPABASE_SCREENSHOTS_BASE)) return;
+    const tr = _lbData[_lbTradeIdx];
+    _patchTradeAndLbRowToSupabase(tr, _lbStep, imgEl.src, notionFallback);
+    // Once persisted, clear the dataset so we don't double-patch on later loads.
+    delete imgEl.dataset.notionFallback;
+    delete imgEl.dataset.notionRetried;
+  });
   imgEl.addEventListener('error', function _onTvErr() {
     const parent = imgEl.parentElement;
     if (!parent) return;
     if (parent.querySelector('.tv-img-placeholder')) { imgEl.style.display = 'none'; return; }
+    // First failure path: pre-swap to Supabase happened but Supabase 404'd
+    // (image was never uploaded for this trade — sync silently failed, or
+    // trade is newer than the queue's last successful batch). Retry the
+    // original Notion URL once — it may still be fresh enough to load.
+    const notionFallback = imgEl.dataset.notionFallback || '';
+    if (notionFallback && !imgEl.dataset.notionRetried) {
+      imgEl.dataset.notionRetried = '1';
+      imgEl.src = notionFallback;
+      return;
+    }
+    // Reactive Supabase rescue — covers the legacy path (no pre-swap, e.g.
+    // an <img> outside _lbShow's control). For lightbox-driven loads this is
+    // a no-op since pre-swap already handled it.
+    _tryRescueFromSupabase(imgEl, imgEl.src);
     const orig = imgEl.dataset.tvOrig || '';
     const ph = document.createElement('div');
     ph.className = 'tv-img-placeholder';
@@ -13852,7 +14005,21 @@ function _lbShow(tradeIdx, step) {
     imgEl.style.display = '';
     imgEl.dataset.tvOrig = tr[_lbStep + 'Orig'] || '';
     _installTvImageFallback(imgEl);
-    imgEl.src = url;
+    // Pre-swap expired Notion URLs to deterministic Supabase URLs so the
+    // <img> never has to wait for the Notion 403 → eliminates the "Lien
+    // TradingView invalide" placeholder flash. The fallback (original Notion
+    // URL) is stashed on the dataset; if Supabase 404s the onerror handler
+    // retries the original URL once before giving up. notionRetried is reset
+    // each call so navigation between trades gets a fresh attempt.
+    const swapped = _resolveLightboxImageUrl(url, tr, _lbStep);
+    delete imgEl.dataset.notionRetried;
+    if (swapped && swapped !== url) {
+      imgEl.dataset.notionFallback = url;
+      imgEl.src = swapped;
+    } else {
+      delete imgEl.dataset.notionFallback;
+      imgEl.src = url;
+    }
   }
 
   // Highlight active trade card in drawer
