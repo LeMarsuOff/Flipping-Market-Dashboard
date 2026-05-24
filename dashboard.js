@@ -14799,8 +14799,8 @@ function renderBarsSplit(containerId, items, small, chart) {
   if (!items || !items.length) { container.innerHTML = '<div class="no-data">No data</div>'; return; }
 
   const cG = tc('--g'), cR = tc('--r'), cA = tc('--gold') || tc('--a');
-  const cBETP = '#2962ff';
-  const cBESL = '#b478f0';
+  const cBETP = tc('--oc-betp');
+  const cBESL = tc('--oc-besl');
 
   const useTotal = barMode === 'total';
   const useWR    = barMode === 'wr';
@@ -15535,7 +15535,7 @@ function drawCharts(trades) {
       boxY = Math.max(pad.t, Math.min(boxY, H - pad.b - boxH));
       const boxX = Math.max(pad.l, Math.min(x - boxW / 2, W - pad.r - boxW));
 
-      eqCtx.fillStyle = 'rgba(11,18,32,0.88)';
+      eqCtx.fillStyle = tcRgba('--bg4', 0.88);
       eqCtx.strokeStyle = color;
       eqCtx.lineWidth = 1;
       eqCtx.beginPath();
@@ -15543,7 +15543,7 @@ function drawCharts(trades) {
       eqCtx.fill();
       eqCtx.stroke();
 
-      eqCtx.fillStyle = '#e8eefc';
+      eqCtx.fillStyle = tc('--white');
       eqCtx.textAlign = 'center';
       eqCtx.textBaseline = 'middle';
       eqCtx.fillText(text, boxX + boxW / 2, boxY + boxH / 2);
@@ -16607,8 +16607,8 @@ function drawDonut(stats) {
     if (!pa || !pb) return a;
     return `rgb(${Math.round((parseInt(pa[1],16)+parseInt(pb[1],16))/2)},${Math.round((parseInt(pa[2],16)+parseInt(pb[2],16))/2)},${Math.round((parseInt(pa[3],16)+parseInt(pb[3],16))/2)})`;
   };
-  const cBETP = '#2962ff';
-  const cBESL = '#b478f0';
+  const cBETP = tc('--oc-betp');
+  const cBESL = tc('--oc-besl');
 
   const data = [
     { label:'TP',    n: (stats||{}).cnt_tp||0, color: cG    },
@@ -16847,8 +16847,8 @@ function drawMonthly(trades) {
   const _fsGrid    = tc('--fs-monthly-grid')    || '8px';
   const _fsTip     = _cs.getPropertyValue('--fs-monthly-tooltip').trim() || '9px';
 
-  const cBETP = '#2962ff';
-  const cBESL = '#b478f0';
+  const cBETP = tc('--oc-betp');
+  const cBESL = tc('--oc-besl');
 
   // Tooltip element
   const tip = getByIdSafe('monthly-tooltip');
@@ -18031,8 +18031,8 @@ function _buildKpiTooltipBreakdown(kpiKey, stats, beStats) {
     const pct = (n) => (n / total * 100).toFixed(0) + '%';
     const rows = [
       { color: 'var(--g)',                                          label: 'TP',    n: stats.cnt_tp || 0 },
-      { color: '#2962ff',                                           label: 'BE-TP', n: stats.be_tp  || 0 },
-      { color: '#b478f0',                                           label: 'BE-SL', n: stats.be_sl  || 0 },
+      { color: 'var(--oc-betp)',                                    label: 'BE-TP', n: stats.be_tp  || 0 },
+      { color: 'var(--oc-besl)',                                    label: 'BE-SL', n: stats.be_sl  || 0 },
       { color: 'var(--r)',                                          label: 'SL',    n: stats.cnt_sl || 0 },
     ].filter(r => r.n > 0)
      .map(r => row(r.color, r.label, `${r.n} (${pct(r.n)})`));
@@ -18068,8 +18068,8 @@ function _buildKpiTooltipBreakdown(kpiKey, stats, beStats) {
     const beSl = src.be_sl || 0;
     const total = beTp + beSl;
     if (total <= 0) return '';
-    const cBETP = '#2962ff';
-    const cBESL = '#b478f0';
+    const cBETP = tc('--oc-betp');
+    const cBESL = tc('--oc-besl');
     const rows = [];
     if (beTp > 0) rows.push(row(cBETP, 'BE-TP', `${beTp} (${(beTp / total * 100).toFixed(0)}%)`));
     if (beSl > 0) rows.push(row(cBESL, 'BE-SL', `${beSl} (${(beSl / total * 100).toFixed(0)}%)`));
@@ -22014,7 +22014,7 @@ function _calRenderAnnualDayCell(dateStr, data, maxAbs, cG, cR) {
   const alpha = (0.18 + intensity * 0.72).toFixed(2);
   const hexCol = isWin ? cG : cR;
   const bg = `rgba(${_calHexToRgb(hexCol)},${alpha})`;
-  const txtCol = intensity > 0.45 ? 'rgba(0,0,0,0.9)' : (isWin ? cG : cR);
+  const txtCol = intensity > 0.45 ? tc('--text-inverse') : (isWin ? cG : cR);
   const sign = isWin ? '+' : '';
   const valStr = `${sign}${data.r.toFixed(1)}`;
 
@@ -22137,7 +22137,7 @@ function _renderCalendarMonthly(trades, yearSel) {
 function _calRenderMonthlyDayCell(dateStr, day, data, maxAbs, cG, cR) {
   if (!data) {
     return `<div style="background:var(--bg3);border-radius:3px;padding:3px;display:flex;flex-direction:column">
-      <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7px);color:rgba(255,255,255,0.15)">${day}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7px);color:color-mix(in srgb, var(--dim) 50%, transparent)">${day}</div>
     </div>`;
   }
 
@@ -22155,7 +22155,7 @@ function _calRenderMonthlyDayCell(dateStr, day, data, maxAbs, cG, cR) {
       const a = (0.45 + Math.min(Math.abs(v.r) / (maxAbs || 1), 1) * 0.50).toFixed(2);
       innerHtml += `<div title="${String(h).padStart(2, '0')}h: ${v.r >= 0 ? '+' : ''}${v.r.toFixed(1)}R" style="background:rgba(${rgb},${a});border-radius:1px"></div>`;
     } else {
-      innerHtml += `<div title="${String(h).padStart(2, '0')}h" style="background:rgba(255,255,255,0.05);border-radius:1px"></div>`;
+      innerHtml += `<div title="${String(h).padStart(2, '0')}h" style="background:color-mix(in srgb, var(--dim) 25%, transparent);border-radius:1px"></div>`;
     }
   }
   innerHtml += `</div>`;
@@ -26739,7 +26739,7 @@ function _poRenderEquity(sel, base) {
   const _PO_PRESET_COLORS = {
     P1: tc('--g')   || '#5dd6a8',
     P2: tc('--t')   || '#3ec8d8',
-    P3: '#b478f0',
+    P3: tc('--oc-besl') || '#b478f0',
   };
   for (const key of _PO_PRESET_SLOT_KEYS) {
     const result = (typeof _poSimulateSlotModel === 'function') ? _poSimulateSlotModel(key) : null;
@@ -28424,8 +28424,8 @@ function _buildBarTipHTML(label, n, oc) {
   const gridRows = `${showTP ? `
       <span style="color:var(--g)">TP</span><span style="color:var(--g);text-align:right">×${tpN}</span><span style="color:var(--g);text-align:right">${fmt(tpR)}</span>` : ''}${showSL ? `
       <span style="color:var(--r)">SL</span><span style="color:var(--r);text-align:right">×${slN}</span><span style="color:var(--r);text-align:right">${fmt(slR)}</span>` : ''}${showBETP ? `
-      <span style="color:#2962ff">BE-TP</span><span style="color:#2962ff;text-align:right">×${betpN}</span><span style="color:#2962ff;text-align:right">${fmt(betpR)}</span>` : ''}${showBESL ? `
-      <span style="color:#b478f0">BE-SL</span><span style="color:#b478f0;text-align:right">×${beslN}</span><span style="color:#b478f0;text-align:right">${fmt(beslR)}</span>` : ''}`;
+      <span style="color:var(--oc-betp)">BE-TP</span><span style="color:var(--oc-betp);text-align:right">×${betpN}</span><span style="color:var(--oc-betp);text-align:right">${fmt(betpR)}</span>` : ''}${showBESL ? `
+      <span style="color:var(--oc-besl)">BE-SL</span><span style="color:var(--oc-besl);text-align:right">×${beslN}</span><span style="color:var(--oc-besl);text-align:right">${fmt(beslR)}</span>` : ''}`;
   return `
     <div class="utip-header">${label} <span class="utip-header-sub">×${n}</span></div>
     <div class="utip-grid">${gridRows}
@@ -40875,7 +40875,7 @@ function _drawMobileEquityFrame(canvas, trades, crosshairIdx) {
 
     // Vertical line
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.strokeStyle = tcRgba('--white', 0.35);
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -40905,7 +40905,7 @@ function _drawMobileEquityFrame(canvas, trades, crosshairIdx) {
     if (tx + tW > W - pad.r) tx = W - pad.r - tW;
     const ty = cy - tH - 8 < pad.t ? cy + 10 : cy - tH - 8;
 
-    ctx.fillStyle = 'rgba(20,20,30,0.88)';
+    ctx.fillStyle = tcRgba('--bg4', 0.88);
     ctx.beginPath();
     ctx.roundRect(tx, ty, tW, tH, 3);
     ctx.fill();
@@ -41797,7 +41797,7 @@ function _svDrawEquity(trades) {
   // Zero line
   const y0 = toY(0);
   ctx.save();
-  ctx.strokeStyle = 'rgba(176,200,232,0.12)';
+  ctx.strokeStyle = tcRgba('--white', 0.12);
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(pad.l, y0); ctx.lineTo(W - pad.r, y0); ctx.stroke();
@@ -41886,7 +41886,7 @@ function _svDrawEquity(trades) {
     const boxX = Math.max(pad.l, Math.min(x - boxW / 2, W - pad.r - boxW));
     const boxY = Math.max(pad.t, Math.min(defaultBoxY, H - pad.b - 20));
 
-    ctx.fillStyle = 'rgba(11,18,32,0.88)';
+    ctx.fillStyle = tcRgba('--bg4', 0.88);
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -41894,7 +41894,7 @@ function _svDrawEquity(trades) {
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#e8eefc';
+    ctx.fillStyle = tc('--white');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, boxX + boxW / 2, boxY + 9.5);
@@ -41929,7 +41929,7 @@ function _svAnnualCalDayCell(data, maxAbs, cG, cR) {
   const hexCol = isWin ? cG : cR;
   const rgb = _calHexToRgb(hexCol);
   const alpha = (0.2 + Math.min(Math.abs(data.r) / maxAbs, 1) * 0.7).toFixed(2);
-  const txtCol = parseFloat(alpha) > 0.5 ? 'rgba(0,0,0,0.85)' : hexCol;
+  const txtCol = parseFloat(alpha) > 0.5 ? tc('--text-inverse') : hexCol;
   return `<div class="sv-cal-mini-day sv-cal-mini-day-value" style="--sv-cal-bg:rgba(${rgb},${alpha});--sv-cal-fg:${txtCol}">${data.r >= 0 ? '+' : ''}${data.r.toFixed(1)}</div>`;
 }
 
