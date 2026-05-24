@@ -1875,13 +1875,82 @@ function addCustomProp({ name, key, type, showInFilters }) {
   // Prepend the new prop so it appears at the top of the declared list, then
   // re-normalize the `order` field so the existing entries shift down by one.
   _saveCustomProps([newProp, ...props].map((p, i) => ({ ...p, order: i })));
-  // Extras are populated exclusively by the eager bake at sync time (under the
-  // Notion display name = prop.name). No per-prop repopulate here: it would
-  // write under prop.key (camelCase) and conflict with the eager-bake's
-  // display-name key, producing the "rotating-empty-filter" bug. Chip will
-  // show data immediately if the prop was already detected (eager-bake ran on
-  // last sync); otherwise data appears on next Sync.
+  // Recovery hook (2026-05-24): if the trades in memory don't already carry
+  // this prop in their extras (e.g. the eager bake at boot was skipped
+  // because the raw cache was empty), fire an explicit recovery: download
+  // the raw blob and re-bake. Solves the "+ Add → 0/N" symptom for users
+  // whose LS cache predates Task #3.11's eager bake. Async, non-blocking.
+  if (typeof _ensureExtrasForNewProp === 'function') {
+    try { _ensureExtrasForNewProp(newProp); } catch (e) {
+      console.warn('[addCustomProp] recovery hook threw:', e?.message || e);
+    }
+  }
   return { ok: true, prop: newProp };
+}
+
+// Recovery helper for the "+ Add → empty chip" symptom. Runs async so the
+// caller (addCustomProp) returns immediately. Strategy:
+//   1. If extras already populated for this prop → no-op.
+//   2. If raw cache is in memory → bake right now, persist, render.
+//   3. Otherwise → download the raw blob, bake, persist, render.
+// Idempotent + cheap to call (early-exit on populated extras).
+async function _ensureExtrasForNewProp(prop) {
+  if (!prop || !prop.name) return;
+  const items = appState?.trades?.items || [];
+  if (!items.length) return;
+  const sampleSize = Math.min(20, items.length);
+  let populated = 0;
+  for (let i = 0; i < sampleSize; i++) {
+    const v = items[i]?.extras?.[prop.name];
+    if (v !== undefined && v !== null && v !== '') populated++;
+  }
+  // Already healthy: at least 1 in 3 trades carry the prop → eager bake ran.
+  if ((populated / sampleSize) >= 0.3) return;
+
+  const src = _getCurrentHTFSource();
+  const profile = getActiveJournalProfile();
+  if (!profile?.id) return;
+  if ((localStorage.getItem(DS_KEY) || 'demo') !== 'api') return;
+
+  // Try in-memory raw first.
+  let raw = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : null;
+  if (!Array.isArray(raw) || !raw.length) {
+    // Download the raw blob — same path the boot IIFE uses.
+    try {
+      const dl = await window._SW.downloadRawTradesBlob(profile.id, src);
+      if (!dl?.trades || !dl.trades.length) {
+        console.warn('[AddCustomProp] no raw blob available for recovery — chip will populate after next Sync');
+        return;
+      }
+      raw = dl.trades;
+      _withJournalProfileCacheContext(profile.id, () => {
+        _setRawAPICache(raw, src, { fromBlobDownload: true });
+      });
+    } catch (e) {
+      console.warn('[AddCustomProp] raw blob download failed:', e?.message || e);
+      return;
+    }
+  }
+
+  // Run the full eager bake — populates extras for ALL detected props, not
+  // just this one. Keeps subsequent Add calls instant (extras already there).
+  if (typeof _bakeAllDetectedPropsToExtras !== 'function') return;
+  const stats = _bakeAllDetectedPropsToExtras(items, raw, src);
+  debugLog('[AddCustomProp] recovery bake', { prop: prop.name, ...stats });
+
+  // Also bake into the parsedMem slot so LS persist picks up the change.
+  const slot = `${src}_${profile.id}`;
+  const parsedMem = _parsedAPICacheMemory[slot];
+  if (Array.isArray(parsedMem) && parsedMem !== items) {
+    _bakeAllDetectedPropsToExtras(parsedMem, raw, src);
+  }
+
+  // Persist + invalidate + render. fromBlobDownload:true would suppress the
+  // upload trigger, but we WANT this state to upload so other devices get
+  // the freshly-baked extras. So omit the flag.
+  try { setCachedAPIData(parsedMem || items, src); } catch (e) {}
+  try { invalidateFilterCache(); } catch (e) {}
+  try { if (typeof render === 'function') render(); } catch (e) {}
 }
 
 /** Patch an existing property. If `key` changes, runs _migrateCustomKey to keep
