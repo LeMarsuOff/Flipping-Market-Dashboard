@@ -1158,12 +1158,12 @@ function _scheduleBlobUpload(profileId, source, trades) {
   const key = `${profileId}_${src}`;
   const existing = _blobUploadTimers.get(key);
   if (existing) clearTimeout(existing.timer);
-  // Cache key matches `_cacheKeyFor(src)` (source then profile, suffix-style).
-  // Fixed 2026-05-24: order was previously inverted (profile_src), so the LS
-  // re-read at fire time always missed → fell back to the stale `trades`
-  // snapshot from schedule time. With the right key, the fire-time payload
-  // is the freshest LS state and survives mid-flight extras updates.
-  const cacheKey = `apiTradesCache_v2_rrmax_${src}_${profileId}`;
+  // Cache key matches `_cacheKeyFor(src)` after `getProfileScopedKey` rewriting.
+  // `getProfileScopedKey('apiTradesCache_v2_rrmax_m15')` matches the regex
+  // `^(.*)_(m15|h4)$` and produces `apiTradesCache_v2_rrmax_<profileId>_<src>`
+  // — profile in the MIDDLE, not the suffix. (Earlier today I "fixed" this
+  // the wrong way; reverting now.)
+  const cacheKey = `apiTradesCache_v2_rrmax_${profileId}_${src}`;
   const timer = setTimeout(async () => {
     _blobUploadTimers.delete(key);
     try {
