@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=230">
+<link rel="stylesheet" href="dashboard.css?v=239">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -997,6 +997,13 @@
       </span>
       <div class="tpm-mode-menu" id="tpm-mode-menu" role="menu" aria-label="TP Management mode"></div>
     </div>
+    <button class="topbar-signin-btn" id="topbar-signin-btn" data-action="toggle-account-panel" type="button"
+            style="display:none" title="Sign in or create an account">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+      </svg>
+      <span>Sign In</span>
+    </button>
     <div class="topbar-more-wrap">
       <button class="topbar-more-btn" data-action="toggle-more-menu" title="More options">⋯</button>
       <div class="topbar-more-menu" id="topbar-more-menu">
@@ -1009,7 +1016,6 @@
         </button>
         <button class="theme-btn" id="theme-toggle-btn" data-action="toggle-theme-panel" title="Customize colors">🎨 Theme Editor</button>
         <button class="tpm-toggle-btn" id="tpm-toggle-btn" data-action="toggle-tpm-panel" title="Configure how effective RR is computed">🎯 TP Management</button>
-        <button class="settings-btn" id="backup-toggle-btn" data-action="toggle-backup-panel" title="Backup or restore your full dashboard setup">📦 Import / Export</button>
         <button class="reset-btn" data-action="reset-all">↺ Reset</button>
       </div>
     </div>
@@ -1298,39 +1304,6 @@
   </div>
 </div>
 
-<!-- ══ BACKUP PANEL (Import / Export full dashboard state) ══ -->
-<div class="backup-panel" id="backup-panel">
-  <div class="bp-header">
-    <span class="bp-title">📦 Backup</span>
-  </div>
-  <p class="bp-explanation">
-    Save or restore your <strong>full dashboard setup</strong> — presets, themes (including
-    your custom ones), GridStack layouts &amp; hidden widgets, TP Management config,
-    Multi-TP / Partial Optimizer / Monte Carlo arrangements, sidebar filters order,
-    and every UI preference.
-  </p>
-  <p class="bp-explanation bp-explanation-dim">
-    <strong>Not included:</strong> the API trade cache and raw CSV cache (re-fetched
-    on demand), and your data-source choice + API URL (kept per-machine).
-  </p>
-  <div class="bp-actions">
-    <button class="bp-btn bp-btn-primary" data-action="backup-export">
-      <span class="bp-btn-icon" aria-hidden="true">📤</span>
-      <div class="bp-btn-text">
-        <span class="bp-btn-label">Export Backup</span>
-        <span class="bp-btn-sub">Download a JSON file you can take to another PC</span>
-      </div>
-    </button>
-    <button class="bp-btn" data-action="backup-import">
-      <span class="bp-btn-icon" aria-hidden="true">📥</span>
-      <div class="bp-btn-text">
-        <span class="bp-btn-label">Import Backup</span>
-        <span class="bp-btn-sub">Restore from a JSON file (asks before overwriting)</span>
-      </div>
-    </button>
-  </div>
-</div>
-
 <!-- ══ DATA HUB PANEL (unified: Health / Mapping / Custom fields) ══ -->
 <div class="data-hub-panel" id="data-hub-panel" role="dialog" aria-labelledby="dhp-title">
   <div class="dhp-head">
@@ -1499,7 +1472,7 @@
         <div class="np-widget-creator-actions" aria-label="Widget creation shortcuts">
           <button type="button" class="np-widget-creator-btn" data-action="cw-open-create-modal" data-cw-type="bars">+ Bar Chart</button>
           <button type="button" class="np-widget-creator-btn np-widget-creator-btn--heatmap" data-action="cw-open-create-modal" data-cw-type="heatmap">+ Heatmap</button>
-          <button type="button" class="np-widget-creator-btn np-widget-creator-btn--donut" data-action="cw-open-create-modal" data-cw-type="donut">+ Donut</button>
+          <button type="button" class="np-widget-creator-btn np-widget-creator-btn--table" data-action="cw-open-create-modal" data-cw-type="table">+ Table</button>
         </div>
         <div class="cw-inline-builder-host" id="cw-inline-builder-host"></div>
         <div class="cw-list-host" id="cw-list-host"></div>
@@ -1847,10 +1820,6 @@
     <div class="filter-group">
       <div class="fg-label fg-label-row fg-label-spaced">
         <span>Presets</span>
-        <div class="filters-header-btns">
-          <button type="button" data-action="presets-export" class="preset-cmp-toggle-btn" title="Export all presets, overrides and live filters as a JSON file">Export</button>
-          <button type="button" data-action="presets-import" class="preset-cmp-toggle-btn" title="Import a presets JSON file (replaces ALL current presets)">Import</button>
-        </div>
       </div>
       <div class="preset-list" id="preset-list"></div>
     </div>
@@ -2900,6 +2869,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=645"></script>
+<script src="dashboard.js?v=701"></script>
 </body>
 </html>

@@ -3497,6 +3497,120 @@ body.layout-edit-mode #preset-list > .preset-row > .preset-btn-wrap::before {
   color: var(--text-muted);
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   Custom Table widget (Data Setup → Create Widget → Table)
+   Single visual style: tabular grid with optional horizontal data-bar
+   overlay on the Total R column (toggle via the Bars header button).
+   Sync chain (⛓) ties all custom tables to one shared sort + bars mode.
+   ══════════════════════════════════════════════════════════════════ */
+.cw-table-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cw-table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.cw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-table-body-size);
+  color: var(--body);
+}
+.cw-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--bg2);
+  z-index: 1;
+}
+.cw-th {
+  padding: 6px 8px;
+  font-size: var(--typo-table-hd-size);
+  font-weight: var(--typo-table-hd-weight);
+  letter-spacing: var(--typo-table-hd-ls);
+  text-transform: var(--typo-table-hd-tt);
+  color: color-mix(in srgb, var(--body) 60%, transparent);
+  border-bottom: 1px solid var(--line2);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color .12s, background .12s;
+}
+.cw-th-label { text-align: left; }
+.cw-th-num   { text-align: right; }
+.cw-th-bar   { text-align: right; min-width: 90px; }
+.cw-th:hover { color: var(--body); background: color-mix(in srgb, var(--gold) 5%, transparent); }
+.cw-th.is-active { color: var(--gold); }
+.cw-table-row {
+  cursor: pointer;
+  transition: background .1s;
+}
+.cw-table-row:hover {
+  background: color-mix(in srgb, var(--gold) 6%, transparent);
+}
+.cw-td {
+  padding: 5px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  white-space: nowrap;
+}
+.cw-td-label {
+  text-align: left;
+  color: var(--white);
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 1%;
+}
+.cw-td-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+.cw-td-count { color: var(--dim); font-weight: 400; }
+.cw-table-empty {
+  padding: 16px 12px;
+  text-align: center;
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-chart-axis-size);
+  color: var(--dim);
+}
+
+/* Data-bar mode — horizontal gradient on the Total R column. The gradient
+   is set inline per-row so each row's bar width tracks |sumR| / max(|sumR|).
+   Slight extra padding gives the value text breathing room over the bar. */
+.cw-table-bars .cw-td-bar {
+  font-weight: 600;
+  position: relative;
+  text-align: right;
+  padding: 5px 10px;
+}
+.cw-table-bars tbody tr:hover .cw-td-bar {
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--gold) 20%, transparent);
+}
+
+/* Perfect-PF glyph (winners only, zero losses). Renders larger so the
+   no-loss case stands out at a glance vs. a finite PF value. */
+.cw-pf-inf {
+  font-size: 1.55em;
+  line-height: 1;
+  vertical-align: middle;
+  font-weight: 700;
+}
+
+/* Toolbar controls inside cc-head — sync chain + bars toggle. */
+.cw-table-bars-btn {
+  padding: 3px 8px;
+  font-size: 10px;
+  letter-spacing: .3px;
+}
+.cw-table-sync-btn {
+  /* Inherits the heatmap sync button look (.bar-sort-btn shares the chain
+     icon styling). No extra rules needed beyond ensuring it sits left of
+     the Bars toggle, which the flex layout in .cc-head-controls handles. */
+}
+
 /* ── Small legend items (streak timeline, calendar, etc.) ── */
 .legend-item {
   display: flex;
@@ -5933,6 +6047,35 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .theme-btn:hover { border-color: color-mix(in srgb, var(--gold) 35%, transparent); color: var(--gold); }
 .theme-btn.open  { border-color: var(--sel-border); color: var(--gold); background: var(--gold2); }
 
+/* ── Topbar Sign-In button — visible only when signed out (toggled by
+   _renderAccountPanelAuthState). Gold accent to nudge users to authenticate. ── */
+.topbar-signin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, var(--bg3));
+  border: 1px solid color-mix(in srgb, var(--gold) 38%, var(--border-normal));
+  border-radius: var(--rad-sm);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+  white-space: nowrap;
+  line-height: 1;
+}
+.topbar-signin-btn:hover {
+  background: color-mix(in srgb, var(--gold) 18%, var(--bg3));
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border-normal));
+}
+.topbar-signin-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
 /* ── Topbar "more" dropdown (settings / theme / reset) ── */
 .topbar-more-wrap {
   position: relative;
@@ -6009,111 +6152,6 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   height: 1px;
   background: var(--line);
   margin: 4px 0;
-}
-
-/* ── Backup panel (Import / Export full state) ── */
-.backup-panel {
-  position: fixed;
-  top: 46px;
-  right: 70px;
-  width: 340px;
-  background: var(--bg2);
-  border: 1px solid var(--line2);
-  border-radius: 10px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-  z-index: 1200;
-  box-shadow: 0 10px 32px rgba(0,0,0,.6);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-8px);
-  transition: opacity .16s, transform .16s;
-}
-.backup-panel.open {
-  opacity: 1;
-  pointer-events: all;
-  transform: translateY(0);
-}
-.bp-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.bp-title {
-  font-family: 'DM Mono', monospace;
-  font-size: 12px;
-  letter-spacing: .6px;
-  color: var(--fg);
-  text-transform: uppercase;
-  font-weight: 600;
-}
-.bp-explanation {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--dim);
-}
-.bp-explanation strong {
-  color: var(--fg);
-  font-weight: 500;
-}
-.bp-explanation-dim {
-  font-size: 10.5px;
-  opacity: .8;
-}
-.bp-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  margin-top: 2px;
-}
-.bp-btn {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  background: var(--surface-3, var(--bg));
-  border: 1px solid var(--line2);
-  border-radius: 7px;
-  padding: 9px 11px;
-  color: var(--fg);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color .14s, background .14s;
-  font-family: inherit;
-}
-.bp-btn:hover {
-  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
-  background: var(--surface-4, color-mix(in srgb, var(--gold) 4%, var(--bg2)));
-}
-.bp-btn-primary {
-  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
-  background: var(--gold2);
-}
-.bp-btn-primary:hover {
-  border-color: var(--gold);
-  background: color-mix(in srgb, var(--gold) 14%, transparent);
-}
-.bp-btn-icon {
-  font-size: 18px;
-  flex-shrink: 0;
-}
-.bp-btn-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.bp-btn-label {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--fg);
-}
-.bp-btn-sub {
-  font-size: 10.5px;
-  color: var(--dim);
-  line-height: 1.3;
 }
 
 /* ── Filters accordion ── */
@@ -14162,20 +14200,9 @@ body.ms-sidebar-open .view-tabs {
     0 0 0 1px color-mix(in srgb, var(--gold) 20%, transparent),
     0 10px 28px color-mix(in srgb, var(--gold) 12%, transparent);
 }
-/* Donut button uses --chart-cat-1 (matches the donut slice palette). */
-.np-widget-creator-btn--donut {
-  border-color: color-mix(in srgb, var(--chart-cat-1) 38%, var(--line));
-}
-.np-widget-creator-btn--donut:hover {
-  border-color: color-mix(in srgb, var(--chart-cat-1) 62%, transparent);
-}
-.np-widget-creator-btn--donut.is-active {
-  border-color: color-mix(in srgb, var(--chart-cat-1) 62%, transparent);
-  background: color-mix(in srgb, var(--chart-cat-1) 14%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--chart-cat-1) 20%, transparent),
-    0 10px 28px color-mix(in srgb, var(--chart-cat-1) 12%, transparent);
-}
+/* Table button inherits the default .np-widget-creator-btn styling
+   (matches Bar Chart). Visual distinction comes from the icon, not from a
+   different border color — keeps the create-widget panel DA cohesive. */
 
 .cw-inline-builder-host {
   display: flex;
@@ -14279,7 +14306,8 @@ body.ms-sidebar-open .view-tabs {
   border-radius: var(--rad-pill);
   border: 1px solid transparent;
 }
-.cw-list-type-bars {
+.cw-list-type-bars,
+.cw-list-type-table {
   color: color-mix(in srgb, var(--accent-primary) 80%, var(--body));
   border-color: color-mix(in srgb, var(--accent-primary) 34%, var(--line));
   background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
@@ -14288,11 +14316,6 @@ body.ms-sidebar-open .view-tabs {
   color: color-mix(in srgb, var(--gold) 80%, var(--body));
   border-color: color-mix(in srgb, var(--gold) 38%, var(--line));
   background: color-mix(in srgb, var(--gold) 10%, transparent);
-}
-.cw-list-type-donut {
-  color: color-mix(in srgb, var(--chart-cat-1) 80%, var(--body));
-  border-color: color-mix(in srgb, var(--chart-cat-1) 38%, var(--line));
-  background: color-mix(in srgb, var(--chart-cat-1) 10%, transparent);
 }
 .cw-list-delete-btn {
   appearance: none;

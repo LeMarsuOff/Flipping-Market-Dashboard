@@ -162,9 +162,9 @@ const appState = {
     // Global BE Management mode — drives BE-TP / BE-SL semantics across the
     // PO, computeEffectiveRR (fixed/multi/personalised), the ORR widget, and
     // _getSimulatedR. See _resolveBeR for the full decision table.
-    //   'be-fallback' (default) : path-aware cap at _parseBeTriggerR(trade)
-    //   'flipping-be'           : counterfactual BE armed at 2.4R when reach ≥ 2.4
-    beMode: 'be-fallback',
+    //   'flipping-be' (default) : counterfactual BE armed at 2.4R when reach ≥ 2.4
+    //   'be-fallback'           : path-aware cap at _parseBeTriggerR(trade)
+    beMode: 'flipping-be',
     activeSection: 'global',
     // ORR-only BE Management exclusion. Trades whose `beManagement` array
     // contains any value in this list are dropped from getFiltered() — so the
@@ -475,6 +475,23 @@ const _SW = (() => {
         _user = data?.session?.user ?? null;
         _accountView = _getDefaultAccountView();
         _renderAccountPanelAuthState();
+        // Signed-out boot path: nudge the user toward authentication by
+        // auto-opening the Account panel on the sign-in view. They can still
+        // dismiss it (✕ / Escape / click outside) and keep using Demo mode —
+        // the topbar Sign-In button provides a one-click way back in.
+        // Defer to DOMContentLoaded if needed so the panel/button DOM exists.
+        if (!_user) {
+          const _autoOpenSignIn = () => {
+            if (accountPanelOpen) return;
+            if (!document.getElementById('account-panel')) return;
+            try { toggleAccountPanel(); } catch (e) {}
+          };
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', _autoOpenSignIn, { once: true });
+          } else {
+            _autoOpenSignIn();
+          }
+        }
         // Task #3.13 — Safari ITP workaround: in some browser contexts (notably
         // Safari with default privacy settings) onAuthStateChange may never
         // fire INITIAL_SESSION / SIGNED_IN even though the session is restored
@@ -912,7 +929,16 @@ const _SW = (() => {
     async signUp(email, password) {
       const c = _getClient();
       if (!c) return { error: { message: 'Supabase not loaded' } };
-      return c.auth.signUp({ email, password });
+      // emailRedirectTo: the confirmation link Supabase emails will land on
+      // the dashboard itself (origin + pathname strips any leftover hash /
+      // query). Without this, Supabase falls back to the Site URL configured
+      // in the project — which can drift if the project is reused across
+      // environments. Same pattern as resetPassword above.
+      return c.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.origin + window.location.pathname },
+      });
     },
 
     async resetPassword(email) {
@@ -1399,16 +1425,38 @@ window._recoverPendingCustomWidgetDefs = _recoverPendingCustomWidgetDefs;
 
 function _normalizeCustomWidgetDef(def) {
   if (!def || typeof def !== 'object') return def;
-  if (def.type !== 'heatmap') return def;
-  const settings = def.settings && typeof def.settings === 'object' ? def.settings : {};
-  return {
-    ...def,
-    settings: {
-      metricMode: settings.metricMode === 'n' ? 'n' : 'ev',
-      threshold: _parseHmThreshold(settings.threshold),
-      hardMode: settings.hardMode === true,
-    },
-  };
+  if (def.type === 'heatmap') {
+    const settings = def.settings && typeof def.settings === 'object' ? def.settings : {};
+    return {
+      ...def,
+      settings: {
+        metricMode: settings.metricMode === 'n' ? 'n' : 'ev',
+        threshold: _parseHmThreshold(settings.threshold),
+        hardMode: settings.hardMode === true,
+      },
+    };
+  }
+  if (def.type === 'table') {
+    const settings = def.settings && typeof def.settings === 'object' ? def.settings : {};
+    const validKeys = ['label','count','wr','avg','pf','total'];
+    // Migrate legacy `tableStyle` field (compact/cards/bars) → barsMode boolean.
+    // Anything other than explicit `barsMode: false` defaults to ON since the
+    // data-bar overlay was the format chosen for the final widget.
+    const explicitBarsMode = typeof settings.barsMode === 'boolean' ? settings.barsMode : null;
+    const legacyStyle = settings.tableStyle;
+    const barsMode = explicitBarsMode !== null
+      ? explicitBarsMode
+      : (legacyStyle === 'compact' || legacyStyle === 'cards' ? false : true);
+    return {
+      ...def,
+      settings: {
+        sortKey: validKeys.includes(settings.sortKey) ? settings.sortKey : 'total',
+        sortDir: settings.sortDir === 'asc' ? 'asc' : 'desc',
+        barsMode,
+      },
+    };
+  }
+  return def;
 }
 
 function _addCustomWidgetDef(def) {
@@ -1679,14 +1727,15 @@ function _createCustomBarsWidget({ field, label, propertySource = 'mapped', infe
   return cwDef;
 }
 
-function _createCustomDonutWidget({ field, label, propertySource = 'mapped', inferredType = 'text', createdFrom = 'mapping-card' }) {
+function _createCustomTableWidget({ field, label, propertySource = 'mapped', inferredType = 'text', createdFrom = 'mapping-card' }) {
   if (!field) return null;
   const cwId = 'w-cust-' + Math.random().toString(36).slice(2, 9);
   const cwDef = {
     id: cwId,
-    type: 'donut',
+    type: 'table',
     field,
     label: label || field,
+    fieldLabel: label || field,
     propertyKey: field,
     propertyLabel: label || field,
     fieldSource: propertySource,
@@ -1694,6 +1743,7 @@ function _createCustomDonutWidget({ field, label, propertySource = 'mapped', inf
     inferredType,
     createdFrom,
     createdAt: Date.now(),
+    settings: { sortKey: 'total', sortDir: 'desc', barsMode: true },
   };
   _addCustomWidgetDef(cwDef);
   _eagerBakeAfterWidgetCreate();
@@ -3233,6 +3283,90 @@ function handleActionClick(event) {
     case 'reset-all': resetAll(); document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
     case 'exit-raw-mode': exitRawMode(); break;
     case 'set-bar-mode': setBarMode(actionEl.dataset.mode); break;
+    case 'set-table-bars-mode': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      if (!cwId) break;
+      if (_customTableSyncEnabled) {
+        // Sync chain active — flip the master state and re-render every table.
+        _customTableMasterSettings.barsMode = !(_customTableMasterSettings.barsMode === true);
+        _rerenderAllCustomTables();
+      } else {
+        const updated = _updateCustomWidgetDef(cwId, current => {
+          const prev = current?.settings || {};
+          return { ...current, settings: { ...prev, barsMode: !(prev.barsMode !== false) } };
+        });
+        if (updated) {
+          actionEl.classList.toggle('active', updated.settings.barsMode === true);
+          const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
+          renderCustomTable(updated, filtered);
+        }
+      }
+      break;
+    }
+    case 'toggle-custom-table-sync': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      if (cwId) toggleCustomTableSync(cwId);
+      break;
+    }
+    case 'set-table-sort': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      const sortKey = actionEl.dataset.sortKey;
+      if (!cwId || !sortKey) break;
+      // Compute next direction (same col flips dir; new col defaults asc for
+      // label, desc for everything else).
+      const prevKey = _customTableSyncEnabled
+        ? _customTableMasterSettings.sortKey
+        : (_loadCustomWidgetDefs().find(d => d.id === cwId)?.settings?.sortKey || 'total');
+      const prevDir = _customTableSyncEnabled
+        ? _customTableMasterSettings.sortDir
+        : (_loadCustomWidgetDefs().find(d => d.id === cwId)?.settings?.sortDir || 'desc');
+      const isSameCol = prevKey === sortKey;
+      const nextDir = isSameCol
+        ? (prevDir === 'asc' ? 'desc' : 'asc')
+        : (sortKey === 'label' ? 'asc' : 'desc');
+
+      if (_customTableSyncEnabled) {
+        _customTableMasterSettings.sortKey = sortKey;
+        _customTableMasterSettings.sortDir = nextDir;
+        _rerenderAllCustomTables();
+      } else {
+        const updated = _updateCustomWidgetDef(cwId, current => ({
+          ...current,
+          settings: { ...(current?.settings || {}), sortKey, sortDir: nextDir },
+        }));
+        if (updated && typeof renderCustomTable === 'function') {
+          const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
+          renderCustomTable(updated, filtered);
+        }
+      }
+      break;
+    }
+    case 'open-custom-row-drawer': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      const rowLabel = actionEl.dataset.rowLabel;
+      if (!cwId || !rowLabel) break;
+      const def = _loadCustomWidgetDefs().find(d => d.id === cwId);
+      if (!def) break;
+      const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
+      // Find every trade whose expanded field values include this row's label.
+      const matching = [];
+      for (const t of filtered) {
+        const vals = _cwExpandFieldValues(
+          _cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource),
+          def.inferredType
+        );
+        if (vals.some(v => String(v) === rowLabel)) matching.push(t);
+      }
+      if (matching.length && typeof openWidgetDrawer === 'function') {
+        const title = `${def.label || def.field} — ${rowLabel}`.trim();
+        openWidgetDrawer(title, `${matching.length} trade${matching.length > 1 ? 's' : ''}`, matching);
+      }
+      break;
+    }
     case 'set-bar-view': setBarView(actionEl.dataset.view); break;
     case 'switch-view': switchView(actionEl.dataset.view); break;
     case 'set-section': {
@@ -3486,32 +3620,6 @@ function handleActionClick(event) {
     case 'layout-save': layoutSave(); break;
     case 'layout-export-json': layoutExportJSON(); break;
     case 'layout-import-trigger': document.getElementById('lt-import-file')?.click(); break;
-    case 'presets-export': presetsExportJSON(); break;
-    case 'presets-import': {
-      const _pimpInput = document.createElement('input');
-      _pimpInput.type = 'file';
-      _pimpInput.accept = '.json,application/json';
-      _pimpInput.addEventListener('change', () => presetsImportJSON(_pimpInput));
-      _pimpInput.click();
-      break;
-    }
-    case 'toggle-backup-panel':
-      toggleBackupPanel();
-      document.getElementById('topbar-more-menu')?.classList.remove('open');
-      break;
-    case 'backup-export':
-      backupExportJSON();
-      _closeBackupPanel();
-      break;
-    case 'backup-import': {
-      const _bimpInput = document.createElement('input');
-      _bimpInput.type = 'file';
-      _bimpInput.accept = '.json,application/json';
-      _bimpInput.addEventListener('change', () => backupImportJSON(_bimpInput));
-      _bimpInput.click();
-      _closeBackupPanel();
-      break;
-    }
     case 'layout-reset': layoutReset(); break;
     case 'layout-hide-toggle': event.stopPropagation(); _toggleHidePopover(); break;
     case 'layout-hide-show-all': event.stopPropagation(); _unhideAllWidgets(); break;
@@ -11103,6 +11211,42 @@ async function initDataSource() {
   localStorage.setItem(DS_KEY, startupMode);
   updateSourceUI(startupMode);
 
+  // Universal Notion auto-hydrate: download the parsed blob from Supabase
+  // Storage and re-inject. Fires in all branches where the active profile is
+  // a Notion-ready one — covers (a) restoreAPI (re-inject on top of LS cache
+  // to pick up server-side bake / cross-device updates), (b) prevWasAPI but
+  // no LS cache (cache purge / quota / cross-device first sync), (c) demo
+  // fallback when LS is wiped post-logout but the user has a Notion profile
+  // restored from remote. Without this universal hook, branches (b) and (c)
+  // left the dashboard empty until the user manually switched profiles.
+  const _notionAutoHydrate = () => {
+    if (!activeProfile || activeProfile.connectionType !== 'notion') return;
+    if (typeof getIntegration !== 'function' || !getIntegration(activeProfile).isReady(activeProfile)) return;
+    (async () => {
+      try {
+        await _reloadJournalProfileSelection({});
+        try { _restoreActivePresetForCurrentSlot(); } catch (e) {}
+        try { if (typeof render === 'function') render(); } catch (e) {}
+      } catch (e) {
+        console.warn('[boot] Notion auto-hydrate failed:', e?.message || e);
+      }
+    })();
+  };
+
+  // Demo branch (DS_KEY null/csv/wiped) but active profile is a Notion-ready
+  // one — flip the mode flags BEFORE loadBuiltinCSV would run so we skip the
+  // demo-data flash and go straight to hydrating from blob. _reloadJournal-
+  // ProfileSelection sets DS_KEY='api' internally when isNotionWithDb; we
+  // mirror that here so the synchronous render below sees consistent state.
+  const _hasNotionProfileButDemoBranch =
+    !restoreAPI && !(restoreCSV && csvCache) && !prevWasAPI
+    && activeProfile?.connectionType === 'notion'
+    && typeof getIntegration === 'function' && getIntegration(activeProfile).isReady(activeProfile);
+  if (_hasNotionProfileButDemoBranch) {
+    try { localStorage.setItem(DS_KEY, 'api'); } catch (e) {}
+    try { updateSourceUI('api'); } catch (e) {}
+  }
+
   const persistedSidebar = _loadPersistedSidebarState();
   if (restoreAPI) {
     debugLog('[DashboardDebug]');
@@ -11115,29 +11259,7 @@ async function initDataSource() {
       source: startupSource,
       profileId: activeProfile?.id || '',
     });
-    // Refacto Total 2026-05-24 — step 4 follow-up: the LS inject above gives
-    // a fast first paint, but LS may carry pre-refacto extras (keyed under
-    // old prop.name instead of notionSourceName). Fire-and-forget the blob-
-    // first path immediately so the canonical server payload re-injects on
-    // top within ~200-500 ms. Without this, custom filter chips show empty
-    // until the user switches profiles (which is what Max kept hitting).
-    //
-    // After the blob re-inject, restore the active preset again — _injectTrades
-    // resets appState.presets.activeId to null in its first-load branch and
-    // the outer boot path's _restoreActivePresetForCurrentSlot already fired
-    // before the async re-inject landed. Without this re-call the user ends
-    // up on "no preset" after every refresh.
-    if (activeProfile?.connectionType === 'notion' && getIntegration(activeProfile).isReady(activeProfile)) {
-      (async () => {
-        try {
-          await _reloadJournalProfileSelection({});
-          try { _restoreActivePresetForCurrentSlot(); } catch (e) {}
-          try { if (typeof render === 'function') render(); } catch (e) {}
-        } catch (e) {
-          console.warn('[boot] blob refresh failed:', e?.message || e);
-        }
-      })();
-    }
+    _notionAutoHydrate();
   } else if (restoreCSV && csvCache) {
     // Re-parse through the normal path with preserveState so sidebar state
     // (filters, presets, BE toggle, temporal range) is re-applied on top of
@@ -11162,6 +11284,17 @@ async function initDataSource() {
     invalidateFilterCache();
     render();
     hideEmptyState();
+    _notionAutoHydrate();
+  } else if (_hasNotionProfileButDemoBranch) {
+    // Skip loadBuiltinCSV — demo data would flash for 200-500ms before being
+    // replaced by Notion data. Start with empty trades + render; the async
+    // auto-hydrate below populates appState.trades from the blob.
+    appState.trades.items.length = 0;
+    appState.trades.totalOverride = 0;
+    invalidateFilterCache();
+    render();
+    hideEmptyState();
+    _notionAutoHydrate();
   } else {
     loadBuiltinCSV(persistedSidebar);
   }
@@ -14178,260 +14311,320 @@ function renderAllCustomWidgets(trades) {
   for (const def of defs) {
     if (def.type === 'bars')         renderCustomBars(def, trades);
     else if (def.type === 'heatmap') renderCustomHeatmap(def, trades);
-    else if (def.type === 'donut')   renderCustomDonut(def, trades);
+    else if (def.type === 'table')   renderCustomTable(def, trades);
   }
 }
 
-// Per-widget runtime state for custom donuts (sectors, geom, hover, segment→trades
-// mapping). Keyed by def.id. Used by the global hover/click handlers below so
-// each donut behaves like the Outcome Breakdown donut (slice grows on hover,
-// inner ring zooms on center hover, click opens the drawer filtered to the
-// slice's trades).
-const _customDonutStates = {};
+// ── Threshold color helpers for the custom Table widget ────────────────
+// Mirror the dashboard's canonical KPI thresholds so Total R / WR / Avg R /
+// PF cells in the per-category breakdown carry the same red→orange→yellow→
+// green→blue→purple semantics the user already learned from the Statistics
+// Overview KPIs. Sources of truth: _wrColor, _evColor, _pfColor inline
+// helpers (~ dashboard.js:11677) + _svProgressTone / _getWinRateTone.
+const _CW_TABLE_PALETTE = {
+  red:    'var(--r)',
+  orange: '#f39a3d',
+  yellow: 'var(--a)',
+  green:  'var(--g)',
+  blue:   'var(--b)',
+  purple: '#9b6dff',
+};
+function _cwTableWrColor(wr) {
+  if (!Number.isFinite(wr)) return '';
+  if (wr > 55)  return _CW_TABLE_PALETTE.purple;
+  if (wr >= 48) return _CW_TABLE_PALETTE.blue;
+  if (wr >= 40) return _CW_TABLE_PALETTE.green;
+  if (wr >= 35) return _CW_TABLE_PALETTE.yellow;
+  if (wr >= 30) return _CW_TABLE_PALETTE.orange;
+  return _CW_TABLE_PALETTE.red;
+}
+function _cwTableAvgColor(avg) {
+  if (!Number.isFinite(avg)) return '';
+  if (avg >= 1)   return _CW_TABLE_PALETTE.purple;
+  if (avg >= 0.6) return _CW_TABLE_PALETTE.blue;
+  if (avg >= 0.3) return _CW_TABLE_PALETTE.green;
+  if (avg >= 0.1) return _CW_TABLE_PALETTE.yellow;
+  if (avg >= 0)   return _CW_TABLE_PALETTE.orange;
+  return _CW_TABLE_PALETTE.red;
+}
+function _cwTablePfColor(pf) {
+  if (!Number.isFinite(pf)) return _CW_TABLE_PALETTE.purple; // ∞ → top tier
+  if (pf >= 3)   return _CW_TABLE_PALETTE.purple;
+  if (pf >= 2.2) return _CW_TABLE_PALETTE.blue;
+  if (pf >= 1.7) return _CW_TABLE_PALETTE.green;
+  if (pf >= 1.3) return _CW_TABLE_PALETTE.yellow;
+  if (pf >= 1)   return _CW_TABLE_PALETTE.orange;
+  return _CW_TABLE_PALETTE.red;
+}
+function _cwTableTotalColor(v) {
+  // Total R uses sign-only coloring (green/red) — its magnitude varies wildly
+  // across categories so a single threshold scale isn't meaningful. The KPI
+  // tooltip breakdown uses the same simple sign convention (see line 17653).
+  return v > 0 ? 'var(--g)' : v < 0 ? 'var(--r)' : '';
+}
 
-// Renders a custom donut widget. Groups trades by field value, sorts by
-// count desc, caps to Top 7 + "Other" aggregate, and draws using the same
-// visual structure as the built-in Outcome Donut (`.donut-wrap` /
-// `.donut-canvas-wrap` / `.donut-legend` / `.dl-row`). Colors cycle through
-// the `--chart-cat-1..8` theme palette so the Theme Editor's chart-colors
-// section already covers re-skinning.
-function renderCustomDonut(def, trades) {
+// Toolbar above the table:
+//   ⛓ link button → sync ALL custom table widgets (sort + bars mode).
+//                    Same UX as the heatmap sync chain icon.
+//   Bars toggle   → enable/disable the horizontal data-bar overlay on the
+//                    Total R column. Off renders a clean tabular grid.
+// When sync is on, both controls read/write the shared master state so
+// every table updates in lockstep. When sync is off, settings live per-widget.
+function _renderCustomTableToolbarHTML(def) {
+  const synced = _customTableSyncEnabled === true;
+  const barsMode = synced
+    ? _customTableMasterSettings.barsMode === true
+    : def?.settings?.barsMode !== false;
+  const cwAttr = ` data-cw-id="${_escapeAttr(def.id)}"`;
+  return `
+    <div class="cc-head-controls cc-head-controls-sm">
+      <button class="bar-sort-btn cw-table-sync-btn${synced ? ' active' : ''}"
+              type="button"
+              data-action="toggle-custom-table-sync"${cwAttr}
+              title="Sync all table widgets — share sort + bar mode">⛓</button>
+      <button class="cc-tab cw-table-bars-btn${barsMode ? ' active' : ''}"
+              type="button"
+              data-action="set-table-bars-mode"${cwAttr}
+              title="Toggle the data-bar overlay on Total R">Bars</button>
+    </div>`;
+}
+
+// ── Custom Table sync state (mirrors the heatmap sync pattern) ────────────
+// When _customTableSyncEnabled is true, all custom table widgets read sort
+// + bars mode from _customTableMasterSettings instead of their own
+// def.settings. Clicks on sort headers / bars toggle update the master,
+// then all tables re-render in lockstep. Turning sync off commits the
+// current master state to every widget's def.settings.
+let _customTableSyncEnabled = false;
+let _customTableMasterSettings = { sortKey: 'total', sortDir: 'desc', barsMode: true };
+
+// Resolve the effective sort + bars settings for a table widget, accounting
+// for sync mode. Returns { sortKey, sortDir, barsMode }.
+function _getCustomTableEffectiveSettings(def) {
+  if (_customTableSyncEnabled) {
+    return {
+      sortKey: _customTableMasterSettings.sortKey,
+      sortDir: _customTableMasterSettings.sortDir,
+      barsMode: _customTableMasterSettings.barsMode === true,
+    };
+  }
+  const s = def?.settings || {};
+  return {
+    sortKey: s.sortKey || 'total',
+    sortDir: s.sortDir === 'asc' ? 'asc' : 'desc',
+    barsMode: s.barsMode !== false,
+  };
+}
+
+// Re-render every custom Table widget that's currently mounted. Used after
+// any sync-mode change so all tables visually update together.
+function _rerenderAllCustomTables() {
+  const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
+  const defs = (typeof _loadCustomWidgetDefs === 'function') ? _loadCustomWidgetDefs() : [];
+  for (const def of defs) {
+    if (def?.type === 'table') {
+      try { renderCustomTable(def, filtered); } catch (e) {}
+    }
+  }
+  // Refresh every table's toolbar active state (sync button + bars button).
+  document.querySelectorAll('.gs-widget[data-cw-id] .cw-table-sync-btn').forEach(btn => {
+    btn.classList.toggle('active', _customTableSyncEnabled === true);
+  });
+  const effectiveBarsMode = _customTableSyncEnabled
+    ? _customTableMasterSettings.barsMode === true
+    : null;
+  document.querySelectorAll('.gs-widget[data-cw-id] .cw-table-bars-btn').forEach(btn => {
+    const root = btn.closest('.gs-widget[data-cw-id]');
+    const cwId = root?.dataset?.cwId;
+    const def = defs.find(d => d.id === cwId);
+    const isOn = effectiveBarsMode !== null
+      ? effectiveBarsMode
+      : def?.settings?.barsMode !== false;
+    btn.classList.toggle('active', isOn === true);
+  });
+}
+
+// Toggle sync on/off. Turning ON seeds the master state from the clicked
+// widget's current settings (so the user's last view becomes the new
+// shared truth). Turning OFF commits the master state to every widget's
+// def.settings so each widget keeps the synced layout after the chain breaks.
+function toggleCustomTableSync(cwId) {
+  if (!_customTableSyncEnabled) {
+    const defs = _loadCustomWidgetDefs();
+    const seed = defs.find(d => d.id === cwId && d.type === 'table')?.settings
+      || _customTableMasterSettings;
+    _customTableMasterSettings = {
+      sortKey: seed.sortKey || 'total',
+      sortDir: seed.sortDir === 'asc' ? 'asc' : 'desc',
+      barsMode: seed.barsMode !== false,
+    };
+    _customTableSyncEnabled = true;
+  } else {
+    // Commit master state to every table def before breaking the chain.
+    const defs = _loadCustomWidgetDefs();
+    let changed = false;
+    for (const def of defs) {
+      if (def?.type !== 'table') continue;
+      const prev = def.settings || {};
+      if (prev.sortKey === _customTableMasterSettings.sortKey
+          && prev.sortDir === _customTableMasterSettings.sortDir
+          && (prev.barsMode !== false) === (_customTableMasterSettings.barsMode === true)) continue;
+      def.settings = {
+        ...prev,
+        sortKey: _customTableMasterSettings.sortKey,
+        sortDir: _customTableMasterSettings.sortDir,
+        barsMode: _customTableMasterSettings.barsMode === true,
+      };
+      changed = true;
+    }
+    if (changed) _saveCustomWidgetDefs(defs);
+    _customTableSyncEnabled = false;
+  }
+  _rerenderAllCustomTables();
+}
+
+// Renders a custom Table widget: one row per category (field value) with
+// the canonical trading metrics — Total R / WR / Avg R / PF / # Trades.
+// WR/Avg R/PF cells carry threshold colors matching the KPI tier scheme.
+// Sort header click toggles asc/desc. Click a row to open the trade drawer
+// filtered to that category's trades. The Total R column gets an Excel-style
+// horizontal data-bar gradient when `barsMode` is on — toggle via the
+// header button. Settings sync globally when the chain icon is active.
+function renderCustomTable(def, trades) {
   const root = document.querySelector(`.gs-widget[data-cw-id="${CSS.escape(def.id)}"]`);
-  const canvas = document.getElementById(`donutCanvas-${def.id}`);
-  const wrap   = root?.querySelector('.donut-canvas-wrap');
-  const outer  = root?.querySelector('.donut-wrap');
-  const leg    = document.getElementById(`donut-legend-${def.id}`);
-  if (!root || !canvas || !wrap || !outer || !leg) return;
+  const host = root?.querySelector('.cw-table-host');
+  if (!root || !host) return;
 
-  // Group trades by field value (handles multi-select via _cwExpandFieldValues).
-  // Track the matching trades per value so click-to-drawer can pull them out
-  // without re-running the filter.
-  const counts = new Map();
-  const tradesByVal = new Map();
+  const tpConfig = appState?.ui?.tpConfig;
+
+  // Single-pass per-category bucket: count, sumR, winners, gross win/loss
+  // (for profit factor), and the matching trades array for drill-down.
+  const buckets = new Map();
   for (const t of (trades || [])) {
     const vals = _cwExpandFieldValues(
       _cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource),
       def.inferredType
     );
     if (!vals.length) continue;
+    const effR = (typeof computeEffectiveRR === 'function')
+      ? computeEffectiveRR(t, tpConfig)
+      : (Number(t.r) || 0);
+    const isWin = (typeof isWinner === 'function') ? isWinner(t, tpConfig) : (effR > 0);
     for (const v of vals) {
       const key = String(v);
-      counts.set(key, (counts.get(key) || 0) + 1);
-      if (!tradesByVal.has(key)) tradesByVal.set(key, []);
-      tradesByVal.get(key).push(t);
-    }
-  }
-
-  // Sort desc, keep Top 7, aggregate the rest into "Other" so the chart stays
-  // readable even on high-cardinality fields (e.g. pair with 30+ symbols).
-  const sortedEntries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const TOP_N = 7;
-  const top  = sortedEntries.slice(0, TOP_N);
-  const rest = sortedEntries.slice(TOP_N);
-  const otherCount = rest.reduce((s, [, n]) => s + n, 0);
-  const otherTrades = rest.flatMap(([k]) => tradesByVal.get(k) || []);
-
-  const segments = top.map(([label, n], i) => ({
-    label,
-    n,
-    color: tc(`--chart-cat-${(i % 8) + 1}`),
-    trades: tradesByVal.get(label) || [],
-  }));
-  if (otherCount > 0) {
-    segments.push({ label: 'Other', n: otherCount, color: tc('--dim') || '#7f8aa8', trades: otherTrades });
-  }
-
-  if (!segments.length) {
-    leg.innerHTML = '';
-    delete _customDonutStates[def.id];
-    if (typeof renderCanvasEmptyState === 'function') {
-      renderCanvasEmptyState(`.gs-widget[data-cw-id="${CSS.escape(def.id)}"] .donut-wrap`, [`donutCanvas-${def.id}`]);
-    }
-    return;
-  }
-  if (typeof clearCanvasEmptyState === 'function') {
-    clearCanvasEmptyState(`.gs-widget[data-cw-id="${CSS.escape(def.id)}"] .donut-wrap`);
-  }
-
-  // Mirror drawDonut's responsive sizing: legend rendered first so we can
-  // measure its height and fit the donut into the remaining vertical space.
-  const outerRect = outer.getBoundingClientRect();
-  const availW = outerRect.width  || 200;
-  const availH = outerRect.height || 140;
-  const legFont = availH < 180 ? '9.5px' : '11px';
-  const pctFont = availH < 180 ? '8.5px' : '9.5px';
-  const total = segments.reduce((s, d) => s + d.n, 0) || 1;
-
-  leg.innerHTML = segments.map(d => `
-    <div class="dl-row">
-      <div class="dl-dot" style="background:${d.color}"></div>
-      <span class="dl-label" style="font-size:${legFont}">${_escapeHtml(d.label)}</span>
-      <span class="dl-val"   style="font-size:${legFont}">${d.n}</span>
-      <span class="dl-pct"   style="font-size:${pctFont}">${(d.n/total*100).toFixed(0)}%</span>
-    </div>`).join('');
-
-  const legendH = leg.offsetHeight || 60;
-  const maxW    = availW - 16;
-  const maxH    = availH - legendH - 16;
-  const maxSide = Math.min(maxW, maxH, 260);
-  const S       = Math.max(60, maxSide);
-
-  wrap.style.width  = S + 'px';
-  wrap.style.height = S + 'px';
-  canvas.width      = Math.round(S * devicePixelRatio);
-  canvas.height     = Math.round(S * devicePixelRatio);
-  canvas.style.width  = S + 'px';
-  canvas.style.height = S + 'px';
-
-  // Build sector geometry (mirrors drawDonut) and persist it so the global
-  // hover/click handlers can hit-test without recomputing.
-  const cx = S / 2;
-  const cy = S / 2;
-  const r  = S * 0.38;
-  const iR = S * 0.22;
-  const sectors = [];
-  let angle = -Math.PI / 2;
-  for (const d of segments) {
-    const sweep = (d.n / total) * Math.PI * 2;
-    sectors.push({
-      label: d.label,
-      color: d.color,
-      start: angle,
-      end:   angle + sweep,
-      n:     d.n,
-      trades: d.trades,
-    });
-    angle += sweep;
-  }
-  const geom = { cx, cy, r, iR, S, cBg1: tc('--bg1') || '#0d1526' };
-  const totalTrades = segments.reduce((s, d) => s + (d.trades?.length || 0), 0);
-  // Preserve any hover state across the re-render (resize-driven repaints
-  // shouldn't reset the user's hover position).
-  const previousHover = _customDonutStates[def.id]?.hover || null;
-  _customDonutStates[def.id] = {
-    canvasId: `donutCanvas-${def.id}`,
-    sectors,
-    geom,
-    total: totalTrades,
-    defLabel: def.label || def.field,
-    hover: previousHover,
-  };
-
-  const ctx = canvas.getContext('2d');
-  _drawCustomDonut(ctx, _customDonutStates[def.id], previousHover);
-}
-
-// Same draw treatment as the Outcome donut (slice highlight + dim, center
-// hole zoom on center hover) but with the total trade count as center label
-// instead of the hard-coded TP/SL win-rate.
-function _drawCustomDonut(ctx, state, hoverZone) {
-  if (!ctx || !state) return;
-  // _drawDonutSectors with stats=null does all the slice + hole drawing and
-  // skips the win-rate center label.
-  _drawDonutSectors(ctx, state.sectors, state.geom, null, hoverZone);
-  // Overlay the total trade count in the center (matches the win-rate
-  // typography from the Outcome donut so the DA stays consistent).
-  const { cx, cy, S } = state.geom;
-  const isCenter = hoverZone === 'center';
-  ctx.fillStyle = isCenter ? (tc('--gold') || '#c8a84e') : (tc('--white') || '#fff');
-  const fontSize = isCenter ? Math.max(10, Math.round(S * 0.15)) : Math.max(9, Math.round(S * 0.13));
-  ctx.font = `700 ${fontSize}px Anybody, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(state.total || 0), cx, cy);
-}
-
-// Hit-test a pointer event against a custom donut's stored geometry. Returns
-// 'center' (over the hole), a sector label, or null. Mirrors _donutHitTest
-// but reads from a passed-in state so multiple donuts can coexist.
-function _customDonutHitTest(canvas, state, e) {
-  if (!canvas || !state) return null;
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const { cx, cy, r, iR, S } = state.geom;
-  const scaleX = S / rect.width;
-  const scaleY = S / rect.height;
-  const sx = x * scaleX, sy = y * scaleY;
-  const dx = sx - cx, dy = sy - cy;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist > r * 1.08) return null;
-  if (dist < iR) return 'center';
-  const angle = Math.atan2(dy, dx);
-  for (const sec of state.sectors) {
-    let a = angle;
-    if (a < sec.start) a += Math.PI * 2;
-    if (a >= sec.start && a < sec.end) return sec.label;
-    if (sec.end > Math.PI && angle + Math.PI * 2 >= sec.start && angle + Math.PI * 2 < sec.end) {
-      return sec.label;
-    }
-  }
-  return null;
-}
-
-// Resolve the custom donut state attached to a canvas element. The state map
-// is keyed by def.id; the canvas id follows the pattern `donutCanvas-<def.id>`.
-function _customDonutStateFromCanvas(canvas) {
-  if (!canvas) return null;
-  const cid = canvas.id || '';
-  if (!cid.startsWith('donutCanvas-')) return null;
-  const defId = cid.slice('donutCanvas-'.length);
-  return _customDonutStates[defId] ? { defId, state: _customDonutStates[defId] } : null;
-}
-
-// ── Custom donut hover ──
-document.addEventListener('mousemove', e => {
-  const canvas = e.target.closest('canvas[id^="donutCanvas-"]');
-  if (!canvas) {
-    // Mouse moved off any custom donut: clear hover state on every donut
-    // that still has one and repaint to flush the highlight.
-    for (const defId of Object.keys(_customDonutStates)) {
-      const st = _customDonutStates[defId];
-      if (st.hover) {
-        st.hover = null;
-        const c = document.getElementById(st.canvasId);
-        if (c) {
-          c.style.cursor = '';
-          _drawCustomDonut(c.getContext('2d'), st, null);
-        }
+      let b = buckets.get(key);
+      if (!b) {
+        b = { count: 0, sumR: 0, winners: 0, sumWins: 0, sumLosses: 0 };
+        buckets.set(key, b);
       }
+      b.count++;
+      b.sumR += effR;
+      if (effR > 0) b.sumWins += effR;
+      else if (effR < 0) b.sumLosses += Math.abs(effR);
+      if (isWin) b.winners++;
     }
+  }
+
+  // Derive metrics. PF=Infinity when wins>0 and losses=0 (perfect win-only
+  // category — rendered as a larger "∞" glyph so the no-loss case stands out
+  // vs. a real high PF like "3.42").
+  const rows = [];
+  for (const [label, b] of buckets.entries()) {
+    const avgR = b.count > 0 ? b.sumR / b.count : 0;
+    const wr = b.count > 0 ? (b.winners / b.count) * 100 : 0;
+    const pf = b.sumLosses > 0
+      ? b.sumWins / b.sumLosses
+      : (b.sumWins > 0 ? Infinity : 0);
+    rows.push({ label, count: b.count, sumR: b.sumR, avgR, wr, pf });
+  }
+
+  // Effective settings — pulled from the sync master if the chain is active,
+  // else from this widget's own def.settings.
+  const eff = _getCustomTableEffectiveSettings(def);
+  const { sortKey, sortDir, barsMode } = eff;
+
+  const cmpFn = {
+    label: (a, b) => String(a.label).localeCompare(String(b.label)),
+    count: (a, b) => a.count - b.count,
+    wr:    (a, b) => a.wr - b.wr,
+    avg:   (a, b) => a.avgR - b.avgR,
+    pf:    (a, b) => {
+      const av = isFinite(a.pf) ? a.pf : Number.MAX_VALUE;
+      const bv = isFinite(b.pf) ? b.pf : Number.MAX_VALUE;
+      return av - bv;
+    },
+    total: (a, b) => a.sumR - b.sumR,
+  }[sortKey] || ((a, b) => a.sumR - b.sumR);
+  rows.sort(cmpFn);
+  if (sortDir === 'desc') rows.reverse();
+
+  if (!rows.length) {
+    host.innerHTML = '<div class="cw-table-empty">No data for this property under the current filters.</div>';
     return;
   }
-  const found = _customDonutStateFromCanvas(canvas);
-  if (!found) return;
-  const { state } = found;
-  const zone = _customDonutHitTest(canvas, state, e);
-  if (zone !== state.hover) {
-    state.hover = zone;
-    canvas.style.cursor = zone ? 'pointer' : '';
-    _drawCustomDonut(canvas.getContext('2d'), state, zone);
-  }
-});
 
-// ── Custom donut click: open drawer per sector (or all from center) ──
-document.addEventListener('click', e => {
-  const canvas = e.target.closest('canvas[id^="donutCanvas-"]');
-  if (!canvas) return;
-  const found = _customDonutStateFromCanvas(canvas);
-  if (!found) return;
-  const { state } = found;
-  const zone = _customDonutHitTest(canvas, state, e);
-  if (!zone) return;
-  let trades, title;
-  if (zone === 'center') {
-    trades = state.sectors.flatMap(s => s.trades || []);
-    title = state.defLabel || 'All Trades';
-  } else {
-    const sec = state.sectors.find(s => s.label === zone);
-    if (!sec) return;
-    trades = sec.trades || [];
-    title = `${state.defLabel || ''} — ${zone}`.trim();
-  }
-  if (trades.length && typeof openWidgetDrawer === 'function') {
-    openWidgetDrawer(title, `${trades.length} trade${trades.length > 1 ? 's' : ''}`, trades);
-  }
-});
+  const cwIdAttr = _escapeAttr(def.id);
+  const fmtR = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
+  const fmtPct = v => v.toFixed(0) + '%';
+  // PF formatter renders ∞ inside a larger-font span so the perfect-PF
+  // case (winners only, zero losses) jumps out visually vs. a finite PF.
+  const fmtPF = v => !isFinite(v)
+    ? '<span class="cw-pf-inf">∞</span>'
+    : v.toFixed(2);
+
+  const arrow = k => sortKey !== k ? '' : (sortDir === 'desc' ? ' ▼' : ' ▲');
+  const headerLabel = _escapeHtml(def.fieldLabel || def.label || def.field);
+  const headerCell = (key, text, alignClass = 'cw-th-num') => `
+    <th class="cw-th ${alignClass}${sortKey === key ? ' is-active' : ''}"
+        data-action="set-table-sort" data-cw-id="${cwIdAttr}" data-sort-key="${key}"
+        title="Sort by ${text.replace(/['"<>&]/g, '')}">${text}${arrow(key)}</th>`;
+
+  // Bar magnitude relative to max |sumR|. Guard against all-zero rows (e.g.
+  // BE-only categories) by clamping the denominator.
+  const maxAbs = barsMode ? Math.max(...rows.map(r => Math.abs(r.sumR)), 0.0001) : 0;
+
+  host.innerHTML = `
+    <div class="cw-table-scroll">
+      <table class="cw-table${barsMode ? ' cw-table-bars' : ''}">
+        <thead>
+          <tr>
+            ${headerCell('label', headerLabel, 'cw-th-label')}
+            ${headerCell('total', 'Total R', barsMode ? 'cw-th-bar' : 'cw-th-num')}
+            ${headerCell('wr',    'WR')}
+            ${headerCell('avg',   'Avg R')}
+            ${headerCell('pf',    'PF')}
+            ${headerCell('count', 'Vol')}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => {
+            let totalCellStyle = `color:${_cwTableTotalColor(r.sumR)}`;
+            let totalCellClass = 'cw-td cw-td-num';
+            if (barsMode) {
+              const barPct = (Math.abs(r.sumR) / maxAbs) * 100;
+              const barColor = r.sumR >= 0 ? 'var(--g)' : 'var(--r)';
+              const barBg = `linear-gradient(to right, color-mix(in srgb, ${barColor} 22%, transparent) 0 ${barPct.toFixed(2)}%, transparent ${barPct.toFixed(2)}% 100%)`;
+              totalCellStyle = `background:${barBg};color:${_cwTableTotalColor(r.sumR)}`;
+              totalCellClass = 'cw-td cw-td-num cw-td-bar';
+            }
+            return `
+            <tr class="cw-table-row"
+                data-action="open-custom-row-drawer"
+                data-cw-id="${cwIdAttr}"
+                data-row-label="${_escapeAttr(r.label)}"
+                title="Click to drill into ${r.count} trade${r.count > 1 ? 's' : ''}">
+              <td class="cw-td cw-td-label">${_escapeHtml(r.label)}</td>
+              <td class="${totalCellClass}" style="${totalCellStyle}">${fmtR(r.sumR)}</td>
+              <td class="cw-td cw-td-num" style="color:${_cwTableWrColor(r.wr)}">${fmtPct(r.wr)}</td>
+              <td class="cw-td cw-td-num" style="color:${_cwTableAvgColor(r.avgR)}">${fmtR(r.avgR)}</td>
+              <td class="cw-td cw-td-num" style="color:${_cwTablePfColor(r.pf)}">${fmtPF(r.pf)}</td>
+              <td class="cw-td cw-td-num cw-td-count">${r.count}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
 
 function renderBarsSplit(containerId, items, small, chart) {
   const container = document.getElementById(containerId);
@@ -29550,6 +29743,10 @@ function _renderAccountPanelAuthState() {
   } else {
     _setAccountStatus('Local only', 'muted');
   }
+  // Topbar Sign-In button — visible only for signed-out users so they always
+  // have a one-click path back to the auth panel after dismissing it.
+  const signinBtn = document.getElementById('topbar-signin-btn');
+  if (signinBtn) signinBtn.style.display = user ? 'none' : 'inline-flex';
   _syncJournalProfileUI();
 }
 
@@ -29567,6 +29764,12 @@ function toggleAccountPanel() {
     _journalProfileEditingId = '';
     _journalProfileRowMenuOpenId = '';
     _journalProfileSwitcherOpen = false;
+    // Signed-out users land on the Account tab so the sign-in form is the
+    // first thing they see — covers both auto-open at boot and the topbar
+    // Sign-In button click. Signed-in users keep their last-used tab.
+    if (!window._SW?.getUser?.() && _settingsActiveTab !== 'account') {
+      _setSettingsActiveTab('account');
+    }
     _renderAccountPanelAuthState();
     // Refresh the Notion integration badge when opening the panel on the
     // Integrations tab — without this, the tab restored from localStorage
@@ -29657,12 +29860,36 @@ async function _handleAccountSignup() {
     return;
   }
   _setAccountAlert('Creating account…', 'warning');
-  const { error } = await _SW.signUp(email, password);
+  const { data, error } = await _SW.signUp(email, password);
   if (error) {
     _setAccountAlert(error.message, 'danger');
-  } else {
-    _setAccountAlert('Check your email to confirm your account.', 'success');
+    return;
   }
+  // Supabase's anti-enumeration idiom for "email already exists" when
+  // "Confirm email" is on: data.user is returned but `identities` is empty.
+  // Show the same success copy as a real new signup to avoid leaking the
+  // existence of the account — but skip the misleading "check your email"
+  // line since no email gets sent in that case.
+  if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    _setAccountAlert('If this email is available, a confirmation link has been sent.', 'success');
+    return;
+  }
+  // Expected path with "Confirm email" enabled in Supabase: user is created
+  // but no session is established until the email link is clicked.
+  if (data?.user && !data?.session) {
+    _setAccountAlert('Account created — check your email to confirm before signing in.', 'success');
+    return;
+  }
+  // Fallback: user + session both returned means "Confirm email" is OFF in
+  // the Supabase project. Flag this loud so the operator (Max) notices the
+  // project setting drifted — users would otherwise be auto-signed-in
+  // without ever validating their email.
+  if (data?.session) {
+    console.warn('[Auth] signUp returned an active session — Supabase "Confirm email" is OFF. Enable it in Authentication → Providers → Email.');
+    _setAccountAlert('Account created and signed in (email confirmation is disabled).', 'warning');
+    return;
+  }
+  _setAccountAlert('Account created — check your email to confirm before signing in.', 'success');
 }
 
 async function _handleAccountSendResetLink() {
@@ -29787,7 +30014,7 @@ function _handleDeleteAccount() {
     }
     await _SW.signOut();
     _accountRecoveryMode = false;
-    _setAccountView('signed_out', { clearForms: true });
+    _wipeLocalStateAndReload();
   };
   backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
   backdrop.querySelector('.layout-confirm-cancel').addEventListener('click', close);
@@ -29795,11 +30022,25 @@ function _handleDeleteAccount() {
   const onKey = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
 }
+// Wipe every piece of local dashboard state (LS profiles, layouts, presets,
+// cached trades, custom widgets, screenshots, mappings, …) + sessionStorage,
+// then reload. Used by sign-out / delete-account so the dashboard comes back
+// up in its brand-new-install state (Demo mode, no profiles, integrations
+// shown as disconnected) — the auth session has already been killed by the
+// caller, so `sb-*` keys can also be cleared. Remote Supabase data is left
+// untouched on logout (user may sign back in) — delete-account handles its
+// own remote cleanup upstream.
+function _wipeLocalStateAndReload() {
+  try { localStorage.clear(); } catch (e) {}
+  try { sessionStorage.clear(); } catch (e) {}
+  window.location.reload();
+}
+
 async function _handleAccountLogout() {
   _setAccountAlert('Logging out…', 'warning');
   await _SW.signOut();
   _accountRecoveryMode = false;
-  _setAccountView('signed_out', { clearForms: true });
+  _wipeLocalStateAndReload();
 }
 
 // Factory Reset — wipe everything (LS, sessionStorage, Supabase user_data,
@@ -29897,31 +30138,6 @@ document.addEventListener('click', e => {
     settingsPanelOpen = false;
     panel?.classList.remove('open');
     btn?.classList.remove('open');
-  }
-});
-
-// ── Backup panel (Import / Export full dashboard state) ──
-let backupPanelOpen = false;
-function toggleBackupPanel() {
-  backupPanelOpen = !backupPanelOpen;
-  document.getElementById('backup-panel')?.classList.toggle('open', backupPanelOpen);
-  document.getElementById('backup-toggle-btn')?.classList.toggle('open', backupPanelOpen);
-}
-function _closeBackupPanel() {
-  backupPanelOpen = false;
-  document.getElementById('backup-panel')?.classList.remove('open');
-  document.getElementById('backup-toggle-btn')?.classList.remove('open');
-}
-document.addEventListener('click', e => {
-  if (!backupPanelOpen) return;
-  const btn   = document.getElementById('backup-toggle-btn');
-  const panel = document.getElementById('backup-panel');
-  // The toggle button lives inside the more-menu, which gets closed by the
-  // action handler when the panel opens — by then the button is detached, so
-  // we also accept clicks on any element with the toggle-backup-panel action.
-  if (!btn?.contains(e.target) && !panel?.contains(e.target) &&
-      !e.target.closest('[data-action="toggle-backup-panel"]')) {
-    _closeBackupPanel();
   }
 });
 
@@ -30500,10 +30716,17 @@ const _CW_TYPE_ICONS = {
     <rect x="8"  y="16" width="6" height="6" rx="1" opacity=".14"/>
     <rect x="16" y="16" width="6" height="6" rx="1" opacity=".52"/>
   </svg>`,
-  donut: `<svg class="cw-type-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="5" stroke-dasharray="23 34" stroke-linecap="butt"/>
-    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="5" stroke-dasharray="16 41" stroke-dashoffset="-23" stroke-linecap="butt" opacity=".52"/>
-    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="5" stroke-dasharray="18 39" stroke-dashoffset="-39" stroke-linecap="butt" opacity=".24"/>
+  table: `<svg class="cw-type-icon" viewBox="0 0 28 22" fill="currentColor" aria-hidden="true">
+    <rect x="0"  y="0"    width="28" height="4"   rx="1"/>
+    <rect x="0"  y="7"    width="8"  height="3.5" rx="1" opacity=".85"/>
+    <rect x="10" y="7"    width="8"  height="3.5" rx="1" opacity=".7"/>
+    <rect x="20" y="7"    width="8"  height="3.5" rx="1" opacity=".55"/>
+    <rect x="0"  y="13"   width="8"  height="3.5" rx="1" opacity=".55"/>
+    <rect x="10" y="13"   width="8"  height="3.5" rx="1" opacity=".4"/>
+    <rect x="20" y="13"   width="8"  height="3.5" rx="1" opacity=".7"/>
+    <rect x="0"  y="18.5" width="8"  height="3.5" rx="1" opacity=".4"/>
+    <rect x="10" y="18.5" width="8"  height="3.5" rx="1" opacity=".7"/>
+    <rect x="20" y="18.5" width="8"  height="3.5" rx="1" opacity=".55"/>
   </svg>`,
 };
 
@@ -30511,7 +30734,7 @@ function _syncCreateWidgetTypeButtons() {
   document.querySelectorAll('.np-widget-creator-btn[data-cw-type]').forEach(btn => {
     const type = btn.getAttribute('data-cw-type');
     const isActive = !!_cwCreateFlowState.open && _cwCreateFlowState.type === type;
-    const label = type === 'heatmap' ? 'Heatmap' : type === 'donut' ? 'Donut' : 'Bar Chart';
+    const label = type === 'heatmap' ? 'Heatmap' : type === 'table' ? 'Table' : 'Bar Chart';
     btn.classList.toggle('is-active', isActive);
     btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     btn.innerHTML = `${_CW_TYPE_ICONS[type] || ''}<span class="cw-type-label">${isActive ? '✓ ' : ''}${label}</span>`;
@@ -31932,13 +32155,13 @@ function _renderCreateWidgetBuilder() {
   const host = document.getElementById('cw-inline-builder-host');
   if (!host) return;
   _syncCreateWidgetTypeButtons();
-  if (!_cwCreateFlowState.open || !['bars', 'heatmap', 'donut'].includes(_cwCreateFlowState.type)) {
+  if (!_cwCreateFlowState.open || !['bars', 'heatmap', 'table'].includes(_cwCreateFlowState.type)) {
     host.innerHTML = '';
     return;
   }
   const { context, mappedFields, sourceFields } = getAvailableWidgetProperties();
   const isHeatmap = _cwCreateFlowState.type === 'heatmap';
-  const isDonut   = _cwCreateFlowState.type === 'donut';
+  const isTable   = _cwCreateFlowState.type === 'table';
   const query = String(_cwCreateFlowState.searchQuery || '').trim().toLowerCase();
   const filter = _cwCreateFlowState.sourceFilter || 'all';
 
@@ -32047,10 +32270,10 @@ function _renderCreateWidgetBuilder() {
       </div>`;
 
   const builderTitle = isHeatmap ? 'Heatmap Setup'
-                      : isDonut   ? 'Donut Setup'
+                      : isTable   ? 'Table Setup'
                       : 'Bar Chart Setup';
   const builderSubtitle = isHeatmap ? 'Select X and Y axes'
-                        : isDonut   ? 'Select a categorical property'
+                        : isTable   ? 'Select a categorical property'
                         : 'Select property';
   host.innerHTML = `
     <div class="cw-inline-builder is-open">
@@ -32098,7 +32321,7 @@ function _renderCreateWidgetBuilder() {
 }
 
 function _openCreateWidgetModal(type) {
-  if (!['bars', 'heatmap', 'donut'].includes(type)) return;
+  if (!['bars', 'heatmap', 'table'].includes(type)) return;
   if (_cwCreateFlowState.open && _cwCreateFlowState.type === type) {
     _closeCreateWidgetBuilder();
     return;
@@ -32189,11 +32412,11 @@ function _handleCreateWidgetContinue() {
       inferredType: selected.inferredType,
       createdFrom: 'widget-builder',
     });
-  } else if (_cwCreateFlowState.type === 'donut') {
+  } else if (_cwCreateFlowState.type === 'table') {
     if (!_cwCreateFlowState.selectedId) return;
     const selected = _getCreateWidgetSelection();
     if (!selected) return;
-    _createCustomDonutWidget({
+    _createCustomTableWidget({
       field: selected.key,
       label: selected.label,
       propertySource: selected.source,
@@ -32249,16 +32472,16 @@ function _renderCreateWidgetList() {
   });
   const rows = sorted.map(def => {
     const isHeatmap = def.type === 'heatmap';
-    const isDonut   = def.type === 'donut';
-    const icon = isHeatmap ? '▦' : isDonut ? '◕' : '▮';
+    const isTable   = def.type === 'table';
+    const icon = isHeatmap ? '▦' : isTable ? '⊞' : '▮';
     const label = _escHTML(def.label || def.field || def.id);
     // Heatmap row shows "X × Y" — field2 holds the X-axis dim (colKey) and
     // field holds the Y-axis dim (rowKey), per the create-widget convention.
     const sub   = isHeatmap
       ? `${_escHTML(def.field2Label || def.field2 || '?')} × ${_escHTML(def.fieldLabel || def.field || '?')}`
       : _escHTML(def.fieldLabel || def.field || '?');
-    const typeBadge = isHeatmap ? 'Heatmap' : isDonut ? 'Donut' : 'Bar Chart';
-    const typeClass = isHeatmap ? 'cw-list-type-heatmap' : isDonut ? 'cw-list-type-donut' : 'cw-list-type-bars';
+    const typeBadge = isHeatmap ? 'Heatmap' : isTable ? 'Table' : 'Bar Chart';
+    const typeClass = isHeatmap ? 'cw-list-type-heatmap' : isTable ? 'cw-list-type-table' : 'cw-list-type-bars';
     return `
       <div class="cw-list-item" data-cw-id="${_escapeAttr(def.id)}">
         <span class="cw-list-icon" aria-hidden="true">${icon}</span>
@@ -34843,12 +35066,16 @@ function importTheme(input) {
 }
 
 function loadSavedTheme() {
-  // TradingView theme values — sourced from the preset definition
-  const TV_THEME = THEME_PRESETS.find(p => p.name === 'TradingView').theme;
+  // Fresh-user default theme. Dawn is the warm-cream light theme — chosen
+  // as the brand-new-user landing experience. Existing users keep whatever
+  // they have in LS untouched. To change the default, edit the .name lookup.
+  const DEFAULT_PRESET = THEME_PRESETS.find(p => p.name === 'Dawn')
+    || THEME_PRESETS.find(p => p.name === 'TradingView'); // belt-and-suspenders fallback
+  const DEFAULT_THEME = DEFAULT_PRESET.theme;
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (!saved) {
-      currentTheme = { ...THEME_DEFAULT, ...TV_THEME };
+      currentTheme = { ...THEME_DEFAULT, ...DEFAULT_THEME };
       try { localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(currentTheme)); } catch(e) {}
       applyThemeToCss(currentTheme);
       return false;
@@ -34864,7 +35091,7 @@ function loadSavedTheme() {
     applyThemeToCss(currentTheme);
     return true;
   } catch(e) {
-    currentTheme = { ...THEME_DEFAULT, ...TV_THEME };
+    currentTheme = { ...THEME_DEFAULT, ...DEFAULT_THEME };
     try { localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(currentTheme)); } catch(e) {}
     applyThemeToCss(currentTheme);
     return false;
@@ -35053,6 +35280,9 @@ window.addEventListener('load', () => {
   // baked BASE_M15_EXCLUDE into P0 before noBaseExclusions:true became the
   // default. One-shot, idempotent.
   _migrateRawBaselineToTrulyRaw_v1();
+  // 2026-05-24: legacy donut custom widgets dropped in favor of sortable tables.
+  // One-shot, idempotent — purges any def with type='donut' from LS.
+  _migrateDropLegacyDonuts_v1();
   // Per-preset live filters (Phase 3 refonte). Load AFTER migration so the
   // presets list is stable; _ensureLiveSlotsInitialized backfills any missing
   // slots (including the 'null' pseudo-preset for no-preset-active context).
@@ -35717,6 +35947,28 @@ function _migrateRawBaselineToTrulyRaw_v1() {
     p0.noBaseExclusions = true;
     p0.description = 'Every trade — no filters applied';
     savePresetsList();
+  }
+  localStorage.setItem(FLAG, '1');
+  return true;
+}
+
+// One-shot migration: drop legacy custom widget defs with type='donut'.
+// The donut widget was retired 2026-05-24 in favor of a sortable table that
+// surfaces #Trades / Win Rate / Avg R / PF / Total R per category.
+// Idempotent via LS flag — runs once, never resurrects donut entries even
+// if the user manually edits LS.
+function _migrateDropLegacyDonuts_v1() {
+  const FLAG = 'flipping_drop_legacy_donuts_v1';
+  if (localStorage.getItem(FLAG)) return false;
+  try {
+    const defs = (typeof _loadCustomWidgetDefs === 'function') ? _loadCustomWidgetDefs() : [];
+    const filtered = defs.filter(d => d?.type !== 'donut');
+    if (filtered.length !== defs.length) {
+      _saveCustomWidgetDefs(filtered);
+      debugLog(`[migrate] dropped ${defs.length - filtered.length} legacy donut widget(s)`);
+    }
+  } catch (e) {
+    console.warn('[migrate] drop-legacy-donuts failed:', e?.message || e);
   }
   localStorage.setItem(FLAG, '1');
   return true;
@@ -38818,15 +39070,13 @@ function _injectCustomWidgetHTML() {
         </div>
         ${_renderCustomBarSortToolbarHTML(def.id)}
         <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
-    } else if (def.type === 'donut') {
+    } else if (def.type === 'table') {
       widget.innerHTML = `
         <div class="cc-head cc-head-spaced">
           <span class="cc-title">${_escapeHtml(def.label)}</span>
+          ${_renderCustomTableToolbarHTML(def)}
         </div>
-        <div class="donut-wrap donut-wrap-centered">
-          <div class="donut-canvas-wrap"><canvas id="donutCanvas-${_escapeAttr(def.id)}"></canvas></div>
-          <div class="donut-legend" id="donut-legend-${_escapeAttr(def.id)}"></div>
-        </div>`;
+        <div class="cw-table-host" id="cw-table-host-${_escapeAttr(def.id)}"></div>`;
     } else {
       widget.innerHTML = `
         <div class="cc-head">
@@ -38860,15 +39110,13 @@ function _injectNewCustomWidget(def) {
       </div>
       ${_renderCustomBarSortToolbarHTML(def.id)}
       <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
-  } else if (def.type === 'donut') {
+  } else if (def.type === 'table') {
     widget.innerHTML = `
       <div class="cc-head cc-head-spaced">
         <span class="cc-title">${_escapeHtml(def.label)}</span>
+        ${_renderCustomTableToolbarHTML(def)}
       </div>
-      <div class="donut-wrap donut-wrap-centered">
-        <div class="donut-canvas-wrap"><canvas id="donutCanvas-${_escapeAttr(def.id)}"></canvas></div>
-        <div class="donut-legend" id="donut-legend-${_escapeAttr(def.id)}"></div>
-      </div>`;
+      <div class="cw-table-host" id="cw-table-host-${_escapeAttr(def.id)}"></div>`;
   } else {
     widget.innerHTML = `
       <div class="cc-head">
@@ -38948,7 +39196,7 @@ function _injectNewCustomWidget(def) {
   const filtered = getFiltered();
   if (def.type === 'bars')         renderCustomBars(def, filtered);
   else if (def.type === 'heatmap') renderCustomHeatmap(def, filtered);
-  else if (def.type === 'donut')   renderCustomDonut(def, filtered);
+  else if (def.type === 'table')   renderCustomTable(def, filtered);
 
   if (typeof _renderHidePopoverList === 'function') _renderHidePopoverList();
 }
@@ -38995,15 +39243,13 @@ function _ensureCustomWidgetInGrid(def) {
       </div>
       ${_renderCustomBarSortToolbarHTML(def.id)}
       <div class="bar-list" id="bars-${_escapeAttr(def.id)}"></div>`;
-  } else if (def.type === 'donut') {
+  } else if (def.type === 'table') {
     widget.innerHTML = `
       <div class="cc-head cc-head-spaced">
         <span class="cc-title">${_escapeHtml(def.label)}</span>
+        ${_renderCustomTableToolbarHTML(def)}
       </div>
-      <div class="donut-wrap donut-wrap-centered">
-        <div class="donut-canvas-wrap"><canvas id="donutCanvas-${_escapeAttr(def.id)}"></canvas></div>
-        <div class="donut-legend" id="donut-legend-${_escapeAttr(def.id)}"></div>
-      </div>`;
+      <div class="cw-table-host" id="cw-table-host-${_escapeAttr(def.id)}"></div>`;
   } else {
     widget.innerHTML = `
       <div class="cc-head">
@@ -39070,7 +39316,7 @@ function _ensureCustomWidgetInGrid(def) {
     const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
     if (def.type === 'bars' && typeof renderCustomBars === 'function') renderCustomBars(def, filtered);
     else if (def.type === 'heatmap' && typeof renderCustomHeatmap === 'function') renderCustomHeatmap(def, filtered);
-    else if (def.type === 'donut' && typeof renderCustomDonut === 'function') renderCustomDonut(def, filtered);
+    else if (def.type === 'table' && typeof renderCustomTable === 'function') renderCustomTable(def, filtered);
   } catch (e) {
     console.warn('[CustomWidget] initial render failed for', def.id, e?.message || e);
   }
@@ -39082,11 +39328,6 @@ function _destroyCustomWidget(id) {
   _closeDeleteConfirm();
   _closeHideConfirm();
   delete barSortState[id];
-  // Drop any persisted donut hover/sector state so listeners stop
-  // matching against a now-removed canvas.
-  if (typeof _customDonutStates === 'object' && _customDonutStates) {
-    delete _customDonutStates[id];
-  }
   // Remove from defs
   _removeCustomWidgetDef(id);
 
@@ -40065,249 +40306,6 @@ function layoutImportJSON(input) {
       _updatePresetButtons();
       _showToast(`Imported: "${name}"`);
     } catch(err) {
-      _showToast('Could not parse JSON file', 'warn');
-    } finally {
-      input.value = '';
-    }
-  };
-  reader.readAsText(file);
-}
-
-// ── Export presets / overrides / live filters as a downloadable JSON file ──
-// Scope: PRESET_LS_KEY, LS_OVERRIDES_KEY, PRESET_LIVE_FILTERS_LS_KEY (3 keys only).
-function presetsExportJSON() {
-  const _readKey = key => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw == null) return null;
-      return JSON.parse(raw);
-    } catch (e) {
-      console.warn('[presetsExport] could not parse', key, e?.message || e);
-      return null;
-    }
-  };
-  const data = {
-    [_htfKey(PRESET_LS_KEY)]:              _readKey(_htfKey(PRESET_LS_KEY)),
-    [_htfKey(LS_OVERRIDES_KEY)]:           _readKey(_htfKey(LS_OVERRIDES_KEY)),
-    [_htfKey(PRESET_LIVE_FILTERS_LS_KEY)]: _readKey(_htfKey(PRESET_LIVE_FILTERS_LS_KEY)),
-  };
-  const payload = JSON.stringify({
-    schema:     'presets-v1',
-    exportedAt: new Date().toISOString(),
-    data,
-  }, null, 2);
-  const blob  = new Blob([payload], { type: 'application/json' });
-  const url   = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0, 10);
-  const a     = document.createElement('a');
-  a.href      = url;
-  a.download  = `flipping_presets_${stamp}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  const presetsArr = data[_htfKey(PRESET_LS_KEY)];
-  const nPresets   = Array.isArray(presetsArr) ? presetsArr.length : 0;
-  _showToast(`Exported: flipping_presets_${stamp}.json (${nPresets} preset${nPresets === 1 ? '' : 's'})`);
-}
-
-// ── Import a presets JSON file (replaces ALL preset data after confirmation) ──
-function presetsImportJSON(input) {
-  const file = input?.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const parsed = JSON.parse(e.target.result);
-      if (!parsed || parsed.schema !== 'presets-v1') {
-        _showToast('Invalid file: not a presets-v1 export', 'warn');
-        return;
-      }
-      if (!parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
-        _showToast('Invalid file: missing data object', 'warn');
-        return;
-      }
-      const slots = [
-        { key: _htfKey(PRESET_LS_KEY),              label: 'presets'      },
-        { key: _htfKey(LS_OVERRIDES_KEY),           label: 'overrides'    },
-        { key: _htfKey(PRESET_LIVE_FILTERS_LS_KEY), label: 'live filters' },
-      ];
-      const toWrite = [];
-      const missing = [];
-      for (const s of slots) {
-        const raw = parsed.data[s.key];
-        if (raw == null) { missing.push(s.label); continue; }
-        let cloned;
-        try {
-          cloned = JSON.parse(JSON.stringify(raw));
-        } catch (cloneErr) {
-          console.warn('[presetsImport] could not clone', s.key, cloneErr?.message || cloneErr);
-          missing.push(s.label);
-          continue;
-        }
-        if (cloned === null || typeof cloned !== 'object') {
-          missing.push(s.label);
-          continue;
-        }
-        toWrite.push({ key: s.key, value: cloned, label: s.label });
-      }
-      if (toWrite.length === 0) {
-        _showToast('Nothing to import (no valid keys found)', 'warn');
-        return;
-      }
-      const ok = window.confirm(
-        'This will replace ALL your current presets, overrides and live filters. Continue?'
-      );
-      if (!ok) return;
-      for (const w of toWrite) {
-        try {
-          localStorage.setItem(w.key, JSON.stringify(w.value));
-        } catch (writeErr) {
-          console.warn('[presetsImport] could not write', w.key, writeErr?.message || writeErr);
-        }
-      }
-      const presetsArr  = toWrite.find(w => w.key === _htfKey(PRESET_LS_KEY))?.value;
-      const importedN   = Array.isArray(presetsArr) ? presetsArr.length : 0;
-      const writtenLbl  = toWrite.map(w => w.label).join(', ');
-      const partialNote = missing.length ? ` — partial: ${writtenLbl} only (no ${missing.join(', ')})` : '';
-      _showToast(`Imported ${importedN} preset${importedN === 1 ? '' : 's'}${partialNote}. Reloading...`);
-      setTimeout(() => location.reload(), 700);
-    } catch (err) {
-      console.warn('[presetsImport] parse failed', err?.message || err);
-      _showToast('Could not parse JSON file', 'warn');
-    } finally {
-      input.value = '';
-    }
-  };
-  reader.readAsText(file);
-}
-
-// ── Full backup: export ALL user-configurable localStorage state ──
-// Scope: every localStorage key except the blacklist below. The blacklist
-// covers (a) huge caches that are re-fetched on demand (API trade cache, raw
-// CSV cache), (b) internal migration/version flags that should NOT cross
-// machines, (c) machine-specific data-source choice + API URL (per user
-// preference — each PC keeps its own source). Anything else — presets,
-// themes, GridStack layouts, TPM config, sidebar state, UI prefs — travels
-// with the backup.
-const BACKUP_EXCLUDE_KEYS = new Set([
-  // Caches: re-fetched / re-imported on demand, can be MB-sized
-  'apiTradesCache_v2_rrmax',
-  'apiTradesCacheTime_v2_rrmax',
-  'apiTradesCache_v2_rrmax_m15',
-  'apiTradesCacheTime_v2_rrmax_m15',
-  'apiTradesCache_v2_rrmax_h4',
-  'apiTradesCacheTime_v2_rrmax_h4',
-  'flipping_csv_cache_v1',
-  // Internal migration / cleanup / schema flags
-  'flipping_cache_cleanup_v1',
-  'flipping_invalide_bf_migration_v1',
-  'flipping_schema_version',
-  // Boot snapshot — derived on next render
-  'dashboard_boot_snapshot_v1',
-  // Machine-specific (user explicitly opted to keep these per-machine)
-  'dataSource',
-  'flipping_api_url',
-  // API field names — re-derived from current data source (per HTF source)
-  'apiFieldNames_v1_m15',
-  'apiFieldNames_v1_h4',
-]);
-const BACKUP_EXCLUDE_PREFIXES = [
-  'apiTradesCache_v2_rrmax_',
-  'apiTradesCacheTime_v2_rrmax_',
-  'apiTradesMedia_v1_',
-  'apiTradesSessionCache_v1_',
-  'apiTradesRaw_session_v2_',
-  'apiFieldNames_v1_',
-];
-function _isBackupExcludedKey(key) {
-  return BACKUP_EXCLUDE_KEYS.has(key)
-    || BACKUP_EXCLUDE_PREFIXES.some(prefix => key.startsWith(prefix));
-}
-
-function backupExportJSON() {
-  const data = {};
-  let count = 0;
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key || _isBackupExcludedKey(key)) continue;
-    const raw = localStorage.getItem(key);
-    if (raw == null) continue;
-    // Try to JSON.parse so objects/arrays/numbers/booleans live as proper JSON
-    // in the export file (more human-readable). Raw strings (e.g. 'be-fallback')
-    // fall through to the catch and are stored as-is.
-    let value;
-    try { value = JSON.parse(raw); }
-    catch { value = raw; }
-    data[key] = value;
-    count++;
-  }
-  const payload = JSON.stringify({
-    schema:     'flipping-backup-v1',
-    exportedAt: new Date().toISOString(),
-    data,
-  }, null, 2);
-  const blob  = new Blob([payload], { type: 'application/json' });
-  const url   = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0, 10);
-  const a     = document.createElement('a');
-  a.href      = url;
-  a.download  = `flipping_backup_${stamp}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  _showToast(`Backup exported: ${count} key${count === 1 ? '' : 's'}`);
-}
-
-function backupImportJSON(input) {
-  const file = input?.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const parsed = JSON.parse(e.target.result);
-      if (!parsed || typeof parsed !== 'object' || !parsed.data ||
-          typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
-        _showToast('Invalid file: not a recognised backup', 'warn');
-        return;
-      }
-      const schema = parsed.schema;
-      // Accept both: new full backup AND legacy presets-only export.
-      if (schema !== 'flipping-backup-v1' && schema !== 'presets-v1') {
-        _showToast(`Unsupported schema: ${schema || 'unknown'}`, 'warn');
-        return;
-      }
-      // Drop any blacklisted keys from the payload as a safety net (in case the
-      // file was hand-edited or came from an older export that included them).
-      const entries = Object.entries(parsed.data)
-        .filter(([k, v]) => !BACKUP_EXCLUDE_KEYS.has(k) && v != null);
-      if (entries.length === 0) {
-        _showToast('Nothing to import (empty data)', 'warn');
-        return;
-      }
-      const scopeLabel = schema === 'presets-v1' ? 'preset' : 'backup';
-      const ok = window.confirm(
-        `This will overwrite ${entries.length} ${scopeLabel} key${entries.length === 1 ? '' : 's'} in localStorage. Continue?`
-      );
-      if (!ok) return;
-      let written = 0, failed = 0;
-      for (const [key, value] of entries) {
-        try {
-          // Raw strings stay raw; everything else gets re-serialised.
-          const toStore = typeof value === 'string' ? value : JSON.stringify(value);
-          localStorage.setItem(key, toStore);
-          written++;
-        } catch (writeErr) {
-          console.warn('[backupImport] could not write', key, writeErr?.message || writeErr);
-          failed++;
-        }
-      }
-      const failNote = failed ? ` — ${failed} failed` : '';
-      _showToast(`Imported ${written} key${written === 1 ? '' : 's'}${failNote}. Reloading...`);
-      setTimeout(() => location.reload(), 700);
-    } catch (err) {
-      console.warn('[backupImport] parse failed', err?.message || err);
       _showToast('Could not parse JSON file', 'warn');
     } finally {
       input.value = '';
