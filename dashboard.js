@@ -949,6 +949,52 @@ const _SW = (() => {
       _user = null;
     },
 
+    // Factory Reset: wipe every Supabase-side trace of this user's dashboard
+    // data, then sign out. Used by the Account → Edit account → Factory Reset
+    // flow to bring the dashboard back to a brand-new-install state. Returns
+    // a summary object with per-resource success/error so the caller can log
+    // or surface partial failures. Localstorage / sessionStorage wipe is the
+    // caller's responsibility (it runs even when there's no auth session).
+    async factoryReset() {
+      const c = _getClient();
+      const result = { user_data: null, journal_profiles: null, notion_connections: null, blobs: null, signedOut: false };
+      if (!c) return { ...result, skipped: 'no-client' };
+      const { data: sessionData } = await c.auth.getSession();
+      const uid = sessionData?.session?.user?.id ?? _user?.id;
+      if (!uid) return { ...result, skipped: 'no-uid' };
+      // Run the deletes in parallel — RLS scopes everything to the current
+      // user, so failures are independent and we surface each one.
+      const tasks = [
+        c.from('user_data').delete().eq('user_id', uid)
+          .then(({ error }) => { result.user_data = error ? { error: error.message } : { ok: true }; }),
+        c.from('journal_profiles').delete().eq('user_id', uid)
+          .then(({ error }) => { result.journal_profiles = error ? { error: error.message } : { ok: true }; }),
+        c.from('notion_connections').delete().eq('user_id', uid)
+          .then(({ error }) => { result.notion_connections = error ? { error: error.message } : { ok: true }; }),
+        // Storage: list all paths under <uid>/ and remove them in one batch.
+        (async () => {
+          try {
+            const { data: files, error: listErr } = await c.storage.from('notion-trades').list(uid, { limit: 1000 });
+            if (listErr) { result.blobs = { error: listErr.message }; return; }
+            if (!files?.length) { result.blobs = { ok: true, removed: 0 }; return; }
+            const paths = files.map(f => `${uid}/${f.name}`);
+            const { error: rmErr } = await c.storage.from('notion-trades').remove(paths);
+            result.blobs = rmErr ? { error: rmErr.message } : { ok: true, removed: paths.length };
+          } catch (e) {
+            result.blobs = { error: e?.message || String(e) };
+          }
+        })(),
+      ];
+      await Promise.allSettled(tasks);
+      // Sign out last — keeping the session alive during the deletes so RLS
+      // policies still accept them.
+      try { await c.auth.signOut(); result.signedOut = true; } catch (e) {
+        result.signedOut = false;
+      }
+      _user = null;
+      return result;
+    },
+
     async saveJournalProfilesToRemote(profiles, activeId) {
       const c = _getClient();
       if (!c) { console.warn('[JournalProfilesRemote] saveJournalProfilesToRemote — no Supabase client'); return; }
@@ -3067,6 +3113,7 @@ function handleActionClick(event) {
     case 'auth-show-edit-profile': event.stopPropagation(); _setAccountView('edit_profile', { clearForms: true }); break;
     case 'auth-cancel-edit-profile': event.stopPropagation(); _setAccountView('signed_in', { clearForms: true }); break;
     case 'auth-delete-account': event.stopPropagation(); _handleDeleteAccount(); break;
+    case 'auth-factory-reset': event.stopPropagation(); _handleFactoryReset(); break;
     case 'auth-show-change-password': event.stopPropagation(); _setAccountView('change_password', { clearForms: true }); break;
     case 'auth-cancel-change-password': event.stopPropagation(); _setAccountView('edit_profile', { clearForms: true }); break;
     case 'auth-cancel-recovery': event.stopPropagation(); _accountRecoveryMode = false; _setAccountView(_getDefaultAccountView(), { clearForms: true }); break;
@@ -29651,6 +29698,65 @@ async function _handleAccountLogout() {
   await _SW.signOut();
   _accountRecoveryMode = false;
   _setAccountView('signed_out', { clearForms: true });
+}
+
+// Factory Reset — wipe everything (LS, sessionStorage, Supabase user_data,
+// journal_profiles, notion_connections, notion-trades Storage blobs), sign
+// out the auth session, and reload so the dashboard comes back up in its
+// brand-new-install state (Demo mode, no profiles, default layout).
+function _handleFactoryReset() {
+  document.getElementById('account-factory-reset-backdrop')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.id = 'account-factory-reset-backdrop';
+  backdrop.className = 'layout-confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="layout-confirm-modal" role="dialog" aria-modal="true">
+      <div class="layout-confirm-head">
+        <span class="layout-confirm-icon">⚠</span>
+        <span class="layout-confirm-title">Factory Reset</span>
+      </div>
+      <div class="layout-confirm-body">
+        <div class="layout-confirm-sub">This will wipe every piece of dashboard data tied to your account:</div>
+        <div class="layout-confirm-sub" style="margin-top:6px;opacity:.8">
+          • Notion integrations + journal profiles<br>
+          • Layouts, presets, filters, custom widgets<br>
+          • All cached trades + screenshots<br>
+          • Cross-device sync state
+        </div>
+        <div class="layout-confirm-sub" style="margin-top:8px">You'll be signed out and land on the demo dashboard, exactly like a fresh install.</div>
+        <div class="layout-confirm-sub" style="margin-top:4px;opacity:.6">Your account itself stays — only the data is reset. This action cannot be undone.</div>
+      </div>
+      <div class="layout-confirm-actions">
+        <button class="lt-btn layout-confirm-cancel" type="button">Cancel</button>
+        <button class="lt-btn layout-confirm-ok layout-confirm-ok--danger" type="button">Factory Reset</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+  const commit = async () => {
+    close();
+    _setAccountAlert('Factory Reset in progress…', 'warning');
+    // Supabase-side wipe (only runs when there's an auth session — local-only
+    // users skip straight to the LS clear). Errors are non-blocking.
+    try {
+      const summary = await _SW.factoryReset();
+      console.log('[FactoryReset] Supabase summary:', summary);
+    } catch (e) {
+      console.warn('[FactoryReset] Supabase wipe failed:', e?.message || e);
+    }
+    // Local wipe — runs unconditionally so the dashboard comes back clean
+    // even if Supabase calls partially failed.
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    // Reload — fresh module state + boot pipeline lands on Demo mode.
+    window.location.reload();
+  };
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('.layout-confirm-cancel').addEventListener('click', close);
+  backdrop.querySelector('.layout-confirm-ok').addEventListener('click', commit);
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
 }
 
 let settingsPanelOpen = false;
