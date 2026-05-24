@@ -6524,7 +6524,29 @@ async function _reloadJournalProfileSelection(options = {}) {
   }
 
   const cached = getCachedAPIData();
-  if (cached && cached.length && !forceFetch) {
+  // Anti-stale guard (2026-05-24): a prior client may have persisted a degraded
+  // LS cache (extras nearly empty) while the server blob holds the healthy,
+  // freshly-baked state. Without this guard the boot would commit to the bad
+  // LS payload and never consult the blob. The guard samples up to 50 trades:
+  // if < 30% carry ≥ 3 extras keys, we treat LS as stale and fall through to
+  // the blob download path below, which will hydrate from the authoritative
+  // server payload. Mirrors `_blobPayloadIsHealthy` used on the upload path.
+  let lsIsHealthy = true;
+  if (cached && cached.length) {
+    const sampleSize = Math.min(50, cached.length);
+    let healthy = 0;
+    for (let i = 0; i < sampleSize; i++) {
+      const ex = cached[i]?.extras;
+      if (ex && typeof ex === 'object' && Object.keys(ex).length >= 3) healthy++;
+    }
+    lsIsHealthy = (healthy / sampleSize) >= 0.3;
+    if (!lsIsHealthy) {
+      console.warn('[BootCache] LS payload looks degraded — falling through to blob download', {
+        sampleSize, healthy, profileId: activeProfile?.id, source: _getCurrentHTFSource(),
+      });
+    }
+  }
+  if (cached && cached.length && !forceFetch && lsIsHealthy) {
     _injectTrades(cached, 'Notion Live', null);
     _syncJournalProfileUI();
     return;
