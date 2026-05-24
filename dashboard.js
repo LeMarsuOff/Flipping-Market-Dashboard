@@ -11799,6 +11799,10 @@ function createPreset() {
   savePresetSnapshots();
   savePresetOverrides();
   savePresetLiveFilters();
+  // Auto-select the freshly-created preset (Max invariant: creating a preset
+  // should switch focus to it, otherwise the user has no signal that the
+  // action succeeded beyond it appearing in the list).
+  try { applyPreset(id); } catch (e) { console.warn('[createPreset] applyPreset failed:', e?.message || e); }
   renderPresetList();
   refreshPresetCompareDropdowns();
 }
