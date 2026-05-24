@@ -1506,12 +1506,28 @@ function _bakeAllDetectedPropsToExtras(trades, rawCache, source) {
     if (propName && propName !== NO_MAPPING_VALUE) screenshotDimProps.add(propName);
   }
 
+  // Index rawCache by notionId for the post-refresh fallback path: cached
+  // trades come back from LS without _rawRowIndex (it's stripped by
+  // _STORAGE_*_KEYS), so direct index lookup would skip them and the bake
+  // would leave 656/658 trades with stale extras after every incremental
+  // resync. The map is built once per call (cheap vs. per-trade lookup).
+  const rawByNotionId = new Map();
+  for (let i = 0; i < rawCache.length; i++) {
+    const row = rawCache[i];
+    const id = String(row?._notionId || row?.notionId || row?.id || '').trim();
+    if (id) rawByNotionId.set(id, row);
+  }
+
   let baked = 0;
   let deleted = 0;
   for (const t of trades) {
+    let rawRow = null;
     const rowIndex = t?._rawRowIndex;
-    if (typeof rowIndex !== 'number') continue;
-    const rawRow = rawCache[rowIndex];
+    if (typeof rowIndex === 'number') rawRow = rawCache[rowIndex] || null;
+    if (!rawRow) {
+      const notionId = String(t?._notionId || t?.notionId || t?.id || '').trim();
+      if (notionId) rawRow = rawByNotionId.get(notionId) || null;
+    }
     if (!rawRow || typeof rawRow !== 'object') continue;
     for (const propName of Object.keys(rawRow)) {
       if (_NOTION_EXTRAS_SYSTEM_KEYS.has(propName)) continue;
@@ -1825,9 +1841,12 @@ function addCustomProp({ name, key, type, showInFilters }) {
   // Prepend the new prop so it appears at the top of the declared list, then
   // re-normalize the `order` field so the existing entries shift down by one.
   _saveCustomProps([newProp, ...props].map((p, i) => ({ ...p, order: i })));
-  // Option B: extras populated on every in-memory trade from the raw source
-  // so the filter pipeline reads a value immediately, no reload required.
-  if (typeof _repopulateExtrasForProp === 'function') _repopulateExtrasForProp(newProp);
+  // Extras are populated exclusively by the eager bake at sync time (under the
+  // Notion display name = prop.name). No per-prop repopulate here: it would
+  // write under prop.key (camelCase) and conflict with the eager-bake's
+  // display-name key, producing the "rotating-empty-filter" bug. Chip will
+  // show data immediately if the prop was already detected (eager-bake ran on
+  // last sync); otherwise data appears on next Sync.
   return { ok: true, prop: newProp };
 }
 
@@ -1862,12 +1881,9 @@ function updateCustomProp(id, patch) {
   newProps[idx] = next;
   _saveCustomProps(newProps);
   if (keyChanged) _migrateCustomKey(cur.key, next.key);
-  // Option B: repopulate extras if the key or type changed — name/showInFilters
-  // edits don't affect stored values so skip the scan there.
-  const typeChanged = patch.type !== undefined && patch.type !== cur.type;
-  if ((keyChanged || typeChanged) && typeof _repopulateExtrasForProp === 'function') {
-    _repopulateExtrasForProp(next);
-  }
+  // Type/key changes apply at next Sync (eager-bake re-extracts with the new
+  // type). Until then, extras keep the previously-baked shape under prop.name.
+  // No per-prop repopulate here — see addCustomProp for the rationale.
   return { ok: true, prop: next, keyChanged };
 }
 
@@ -2393,7 +2409,14 @@ function _syncLiveSlotFromActiveChips() {
  *  the closure scoping of _normalizeAPITrade. Returns scalar / array / null. */
 function _extractApiValueForProp(rawTrade, prop) {
   if (!rawTrade || !prop) return null;
-  const raw = rawTrade[prop.key];
+  // Notion raw rows are keyed by the display name (e.g. "Pattern Strength").
+  // Some proxy versions also emit a camelCase alias for select/multi-select.
+  // Prefer the display name (always present); fall back to the camelCase key
+  // for legacy compatibility. Without this fallback, props added via "+ Add
+  // from Detected" — whose key is auto-sanitized to camelCase — could never
+  // be extracted, leaving extras empty after every resync.
+  let raw = (prop.name && rawTrade[prop.name] !== undefined) ? rawTrade[prop.name] : undefined;
+  if (raw === undefined) raw = rawTrade[prop.key];
   if (raw === null || raw === undefined) return null;
   const firstText = v => {
     if (v === null || v === undefined) return '';
@@ -2447,92 +2470,57 @@ function _extractApiValueForProp(rawTrade, prop) {
   return s === '' ? null : s;
 }
 
+// Memoized lookup map (raw-cache reference → notionId-keyed map). Reset when
+// the cache reference changes (i.e. after a sync replaces the raw array).
+let _rawApiNotionIdCache = null;
+
 /** Resolve the raw source row for a given trade, dispatching on active mode.
- *  Relies on _rawRowIndex stamped at ingestion time by every parser. */
+ *  Prefers _rawRowIndex (stamped at ingestion); falls back to _notionId lookup
+ *  in API mode for cached trades that came back from LS without _rawRowIndex
+ *  (it's not in _STORAGE_*_KEYS). Without this fallback, a refresh + resync
+ *  cycle leaves every cached trade unbaked because the eager-bake / repopulate
+ *  paths can't resolve raw via the stripped index. */
 function _getRawForTrade(trade, mode) {
-  if (!trade || typeof trade._rawRowIndex !== 'number') return null;
+  if (!trade) return null;
+  const hasIndex = typeof trade._rawRowIndex === 'number';
+  if (!hasIndex && mode !== 'api') return null;
   if (mode === 'csv')  return Array.isArray(_lastCsvRows) ? _lastCsvRows[trade._rawRowIndex] : null;
   if (mode === 'demo') return (typeof DEMO_TRADES !== 'undefined' && Array.isArray(DEMO_TRADES)) ? DEMO_TRADES[trade._rawRowIndex] : null;
   if (mode === 'api') {
     const raw = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : null;
-    return Array.isArray(raw) ? raw[trade._rawRowIndex] : null;
+    if (!Array.isArray(raw) || !raw.length) return null;
+    if (hasIndex) {
+      const direct = raw[trade._rawRowIndex];
+      if (direct) return direct;
+    }
+    // Fallback: notionId lookup. Keeps the cost amortized via a per-cache
+    // memoized index so we don't rebuild on every trade scan.
+    const notionId = String(trade._notionId || trade.notionId || trade.id || '').trim();
+    if (!notionId) return null;
+    const cache = raw;
+    if (!_rawApiNotionIdCache || _rawApiNotionIdCache.cache !== cache) {
+      const map = new Map();
+      for (let i = 0; i < cache.length; i++) {
+        const row = cache[i];
+        const id = String(row?._notionId || row?.notionId || row?.id || '').trim();
+        if (id) map.set(id, row);
+      }
+      _rawApiNotionIdCache = { cache, map };
+    }
+    return _rawApiNotionIdCache.map.get(notionId) || null;
   }
   return null;
 }
 
-/** Repopulate t.extras[prop.key] on every in-memory trade from the dataset's
- *  raw source. Called when a prop is added, its key/type changes, or after
- *  _injectTrades. Writes typed values via _coerceCustomValue. Triggers
- *  invalidateFilterCache + render unless opts.silent. */
-function _repopulateExtrasForProp(prop, opts = {}) {
-  if (!prop || !prop.key) return;
-  const mode = localStorage.getItem(DS_KEY) || 'demo';
-  const items = appState?.trades?.items || [];
-
-  const writeOrDelete = (t, v) => {
-    if (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length)) {
-      if (t.extras) delete t.extras[prop.key];
-    } else {
-      t.extras = t.extras || {};
-      t.extras[prop.key] = v;
-    }
-  };
-
-  // Pre-resolve CSV header to avoid per-trade matching.
-  let csvHeader = null;
-  if (mode === 'csv' && Array.isArray(_lastCsvRows) && _lastCsvRows[0]) {
-    if (Object.prototype.hasOwnProperty.call(_lastCsvRows[0], prop.name)) {
-      csvHeader = prop.name;
-    } else {
-      const normKey  = _normalizeForMatch(prop.key);
-      const normName = _normalizeForMatch(prop.name);
-      for (const h of Object.keys(_lastCsvRows[0])) {
-        const n = _normalizeForMatch(h);
-        if (n === normKey || n === normName) { csvHeader = h; break; }
-      }
-    }
-  }
-
-  for (const t of items) {
-    const rawSource = _getRawForTrade(t, mode);
-    // Raw source unavailable (typical after a page reload — the raw API cache
-    // is in-memory only): preserve whatever extras are already on the trade
-    // from the persisted parsed cache. Wiping here used to destroy the user's
-    // custom-prop values on every refresh and surface "No value found".
-    if (!rawSource) continue;
-    let v = null;
-    if (mode === 'api') {
-      v = _extractApiValueForProp(rawSource, prop);
-    } else if (mode === 'csv') {
-      if (csvHeader) {
-        const raw = rawSource[csvHeader];
-        if (raw !== null && raw !== undefined && raw !== '') {
-          v = _coerceCustomValue(raw, prop.type);
-        }
-      }
-    } else { // demo — direct key match on the raw short-key object
-      if (Object.prototype.hasOwnProperty.call(rawSource, prop.key)) {
-        const raw = rawSource[prop.key];
-        if (raw !== null && raw !== undefined && raw !== '') {
-          v = _coerceCustomValue(raw, prop.type);
-        }
-      }
-    }
-    writeOrDelete(t, v);
-  }
-
-  if (!opts.silent) {
-    if (typeof invalidateFilterCache === 'function') invalidateFilterCache();
-    if (typeof render === 'function') render();
-    // Persist the freshly-populated extras to the parsed cache LS so the
-    // values survive a page refresh. Without this, the user's prop appears
-    // declared on reload but with empty extras (raw cache is in-memory only
-    // and the parsed cache snapshot wouldn't include the new key).
-    if (mode === 'api' && typeof setCachedAPIData === 'function') {
-      try { setCachedAPIData(items, _getCurrentHTFSource()); } catch (e) {}
-    }
-  }
-}
+// (Removed) `_repopulateExtrasForProp` — previously the legacy "Option B"
+// path that wrote `t.extras[prop.key]` (camelCase) at add-time / inject-time.
+// Conflicted with the eager bake (Task #3.11) which writes under prop.name
+// (Notion display name). The two pipelines deleted each other's writes
+// depending on iteration order + Notion proxy alias coverage, producing the
+// "rotating-empty-filter" bug Max reported. Eager bake is now the single
+// source of truth for extras; readers fall back to prop.key for legacy LS
+// values written before this removal (one-time tolerance, naturally
+// migrated away on next full Sync).
 
 
 
@@ -9295,12 +9283,10 @@ function _injectTrades(parsed, totalLabel, savedState) {
     _diagAssertProfileTradeAlignment('post-_injectTrades');
   } catch (e) {}
 
-  // Option B (sub-task 4): bulk repopulate extras for every declared custom
-  // prop from the freshly ingested raw source. Silent — the render() in the
-  // branches below handles re-render once at the end.
-  if (typeof loadCustomProps === 'function' && typeof _repopulateExtrasForProp === 'function') {
-    for (const p of loadCustomProps()) _repopulateExtrasForProp(p, { silent: true });
-  }
+  // (Removed) Per-prop repopulate loop — used to write extras under prop.key
+  // (camelCase) on every inject, racing with the eager bake's display-name
+  // writes. Source of the "rotating empty filter" bug. Eager bake below is
+  // now the single source of truth.
 
   // Eager bake (Task #3.11): walk every detected Notion property into extras
   // before the lazy widget bake below. This is the path that fires when boot
@@ -12615,7 +12601,13 @@ function _customArrayOk(arr, entry, matchMode) {
 // if the trade passes, false if it fails the entry's filter. Used by both
 // filterCustomChips (live) and getPresetOverrideFiltered (per-preset overrides).
 function _customEntryPasses(trade, prop, entry) {
-  const raw = trade?.extras?.[prop.key];
+  // Prefer extras[prop.name] (Notion display name) — that's where the eager-bake
+  // (Task #3.11) writes, and it's the only key guaranteed to be populated after
+  // a resync. Fall back to extras[prop.key] for legacy values written by
+  // _repopulateExtrasForProp at first-Add time.
+  const raw = (prop?.name != null && trade?.extras?.[prop.name] !== undefined)
+    ? trade.extras[prop.name]
+    : trade?.extras?.[prop.key];
   if (prop.type === 'multi-select') {
     return _customArrayOk(raw, entry, entry.matchMode || 'any');
   }
@@ -33376,7 +33368,11 @@ function _npCoverageForProp(p) {
   const items = Array.isArray(appState.trades?.items) ? appState.trades.items : [];
   let covered = 0;
   for (const t of items) {
-    const v = t.extras?.[p.key];
+    // Prefer extras[p.name] (eager-bake target since Task #3.11); fall back to
+    // extras[p.key] (where _repopulateExtrasForProp writes when raw is fresh).
+    const v = (p?.name != null && t.extras?.[p.name] !== undefined)
+      ? t.extras[p.name]
+      : t.extras?.[p.key];
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) continue;
     covered++;
   }
@@ -34365,9 +34361,18 @@ function _scanUniqueValuesFor(prop) {
       set.add(String(v));
     }
   };
-  // Read extras directly — Option B (sub-task 4) ensures t.extras[prop.key]
-  // is populated on every trade as soon as the prop is declared.
-  for (const t of items) addValue(t?.extras?.[prop.key]);
+  // Read extras directly — prefer prop.name (Notion display name, where the
+  // eager-bake from Task #3.11 writes for every detected prop on every sync)
+  // and fall back to prop.key (legacy slot written by _repopulateExtrasForProp
+  // when raw cache is in memory at first-Add time). Without the prop.name
+  // fallback, props added via "+ Add from Detected" — whose key is auto-
+  // sanitized to camelCase — show 0 values after a refresh / resync.
+  for (const t of items) {
+    const v = (prop?.name != null && t?.extras?.[prop.name] !== undefined)
+      ? t.extras[prop.name]
+      : t?.extras?.[prop.key];
+    addValue(v);
+  }
 
   const total = set.size;
   if (total > 100) return { values: [], total, overLimit: true };
