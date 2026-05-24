@@ -1129,6 +1129,28 @@ function _scheduleRawBlobUpload(profileId, source) {
 
 const _blobUploadTimers = new Map();
 const _BLOB_UPLOAD_DEBOUNCE_MS = 1500;
+
+// Anti-corruption guard for blob upload: returns true if the payload looks
+// "healthy enough" to be uploaded. The Notion eager-bake should populate ~50-150
+// extras keys per trade in steady state; if we're about to upload trades whose
+// extras are almost universally empty, something upstream broke (eager-bake
+// skipped, raw cache empty at injection, etc.) and uploading would clobber
+// a perfectly good server-side blob with garbage. Better to skip silently and
+// let the next clean cycle re-upload. Threshold: at least 30% of the (up to 50)
+// sample trades must carry ≥ 3 extras keys. New-profile users have empty raw
+// → empty payload → array length check above blocks anyway, so this only
+// trips on bona-fide corruption.
+function _blobPayloadIsHealthy(trades) {
+  if (!Array.isArray(trades) || !trades.length) return false;
+  const sampleSize = Math.min(50, trades.length);
+  let healthy = 0;
+  for (let i = 0; i < sampleSize; i++) {
+    const ex = trades[i]?.extras;
+    if (ex && typeof ex === 'object' && Object.keys(ex).length >= 3) healthy++;
+  }
+  return (healthy / sampleSize) >= 0.3;
+}
+
 function _scheduleBlobUpload(profileId, source, trades) {
   if (!profileId || !source) return;
   if (!Array.isArray(trades)) return;
@@ -1136,10 +1158,12 @@ function _scheduleBlobUpload(profileId, source, trades) {
   const key = `${profileId}_${src}`;
   const existing = _blobUploadTimers.get(key);
   if (existing) clearTimeout(existing.timer);
-  // Snapshot the trades length only — we want the freshest LS state at fire
-  // time, not the array at schedule time. The cache key is reconstructable
-  // from (profileId, src) without needing the active-profile context.
-  const cacheKey = `apiTradesCache_v2_rrmax_${profileId}_${src}`;
+  // Cache key matches `_cacheKeyFor(src)` (source then profile, suffix-style).
+  // Fixed 2026-05-24: order was previously inverted (profile_src), so the LS
+  // re-read at fire time always missed → fell back to the stale `trades`
+  // snapshot from schedule time. With the right key, the fire-time payload
+  // is the freshest LS state and survives mid-flight extras updates.
+  const cacheKey = `apiTradesCache_v2_rrmax_${src}_${profileId}`;
   const timer = setTimeout(async () => {
     _blobUploadTimers.delete(key);
     try {
@@ -1155,6 +1179,16 @@ function _scheduleBlobUpload(profileId, source, trades) {
         }
       } catch (e) {}
       if (!Array.isArray(payload) || !payload.length) return;
+      // Anti-corruption guard: refuse to overwrite the server blob with a
+      // payload that looks like the eager-bake didn't run. See
+      // `_blobPayloadIsHealthy` for rationale.
+      if (!_blobPayloadIsHealthy(payload)) {
+        console.warn('[BlobUpload] skipped — payload extras suspiciously sparse, refusing to overwrite server blob', {
+          tradesCount: payload.length,
+          sampleExtrasKeys: payload[0]?.extras ? Object.keys(payload[0].extras).length : 0,
+        });
+        return;
+      }
       await window._SW.uploadTradesBlob(profileId, src, payload);
     } catch (e) {
       console.warn('[BlobUpload] scheduled upload failed:', e?.message || e);
