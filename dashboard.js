@@ -1951,6 +1951,9 @@ async function _ensureExtrasForNewProp(prop) {
   try { setCachedAPIData(parsedMem || items, src); } catch (e) {}
   try { invalidateFilterCache(); } catch (e) {}
   try { if (typeof render === 'function') render(); } catch (e) {}
+  // Sidebar Custom Fields chips aren't included in render(); re-render
+  // explicitly so the chip the user just added picks up the baked values.
+  try { if (typeof renderCustomFilterChips === 'function') renderCustomFilterChips(); } catch (e) {}
 }
 
 /** Patch an existing property. If `key` changes, runs _migrateCustomKey to keep
@@ -6580,6 +6583,16 @@ async function _reloadJournalProfileSelection(options = {}) {
             // Re-render so the widgets reflect the newly-baked extras.
             if (typeof render === 'function') {
               try { render(); } catch (e) {}
+            }
+            // CRITICAL (2026-05-24): render() doesn't include the sidebar
+            // Custom Fields chips. Without this explicit call, the first-paint
+            // sidebar (rendered before extras arrive via this IIFE) shows
+            // "0/N" / "No values found" permanently for every declared
+            // customProp, even though appState.trades.items now carries the
+            // extras. Re-rendering the chips here makes them pick up the
+            // freshly-baked values.
+            if (typeof renderCustomFilterChips === 'function') {
+              try { renderCustomFilterChips(); } catch (e) {}
             }
             debugLog('[RawBlob] post-hydration eager bake', bakeStats);
           }
