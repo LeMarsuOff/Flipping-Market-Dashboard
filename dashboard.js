@@ -950,14 +950,15 @@ const _SW = (() => {
     },
 
     // Factory Reset: wipe every Supabase-side trace of this user's dashboard
-    // data, then sign out. Used by the Account → Edit account → Factory Reset
-    // flow to bring the dashboard back to a brand-new-install state. Returns
-    // a summary object with per-resource success/error so the caller can log
-    // or surface partial failures. Localstorage / sessionStorage wipe is the
-    // caller's responsibility (it runs even when there's no auth session).
+    // data while KEEPING the auth session live. Used by the Account → Edit
+    // account → Factory Reset flow to bring the dashboard back to a brand-
+    // new state without forcing the user to log back in. Returns a summary
+    // object with per-resource success/error so the caller can log or surface
+    // partial failures. Localstorage / sessionStorage wipe is the caller's
+    // responsibility (it runs even when there's no auth session).
     async factoryReset() {
       const c = _getClient();
-      const result = { user_data: null, journal_profiles: null, notion_connections: null, blobs: null, signedOut: false };
+      const result = { user_data: null, journal_profiles: null, notion_connections: null, blobs: null };
       if (!c) return { ...result, skipped: 'no-client' };
       const { data: sessionData } = await c.auth.getSession();
       const uid = sessionData?.session?.user?.id ?? _user?.id;
@@ -986,12 +987,8 @@ const _SW = (() => {
         })(),
       ];
       await Promise.allSettled(tasks);
-      // Sign out last — keeping the session alive during the deletes so RLS
-      // policies still accept them.
-      try { await c.auth.signOut(); result.signedOut = true; } catch (e) {
-        result.signedOut = false;
-      }
-      _user = null;
+      // Auth session intentionally preserved — user stays logged in but the
+      // dashboard comes back as if it were a fresh device for this account.
       return result;
     },
 
@@ -29723,8 +29720,8 @@ function _handleFactoryReset() {
           • All cached trades + screenshots<br>
           • Cross-device sync state
         </div>
-        <div class="layout-confirm-sub" style="margin-top:8px">You'll be signed out and land on the demo dashboard, exactly like a fresh install.</div>
-        <div class="layout-confirm-sub" style="margin-top:4px;opacity:.6">Your account itself stays — only the data is reset. This action cannot be undone.</div>
+        <div class="layout-confirm-sub" style="margin-top:8px">You'll stay signed in. The dashboard reloads in its brand-new state — empty profiles, default layout, demo data.</div>
+        <div class="layout-confirm-sub" style="margin-top:4px;opacity:.6">Your account itself stays untouched. This action cannot be undone.</div>
       </div>
       <div class="layout-confirm-actions">
         <button class="lt-btn layout-confirm-cancel" type="button">Cancel</button>
@@ -29745,11 +29742,28 @@ function _handleFactoryReset() {
     } catch (e) {
       console.warn('[FactoryReset] Supabase wipe failed:', e?.message || e);
     }
-    // Local wipe — runs unconditionally so the dashboard comes back clean
-    // even if Supabase calls partially failed.
-    try { localStorage.clear(); } catch (e) {}
+    // Local wipe — preserve the Supabase auth token keys so the user stays
+    // signed in across the reload. The Supabase JS client persists the
+    // session at `sb-<projectRef>-auth-token` (+ a few helper keys); a blanket
+    // localStorage.clear() would knock the user back to the sign-in page,
+    // breaking the "stay logged in after Factory Reset" promise. Whitelist
+    // anything starting with `sb-` (v2 convention) — narrow enough to spare
+    // only the auth bag, broad enough to cover future helper keys.
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith('sb-')) continue;
+        keysToRemove.push(k);
+      }
+      for (const k of keysToRemove) {
+        try { localStorage.removeItem(k); } catch (e) {}
+      }
+    } catch (e) {}
     try { sessionStorage.clear(); } catch (e) {}
-    // Reload — fresh module state + boot pipeline lands on Demo mode.
+    // Reload — fresh module state + boot pipeline lands on Demo mode with
+    // the auth session intact (account section still shows "Connected").
     window.location.reload();
   };
   backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
