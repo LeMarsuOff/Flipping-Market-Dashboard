@@ -4582,14 +4582,19 @@ async function hydrateJournalProfilesFromRemote(mergedFromSync) {
       return;
     }
     const localById = new Map(getJournalProfiles().map(p => [p.id, p]));
-    const mergedProfiles = remote.profiles.map(profile => {
-      const local = localById.get(profile.id);
-      if (!local) return profile;
-      return {
-        ...profile,
-        notionDatabaseTitle: profile.notionDatabaseTitle || local.notionDatabaseTitle || '',
-      };
-    });
+    const mergedProfiles = remote.profiles
+      .map(profile => {
+        const local = localById.get(profile.id);
+        if (!local) return profile;
+        return {
+          ...profile,
+          notionDatabaseTitle: profile.notionDatabaseTitle || local.notionDatabaseTitle || '',
+        };
+      })
+      // 2026-05-24: drop the legacy "M15 Personnel" auto-seed (matches
+      // _isDefaultJournalProfile pristine signature) before persisting locally,
+      // so the phantom row doesn't re-appear from remote on every sign-in.
+      .filter(profile => !_isDefaultJournalProfile(profile));
     try { localStorage.setItem(JOURNAL_PROFILES_LS_KEY, JSON.stringify(mergedProfiles)); } catch {}
     const nextRemoteActiveId = remote.activeId || mergedProfiles[0]?.id || '';
     if (nextRemoteActiveId) {
@@ -4619,21 +4624,21 @@ _SW.setSignedInHook(hydrateJournalProfilesFromRemote);
 debugLog('[DashboardDebug]');
 
 function ensureDefaultJournalProfile() {
+  // 2026-05-24: stopped auto-seeding the legacy "M15 Personnel" profile (its
+  // pre-OAuth backend database no longer exists). Pristine seeds matching
+  // _isDefaultJournalProfile get pruned here so the phantom row disappears
+  // for every user. Any user customisation breaks the signature → safe.
   let profiles = getJournalProfiles();
-  if (!profiles.length) {
-    profiles = saveJournalProfiles([{
-      id: _makeJournalProfileId(),
-      name: 'M15 Personnel',
-      type: 'm15',
-      apiUrl: API_URL_DEFAULT,
-      source: 'api',
-    }]);
+  const pruned = profiles.filter(p => !_isDefaultJournalProfile(p));
+  if (pruned.length !== profiles.length) {
+    profiles = saveJournalProfiles(pruned);
   } else {
     const normalized = profiles.map(_normalizeJournalProfile);
     const changed = JSON.stringify(normalized) !== JSON.stringify(profiles);
     profiles = changed ? saveJournalProfiles(normalized) : normalized;
   }
 
+  if (!profiles.length) return null;
   const activeId = String(localStorage.getItem(ACTIVE_JOURNAL_PROFILE_LS_KEY) || '').trim();
   if (!profiles.some(p => p.id === activeId)) {
     try { localStorage.setItem(ACTIVE_JOURNAL_PROFILE_LS_KEY, profiles[0].id); } catch {}
@@ -6056,6 +6061,15 @@ async function _handleNotionProfileSyncNow(profileId) {
   // view. `_loadNotionTrades` gates DS_KEY / HTF / UI side-effects on
   // `wasActiveAtStart` so a background sync stays silent.
   await _loadNotionTrades(profile, { force: false, syncNow: true });
+  // _injectTrades wipes activeId to null in-memory when the resynced profile
+  // is the active one — LS still holds the user's persisted id (setActivePreset
+  // isn't called from that path), so the restore re-applies the same preset.
+  // Skip when the user switched profiles mid-sync.
+  if (String(getActiveJournalProfile()?.id || '') === String(profileId)) {
+    try { _restoreActivePresetForCurrentSlot(); } catch (e) {
+      console.warn('[SyncNow] preset restore failed:', e?.message || e);
+    }
+  }
 }
 // "Full resync" — bypasses the incremental cursor and refetches the entire
 // Notion database. Replaces the cache wholesale, which implicitly purges
@@ -6082,6 +6096,14 @@ async function _handleNotionProfileFullResync(profileId) {
   if (_lastFullSyncResult.ranAt === beforeRun) {
     showThemeToast('Full resync failed — check the Notion connection.', true);
     return;
+  }
+  // Same restore as the incremental sync handler — _injectTrades nukes the
+  // active preset in-memory but not in LS. Re-apply it when the resynced
+  // profile is still the active one.
+  if (String(getActiveJournalProfile()?.id || '') === String(profileId)) {
+    try { _restoreActivePresetForCurrentSlot(); } catch (e) {
+      console.warn('[FullResync] preset restore failed:', e?.message || e);
+    }
   }
   const { purgedCount, tradeCount } = _lastFullSyncResult;
   if (purgedCount > 0) {
@@ -11680,12 +11702,15 @@ const DEFAULT_PRESETS = [
     id: 0,
     order: 0,
     label: 'RAW Baseline',
-    description: 'No obstacle/context filters — base exclusions only',
+    description: 'Every trade — no filters applied',
     be: false,
     clear: true,
     m15Exclude: [],
     h4Exclude: [],
     sessionExclude: [],
+    // noBaseExclusions tells _migrateToV2 not to bake BASE_M15_EXCLUDE /
+    // BASE_SESSION_EXCLUDE into P0's snapshot. RAW = truly raw.
+    noBaseExclusions: true,
   },
 ];
 
@@ -11981,18 +12006,18 @@ function deletePreset(id) {
   savePresetLiveFilters();
 
   if (wasActive) {
-    // Transition active → null via le même flux qu'applyPreset pour garantir
-    // la cohérence chip state ↔ live slot. Le preset venant d'être supprimé
-    // ne figure plus dans PRESETS, donc _syncLiveSlotFromActiveChips() va
-    // écrire dans presetLiveFilters[id] (slot déjà supprimé) — on recrée un
-    // blank pour qu'il n'y ait pas de ressuscitation, puis on le re-supprime.
+    // Max invariant (Refacto Total 2026-05-24): the user is NEVER on "no
+    // preset". Falling back to P0 (RAW Baseline) keeps the dashboard usable.
+    // Pre-clearing chips before applyPreset(0) makes its inner
+    // _syncLiveSlotFromActiveChips write empty arrays to presetLiveFilters[id]
+    // (the just-deleted slot is re-allocated blank), then we re-delete it.
     _removeAllPresetChips();
     _removeAllLiveChips();
     _clearComboFilters();
-    appState.presets.activeId = null;
-    _hydrateChipsFromSnapshot(presetSnapshots[null]);
-    _hydrateChipsFromLiveSlot(getPresetLiveSlot(null));
-    Object.keys(appState.filters.chips).forEach(key => _syncChipModeButtons(key));
+    try { applyPreset(0); } catch (e) {
+      console.warn('[deletePreset] applyPreset(0) failed:', e?.message || e);
+      appState.presets.activeId = null;
+    }
     // Re-cleanup au cas où sync aurait recréé un slot pour l'id supprimé.
     delete presetLiveFilters[_liveKey(id)];
     savePresetLiveFilters();
@@ -35024,6 +35049,10 @@ window.addEventListener('load', () => {
   initPresetSnapshots();
   loadPresetSnapshots();
   _migrateToV2();
+  // 2026-05-24: re-rinse P0's snapshot for existing v2 users — _migrateToV2
+  // baked BASE_M15_EXCLUDE into P0 before noBaseExclusions:true became the
+  // default. One-shot, idempotent.
+  _migrateRawBaselineToTrulyRaw_v1();
   // Per-preset live filters (Phase 3 refonte). Load AFTER migration so the
   // presets list is stable; _ensureLiveSlotsInitialized backfills any missing
   // slots (including the 'null' pseudo-preset for no-preset-active context).
@@ -35658,6 +35687,39 @@ function _migrateInvalideBadFeelingV1() {
 
   localStorage.setItem(FLAG, '1');
   return mutated;
+}
+
+// One-shot migration 2026-05-24: P0 RAW Baseline is now truly raw (no base
+// exclusions). Existing users whose snapshot was materialised by _migrateToV2
+// have BASE_M15_EXCLUDE / BASE_SESSION_EXCLUDE baked into P0's chips — strip
+// them so the baseline shows every trade. Idempotent via LS flag.
+function _migrateRawBaselineToTrulyRaw_v1() {
+  const FLAG = 'flipping_raw_baseline_truly_raw_v1';
+  if (localStorage.getItem(FLAG)) return false;
+  const snap = presetSnapshots[0];
+  if (snap && snap.chips) {
+    const baseM15 = new Set(BASE_M15_EXCLUDE);
+    const baseSess = new Set(BASE_SESSION_EXCLUDE);
+    const obs = snap.chips.obstacles;
+    if (obs && Array.isArray(obs.excluded) && obs.excluded.length) {
+      obs.excluded = obs.excluded.filter(v => !baseM15.has(v));
+    }
+    const sess = snap.chips.session;
+    if (sess && Array.isArray(sess.excluded) && sess.excluded.length && baseSess.size) {
+      sess.excluded = sess.excluded.filter(v => !baseSess.has(v));
+    }
+    savePresetSnapshots();
+  }
+  // Force P0 in PRESETS to carry noBaseExclusions:true (legacy v1→v2 migrations
+  // set this on every preset but a manually corrupted state could be missing it).
+  const p0 = PRESETS.find(p => p.id === 0);
+  if (p0 && p0.noBaseExclusions !== true) {
+    p0.noBaseExclusions = true;
+    p0.description = 'Every trade — no filters applied';
+    savePresetsList();
+  }
+  localStorage.setItem(FLAG, '1');
+  return true;
 }
 
 // ══ TUNE PANEL OPEN/CLOSE ══
