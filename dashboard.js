@@ -11801,9 +11801,12 @@ function createPreset() {
   savePresetLiveFilters();
   // Auto-select the freshly-created preset (Max invariant: creating a preset
   // should switch focus to it, otherwise the user has no signal that the
-  // action succeeded beyond it appearing in the list).
-  try { applyPreset(id); } catch (e) { console.warn('[createPreset] applyPreset failed:', e?.message || e); }
+  // action succeeded beyond it appearing in the list). Render the preset list
+  // FIRST so applyPreset's downstream syncPresetSelectionState finds the new
+  // button in the DOM and can apply the `.active` class to it. Swapping the
+  // order would wipe the active class on the subsequent renderPresetList.
   renderPresetList();
+  try { applyPreset(id); } catch (e) { console.warn('[createPreset] applyPreset failed:', e?.message || e); }
   refreshPresetCompareDropdowns();
 }
 
