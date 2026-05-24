@@ -6563,6 +6563,17 @@ async function _reloadJournalProfileSelection(options = {}) {
             _withJournalProfileCacheContext(rawProfileId, () => {
               try {
                 bakeStats = _bakeAllDetectedPropsToExtras(parsedMem, rawResult.trades, rawSrc);
+                // CRITICAL (2026-05-24): also bake appState.trades.items, NOT
+                // just parsedMem. _injectTrades clones the trade objects via
+                // `{...t}` so appState items have their own object identity;
+                // mutating parsedMem doesn't propagate. The bake is idempotent
+                // — running it twice is fine. Without this, extras lives in
+                // _parsedAPICacheMemory but appState (what readers consume)
+                // stays empty, producing the "0/658 even though data is in
+                // memory" symptom Max kept hitting.
+                if (appState?.trades?.items?.length && appState.trades.items !== parsedMem) {
+                  _bakeAllDetectedPropsToExtras(appState.trades.items, rawResult.trades, rawSrc);
+                }
               } catch (e) {
                 console.warn('[RawBlob] post-hydration eager bake failed:', e?.message || e);
               }
