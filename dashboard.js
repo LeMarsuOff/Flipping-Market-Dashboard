@@ -796,7 +796,7 @@ const _SW = (() => {
     // ── Raw Notion blob — cross-device propagation of the unparsed Notion
     //    response payload (Task #3.10). Same bucket as the parsed blob, sibling
     //    path `<uid>/<profile>_<src>_raw.json.gz`. The raw payload feeds
-    //    _bakeCustomWidgetExtrasIntoCache (widget creation) and
+    //    _eagerBakeAfterWidgetCreate (widget creation) and
     //    _reapplyAPIOverrides (mapping change) — both of which previously
     //    needed a full Sync on every fresh device because the raw cache was
     //    in-memory only. With the raw blob, a fresh device hydrates raw
@@ -1410,85 +1410,37 @@ function _updateCustomWidgetDef(id, updater) {
 // refresh; without this, the widget shows "no data" after reload because
 // _cwGetFieldValue can't find the value in either t[key] or t.extras.
 // Extract a widget-ready value from a raw Notion field and write it into
-// t.extras[fieldKey]. Stores a plain string (via _flattenApiWidgetValue), NOT
-// the raw Notion object — raw objects can be 10-50× larger and push the
-// localStorage trade cache into minimal/ultra serialization mode, which drops
-// extras entirely and causes widgets to show "no data" after page reload.
+// t.extras[fieldKey]. Stores compact representations to keep the LS payload
+// small (raw Notion objects are 10-50× larger and would push the cache into
+// minimal/ultra serialization mode, which used to drop extras entirely).
+//
+// Refacto Total 2026-05-24 — step 3: arrays are preserved as arrays-of-strings
+// (one flattened primitive per element) so multi-select downstream filters
+// receive the shape they expect. Scalars are flattened to a single string.
 function _extractWidgetValueForExtras(rawVal) {
   if (rawVal === null || rawVal === undefined) return undefined;
   // _flattenApiWidgetValue is defined later in the file but hoisted.
+  if (Array.isArray(rawVal)) {
+    const arr = rawVal
+      .map(item => (typeof _flattenApiWidgetValue === 'function') ? _flattenApiWidgetValue(item) : String(item))
+      .filter(v => v !== null && v !== undefined && v !== '');
+    return arr.length ? arr : undefined;
+  }
   const flat = (typeof _flattenApiWidgetValue === 'function')
     ? _flattenApiWidgetValue(rawVal)
     : (typeof rawVal === 'string' ? rawVal : String(rawVal));
   return flat || undefined;
 }
 
-function _bakeCustomWidgetExtrasIntoCache(def) {
-  const mode = localStorage.getItem(DS_KEY) || 'demo';
-  if (mode !== 'api') return;
-  const rawCache = _getRawAPICache();
-  if (!rawCache || !rawCache.length) return;
+// Refacto Total 2026-05-24 — step 2: `_bakeCustomWidgetExtrasIntoCache` deleted.
+// Its responsibility (bake a widget's specific fields into extras at create
+// time) is fully covered by `_bakeAllDetectedPropsToExtras` below, which
+// bakes ALL detected Notion props for the entire trade list. Call sites at
+// widget create now go through `_eagerBakeAfterWidgetCreate` (defined below
+// after `_bakeAllDetectedPropsToExtras`).
 
-  const fieldsToProcess = [];
-  if ((def.fieldSource || def.propertySource || '') === 'api' && def.field)
-    fieldsToProcess.push(def.field);
-  if ((def.field2Source || def.propertySource || '') === 'api' && def.field2)
-    fieldsToProcess.push(def.field2);
-  if (!fieldsToProcess.length) return;
-
-  const src = _getCurrentHTFSource();
-
-  // Update in-memory trades (the currently filtered/active view).
-  for (const t of (appState?.trades?.items || [])) {
-    if (typeof t._rawRowIndex !== 'number') continue;
-    const rawRow = rawCache[t._rawRowIndex];
-    if (!rawRow) continue;
-    t.extras = t.extras || {};
-    for (const fk of fieldsToProcess) {
-      if (t.extras[fk] !== undefined) continue;
-      if (Object.prototype.hasOwnProperty.call(rawRow, fk)) {
-        const v = _extractWidgetValueForExtras(rawRow[fk]);
-        if (v !== undefined) t.extras[fk] = v;
-      }
-    }
-  }
-
-  // Also update the full parsed cache (all trades, not just the filtered view)
-  // and re-persist to localStorage so extras survive a page reload.
-  const slot = _getProfileScopedSourceSlot(src);
-  const allTrades = Array.isArray(_parsedAPICacheMemory[slot]) ? _parsedAPICacheMemory[slot] : null;
-  if (allTrades && allTrades.length) {
-    let changed = false;
-    for (const t of allTrades) {
-      if (typeof t._rawRowIndex !== 'number') continue;
-      const rawRow = rawCache[t._rawRowIndex];
-      if (!rawRow) continue;
-      for (const fk of fieldsToProcess) {
-        if (t.extras && t.extras[fk] !== undefined) continue;
-        if (Object.prototype.hasOwnProperty.call(rawRow, fk)) {
-          const v = _extractWidgetValueForExtras(rawRow[fk]);
-          if (v !== undefined) {
-            t.extras = t.extras || {};
-            t.extras[fk] = v;
-            changed = true;
-          }
-        }
-      }
-    }
-    if (changed) setCachedAPIData(allTrades, src);
-  }
-}
-
-// ── Eager bake: ALL detected Notion props → extras (Task #3.11) ───────────
-// The per-widget `_bakeCustomWidgetExtrasIntoCache` above is lazy: it only
-// touches properties referenced by an existing custom widget def. This means
-// creating a new widget on a property that isn't yet referenced requires
-// either (a) the raw cache to be populated (so the bake at creation can
-// extract the value) or (b) waiting for a Sync. Cross-device with a fresh
-// device, neither is guaranteed — the parsed blob ferries trades but only
-// carries extras for properties the source device had bake'd before upload.
-//
-// Eager bake: walk every raw property for every trade, flatten the value,
+// ── Eager bake: ALL detected Notion props → extras ────────────────────────
+// Walks every raw property for every trade, flattens the value,
 // write to `t.extras[propName]`. Standard-dim properties (pair, outcome,
 // setup, h4 etc., mapped via field overrides) are intentionally INCLUDED so
 // a custom widget on those still works. Skipped: system keys (id, _notionId,
@@ -1584,13 +1536,45 @@ function _bakeAllDetectedPropsToExtras(trades, rawCache, source) {
         continue;
       }
       t.extras = t.extras || {};
-      if (t.extras[propName] !== flat) {
+      const prev = t.extras[propName];
+      // Refacto Total 2026-05-24 — step 3: deep-ish equality for arrays so
+      // multi-select bakes don't loop-write on every pass (arrays compared
+      // by reference always differ). Scalars use strict !== as before.
+      const same = Array.isArray(flat) && Array.isArray(prev) && prev.length === flat.length
+        ? prev.every((v, i) => v === flat[i])
+        : prev === flat;
+      if (!same) {
         t.extras[propName] = flat;
         baked++;
       }
     }
   }
   return { baked, deleted };
+}
+
+// Refacto Total 2026-05-24 — step 2 helper: at widget create time, ensure the
+// new widget's field is in extras by running the full eager bake on both the
+// in-memory active trade list AND the parsed cache slot, then persisting via
+// setCachedAPIData so the bake survives a refresh. Idempotent — no-op if all
+// detected props are already in extras. Replaces the lazy per-widget bake
+// that used to live in `_bakeCustomWidgetExtrasIntoCache` (deleted).
+function _eagerBakeAfterWidgetCreate() {
+  const mode = localStorage.getItem(DS_KEY) || 'demo';
+  if (mode !== 'api') return;
+  const raw = (typeof _getRawAPICache === 'function') ? _getRawAPICache() : null;
+  if (!Array.isArray(raw) || !raw.length) return;
+  const src = _getCurrentHTFSource();
+  const items = appState?.trades?.items || [];
+  if (items.length) _bakeAllDetectedPropsToExtras(items, raw, src);
+  const slot = _getProfileScopedSourceSlot(src);
+  const parsedMem = _parsedAPICacheMemory[slot];
+  if (Array.isArray(parsedMem) && parsedMem.length && parsedMem !== items) {
+    _bakeAllDetectedPropsToExtras(parsedMem, raw, src);
+  }
+  const persistTarget = (Array.isArray(parsedMem) && parsedMem.length) ? parsedMem : items;
+  if (persistTarget && persistTarget.length) {
+    try { setCachedAPIData(persistTarget, src); } catch (e) {}
+  }
 }
 
 // Task #3.9 — when a new widget is created on a device whose raw cache is
@@ -1658,7 +1642,7 @@ function _createCustomBarsWidget({ field, label, propertySource = 'mapped', infe
     createdAt: Date.now(),
   };
   _addCustomWidgetDef(cwDef);
-  _bakeCustomWidgetExtrasIntoCache(cwDef);
+  _eagerBakeAfterWidgetCreate();
   _injectNewCustomWidget(cwDef);
   _maybeTriggerFullSyncAfterWidgetCreate(cwDef);
   return cwDef;
@@ -1681,7 +1665,7 @@ function _createCustomDonutWidget({ field, label, propertySource = 'mapped', inf
     createdAt: Date.now(),
   };
   _addCustomWidgetDef(cwDef);
-  _bakeCustomWidgetExtrasIntoCache(cwDef);
+  _eagerBakeAfterWidgetCreate();
   _injectNewCustomWidget(cwDef);
   _maybeTriggerFullSyncAfterWidgetCreate(cwDef);
   return cwDef;
@@ -1724,7 +1708,7 @@ function _createCustomHeatmapWidget({
     createdAt: Date.now(),
   };
   _addCustomWidgetDef(cwDef);
-  _bakeCustomWidgetExtrasIntoCache(cwDef);
+  _eagerBakeAfterWidgetCreate();
   _injectNewCustomWidget(cwDef);
   _maybeTriggerFullSyncAfterWidgetCreate(cwDef);
   return cwDef;
@@ -1792,15 +1776,36 @@ const VALID_PROP_KEY_RE = /^[a-z][a-zA-Z0-9]*$/;
 
 let _customPropsCache = null;
 
-/** Read & memoize the user's declared Notion properties from localStorage. */
+/** Read & memoize the user's declared Notion properties from localStorage.
+ *  One-shot migration (Refacto Total 2026-05-24, step 1): every prop gains
+ *  `notionSourceName` — the immutable Notion property identity used as the
+ *  canonical extras key going forward. For pre-migration props, we seed it
+ *  from `prop.name` (which was the Notion display name at creation time,
+ *  unless the user has since renamed). Re-persisted if any prop was missing
+ *  the field. */
 function loadCustomProps() {
   if (_customPropsCache) return _customPropsCache;
   try {
     const raw = localStorage.getItem(getProfileScopedKey(CUSTOM_PROPS_LS_KEY));
     const parsed = raw ? JSON.parse(raw) : [];
-    _customPropsCache = (Array.isArray(parsed) ? parsed : [])
+    const arr = (Array.isArray(parsed) ? parsed : [])
       .filter(p => p && typeof p === 'object' && p.id && p.key)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    let migrated = false;
+    for (const p of arr) {
+      if (typeof p.notionSourceName !== 'string' || !p.notionSourceName) {
+        p.notionSourceName = String(p.name || '').trim();
+        migrated = true;
+      }
+    }
+    _customPropsCache = arr;
+    if (migrated) {
+      try {
+        localStorage.setItem(getProfileScopedKey(CUSTOM_PROPS_LS_KEY), JSON.stringify(arr));
+      } catch (e) {
+        console.warn('[customProps] migration persist failed:', e.message);
+      }
+    }
   } catch {
     _customPropsCache = [];
   }
@@ -1854,8 +1859,13 @@ function suggestCustomPropKey(name) {
   return key;
 }
 
-/** Append a new declared property. Returns {ok:true, prop} or {ok:false, error, field}. */
-function addCustomProp({ name, key, type, showInFilters }) {
+/** Append a new declared property. Returns {ok:true, prop} or {ok:false, error, field}.
+ *  `notionSourceName` (optional): immutable Notion property identity — set by the
+ *  "+ Add from Detected" path to the raw Notion column key (which never changes
+ *  even if the user later renames the friendly `name`). For manual Add, the
+ *  caller can omit it and we fall back to `name.trim()`. This is the canonical
+ *  extras key used by readers post-refacto (step 3). */
+function addCustomProp({ name, key, type, showInFilters, notionSourceName }) {
   const props = loadCustomProps();
   if (props.length >= CUSTOM_PROPS_MAX) {
     return { ok: false, error: `Limit reached (${CUSTOM_PROPS_MAX} properties max).` };
@@ -1864,13 +1874,17 @@ function addCustomProp({ name, key, type, showInFilters }) {
   if (nameErr) return { ok: false, error: nameErr, field: 'name' };
   const keyErr = validateCustomPropKey(key);
   if (keyErr) return { ok: false, error: keyErr, field: 'key' };
+  const trimmedName = name.trim();
   const newProp = {
     id: 'cp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7),
-    name: name.trim(),
+    name: trimmedName,
     key,
     type: CUSTOM_PROP_TYPES.includes(type) ? type : 'text',
     showInFilters: showInFilters !== false,
     order: 0,
+    notionSourceName: (typeof notionSourceName === 'string' && notionSourceName.trim())
+      ? notionSourceName.trim()
+      : trimmedName,
   };
   // Prepend the new prop so it appears at the top of the declared list, then
   // re-normalize the `order` field so the existing entries shift down by one.
@@ -1999,11 +2013,17 @@ function deleteCustomProp(id) {
   if (!target) return { ok: false, error: 'Property not found.' };
   const next = props.filter(p => p.id !== id).map((p, i) => ({ ...p, order: i }));
   _saveCustomProps(next);
-  // Drop the live chip slot. Re-adding the same key later will repopulate
-  // extras from the raw source via Option B, so wiping extras here is safe.
+  // Drop the live chip slot. Re-adding the same prop later triggers a fresh
+  // eager bake which repopulates extras from raw — wiping here is safe.
   if (appState?.filters?.customChips) delete appState.filters.customChips[target.key];
+  // Refacto Total 2026-05-24 — step 3: extras are keyed by notionSourceName
+  // post-refacto. Delete that key. We also delete the legacy camelCase slot
+  // (target.key) to clean up any pre-refacto data left in extras.
+  const extrasKeysToDrop = [target.notionSourceName, target.key].filter(Boolean);
   for (const t of (appState?.trades?.items || [])) {
-    if (t.extras) delete t.extras[target.key];
+    if (t.extras) {
+      for (const k of extrasKeysToDrop) delete t.extras[k];
+    }
   }
   if (typeof invalidateFilterCache === 'function') invalidateFilterCache();
   if (typeof render === 'function') render();
@@ -2087,7 +2107,9 @@ function _isMeaningfulExtra(v) {
 }
 
 /** Build a typed extras map from a plain object whose keys are expected to match
- *  declared property keys. Used by the DEMO loader and as a generic fallback. */
+ *  declared property keys. Used by the DEMO loader and as a generic fallback.
+ *  Refacto Total 2026-05-24 — step 3: writes under `p.notionSourceName` so the
+ *  reader's single canonical key path finds the value. */
 function _collectCustomExtras(rawObj) {
   const props = loadCustomProps();
   if (!props.length || !rawObj) return {};
@@ -2095,13 +2117,15 @@ function _collectCustomExtras(rawObj) {
   for (const p of props) {
     if (!Object.prototype.hasOwnProperty.call(rawObj, p.key)) continue;
     const v = _coerceCustomValue(rawObj[p.key], p.type);
-    if (_isMeaningfulExtra(v)) extras[p.key] = v;
+    if (_isMeaningfulExtra(v)) extras[p.notionSourceName || p.key] = v;
   }
   return extras;
 }
 
 /** CSV-row variant: lookup by header name (case-insensitive) → coerce by type.
- *  Used by parseFlippingMarketCSV / parseProTemplateCSV / parseBeginnerCSV. */
+ *  Used by parseFlippingMarketCSV / parseProTemplateCSV / parseBeginnerCSV.
+ *  Refacto Total 2026-05-24 — step 3: writes under `p.notionSourceName` so the
+ *  reader's single canonical key path finds the value. */
 function _collectCustomExtrasFromCSV(headers, getCol) {
   const props = loadCustomProps();
   if (!props.length) return {};
@@ -2112,7 +2136,7 @@ function _collectCustomExtrasFromCSV(headers, getCol) {
     const raw = getCol(idx);
     if (raw === '' || raw === null || raw === undefined) continue;
     const v = _coerceCustomValue(raw, p.type);
-    if (_isMeaningfulExtra(v)) extras[p.key] = v;
+    if (_isMeaningfulExtra(v)) extras[p.notionSourceName || p.key] = v;
   }
   return extras;
 }
@@ -8320,35 +8344,14 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     s => _firstText(s)
   );
 
-  // Notion custom properties → extras{}. Uses the local _firstText/_parseField
-  // helpers because Notion API values are typed objects, not plain scalars.
-  const _customProps = (typeof loadCustomProps === 'function') ? loadCustomProps() : [];
+  // Refacto Total 2026-05-24 — step 3: legacy custom-props block removed.
+  // It used to write `extras[p.key]` (camelCase) for declared custom props.
+  // Now `_bakeAllDetectedPropsToExtras` handles every detected Notion prop
+  // (writing under `notionSourceName`, the canonical immutable key readers
+  // use). The eager bake fires right after this normalization step in
+  // `_loadNotionTrades` (before `setCachedAPIData`), so LS/blob carry the
+  // canonical extras.
   const extras = {};
-  for (const p of _customProps) {
-    if (!Object.prototype.hasOwnProperty.call(t, p.key)) continue;
-    const raw = t[p.key];
-    if (raw === null || raw === undefined) continue;
-    let v;
-    if (p.type === 'multi-select') {
-      const arr = _parseField(raw);
-      v = (arr && arr.length) ? arr : null;
-    } else if (p.type === 'number') {
-      const txt = _firstText(raw);
-      const n = txt === '' ? null : Number(String(txt).replace(',', '.'));
-      v = Number.isFinite(n) ? n : null;
-    } else if (p.type === 'checkbox') {
-      v = (typeof raw === 'boolean') ? raw : (() => {
-        const s = String(_firstText(raw)).trim().toLowerCase();
-        return s === 'true' || s === '1' || s === 'yes' || s === 'oui' || s === 'x' || s === '✓';
-      })();
-    } else {
-      const s = _firstText(raw);
-      v = s === '' ? null : s;
-    }
-    if (v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)) {
-      extras[p.key] = v;
-    }
-  }
 
   // Custom-widget API fields → bake flattened string values into extras so they
   // survive page reload. Store plain strings (not raw Notion objects) to keep
@@ -9148,9 +9151,8 @@ function setCachedAPIData(trades, source = null, options = {}) {
   // Trigger Supabase Storage blob upload — debounced per (profile, source).
   // Every centralized cache write funnels through setCachedAPIData, so this
   // single hook covers Notion sync (_loadNotionTrades), mapping change re-
-  // normalization (_reapplyAPIOverrides), and custom widget extras bake
-  // (_bakeCustomWidgetExtrasIntoCache) without needing 3 separate call-site
-  // hooks. The debounce coalesces rapid drag-induced re-renders. Skips if
+  // normalization (_reapplyAPIOverrides), and the eager bake at widget create
+  // (_eagerBakeAfterWidgetCreate) without needing 3 separate call-site hooks. The debounce coalesces rapid drag-induced re-renders. Skips if
   // no profile context (demo mode), empty trades (cache reset), or the
   // write originates from a blob download itself (would loop the data back
   // to the bucket immediately — wasteful, see options.fromBlobDownload).
@@ -9457,13 +9459,10 @@ function _injectTrades(parsed, totalLabel, savedState) {
     }
   }
 
-  // Backfill extras for any existing custom widgets whose API fields haven't
-  // been baked yet (e.g. widgets created before this fix, or in a session where
-  // the raw cache is still warm). Only runs when the raw cache is available.
-  if (typeof _bakeCustomWidgetExtrasIntoCache === 'function') {
-    const _cwDefs = (typeof _loadCustomWidgetDefs === 'function') ? _loadCustomWidgetDefs() : [];
-    for (const def of _cwDefs) _bakeCustomWidgetExtrasIntoCache(def);
-  }
+  // Refacto Total 2026-05-24 — step 2: removed redundant per-widget bake loop.
+  // `_bakeAllDetectedPropsToExtras` runs above (right after raw cache lookup)
+  // and covers every detected Notion prop for the entire trade list — strict
+  // superset of what the per-widget bake did.
 
   if (savedState) {
     // ── Source switch: restore all state, no reset ──
@@ -12750,13 +12749,11 @@ function _customArrayOk(arr, entry, matchMode) {
 // if the trade passes, false if it fails the entry's filter. Used by both
 // filterCustomChips (live) and getPresetOverrideFiltered (per-preset overrides).
 function _customEntryPasses(trade, prop, entry) {
-  // Prefer extras[prop.name] (Notion display name) — that's where the eager-bake
-  // (Task #3.11) writes, and it's the only key guaranteed to be populated after
-  // a resync. Fall back to extras[prop.key] for legacy values written by
-  // _repopulateExtrasForProp at first-Add time.
-  const raw = (prop?.name != null && trade?.extras?.[prop.name] !== undefined)
-    ? trade.extras[prop.name]
-    : trade?.extras?.[prop.key];
+  // Refacto Total 2026-05-24 — step 3: read extras under the prop's immutable
+  // notionSourceName (the canonical Notion column key set at creation, never
+  // mutated by user renames). Eager bake writes here, so reads always find
+  // the value when the prop exists in Notion — no fallback chain needed.
+  const raw = trade?.extras?.[prop?.notionSourceName];
   if (prop.type === 'multi-select') {
     return _customArrayOk(raw, entry, entry.matchMode || 'any');
   }
@@ -31763,7 +31760,7 @@ function getApiAvailableProperties(apiTrades) {
   // in that case so the user still sees the property names (sourced from
   // the synced apiFieldNames_v1_<id> via _listAPIKeys fallback) — they can
   // create the widget, and the data populates at the next Sync click via
-  // the existing _bakeCustomWidgetExtrasIntoCache flow.
+  // the existing eager bake flow (_eagerBakeAfterWidgetCreate + sync paths).
   const hasRaw = ctx.rawRows.length > 0;
   return (ctx.availableColumns || []).map(column => {
     const stats = _getSourceColumnStats(ctx, column.key, column.label);
@@ -33517,11 +33514,9 @@ function _npCoverageForProp(p) {
   const items = Array.isArray(appState.trades?.items) ? appState.trades.items : [];
   let covered = 0;
   for (const t of items) {
-    // Prefer extras[p.name] (eager-bake target since Task #3.11); fall back to
-    // extras[p.key] (where _repopulateExtrasForProp writes when raw is fresh).
-    const v = (p?.name != null && t.extras?.[p.name] !== undefined)
-      ? t.extras[p.name]
-      : t.extras?.[p.key];
+    // Refacto Total 2026-05-24 — step 3: single deterministic reader against
+    // the immutable notionSourceName.
+    const v = t.extras?.[p?.notionSourceName];
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) continue;
     covered++;
   }
@@ -33690,9 +33685,15 @@ function _handleSavePropertyForm() {
   });
   let result;
   if (_npFormState.mode === 'add') {
+    // "+ Add from Detected" path: detectedColKey holds the immutable Notion
+    // property name as it appears in the raw Notion response. Pass it through
+    // as notionSourceName so a later rename of the friendly `name` doesn't
+    // break the extras lookup. Manual Add path (detectedColKey null) falls
+    // back to name.trim() inside addCustomProp.
     result = addCustomProp({
       name, key, type,
       showInFilters: showInFiltersInput ? showInFiltersInput.checked : true,
+      notionSourceName: _npFormState.detectedColKey || null,
     });
   } else {
     result = updateCustomProp(_npFormState.editingId, { name, key, type });
@@ -34510,17 +34511,11 @@ function _scanUniqueValuesFor(prop) {
       set.add(String(v));
     }
   };
-  // Read extras directly — prefer prop.name (Notion display name, where the
-  // eager-bake from Task #3.11 writes for every detected prop on every sync)
-  // and fall back to prop.key (legacy slot written by _repopulateExtrasForProp
-  // when raw cache is in memory at first-Add time). Without the prop.name
-  // fallback, props added via "+ Add from Detected" — whose key is auto-
-  // sanitized to camelCase — show 0 values after a refresh / resync.
+  // Refacto Total 2026-05-24 — step 3: read extras under the prop's immutable
+  // notionSourceName. Single deterministic key — the eager bake writes here
+  // for every detected Notion prop on every sync.
   for (const t of items) {
-    const v = (prop?.name != null && t?.extras?.[prop.name] !== undefined)
-      ? t.extras[prop.name]
-      : t?.extras?.[prop.key];
-    addValue(v);
+    addValue(t?.extras?.[prop?.notionSourceName]);
   }
 
   const total = set.size;
