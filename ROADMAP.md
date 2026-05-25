@@ -7,7 +7,15 @@
 
 ## In Progress
 
-- [ ] **Supabase Realtime Push — cross-device live sync + zero-loss writes (5 phases)** — surfaced 2026-05-25 after Max lost data: PC A made changes → PC B (tab open 2h, in-memory state frozen) triggered an autosave → wrote stale blob over fresh PC A blob → irrecoverable loss. Goal: every write carries `expected_updated_at`, RPC raises `stale_write` if remote moved → client re-pulls + retries. Realtime subscribes on `user_data` + `journal_profiles` + `notion_connections` + new `trades_blob_meta` watcher → other tabs/PCs reflect changes within ~1-2s. `visibilitychange → visible` after >10s hidden forces a full re-pull. **Phase 0 done 2026-05-25** (5 migrations: triggers + 5 RPCs + watcher table + Realtime publication + harden). **Phase 1 next**: wrap client write sites with version-check + retry. **Phase 2**: subscribe + self-event mute. **Phase 3**: refocus + WS reconnect. **Phase 4**: cross-device QA. Detailed plan in DECISIONS.md § 2026-05-25.
+- [ ] **Supabase Realtime Push — awaiting Phase 4 cross-device QA** — Phases 0-3 shipped 2026-05-25. Phase 4 needs Max to: (1) hard-refresh ALL open dashboard tabs (pre-deploy tabs without the stale-check code can still clobber). (2) Sign in on 2 browser windows (or 2 PCs) with the same account. (3) Run the test scenarios:
+  - **Write propagation**: change a preset / drag a widget / edit a mapping on window A → confirm window B updates within ~1-2s without F5 and shows the "Synced from another device" toast.
+  - **Stale write refused**: keep window B inactive for 30+ seconds while making changes on A. Then make a change on B. B should silently retry once; if still stale, show the toast and adopt the remote version. Verify A's edit is NOT clobbered.
+  - **Long hide refocus**: minimize window B for >10 s, then re-focus. forcePull should fire — verify in console (look for `[Realtime] forcePull triggered — refocus (XXs)`).
+  - **Trades blob propagation**: trigger a Notion sync on A → confirm B's trades widgets update without F5.
+  - **No infinite loop**: edit something repeatedly on A — B should toast once (10 s throttle), not flood.
+  - **0 console errors** throughout.
+
+  Detailed architecture in DECISIONS.md § 2026-05-25 (3 separate entries for Phase 0 then Phases 1-3).
 
 ---
 
