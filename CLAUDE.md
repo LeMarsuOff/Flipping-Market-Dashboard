@@ -47,9 +47,9 @@ Flipping Market Dashboard is a quantitative trading journal for SMC/M15 traders.
 
 ```
 /
-├── index.html          ~2,200 lines  — HTML shell, widget containers, overlays, CSV doc
-├── dashboard.js        ~27,500 lines — all app logic (§9 has the function map)
-├── dashboard.css       ~13,300 lines — 3-layer design token system
+├── index.html          ~2,900 lines  — HTML shell, widget containers, overlays, CSV doc
+├── dashboard.js        ~44,200 lines — all app logic (§9 has the function map)
+├── dashboard.css       ~18,900 lines — 3-layer design token system
 ├── CLAUDE.md           This file
 ├── AGENTS.md           Mirror of CLAUDE.md for Codex
 ├── ROADMAP.md          Active/backlog/done task tracking
@@ -63,21 +63,26 @@ Flipping Market Dashboard is a quantitative trading journal for SMC/M15 traders.
 
 ### dashboard.js — approximate line ranges
 
+> Updated 2026-05-25 (file grew from ~27.5k → ~44.2k since first map). For canonical line numbers of named functions, prefer the §9 "Where to Find What" table, which is grep-verified.
+
 | Range | Content |
 |---|---|
 | 1–180 | `DEMO_TRADES` const, `appState` object, boot localStorage restores |
 | 180–400 | Supabase `_SB_*` constants, storage wrapper `_SW`, journal profile plumbing |
-| 400–1200 | OAuth flow, Notion sync engine (full + incremental), media queue |
-| 1200–2000 | Trade normalization, `_enrichTradeClassification`, `computeEffectiveRR`, `isWinner/isLoser/isBE` |
-| 2000–4000 | CSV import pipeline, data hub UI, field mapping, custom chip ingestion |
-| 4000–5500 | Preset system — `applyPreset`, `savePresetsList`, snapshots, live slots |
-| 4848 | `filterDataset()` — **central filter pipeline, mandatory pass for all widgets** |
-| 5000–8000 | `calcStats`, widget render helpers, share-view |
-| 8000–14000 | Widget renderers — equity, monthly P&L, heatmaps, pair/setup bars, ORR |
-| 14000–16500 | Partial Optimizer, BE resolvers (`_resolveBEDecision` et al.) |
-| 16500–23000 | Theme editor, typography panel |
-| 23000–27000 | GridStack init, layout, mini-sidebar, share-view export |
-| 27000+ | DOMContentLoaded bootstrap |
+| 400–2800 | OAuth flow, Notion sync engine (full + incremental), media queue, profile sync |
+| 2800–4600 | CSV import pipeline, data hub UI, field mapping, custom chip ingestion (`_collectCustomExtras` @2812) |
+| 4600–5300 | Trade classification (`isWinner/isLoser/isBE` @4596 · `computeEffectiveRR` @4682 · `_enrichTradeClassification` @4843) |
+| 5300–8000 | HTF keys (`_htfKey` @7696), profile-scoped storage helpers, sync utils |
+| 8000–9300 | Template detection (`_getDetectedTemplate` @8238 · `_detectTemplateFromTitle` @8346 · `_maybeAutoApplyTemplateMapping` @8381) · `_normalizeAPITrade` @8968 |
+| 9300–13000 | API load, Notion fetch, cache helpers, merge logic |
+| 13000–14000 | **Preset core**: `applyPreset` @13029 · `filterDataset` @13386 (central pipeline) · `calcStats` @13756 |
+| 14000–24000 | Widget renderers — equity, monthly P&L, heatmaps, pair/setup bars, ORR, partial sim previews |
+| 24000–25500 | Partial Optimizer (`_ppSimTrade` @24394 · `_poSimTradeBeAware` @25278) · BE resolvers (`_resolveBEDecision` @25091) · RR bubble (`_rrFilterBubbleClick` @24759) |
+| 25500–31000 | Theme editor, typography panel |
+| 31000–36000 | Data Setup hero (`_updateDataSetupHero` @31920), mapping panel (`_renderMappingSectionsHtml` @32405), widget builder |
+| 36000–39000 | Theme sanitize (`_isSafeCssValue` @36196) · preset live slot (`getPresetLiveSlot` @36851) · section filter (`_applySectionFilter` @38331) |
+| 39000–40700 | Mini-sidebar grid (`_msState` @39470, `_msPreview` @39642, `_msInitGrid` @39738, `_msApplyChanges` @39956, `_applyMagnetSnap` @39403) |
+| 40700–44200 | GridStack init (`initGridstack` @40747), layout slot persistence, share-view export, DOMContentLoaded bootstrap |
 
 ---
 
@@ -88,7 +93,7 @@ Notion DB (user-owned)
   → OAuth handshake via Vercel backend
     → _fetchApiTrades() / incremental sync (last_edited_time cursor)
       → _normalizeAPITrade() → appState.trades.items[]
-        → filterDataset() [line 4848]
+        → filterDataset() [line 13386]
           → individual widget renderers
             ↕ localStorage (preset slots, field names, theme, layout)
             ↕ Supabase (sync keys cross-device)
@@ -120,7 +125,7 @@ A preset = a named filter configuration the user saves and switches between.
 ```
 `*FromPreset` sets tag values injected by the snapshot (rendered with a glow halo) vs live-clicked overrides.
 
-**Key functions:** `applyPreset(id)` ~line 4500 · `savePresetLiveFilters()` · `savePresetSnapshots()` · `getPresetLiveSlot(id)` ~line 31358
+**Key functions:** `applyPreset(id)` ~line 13029 · `savePresetLiveFilters()` · `savePresetSnapshots()` · `getPresetLiveSlot(id)` ~line 36851
 
 **Invariant:** Never zero out `flipping_preset_snapshots_v2` without a migration. Breaking the snapshot schema silently destroys all user presets.
 
@@ -180,26 +185,26 @@ A preset = a named filter configuration the user saves and switches between.
 
 | Feature | Location |
 |---|---|
-| Central filter pipeline | `filterDataset()` ~line 4848 |
-| Trade classification | `isWinner / isLoser / isBE(t, cfg?)` ~line 1646 |
-| Effective-R calculation | `computeEffectiveRR(trade, tpConfig)` ~line 1732 |
-| Trade normalization | `_normalizeAPITrade()` ~line 1200 |
-| BE resolution | `_resolveBEDecision(trade, beMode)` ~line 16351 |
-| Aggregate stats | `calcStats(trades, tpConfigArg?)` ~line 5185 |
-| Preset apply | `applyPreset(id)` ~line 4500 |
-| Preset live slot | `getPresetLiveSlot(id)` ~line 31358 |
-| Grid initialization | `initGridstack()` ~line 34775 |
-| Section filter | `_applySectionFilter(section)` ~line 32738 |
-| RR bubble filter | `_rrFilterBubbleClick(lv)` ~line 14174 |
-| Partial sim (personalised) | `_ppSimTrade(rrMax, partials)` ~line 13770 |
-| BE-aware partial sim | `_poSimTradeBeAware(trade, rrMax, partials)` ~line 14600 |
-| Theme import sanitize | `_isSafeCssValue(val)` in `importTheme` (ROBUST-11) |
-| Share-view export | `_svExport()` — 2400×1032 canonical PNG |
-| Mini grid sidebar | `_msState`, `_msInitGrid`, `_msPreview`, `_msApplyChanges`, `_applyMagnetSnap` |
-| HTF M15/H4 toggle | `_htfKey()` namespacing, `HTF_SOURCE_KEY` localStorage key |
-| Custom Notion chips | `_collectCustomExtras()`, `appState.filters.customChips` |
+| Central filter pipeline | `filterDataset()` ~line 13386 |
+| Trade classification | `isWinner / isLoser / isBE(t, cfg?)` ~line 4596 |
+| Effective-R calculation | `computeEffectiveRR(trade, tpConfig)` ~line 4682 |
+| Trade normalization | `_normalizeAPITrade()` ~line 8968 |
+| BE resolution | `_resolveBEDecision(trade, beMode)` ~line 25091 |
+| Aggregate stats | `calcStats(trades, tpConfigArg?)` ~line 13756 |
+| Preset apply | `applyPreset(id)` ~line 13029 |
+| Preset live slot | `getPresetLiveSlot(id)` ~line 36851 |
+| Grid initialization | `initGridstack()` ~line 40747 |
+| Section filter | `_applySectionFilter(section)` ~line 38331 |
+| RR bubble filter | `_rrFilterBubbleClick(lv)` ~line 24759 |
+| Partial sim (personalised) | `_ppSimTrade(rrMax, partials)` ~line 24394 |
+| BE-aware partial sim | `_poSimTradeBeAware(trade, rrMax, partials)` ~line 25278 |
+| Theme import sanitize | `_isSafeCssValue(val)` ~line 36196 (used inside `importTheme`, ROBUST-11) |
+| Share-view export | `_svExporting` flag ~line 42645 (entry point set at ~line 43655) — 2400×1032 canonical PNG |
+| Mini grid sidebar | `_msState` @39470 · `_msPreview` @39642 · `_msInitGrid` @39738 · `_msApplyChanges` @39956 · `_applyMagnetSnap` @39403 |
+| HTF M15/H4 toggle | `_htfKey()` @7696 namespacing · `HTF_SOURCE_KEY` @5287 localStorage key |
+| Custom Notion chips | `_collectCustomExtras()` @2812 · `appState.filters.customChips` |
 | ORR widget | Search `w-optimal-rr` in index.html / dashboard.js |
-| Template detection (title-based) | `_detectTemplateFromTitle(title)` ~line 6243 · `_getDetectedTemplate()` reads live from `profile.notionDatabaseTitle` (no LS lag) |
+| Template detection (title-based) | `_detectTemplateFromTitle(title)` @8346 · `_getDetectedTemplate()` @8238 reads live from `profile.notionDatabaseTitle` (no LS lag) · `_maybeAutoApplyTemplateMapping` @8381 |
 
 ---
 
