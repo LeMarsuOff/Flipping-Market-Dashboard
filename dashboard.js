@@ -36499,6 +36499,16 @@ function loadPresetSnapshots() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return;
+    // Realtime hotfix 5 (2026-05-25): savePresetSnapshots OMITS snapshots
+    // with hasAny=false (entirely empty chips + empty customChips + default
+    // tpConfig). Without resetting the in-memory map first, this function
+    // becomes a merge-add — when A clears a snapshot (e.g. removes the
+    // last filter then clicks Update), B's load skips that id and the
+    // stale in-memory snapshot survives, so _hydrateChipsFromSnapshot
+    // re-applies dead chips. Same root cause as hotfix 4 on liveFilters.
+    for (const k of Object.keys(presetSnapshots)) {
+      presetSnapshots[k] = _blankSnapshot();
+    }
     for (const [idStr, snap] of Object.entries(parsed)) {
       const id = parseInt(idStr, 10);
       if (!Number.isFinite(id) || id < 0 || id >= PRESET_MAX) continue;
