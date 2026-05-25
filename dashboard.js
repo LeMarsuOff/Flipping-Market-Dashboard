@@ -1530,6 +1530,28 @@ const _swRealtime = (() => {
   let _hadInitialSubscribed = false; // first 'SUBSCRIBED' is initial; subsequent ones = reconnect
   let _pullInFlight = false;
   const _REFOCUS_FORCE_PULL_THRESHOLD_MS = 10000;
+  // Hotfix 2 (post-QA 2026-05-25): when a remote event triggers a re-render
+  // (applyPreset, loadSavedTheme, hydrate, etc.), the cascade writes back
+  // to LS — those writes would normally fire _SW.set → Supabase upsert →
+  // new Realtime event → re-render → echo loop. Flag set true during the
+  // re-render block, monkey-patch checks it and skips the Supabase push.
+  // Auto-clears 1500ms after the last enter so async/deferred renders are
+  // also covered. Trade-off: legitimate user writes within 1.5s of a
+  // remote event are not synced — next user action syncs normally.
+  let _isApplyingRemote = false;
+  let _isApplyingRemoteTimer = null;
+  const _APPLY_REMOTE_WINDOW_MS = 1500;
+  function _enterApplyingRemote() {
+    _isApplyingRemote = true;
+    if (_isApplyingRemoteTimer) clearTimeout(_isApplyingRemoteTimer);
+    _isApplyingRemoteTimer = setTimeout(() => {
+      _isApplyingRemote = false;
+      _isApplyingRemoteTimer = null;
+    }, _APPLY_REMOTE_WINDOW_MS);
+  }
+  // Exposed for the monkey-patch (and any other top-level write site)
+  // to check before pushing to Supabase.
+  window._isApplyingRemoteRealtime = () => _isApplyingRemote;
 
   function _lsSetUntracked(k, v) {
     if (typeof window._lsSetUntracked === 'function') window._lsSetUntracked(k, v);
@@ -1571,6 +1593,12 @@ const _swRealtime = (() => {
     // (presetSnapshots, presetsList, etc.) stay stale until something
     // re-reads them, and the widgets only re-render when applyPreset is
     // called. Detect the key family and trigger the canonical re-render.
+    //
+    // Hotfix 2 (same day): the re-render cascade writes back to LS via
+    // setActivePreset, _syncLiveSlotFromActiveChips, etc. Without the
+    // _enterApplyingRemote() flag, those writes fire _SW.set → Supabase
+    // upsert → another Realtime event → re-render → echo loop with
+    // "Synced from another device" + "Sync conflict" toasts spamming.
     try {
       const k = row.key;
       const isPresetKey =
@@ -1584,6 +1612,9 @@ const _swRealtime = (() => {
         k === 'flipping_dashboard_theme'   || k === 'flipping_active_theme_meta' ||
         k === 'flipping_user_themes'       || k === 'flipping_builtin_overrides' ||
         k === 'flipping_typo_mode';
+      if (isPresetKey || isThemeKey) {
+        _enterApplyingRemote();
+      }
       if (isPresetKey) {
         // Refresh in-memory caches from LS (write-through already updated LS).
         try { if (typeof loadPresetsList === 'function')     loadPresetsList(); }     catch (e) {}
@@ -1934,6 +1965,13 @@ window._flushPendingSyncWrites = _flushPendingSyncWrites;
   localStorage.setItem = function(key, value) {
     _origSet(key, value);
     if (!value || value === 'null') return;
+    // Realtime echo-loop guard (Hotfix 2, 2026-05-25): when a remote
+    // Realtime event is being applied, the cascade re-renders write back
+    // to LS — those writes would normally fire _SW.set → Supabase upsert
+    // → another Realtime event → re-render → infinite echo loop. Skip the
+    // Supabase push while the apply-remote window is active.
+    if (typeof window._isApplyingRemoteRealtime === 'function'
+        && window._isApplyingRemoteRealtime()) return;
     if (window._SW && window._SW.getUser && window._SW.getUser()) {
       window._SW.set(key, value);
     } else if (window._SW && window._SW.set) {
@@ -1948,6 +1986,8 @@ window._flushPendingSyncWrites = _flushPendingSyncWrites;
 
   localStorage.removeItem = function(key) {
     _origRemove(key);
+    if (typeof window._isApplyingRemoteRealtime === 'function'
+        && window._isApplyingRemoteRealtime()) return;
     if (window._SW && window._SW.getUser && window._SW.getUser()) {
       window._SW.remove(key);
     } else if (window._SW && window._SW.remove) {
