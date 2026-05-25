@@ -3179,6 +3179,20 @@ const _LIVE_CHIP_DIMS = ['outcome','setup','session','day','pair','direction','o
  *  presetLiveFilters[activeId], puis persiste. Appelée après chaque mutation
  *  de chip live pour garder le slot du preset actif en miroir de l'état. */
 function _syncLiveSlotFromActiveChips() {
+  // Realtime hotfix 3 (2026-05-25): when applying a remote event, applyPreset
+  // is called via _restoreActivePresetForCurrentSlot. Its FIRST step calls
+  // _syncLiveSlotFromActiveChips which captures the current (stale) chips
+  // state into the live slot AND persists via savePresetLiveFilters →
+  // clobbers the freshly-pulled live filters from the other device, AND
+  // then _hydrateChipsFromLiveSlot in the SAME applyPreset call reads back
+  // that stale state. Net effect: the remote change is silently undone in
+  // B's UI. Bail when the remote-apply guard is on so applyPreset acts as
+  // a pure hydrate (snapshot + live both read from the freshly-loaded
+  // in-memory caches).
+  if (typeof window._isApplyingRemoteRealtime === 'function'
+      && window._isApplyingRemoteRealtime()) {
+    return;
+  }
   const id = appState.presets.activeId;
   const slot = getPresetLiveSlot(id);
 
