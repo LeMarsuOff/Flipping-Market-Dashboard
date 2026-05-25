@@ -427,16 +427,32 @@ const _SW = (() => {
   const _selfWrites = new Map();
   const _SELF_WRITE_TTL_MS = 5000;
   function _seenKey(...parts) { return parts.filter(Boolean).join('|'); }
+  // Normalize a Postgres timestamptz to epoch ms — robust to format drift
+  // between PostgREST RPC return ("2026-05-25T20:49:11.41542+00:00", ISO with
+  // T + colon offset) and Realtime postgres_changes payload (may arrive as
+  // "2026-05-25 20:49:11.41542+00", space + bare offset). Without this, a
+  // string-strict compare in _isSelfWriteFn rate-limits to ~0% match → every
+  // self-write echoes back as a "remote event" → infinite toast loop on
+  // trades_blob_meta (Max 2026-05-25). Falls back to the raw input if Date
+  // can't parse it, so a future format we don't anticipate still has a chance
+  // to compare equal.
+  function _normUpd(x) {
+    if (!x) return null;
+    const t = new Date(x).getTime();
+    return Number.isFinite(t) ? t : String(x);
+  }
   function _markSelfWrite(table, composite, updatedAt) {
-    if (!updatedAt) return;
-    const k = `${table}|${composite}|${updatedAt}`;
+    const norm = _normUpd(updatedAt);
+    if (norm == null) return;
+    const k = `${table}|${composite}|${norm}`;
     const existing = _selfWrites.get(k);
     if (existing) clearTimeout(existing);
     _selfWrites.set(k, setTimeout(() => _selfWrites.delete(k), _SELF_WRITE_TTL_MS));
   }
   function _isSelfWriteFn(table, composite, updatedAt) {
-    if (!updatedAt) return false;
-    return _selfWrites.has(`${table}|${composite}|${updatedAt}`);
+    const norm = _normUpd(updatedAt);
+    if (norm == null) return false;
+    return _selfWrites.has(`${table}|${composite}|${norm}`);
   }
   function _isStaleWriteError(error) {
     return !!(error && error.code === 'P0001' && /stale_write/i.test(String(error.message || error.details || '')));
@@ -1715,6 +1731,12 @@ const _swRealtime = (() => {
     try {
       const active = (typeof getActiveJournalProfile === 'function') ? getActiveJournalProfile() : null;
       if (active?.id && String(active.id) === String(row.profile_id)) {
+        // Belt-and-suspenders anti-loop guard (Max 2026-05-25). _reloadJournalProfileSelection
+        // funnels into _reapplyAPIOverrides → setCachedAPIData → _scheduleBlobUpload.
+        // setCachedAPIData now reads _isApplyingRemoteRealtime() to skip the
+        // upload during remote-apply, but we set the flag here too so the
+        // user_data fallback paths inside the reload are also covered.
+        _enterApplyingRemote();
         if (typeof window._reloadJournalProfileSelection === 'function') {
           window._reloadJournalProfileSelection({});
         }
@@ -7883,7 +7905,12 @@ function _setRawAPICache(rawTrades, source = null, options = {}) {
     // (_rawAPICacheMemory[`<src>_<profileId>`]) hits the same slot we just
     // wrote to (via _getProfileScopedSourceSlot above). Skips for `__demo`
     // — demo data never crosses devices.
-    if (!options.fromBlobDownload && rawTrades.length) {
+    // Mirror the parsed-blob anti-loop guard in setCachedAPIData (Max 2026-05-25):
+    // a remote-apply window means we're reacting to an event, not a user
+    // edit — re-uploading would round-trip cloud → us → cloud uselessly.
+    const inRemoteApply = typeof window._isApplyingRemoteRealtime === 'function'
+      && window._isApplyingRemoteRealtime();
+    if (!options.fromBlobDownload && !inRemoteApply && rawTrades.length) {
       const { profileId: ctxProfileId } = _getJournalProfileCacheContext();
       if (ctxProfileId && ctxProfileId !== '__demo') {
         _scheduleRawBlobUpload(ctxProfileId, src);
@@ -9939,7 +9966,16 @@ function setCachedAPIData(trades, source = null, options = {}) {
   // no profile context (demo mode), empty trades (cache reset), or the
   // write originates from a blob download itself (would loop the data back
   // to the bucket immediately — wasteful, see options.fromBlobDownload).
-  if (activeProfileId && Array.isArray(trades) && trades.length && !options.fromBlobDownload) {
+  //
+  // Also skip during a Realtime remote-apply window (Max 2026-05-25): a
+  // trades_blob_meta event triggers _reloadJournalProfileSelection →
+  // _reapplyAPIOverrides → setCachedAPIData (no fromBlobDownload flag), which
+  // would re-upload what we just received and bounce the event back as a
+  // self-write loop. _isApplyingRemoteRealtime() is set by _swRealtime
+  // handlers and auto-clears ~1.5s later.
+  const inRemoteApply = typeof window._isApplyingRemoteRealtime === 'function'
+    && window._isApplyingRemoteRealtime();
+  if (activeProfileId && Array.isArray(trades) && trades.length && !options.fromBlobDownload && !inRemoteApply) {
     _scheduleBlobUpload(activeProfileId, src, trades);
   }
 }
@@ -15390,13 +15426,43 @@ function toggleCustomTableSync(cwId) {
   _rerenderAllCustomTables();
 }
 
+// Resolves a Custom Widget's grouping field to its filter chip key. Three
+// paths:
+//   1. Native dim (outcome, pair, setup…) → chipKey = field, routed to
+//      appState.filters.chips[field].
+//   2. Declared Custom Field (user added it via Data Setup → Custom Fields)
+//      → chipKey = 'custom:<safeKey>'. The widget's def.field carries the
+//      raw Notion source name ("H4 Type détail"), but customChips is indexed
+//      by the safe lowercase key the user assigned ("h4TypeDetail"). Match
+//      via notionSourceName so the sidebar chip and the widget's right-click
+//      menu hit the same entry — without this, exclusions land in a phantom
+//      customChips['H4 Type détail'] that nothing renders.
+//   3. Undeclared field (widget exists but user never declared it as a Custom
+//      Field) → chipKey = 'custom:<rawField>'. Filter state is preserved but
+//      no sidebar chip exists yet; we still return a key so the right-click
+//      menu can show the include/exclude buttons and the widget filters
+//      itself. Declaring the field later picks up the state automatically if
+//      the safe key happens to match.
+function _cwResolveChipKey(def) {
+  const f = def?.field;
+  if (!f) return null;
+  if (appState?.filters?.chips?.[f]) return f;
+  if (typeof loadCustomProps === 'function') {
+    const declared = loadCustomProps().find(p => p?.notionSourceName === f || p?.key === f);
+    if (declared?.key) return 'custom:' + declared.key;
+  }
+  return 'custom:' + f;
+}
+
 // Renders a custom Table widget: one row per category (field value) with
 // the canonical trading metrics — Total R / WR / Avg R / PF / # Trades.
 // WR/Avg R/PF cells carry threshold colors matching the KPI tier scheme.
 // Sort header click toggles asc/desc. Click a row to open the trade drawer
-// filtered to that category's trades. The Total R column gets an Excel-style
-// horizontal data-bar gradient when `barsMode` is on — toggle via the
-// header button. Settings sync globally when the chain icon is active.
+// filtered to that category's trades. Right-click a label cell to include/
+// exclude that category value via the same chip menu used by bars + heatmap
+// cells. The Total R column gets an Excel-style horizontal data-bar gradient
+// when `barsMode` is on — toggle via the header button. Settings sync globally
+// when the chain icon is active.
 function renderCustomTable(def, trades) {
   const root = document.querySelector(`.gs-widget[data-cw-id="${CSS.escape(def.id)}"]`);
   const host = root?.querySelector('.cw-table-host');
@@ -15533,8 +15599,8 @@ function renderCustomTable(def, trades) {
                 data-action="open-custom-row-drawer"
                 data-cw-id="${cwIdAttr}"
                 data-row-label="${_escapeAttr(r.label)}"
-                title="Click to drill into ${r.count} trade${r.count > 1 ? 's' : ''}">
-              <td class="cw-td cw-td-label">${_escapeHtml(r.label)}</td>
+                title="Click to drill into ${r.count} trade${r.count > 1 ? 's' : ''} · right-click to include/exclude">
+              <td class="cw-td cw-td-label" data-row-label="${_escapeAttr(r.label)}">${_escapeHtml(r.label)}</td>
               <td class="${totalCellClass}" style="${totalCellStyle}">${fmtR(r.sumR)}</td>
               <td class="cw-td cw-td-num" style="color:${_cwTableWrColor(r.wr)}">${fmtPct(r.wr)}</td>
               <td class="cw-td cw-td-num" style="color:${_cwTableAvgColor(r.avgR)}">${fmtR(r.avgR)}</td>
@@ -15545,6 +15611,29 @@ function renderCustomTable(def, trades) {
         </tbody>
       </table>
     </div>`;
+
+  // Right-click on a property-name (label) cell → include/exclude that value
+  // through the same chip menu used by bar widgets and heatmap cells. Routed
+  // via _showHeatmapContextMenu (1-dim array) so custom Notion props
+  // (chipKey = 'custom:<field>') work transparently alongside native dims —
+  // _resolveChipEntry inside the menu handler does the dispatch.
+  const chipKey = _cwResolveChipKey(def);
+  if (chipKey) {
+    const dimLabel = def.fieldLabel || def.label || def.field;
+    host.querySelectorAll('.cw-td-label').forEach(cell => {
+      cell.addEventListener('contextmenu', e => {
+        const rawKey = cell.dataset.rowLabel;
+        if (!rawKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        _showHeatmapContextMenu(
+          [{ chipKey, rawKey, displayLabel: rawKey, dimLabel }],
+          rawKey,
+          e
+        );
+      });
+    });
+  }
 }
 
 // ── Property-column resize for custom Table widgets ────────────────────────
@@ -20312,8 +20401,12 @@ function _ensurePresetCmpDiffToggleWired() {
 // versa) for a given dim×kind (kind = "incl" or "excl"). Custom chips are
 // surfaced via their user-facing label when available.
 function _buildPresetFilterDiff(pA, pB, idA, idB) {
-  const snapA = presetSnapshots[idA];
-  const snapB = presetSnapshots[idB];
+  // Effective state (snapshot + live deltas + active chips), not raw snapshots
+  // — same source of truth as _getPresetStats. Without this, live chip clicks
+  // update the Compare numbers but the Filter Differences section stays
+  // frozen on the saved snapshot (Max 2026-05-25).
+  const snapA = _buildEffectiveSnapForPreset(idA);
+  const snapB = _buildEffectiveSnapForPreset(idB);
   if (!snapA || !snapB) return '';
 
   const customProps = (typeof loadCustomProps === 'function') ? loadCustomProps() : [];
