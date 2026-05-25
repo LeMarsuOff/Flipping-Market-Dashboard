@@ -13405,7 +13405,15 @@ function filterPreset(trades) {
 /** Apply a preset snapshot (pure value lists) to a trade array with the same
  *  include/exclude semantics as filterChips + filterCustomChips. Used by
  *  tools that preview/compare a preset without making it active — e.g.
- *  _getPresetStats (Preset Compare) and getPoPreview (tune-panel live stats). */
+ *  _getPresetStats (Preset Compare) and getPoPreview (tune-panel live stats).
+ *
+ *  2026-05-25: extended to mirror filterChips coverage exactly — previously
+ *  the outcome + direction scalar dims and the sessionDay / pairSession combo
+ *  filters were silently dropped here, so Preset Compare ignored those
+ *  filters (e.g. a preset excluding BE-SL/BE-TP via outcome showed all
+ *  trades in Compare instead of the post-filter subset). Combo filters live
+ *  in the live slot (snap.comboFilters when called via _getPresetStats), so
+ *  we read them off the same source object the caller passed in. */
 function _filterTradesBySnapshot(trades, snap) {
   if (!snap) return trades;
   const c = snap.chips || {};
@@ -13438,12 +13446,20 @@ function _filterTradesBySnapshot(trades, snap) {
   const customActive = Object.entries(snap.customChips || {}).filter(([k, e]) =>
     propByKey[k] && ((e.included?.length || 0) + (e.excluded?.length || 0) > 0)
   );
+  // Combo filters — read from snap.comboFilters when available (live slot has
+  // them, raw snapshot typically doesn't). Same composite-key semantics as
+  // filterChips (line ~13546).
+  const cf = snap.comboFilters || null;
+  const sd = cf?.sessionDay || null;
+  const ps = cf?.pairSession || null;
   return trades.filter(t => {
+    if (!scalar(t.outcome,   'outcome'))   return false;
     // setup: match against both general and detailed setup (see filterChips for rationale)
     if (!array([t.setup, t.setupDetail].filter(Boolean), 'setup', false)) return false;
     if (!scalar(t.session, 'session')) return false;
     if (!scalar(t.day,     'day'))     return false;
     if (!scalar(t.pair,    'pair'))    return false;
+    if (!scalar(t.direction, 'direction')) return false;
     if (!array(t.obstacles,    'obstacles',    true))  return false;
     if (!array(t.h4,           'h4obs',        true))  return false;
     if (!array(t.tradeType,    'tradeType',    false)) return false;
@@ -13462,6 +13478,19 @@ function _filterTradesBySnapshot(trades, snap) {
         excluded: new Set(e.excluded || []),
       };
       if (!_customEntryPasses(t, prop, view)) return false;
+    }
+    // Combo filters (sessionDay + pairSession) — composite keys mirror the
+    // appState shape (see filterChips lines ~13546-13554). Skip when the
+    // source is a bare snapshot (no live slot context).
+    if (sd && (sd.included?.length || sd.excluded?.length)) {
+      const sdKey = (t.sessionUtc || t.session || '') + '|' + (t.day || '');
+      if (sd.included?.length && !sd.included.includes(sdKey)) return false;
+      if (sd.excluded?.includes(sdKey)) return false;
+    }
+    if (ps && (ps.included?.length || ps.excluded?.length)) {
+      const psKey = (t.pair || '') + '|' + (t.sessionUtc || t.session || '');
+      if (ps.included?.length && !ps.included.includes(psKey)) return false;
+      if (ps.excluded?.includes(psKey)) return false;
     }
     return true;
   });
@@ -19962,7 +19991,21 @@ function _commitLiveFiltersConfirmed(id) {
   savePresetLiveFilters();
   _closeSaveDropdown();
   invalidateFilterCache();
-  _refreshChipDerivedUI();
+  // 2026-05-25: replaced the lighter _refreshChipDerivedUI() with a full
+  // render() so chips transition cleanly from their "live" look (dashed
+  // border, no glow) to their "permanent" look (.is-from-preset glow), and
+  // tombstoned chips drop back to a neutral chip. The fast-path refresh did
+  // update the className on every chip in DOM correctly, but reports from
+  // live use showed the visual transition failing in some sessions — a full
+  // render() rebuilds buildChips for every container which is the canonical
+  // path and guarantees the new class set lands consistently. Cost ~5ms,
+  // one-time on Update click — negligible. Falls through to buildTunePanel
+  // afterwards (render() doesn't touch the tune panel) so an open tune panel
+  // reflects the newly-promoted preset values.
+  if (typeof render === 'function') render();
+  if (typeof openTunePanel === 'number' && typeof buildTunePanel === 'function') {
+    buildTunePanel(openTunePanel);
+  }
   _flashSaveConfirm('✓ Updated');
 }
 
@@ -20084,41 +20127,159 @@ function _flashSaveConfirm(text) {
   setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1200);
 }
 
+/** Build the effective filter state for a preset id — the snapshot's
+ *  preset-flagged values, plus the live slot's deltas, minus tombstones.
+ *  Mirrors the merge applyPreset performs into appState.filters.chips, so
+ *  _filterTradesBySnapshot reading this gets the SAME filter set the user
+ *  sees when that preset is active.
+ *
+ *  Special case — when the preset IS the currently active one, snapshot
+ *  the live appState.filters.chips directly so unsaved live chip clicks
+ *  show up in Compare in real time (matches Max's UX expectation: chip
+ *  click on the dashboard → Compare numbers re-flow alongside).
+ *
+ *  2026-05-25: replaces the previous "live OR snap" heuristic which used
+ *  ONLY the live slot when it had content. That dropped the snapshot's
+ *  base filters whenever the user added a single live override on top of
+ *  a non-empty preset — Compare then showed the deltas in isolation
+ *  rather than the merged effective state. */
+function _buildEffectiveSnapForPreset(presetId) {
+  // Active preset: read directly from appState so unsaved live edits are
+  // reflected immediately (chip click → render → Compare re-runs → fresh).
+  if (appState.presets.activeId === presetId) {
+    const eff = _blankSnapshot();
+    for (const [k, v] of Object.entries(appState.filters.chips || {})) {
+      if (!eff.chips[k]) eff.chips[k] = { included: [], excluded: [] };
+      eff.chips[k].included = [...(v.included || [])];
+      eff.chips[k].excluded = [...(v.excluded || [])];
+    }
+    for (const [k, v] of Object.entries(appState.filters.customChips || {})) {
+      if (!v) continue;
+      const inc = [...(v.included || [])];
+      const exc = [...(v.excluded || [])];
+      if (!inc.length && !exc.length) continue;
+      eff.customChips[k] = {
+        mode: v.mode || 'neutral',
+        matchMode: v.matchMode || 'any',
+        included: inc,
+        excluded: exc,
+      };
+    }
+    const cf = appState.filters.comboFilters || {};
+    eff.comboFilters = {
+      sessionDay: {
+        included: [...(cf.sessionDay?.included || [])],
+        excluded: [...(cf.sessionDay?.excluded || [])],
+      },
+      pairSession: {
+        included: [...(cf.pairSession?.included || [])],
+        excluded: [...(cf.pairSession?.excluded || [])],
+      },
+    };
+    return eff;
+  }
+  // Non-active preset: merge snapshot + live deltas + tombstones — same
+  // rules as _hydrateChipsFromSnapshot followed by _hydrateChipsFromLiveSlot.
+  const snap = presetSnapshots[presetId];
+  const live = getPresetLiveSlot(presetId);
+  const eff = _blankSnapshot();
+  if (snap?.chips) {
+    for (const [k, v] of Object.entries(snap.chips)) {
+      if (!eff.chips[k]) eff.chips[k] = { included: [], excluded: [] };
+      eff.chips[k].included = [...(v.included || [])];
+      eff.chips[k].excluded = [...(v.excluded || [])];
+    }
+  }
+  if (snap?.customChips) {
+    for (const [k, v] of Object.entries(snap.customChips)) {
+      eff.customChips[k] = {
+        mode: v.mode || 'neutral',
+        matchMode: v.matchMode || 'any',
+        included: [...(v.included || [])],
+        excluded: [...(v.excluded || [])],
+      };
+    }
+  }
+  if (live?.chips) {
+    for (const [k, v] of Object.entries(live.chips)) {
+      if (!eff.chips[k]) eff.chips[k] = { included: [], excluded: [] };
+      const incSet = new Set(eff.chips[k].included);
+      const excSet = new Set(eff.chips[k].excluded);
+      (v.included || []).forEach(x => incSet.add(x));
+      (v.excluded || []).forEach(x => excSet.add(x));
+      (v.removedFromIncluded || []).forEach(x => incSet.delete(x));
+      (v.removedFromExcluded || []).forEach(x => excSet.delete(x));
+      eff.chips[k].included = [...incSet];
+      eff.chips[k].excluded = [...excSet];
+    }
+  }
+  if (live?.customChips) {
+    for (const [k, v] of Object.entries(live.customChips)) {
+      if (!eff.customChips[k]) {
+        eff.customChips[k] = {
+          mode: v.mode || 'neutral',
+          matchMode: v.matchMode || 'any',
+          included: [...(v.included || [])],
+          excluded: [...(v.excluded || [])],
+        };
+      } else {
+        const incSet = new Set(eff.customChips[k].included);
+        const excSet = new Set(eff.customChips[k].excluded);
+        (v.included || []).forEach(x => incSet.add(x));
+        (v.excluded || []).forEach(x => excSet.add(x));
+        eff.customChips[k].included = [...incSet];
+        eff.customChips[k].excluded = [...excSet];
+      }
+    }
+  }
+  if (live?.comboFilters) {
+    eff.comboFilters = {
+      sessionDay: {
+        included: [...(live.comboFilters.sessionDay?.included || [])],
+        excluded: [...(live.comboFilters.sessionDay?.excluded || [])],
+      },
+      pairSession: {
+        included: [...(live.comboFilters.pairSession?.included || [])],
+        excluded: [...(live.comboFilters.pairSession?.excluded || [])],
+      },
+    };
+  }
+  return eff;
+}
+
 function _getPresetStats(presetId) {
   const p = PRESETS.find(x => x.id === presetId);
   if (!p) return null;
 
-  // Live-state simulation: use the preset's LIVE slot (chips + customChips +
-  // comboFilters + tpConfig) rather than the snapshot. Matches what the user
-  // sees in Statistics Overview when this preset is active. BE-TP / BE-SL stay
-  // in (Dataset A obsolete: they behave like TP / SL — labels are visual only).
-  const snap = presetSnapshots[presetId];
-  const live = getPresetLiveSlot(presetId);
-
-  // Filter source: live slot reflects snapshot+modifications after applyPreset
-  // hydration, so it's canonical. Fall back to snapshot if the live slot is
-  // empty (preset never activated since boot).
-  const hasLiveContent = (slot) => {
-    const c = slot?.chips || {};
-    for (const k of Object.keys(c)) {
-      if ((c[k].included?.length || 0) + (c[k].excluded?.length || 0) > 0) return true;
-    }
-    const cc = slot?.customChips || {};
-    for (const k of Object.keys(cc)) {
-      if ((cc[k].included?.length || 0) + (cc[k].excluded?.length || 0) > 0) return true;
-    }
-    return false;
-  };
-  const filterSource = hasLiveContent(live) ? live : (snap || _blankSnapshot());
+  const effective = _buildEffectiveSnapForPreset(presetId);
 
   let filtered = appState.trades.items.slice();
-  filtered = _filterTradesBySnapshot(filtered, filterSource);
+  filtered = _filterTradesBySnapshot(filtered, effective);
+  // Apply the GLOBAL temporal filter so Compare reflects the same date
+  // range the user is looking at in Statistics Overview. Temporal isn't
+  // per-preset by design (it's a dashboard-wide window), but without this
+  // pass the Compare numbers would diverge from what the user sees the
+  // moment they have any date filter active.
+  if (typeof filterTemporal === 'function') {
+    filtered = filterTemporal(filtered);
+  }
 
-  // Per-preset TPM. computeEffectiveRR (called by calcStats) reads the
+  // Per-preset TPM. For the active preset, use the live appState.ui.tpConfig
+  // (mirrors unsaved TPM edits). For non-active, read from the preset's live
+  // slot or snapshot. computeEffectiveRR (called by calcStats) reads the
   // tpConfigArg parameter when provided.
-  const presetTpConfig = _isValidTpConfigShape(live?.tpConfig)
-    ? live.tpConfig
-    : (_isValidTpConfigShape(snap?.tpConfig) ? snap.tpConfig : _defaultTpConfig());
+  let presetTpConfig;
+  if (appState.presets.activeId === presetId) {
+    presetTpConfig = _isValidTpConfigShape(appState.ui.tpConfig)
+      ? appState.ui.tpConfig
+      : _defaultTpConfig();
+  } else {
+    const live = getPresetLiveSlot(presetId);
+    const snap = presetSnapshots[presetId];
+    presetTpConfig = _isValidTpConfigShape(live?.tpConfig)
+      ? live.tpConfig
+      : (_isValidTpConfigShape(snap?.tpConfig) ? snap.tpConfig : _defaultTpConfig());
+  }
 
   return calcStats(filtered, presetTpConfig);
 }
@@ -28114,6 +28275,17 @@ function render() {
   _withWidgetScale('w-optimal-rr', () => renderOptimalRRWidget(getFilteredForORR()));
   _rrSyncActiveFilterBadge();
   _persistSidebarStateDebounced();
+  // Refresh the Compare Presets panel in lockstep with the main dashboard so
+  // live chip clicks on the active preset re-flow the compare numbers in real
+  // time (Max 2026-05-25). Cheap — two _getPresetStats passes over the same
+  // trade array. Gated on `_presetCmpOpen` so it's a no-op when the panel is
+  // collapsed. Try/catch keeps a Compare-side throw from poisoning the main
+  // render path.
+  try {
+    if (_presetCmpOpen && typeof runPresetCompare === 'function') runPresetCompare();
+  } catch (e) {
+    console.warn('[render] preset compare refresh failed:', e.message);
+  }
 }
 
 // ── Typography live-preview: redraw all canvas charts on slider change ──
@@ -36158,9 +36330,32 @@ function _runProfileScopeMigrationV3() {
   try {
     if (localStorage.getItem(FLAG)) return;
   } catch (e) { return; }
+  // 2026-05-25: post-logout sign-in path nukes the FLAG along with every
+  // other LS key (_wipeLocalStateAndReload runs localStorage.clear()). The
+  // user then signs back in immediately, syncFromRemote re-populates the
+  // per-profile preset/layout keys from Supabase BEFORE this boot runs, and
+  // without this guard the legacy wipe below would destroy the freshly
+  // synced post-v3 data — leaving the preset sidebar empty until the user
+  // switched profiles to re-trigger a load. Detect any post-v3 per-profile
+  // key (matches _SYNC_KEY_PREFIXES + a __demo / jp_… suffix); presence
+  // means migration already ran on this account on some device, so set the
+  // FLAG and skip the wipe. Pre-v3 users still hit the wipe path below
+  // because their legacy keys have no profile suffix and don't match.
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (_isProfileScopedSyncKey(key)) {
+        localStorage.setItem(FLAG, '1');
+        console.log('[profile-scope-migration-v3] post-v3 keys detected, skipping legacy wipe');
+        return;
+      }
+    }
+  } catch (e) { /* fall through to wipe */ }
   // Prefixes that uniquely identify the pre-v3 (global) keys. Post-v3 keys
-  // also start with these prefixes BUT only run after this migration sets
-  // the flag, so the wipe runs exactly once before any scoped key exists.
+  // also start with these prefixes BUT the guard above already returned
+  // when any per-profile-shaped key is present, so this loop only ever runs
+  // against legacy global data.
   const prefixes = [
     'gs_layout_',
     'gs_active_preset',
@@ -36275,6 +36470,34 @@ window.addEventListener('load', () => {
   // pipeline fix (2026-05-22). Forces the next boot for each Notion profile
   // to either re-normalise from raw or fetch fresh data with the new code.
   _runScreenshotPipelineV2Migration();
+
+  // 2026-05-25: post-sign-in DS_KEY correction. After a logout / sign-in
+  // round-trip (or any flow that wipes LS and re-pulls from Supabase), Boot
+  // 1 ran while signed-out with an empty LS — initDataSource() landed on
+  // DS_KEY='demo' as the fallback. The sign-in then re-hydrated
+  // journal_profiles + per-profile preset keys via syncFromRemote and
+  // triggered a reload. Boot 2 now has a real Notion profile in LS but
+  // DS_KEY is still 'demo' (stale, from Boot 1). Without this guard, the
+  // preset loaders below read _htfKey('flipping_presets') →
+  // getProfileScopedKey sees dsMode==='demo' → returns
+  // 'flipping_presets___demo' (empty) instead of
+  // 'flipping_presets_<profileId>' (the user's actual presets). Result:
+  // PRESETS stays at its [P0 RAW Baseline] default in memory, the sidebar
+  // renders one button, and the user has to switch profiles away+back to
+  // re-trigger _reloadProfileScopedState which reads with the correct
+  // context. Mirrors initDataSource's _hasNotionProfileButDemoBranch
+  // detection — running it here, BEFORE loadPresetsList, so the preset
+  // loaders see the right scope from the first read.
+  try {
+    const dsMode = localStorage.getItem(DS_KEY);
+    const active = (typeof getActiveJournalProfile === 'function') ? getActiveJournalProfile() : null;
+    const isNotionReady = active?.connectionType === 'notion'
+      && typeof getIntegration === 'function'
+      && getIntegration(active).isReady(active);
+    if (dsMode === 'demo' && isNotionReady) {
+      localStorage.setItem(DS_KEY, 'api');
+    }
+  } catch (e) { /* defensive — non-fatal */ }
 
   // Load custom presets BEFORE static chrome rendering so the preset list
   // reflects user-created presets (and respects deletes/renames).
@@ -42443,6 +42666,16 @@ function _clearActivePreset() {
   appState.filters.exclusions.h4Exclude      = [];
   appState.filters.exclusions.sessionExclude = [...BASE_SESSION_EXCLUDE];
   appState.filters.exclusions.dayExclude     = [];
+  // 2026-05-25: previously this function only flipped activeId to null but
+  // left appState.filters.chips populated with whatever the just-active
+  // preset had loaded. The Share view "No Preset" option then showed STALE
+  // data — e.g. switching from P2 (pair.excluded=XAUUSD) to "No Preset"
+  // kept filtering out XAUUSD, returning 10 trades instead of the full 12.
+  // Mirror applyPreset's chip-wipe sequence so the cleared state actually
+  // hits getFiltered() at the next render.
+  _removeAllPresetChips();
+  _removeAllLiveChips();
+  _clearComboFilters();
   // Use setActivePreset(null) instead of a direct assignment so the cleared
   // state persists in the profile-scoped slot — otherwise switching profiles
   // and switching back would restore the previously-active preset.
