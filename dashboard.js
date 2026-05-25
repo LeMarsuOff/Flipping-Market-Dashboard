@@ -483,11 +483,20 @@ const _SW = (() => {
               // other browser/PC already pushed lands in local LS first;
               // migrateProfileScopedKeys then only uploads truly-local data.
               _SW.migrateProfileScopedKeys().catch(e => console.warn('[SyncMigration] failed:', e?.message || e));
+              // Phase 2 — Realtime sub. Started AFTER the initial pull so the
+              // seen-cache is hydrated before events can arrive. Idempotent:
+              // _swRealtime.connect() skips if already subscribed for this uid.
+              try { window._swRealtime?.connect(); } catch (e) {}
             });
             // Resolve the Notion integration badge as soon as auth is ready —
             // covers the case where the user logs in with Data & Integrations
             // already visible (badge would otherwise sit on "Checking…").
             try { if (typeof _checkNotionIntegrationStatus === 'function') _checkNotionIntegrationStatus(); } catch (e) {}
+          }
+        if (event === 'SIGNED_OUT') {
+            // Phase 2 — tear down the Realtime channel so we don't keep a
+            // dangling WS connection or process events for the previous user.
+            try { window._swRealtime?.disconnect(); } catch (e) {}
           }
         if (event === 'INITIAL_SESSION' && session?.user) {
             debugLog('[DashboardDebug]');
@@ -510,6 +519,8 @@ const _SW = (() => {
             // pull. Closes the gap for users who never sign-out/sign-in
             // between the fix landing and their next session.
             _SW.migrateProfileScopedKeys().catch(e => console.warn('[SyncMigration] failed:', e?.message || e));
+            // Phase 2 — Realtime sub on hard-refresh path too.
+            try { window._swRealtime?.connect(); } catch (e) {}
           }
       });
       _client.auth.getSession().then(({ data }) => {
@@ -557,6 +568,9 @@ const _SW = (() => {
               sw.migrateProfileScopedKeys().catch(e => console.warn('[SyncReconcile] getSession path failed:', e?.message || e));
             }
           } catch (e) {}
+          // Phase 2 — Realtime sub on the Safari ITP / session-restore path.
+          // Idempotent — skips if already subscribed.
+          try { window._swRealtime?.connect(); } catch (e) {}
         }
       });
     }
@@ -1481,11 +1495,186 @@ const _SW = (() => {
     _getSeen(seenKey) { return _getSeenInternal(seenKey); },
     _deleteSeen(seenKey) { _deleteSeenInternal(seenKey); },
     _seenKey(...parts) { return _seenKey(...parts); },
+    // Exposed for the Phase 2 Realtime module which lives outside the closure.
+    // It needs the supabase client to create the subscription channel.
+    getClient() { return _getClient(); },
 
     init() { _getClient(); }
   };
 })();
 window._SW = _SW;
+
+// ── Supabase Realtime — cross-device live sync (Phase 2, 2026-05-25) ──
+// Subscribes to postgres_changes on the 4 sync tables, filtered by user_id.
+// Echoes of our own writes (matched via _SW._isSelfWrite against the
+// _selfWrites set populated in Phase 1) are skipped to prevent infinite
+// render loops. Remote events:
+//   1. write-through to LS via the unpatched setItem/removeItem so we
+//      don't re-fire _SW.set into Supabase
+//   2. update the seen cache so the next local write carries the new
+//      updated_at (and won't be refused as stale)
+//   3. trigger a re-render / re-hydrate path appropriate to the table
+//   4. show a single "Synced from another device" toast (throttled 10s)
+//
+// Lifecycle:
+//   - connect() called from onAuthStateChange on SIGNED_IN, INITIAL_SESSION,
+//     and the getSession() Safari ITP fallback. Idempotent.
+//   - disconnect() called from SIGNED_OUT. Tears down the WS channel.
+const _swRealtime = (() => {
+  let _channel = null;
+  let _subscribedFor = null;
+  let _toastedAt = 0; // throttle the "Synced from another device" toast
+  const _TOAST_THROTTLE_MS = 10000;
+
+  function _lsSetUntracked(k, v) {
+    if (typeof window._lsSetUntracked === 'function') window._lsSetUntracked(k, v);
+    else localStorage.setItem(k, v); // fallback should never happen
+  }
+  function _lsRemoveUntracked(k) {
+    if (typeof window._lsRemoveUntracked === 'function') window._lsRemoveUntracked(k);
+    else localStorage.removeItem(k);
+  }
+  function _maybeToast(msg) {
+    const now = Date.now();
+    if (now - _toastedAt < _TOAST_THROTTLE_MS) return;
+    _toastedAt = now;
+    try { _showToast(msg || 'Synced from another device'); } catch {}
+  }
+
+  function _onUserData(payload) {
+    const isDelete = payload.eventType === 'DELETE';
+    const row = payload.new && Object.keys(payload.new).length ? payload.new : payload.old;
+    if (!row?.dashboard_id || !row?.key) return;
+    const composite = `${row.dashboard_id}|${row.key}`;
+    if (!isDelete && row.updated_at &&
+        window._SW._isSelfWrite('user_data', composite, row.updated_at)) {
+      return;
+    }
+    const lsKey = row.dashboard_id === 'h4' ? `${row.key}_h4` : row.key;
+    if (isDelete) {
+      _lsRemoveUntracked(lsKey);
+      window._SW._deleteSeen(window._SW._seenKey('ud', row.dashboard_id, row.key));
+    } else {
+      const serialized = row.value?._raw !== undefined ? row.value._raw : JSON.stringify(row.value);
+      _lsSetUntracked(lsKey, serialized);
+      window._SW._setSeen(window._SW._seenKey('ud', row.dashboard_id, row.key), row.updated_at);
+    }
+    _maybeToast();
+    document.dispatchEvent(new CustomEvent('rt:user_data', {
+      detail: { key: row.key, dashboardId: row.dashboard_id, isDelete }
+    }));
+  }
+
+  function _onJournalProfiles(payload) {
+    const isDelete = payload.eventType === 'DELETE';
+    const row = payload.new && Object.keys(payload.new).length ? payload.new : payload.old;
+    if (!row?.id) return;
+    if (!isDelete && row.updated_at &&
+        window._SW._isSelfWrite('journal_profiles', row.id, row.updated_at)) {
+      return;
+    }
+    if (isDelete) {
+      window._SW._deleteSeen(window._SW._seenKey('jp', row.id));
+    } else if (row.updated_at) {
+      window._SW._setSeen(window._SW._seenKey('jp', row.id), row.updated_at);
+    }
+    _maybeToast();
+    // Defer to the existing rehydrate path which knows how to merge the
+    // remote list with local LS and re-render the profile picker.
+    try {
+      if (typeof window.hydrateJournalProfilesFromRemote === 'function') {
+        window.hydrateJournalProfilesFromRemote();
+      }
+    } catch (e) {
+      console.warn('[Realtime] hydrateJournalProfilesFromRemote threw:', e?.message || e);
+    }
+    document.dispatchEvent(new CustomEvent('rt:journal_profiles', {
+      detail: { id: row.id, isDelete }
+    }));
+  }
+
+  function _onNotionConnections(payload) {
+    const isDelete = payload.eventType === 'DELETE';
+    const row = payload.new && Object.keys(payload.new).length ? payload.new : payload.old;
+    if (!row?.id) return;
+    if (!isDelete && row.updated_at &&
+        window._SW._isSelfWrite('notion_connections', row.id, row.updated_at)) {
+      return;
+    }
+    _maybeToast();
+    try {
+      if (typeof _checkNotionIntegrationStatus === 'function') _checkNotionIntegrationStatus();
+    } catch (e) {
+      console.warn('[Realtime] _checkNotionIntegrationStatus threw:', e?.message || e);
+    }
+  }
+
+  function _onTradesBlobMeta(payload) {
+    const isDelete = payload.eventType === 'DELETE';
+    const row = payload.new && Object.keys(payload.new).length ? payload.new : payload.old;
+    if (!row?.profile_id || !row?.source) return;
+    const composite = `${row.profile_id}|${row.source}`;
+    if (!isDelete && row.updated_at &&
+        window._SW._isSelfWrite('trades_blob_meta', composite, row.updated_at)) {
+      return;
+    }
+    if (isDelete) {
+      window._SW._deleteSeen(window._SW._seenKey('blob', row.profile_id, row.source));
+    } else if (row.updated_at) {
+      window._SW._setSeen(window._SW._seenKey('blob', row.profile_id, row.source), row.updated_at);
+    }
+    // Only react to parsed blob meta — raw blob (source 'm15_raw'/'h4_raw')
+    // is re-pulled on demand by widget-create / mapping-change paths and
+    // doesn't need an immediate refresh.
+    if (!/^(m15|h4)$/.test(row.source)) return;
+    // Only re-pull for the currently active profile — re-downloading blobs
+    // for inactive profiles would burn bandwidth without affecting any
+    // visible widget. Inactive profiles re-hydrate when the user switches.
+    try {
+      const active = (typeof getActiveJournalProfile === 'function') ? getActiveJournalProfile() : null;
+      if (active?.id && String(active.id) === String(row.profile_id)) {
+        if (typeof window._reloadJournalProfileSelection === 'function') {
+          window._reloadJournalProfileSelection({});
+        }
+      }
+    } catch (e) {
+      console.warn('[Realtime] trades_blob_meta reload threw:', e?.message || e);
+    }
+    _maybeToast('Trades synced from another device');
+  }
+
+  return {
+    connect() {
+      if (!window._SW) return;
+      const user = window._SW.getUser?.();
+      const c    = window._SW.getClient?.();
+      if (!user || !c) return;
+      if (_subscribedFor === user.id && _channel) return; // already subscribed
+      if (_channel) this.disconnect();
+      _subscribedFor = user.id;
+      _channel = c.channel(`realtime:user:${user.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_data',
+            filter: `user_id=eq.${user.id}` }, _onUserData)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'journal_profiles',
+            filter: `user_id=eq.${user.id}` }, _onJournalProfiles)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notion_connections',
+            filter: `user_id=eq.${user.id}` }, _onNotionConnections)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'trades_blob_meta',
+            filter: `user_id=eq.${user.id}` }, _onTradesBlobMeta)
+        .subscribe((status) => { debugLog('[Realtime] channel status:', status); });
+    },
+    disconnect() {
+      if (_channel && window._SW) {
+        const c = window._SW.getClient?.();
+        try { c?.removeChannel?.(_channel); } catch {}
+      }
+      _channel = null;
+      _subscribedFor = null;
+    },
+    isConnected() { return !!_channel; },
+  };
+})();
+window._swRealtime = _swRealtime;
 
 // ── Trades blob debounce scheduler (Session 2 / Task #3) ──
 // Coalesces rapid setCachedAPIData calls (eg multiple re-bakes during widget
@@ -1616,6 +1805,14 @@ window._flushPendingSyncWrites = _flushPendingSyncWrites;
 ((() => {
   const _origSet    = localStorage.setItem.bind(localStorage);
   const _origRemove = localStorage.removeItem.bind(localStorage);
+
+  // Exposed for the Realtime handler (Phase 2). When an inbound event from
+  // another device tells us a row changed, we write-through to LS using
+  // these unpatched calls so we don't re-fire _SW.set into Supabase (which
+  // would cause an infinite echo loop). Named explicitly enough that no
+  // one applies them by accident from feature code.
+  window._lsSetUntracked    = _origSet;
+  window._lsRemoveUntracked = _origRemove;
 
   localStorage.setItem = function(key, value) {
     _origSet(key, value);
