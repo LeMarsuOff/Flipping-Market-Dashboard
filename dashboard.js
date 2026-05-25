@@ -1565,6 +1565,52 @@ const _swRealtime = (() => {
       window._SW._setSeen(window._SW._seenKey('ud', row.dashboard_id, row.key), row.updated_at);
     }
     _maybeToast();
+
+    // Phase 2 hotfix (post-QA 2026-05-25): write-through to LS alone doesn't
+    // make the change *visible* — the dashboard's in-memory caches
+    // (presetSnapshots, presetsList, etc.) stay stale until something
+    // re-reads them, and the widgets only re-render when applyPreset is
+    // called. Detect the key family and trigger the canonical re-render.
+    try {
+      const k = row.key;
+      const isPresetKey =
+        k === 'flipping_presets'                  || k.startsWith('flipping_presets_') ||
+        k === 'flipping_preset_snapshots_v2'      || k.startsWith('flipping_preset_snapshots_v2_') ||
+        k === 'presetLiveFilters_v1'              || k.startsWith('presetLiveFilters_v1_') ||
+        k === 'flipping_preset_overrides'         || k.startsWith('flipping_preset_overrides_') ||
+        k === 'gs_active_preset'                  || k.startsWith('gs_active_preset_') ||
+        k === 'flipping_active_filter_preset_id'  || k.startsWith('flipping_active_filter_preset_id_');
+      const isThemeKey =
+        k === 'flipping_dashboard_theme'   || k === 'flipping_active_theme_meta' ||
+        k === 'flipping_user_themes'       || k === 'flipping_builtin_overrides' ||
+        k === 'flipping_typo_mode';
+      if (isPresetKey) {
+        // Refresh in-memory caches from LS (write-through already updated LS).
+        try { if (typeof loadPresetsList === 'function')     loadPresetsList(); }     catch (e) {}
+        try { if (typeof loadPresetSnapshots === 'function') loadPresetSnapshots(); } catch (e) {}
+        try { if (typeof loadPresetLiveFilters === 'function') loadPresetLiveFilters(); } catch (e) {}
+        try { if (typeof loadPresetOverrides === 'function') loadPresetOverrides(); } catch (e) {}
+        // Re-render the preset-list UI (chip in topbar / sidebar).
+        try { if (typeof renderPresetList === 'function')    renderPresetList(); }    catch (e) {}
+        // Cascade re-render via the canonical "restore active preset" path:
+        // re-reads activeId from LS, calls applyPreset → re-hydrates chips
+        // → invalidates the filter cache → re-renders all widgets.
+        try {
+          if (typeof _restoreActivePresetForCurrentSlot === 'function') {
+            _restoreActivePresetForCurrentSlot();
+          } else if (typeof applyPreset === 'function') {
+            const aid = appState?.presets?.activeId;
+            applyPreset(aid != null ? aid : 0);
+          }
+        } catch (e) { console.warn('[Realtime] preset re-apply threw:', e?.message || e); }
+      } else if (isThemeKey) {
+        try { if (typeof loadSavedTheme === 'function') loadSavedTheme(); } catch (e) {}
+        document.dispatchEvent(new CustomEvent('themeTypoChanged'));
+      }
+    } catch (e) {
+      console.warn('[Realtime] user_data re-render hotfix threw:', e?.message || e);
+    }
+
     document.dispatchEvent(new CustomEvent('rt:user_data', {
       detail: { key: row.key, dashboardId: row.dashboard_id, isDelete }
     }));
