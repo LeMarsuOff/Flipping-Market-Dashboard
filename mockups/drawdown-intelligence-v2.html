@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drawdown Intelligence v2 — kitchen sink mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0e1a;
+  --bg1:       #0f1322;
+  --bg2:       #161b2d;
+  --bg3:       #1c2138;
+  --bg4:       #242a3f;
+  --line:      #2a2e39;
+  --line2:     #353a4a;
+  --body:      #b2b5be;
+  --white:     #d1d4dc;
+  --dim:       #5d606b;
+  --text-muted:#7c818f;
+  --g:         #26a69a;
+  --g2:        rgba(38, 166, 154, 0.14);
+  --g3:        rgba(38, 166, 154, 0.06);
+  --r:         #ef5350;
+  --r2:        rgba(239, 83, 80, 0.16);
+  --r3:        rgba(239, 83, 80, 0.07);
+  --r4:        rgba(239, 83, 80, 0.30);
+  --gold:      #d4af37;
+  --gold2:     rgba(212, 175, 55, 0.14);
+  --gold3:     rgba(212, 175, 55, 0.07);
+  --info:      #7dd3fc;
+  --warn:      #ff9e3d;
+  --violet:    #b478f0;
+
+  --radius-card:  8px;
+  --radius-pill:  4px;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--body);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+body { padding: 22px 28px 60px; display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Section header ───────────────────────────────────────────────────── */
+.section-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding: 0 4px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+}
+.section-title-wrap { display: flex; gap: 12px; align-items: center; }
+.section-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  background: linear-gradient(135deg, var(--r2), transparent);
+  border: 1px solid var(--r4);
+  display: grid; place-items: center; color: var(--r);
+}
+.section-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--white); letter-spacing: -.3px; }
+.section-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; letter-spacing: .1px; }
+.section-controls { display: flex; gap: 8px; }
+.ctl {
+  background: var(--bg1); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 12px; font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--white); cursor: pointer; display: flex; align-items: center; gap: 8px;
+  transition: border-color .14s ease;
+}
+.ctl:hover { border-color: var(--line2); }
+.ctl svg { color: var(--text-muted); }
+.ctl.icon { padding: 8px 9px; }
+
+/* ── Grid layout ──────────────────────────────────────────────────────── */
+.row { display: grid; gap: 10px; }
+.row.kpis-6     { grid-template-columns: repeat(6, 1fr); }
+.row.curve-side { grid-template-columns: 1fr 280px; }
+.row.three      { grid-template-columns: 1fr 1fr 1fr; }
+.row.three-bal  { grid-template-columns: 1fr 1fr 1.1fr; }
+.row.minicards  { grid-template-columns: 1fr 1fr 1fr 1.3fr 1fr; }
+
+/* ── Card primitive ───────────────────────────────────────────────────── */
+.card {
+  background: var(--bg1); border: 1px solid var(--line); border-radius: var(--radius-card);
+  padding: 14px 16px; position: relative; transition: border-color .14s ease;
+}
+.card:hover { border-color: var(--line2); }
+.card-title {
+  font-size: 10px; font-weight: 500; color: var(--text-muted);
+  letter-spacing: .6px; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.card-title .ttl-help {
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--bg3); color: var(--text-muted);
+  display: inline-grid; place-items: center; font-size: 9px;
+  margin-left: 4px; cursor: help;
+}
+.badge {
+  font-family: 'DM Mono', monospace; font-size: 9px; font-weight: 400;
+  letter-spacing: .3px; padding: 2px 6px; border-radius: var(--radius-pill);
+  background: var(--bg3); color: var(--text-muted); text-transform: none;
+}
+.badge.live { color: var(--warn); background: var(--gold3); }
+.badge.good { color: var(--g); background: var(--g3); }
+.badge.bad  { color: var(--r); background: var(--r3); }
+
+/* ── KPI card ─────────────────────────────────────────────────────────── */
+.kpi { position: relative; overflow: hidden; padding: 12px 14px; }
+.kpi::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--accent, var(--line2));
+}
+.kpi.tone-bad     { --accent: var(--r); }
+.kpi.tone-good    { --accent: var(--g); }
+.kpi.tone-warn    { --accent: var(--warn); }
+.kpi.tone-neutral { --accent: var(--info); }
+.kpi.tone-gold    { --accent: var(--gold); }
+.kpi.tone-violet  { --accent: var(--violet); }
+.kpi-head {
+  font-size: 9.5px; font-weight: 500; color: var(--text-muted);
+  letter-spacing: .6px; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.kpi-value {
+  font-family: 'DM Mono', monospace; font-size: 26px; font-weight: 500;
+  color: var(--white); letter-spacing: -.5px; line-height: 1; margin-bottom: 6px;
+}
+.kpi-value.tone-bad  { color: var(--r); }
+.kpi-value.tone-good { color: var(--g); }
+.kpi-value.tone-gold { color: var(--gold); }
+.kpi-value .unit { font-size: 13px; color: var(--text-muted); margin-left: 1px; font-weight: 400; }
+.kpi-sub {
+  font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--text-muted);
+  letter-spacing: .2px; display: flex; align-items: center; gap: 5px; line-height: 1.4;
+}
+.kpi-sub a { color: var(--info); text-decoration: none; cursor: pointer; }
+.kpi-sub a:hover { color: var(--white); text-decoration: underline; }
+.kpi-delta {
+  margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--text-muted);
+}
+.kpi-delta-val { color: var(--white); font-weight: 500; display: flex; align-items: center; gap: 3px; }
+.kpi-delta-val.up { color: var(--g); }
+.kpi-delta-val.dn { color: var(--r); }
+.kpi-delta-val.flat { color: var(--text-muted); }
+.kpi-delta-val .arr { font-size: 11px; }
+
+/* ── Underwater + Profile sidebar ─────────────────────────────────────── */
+.underwater-svg-wrap { position: relative; height: 320px; width: 100%; }
+.underwater svg { display: block; width: 100%; height: 100%; }
+.uw-gridline { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; opacity: .55; }
+.uw-axis-label { font-family: 'DM Mono', monospace; font-size: 10px; fill: var(--text-muted); }
+.uw-peak-line { stroke: var(--g); stroke-width: 1; opacity: .35; stroke-dasharray: 2 4; }
+.uw-area { fill: url(#uw-grad); }
+.uw-line { fill: none; stroke: var(--r); stroke-width: 1.5; }
+.uw-maxdd-marker circle { fill: var(--r); stroke: var(--bg1); stroke-width: 2; }
+.uw-maxdd-marker text {
+  font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; fill: var(--r);
+}
+.uw-tooltip {
+  position: absolute; background: var(--bg3); border: 1px solid var(--line2); border-radius: 6px;
+  padding: 8px 11px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--white);
+  pointer-events: none; opacity: 0; transition: opacity .12s ease; white-space: nowrap; z-index: 5;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+.uw-tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; }
+.uw-tooltip .tt-row + .tt-row { margin-top: 3px; }
+.uw-tooltip .tt-k { color: var(--text-muted); }
+.uw-tooltip .tt-v.bad { color: var(--r); }
+.uw-cursor { stroke: var(--white); stroke-width: 1; opacity: .25; }
+.uw-cursor-dot { fill: var(--r); stroke: var(--white); stroke-width: 1.5; opacity: 0; transition: opacity .12s ease; }
+
+.dd-profile { display: flex; flex-direction: column; gap: 12px; }
+.profile-list { display: flex; flex-direction: column; gap: 7px; }
+.profile-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'DM Mono', monospace; font-size: 11px;
+}
+.profile-row .pk { color: var(--text-muted); }
+.profile-row .pv { color: var(--white); font-weight: 500; }
+.profile-row .pv.bad  { color: var(--r); }
+.profile-row .pv.good { color: var(--g); }
+
+.donut-wrap { display: flex; align-items: center; gap: 14px; }
+.donut { width: 78px; height: 78px; position: relative; }
+.donut-center {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: 'DM Mono', monospace;
+}
+.donut-center .dc-pct { font-size: 18px; font-weight: 500; color: var(--white); line-height: 1; }
+.donut-center .dc-sub { font-size: 8px; color: var(--text-muted); margin-top: 2px; }
+.donut-legend { display: flex; flex-direction: column; gap: 6px; font-family: 'DM Mono', monospace; font-size: 10px; }
+.donut-legend-row { display: flex; align-items: center; gap: 7px; }
+.donut-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+.donut-legend-key { color: var(--text-muted); }
+.donut-legend-val { color: var(--white); font-weight: 500; margin-left: auto; }
+
+/* ── Monte Carlo projection ───────────────────────────────────────────── */
+.mc-wrap { position: relative; height: 280px; width: 100%; }
+.mc-bands { fill: var(--info); opacity: .08; }
+.mc-bands-mid { fill: var(--info); opacity: .14; }
+.mc-path { fill: none; stroke: var(--info); stroke-width: .6; opacity: .14; }
+.mc-median { fill: none; stroke: var(--info); stroke-width: 2; }
+.mc-now-line { stroke: var(--white); stroke-width: 1; stroke-dasharray: 2 3; opacity: .45; }
+.mc-axis { font-family: 'DM Mono', monospace; font-size: 10px; fill: var(--text-muted); }
+.mc-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.mc-stat { font-family: 'DM Mono', monospace; }
+.mc-stat-k { font-size: 9.5px; color: var(--text-muted); letter-spacing: .3px; text-transform: uppercase; }
+.mc-stat-v { font-size: 16px; color: var(--white); font-weight: 500; margin-top: 4px; }
+.mc-stat-v.good { color: var(--g); }
+.mc-stat-v.warn { color: var(--gold); }
+.mc-stat-v.bad  { color: var(--r); }
+.mc-stat-sub { font-size: 9.5px; color: var(--text-muted); margin-top: 2px; }
+.mc-controls { display: flex; gap: 4px; margin-left: auto; }
+.mc-tab {
+  background: transparent; border: 1px solid var(--line); padding: 4px 9px;
+  border-radius: 4px; font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--text-muted); cursor: pointer; transition: all .14s ease;
+}
+.mc-tab:hover { color: var(--white); border-color: var(--line2); }
+.mc-tab.active { color: var(--info); border-color: var(--info); background: var(--bg3); }
+
+/* ── DD by Context table ──────────────────────────────────────────────── */
+.dt-table { width: 100%; font-family: 'DM Mono', monospace; font-size: 11px; border-collapse: collapse; }
+.dt-table th {
+  text-align: left; color: var(--text-muted); font-weight: 500; font-size: 9.5px;
+  letter-spacing: .4px; text-transform: uppercase; padding: 6px 4px; border-bottom: 1px solid var(--line);
+}
+.dt-table th.r { text-align: right; }
+.dt-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); }
+.dt-table td.r { text-align: right; }
+.dt-table tr:last-child td { border-bottom: none; }
+.dt-table tr:hover td { background: var(--bg2); }
+.dt-table tr { cursor: pointer; }
+.dt-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 7px; vertical-align: middle; }
+.dt-table td.bad { color: var(--r); }
+.dt-pair-bars { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 7px; }
+.dt-pair-bar-row { display: grid; grid-template-columns: 60px 1fr 50px; align-items: center; gap: 8px; font-family: 'DM Mono', monospace; font-size: 11px; }
+.dt-pair-label { color: var(--white); }
+.dt-pair-track { height: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.dt-pair-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--r), color-mix(in srgb, var(--r) 60%, var(--gold) 40%));
+}
+.dt-pair-val { color: var(--r); text-align: right; }
+
+/* ── DD Duration table + insight panel ────────────────────────────────── */
+.dur-table { font-family: 'DM Mono', monospace; font-size: 11px; }
+.dur-row { display: grid; grid-template-columns: 75px 1fr 30px 38px 50px; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.dur-row:last-child { border-bottom: none; }
+.dur-label { color: var(--body); }
+.dur-bar-wrap { height: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.dur-bar { height: 100%; background: var(--g); }
+.dur-bar.warn { background: var(--gold); }
+.dur-bar.bad  { background: var(--r); }
+.dur-count { color: var(--white); text-align: right; font-weight: 500; }
+.dur-pct   { color: var(--text-muted); text-align: right; }
+.dur-avg   { color: var(--r); text-align: right; }
+
+.insight-panel {
+  margin-top: 14px; padding: 11px 12px; background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 6px; border-left: 2px solid var(--g);
+  font-family: 'DM Sans', sans-serif; font-size: 11.5px; color: var(--body); line-height: 1.55;
+}
+.insight-panel.danger { border-left-color: var(--r); }
+.insight-panel.warn   { border-left-color: var(--gold); }
+.insight-panel-head {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--g);
+  letter-spacing: .4px; text-transform: uppercase; margin-bottom: 6px;
+}
+.insight-panel.danger .insight-panel-head { color: var(--r); }
+.insight-panel.warn .insight-panel-head { color: var(--gold); }
+.insight-panel b { color: var(--white); font-weight: 600; }
+
+/* ── Risk of Ruin sliders ─────────────────────────────────────────────── */
+.ror-sliders { display: flex; flex-direction: column; gap: 12px; }
+.ror-slider { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center; }
+.ror-slider-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--body); grid-column: 1; }
+.ror-slider-value { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--white); font-weight: 500; grid-column: 2; grid-row: 1; }
+.ror-slider input[type="range"] { grid-column: 1 / -1; width: 100%; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
+.ror-slider input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
+.ror-slider input[type="range"]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; background: var(--white); border: 2px solid var(--bg3); border-radius: 50%; margin-top: -6px; cursor: grab; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.ror-results { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.ror-result-row { display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 11px; }
+.ror-result-key { color: var(--text-muted); }
+.ror-result-val { font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.ror-result-val.good { color: var(--g); }
+.ror-result-val.mid  { color: var(--gold); }
+.ror-result-val.bad  { color: var(--r); }
+.ror-result-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* ── DD Heatmap (hour × session) ──────────────────────────────────────── */
+.hm-wrap { font-family: 'DM Mono', monospace; }
+.hm-grid {
+  display: grid; grid-template-columns: 64px repeat(24, 1fr); gap: 2px;
+  font-size: 9.5px; align-items: center;
+}
+.hm-hourhead { color: var(--text-muted); text-align: center; padding: 5px 0; font-size: 9px; }
+.hm-row-label { color: var(--white); padding: 0 6px; display: flex; align-items: center; gap: 6px; font-size: 10.5px; }
+.hm-cell {
+  aspect-ratio: 1.6 / 1; min-height: 26px; border-radius: 3px;
+  display: grid; place-items: center; color: var(--bg);
+  font-weight: 500; font-size: 10px; cursor: pointer; transition: transform .12s ease;
+}
+.hm-cell:hover { transform: scale(1.15); outline: 1px solid var(--white); }
+.hm-cell.l0 { background: var(--g3); color: var(--text-muted); }
+.hm-cell.l1 { background: color-mix(in srgb, var(--g) 35%, transparent); color: var(--white); }
+.hm-cell.l2 { background: color-mix(in srgb, var(--gold) 50%, transparent); color: var(--white); }
+.hm-cell.l3 { background: color-mix(in srgb, var(--warn) 65%, transparent); color: #1a1a1a; }
+.hm-cell.l4 { background: color-mix(in srgb, var(--r) 80%, transparent); color: #fff; }
+.hm-cell.l5 { background: var(--r); color: #fff; font-weight: 600; }
+.hm-legend { display: flex; gap: 14px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 9.5px; color: var(--text-muted); }
+.hm-legend-item { display: flex; align-items: center; gap: 5px; }
+.hm-legend-sq { width: 11px; height: 11px; border-radius: 2px; }
+
+/* ── Tilt Index gauge ─────────────────────────────────────────────────── */
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; padding: 6px 0 0; }
+.gauge { width: 200px; height: 110px; position: relative; }
+.gauge svg { display: block; width: 100%; height: 100%; }
+.gauge-arc { fill: none; stroke-width: 14; stroke-linecap: butt; }
+.gauge-bg { stroke: var(--bg3); }
+.gauge-val { font-family: 'DM Mono', monospace; font-size: 30px; font-weight: 500; color: var(--white); margin-top: -22px; line-height: 1; }
+.gauge-status { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: .4px; margin-top: 6px; }
+.gauge-status.good { color: var(--g); }
+.gauge-status.warn { color: var(--gold); }
+.gauge-status.bad  { color: var(--r); }
+.tilt-factors {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.tilt-factor { display: flex; justify-content: space-between; align-items: center; font-family: 'DM Mono', monospace; font-size: 10.5px; }
+.tilt-factor-k { color: var(--text-muted); }
+.tilt-factor-v { color: var(--white); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.tilt-factor-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+/* ── Streak distribution (diverging) ──────────────────────────────────── */
+.streak-wrap { font-family: 'DM Mono', monospace; }
+.streak-row { display: grid; grid-template-columns: 22px 1fr 22px; gap: 4px; align-items: center; padding: 4px 0; font-size: 10.5px; }
+.streak-len { color: var(--text-muted); text-align: center; }
+.streak-bars { display: flex; align-items: center; justify-content: center; height: 18px; }
+.streak-bar-l { flex: 1; height: 100%; display: flex; justify-content: flex-end; }
+.streak-bar-r { flex: 1; height: 100%; }
+.streak-bar-l > div, .streak-bar-r > div { height: 100%; border-radius: 2px; }
+.streak-bar-l > div { background: var(--r); }
+.streak-bar-r > div { background: var(--g); }
+.streak-axis { border-left: 1px solid var(--line2); height: 18px; }
+.streak-cnt-l, .streak-cnt-r { font-size: 10px; color: var(--white); font-weight: 500; }
+.streak-cnt-l { text-align: right; }
+.streak-summary {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: 'DM Mono', monospace; font-size: 10.5px;
+}
+.ss-key { color: var(--text-muted); }
+.ss-val { color: var(--white); font-weight: 500; }
+.ss-val.bad { color: var(--r); }
+.ss-val.good { color: var(--g); }
+
+/* ── Recovery patterns ────────────────────────────────────────────────── */
+.rp-row { display: grid; grid-template-columns: 90px 1fr 70px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rp-row:last-child { border-bottom: none; }
+.rp-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--white); }
+.rp-spark { height: 28px; }
+.rp-spark svg { display: block; width: 100%; height: 100%; }
+.rp-val { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--white); font-weight: 500; text-align: right; }
+.rp-val .sub { font-size: 9.5px; color: var(--text-muted); display: block; }
+
+/* ── What-If Lab ──────────────────────────────────────────────────────── */
+.wif-tabs { display: flex; gap: 5px; margin-bottom: 14px; flex-wrap: wrap; }
+.wif-tab {
+  background: var(--bg); border: 1px solid var(--line); padding: 8px 13px;
+  border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 10.5px;
+  color: var(--text-muted); cursor: pointer; transition: all .14s ease;
+  display: flex; align-items: center; gap: 7px;
+}
+.wif-tab:hover { color: var(--white); border-color: var(--line2); }
+.wif-tab.active { color: var(--info); border-color: var(--info); background: var(--bg3); }
+.wif-tab .tog {
+  width: 22px; height: 12px; border-radius: 7px;
+  background: var(--bg3); border: 1px solid var(--line); position: relative;
+  transition: all .14s ease;
+}
+.wif-tab .tog::after {
+  content: ''; position: absolute; left: 1px; top: 1px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted);
+  transition: all .14s ease;
+}
+.wif-tab.active .tog { background: var(--info); border-color: var(--info); }
+.wif-tab.active .tog::after { left: 11px; background: var(--white); }
+
+.wif-body { display: grid; grid-template-columns: 1fr 280px; gap: 14px; }
+.wif-chart-wrap { position: relative; height: 220px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.wif-chart-wrap svg { display: block; width: 100%; height: 100%; }
+.wif-eq-base   { fill: none; stroke: var(--text-muted); stroke-width: 1.4; stroke-dasharray: 3 3; opacity: .8; }
+.wif-eq-actual { fill: none; stroke: var(--g); stroke-width: 2; }
+.wif-fill { fill: var(--g3); }
+.wif-zero { stroke: var(--line2); stroke-width: 1; stroke-dasharray: 2 4; }
+.wif-stats { display: flex; flex-direction: column; gap: 9px; }
+.wif-stat {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 14px;
+  padding: 10px 12px; background: var(--bg2); border: 1px solid var(--line); border-radius: 6px;
+  font-family: 'DM Mono', monospace; font-size: 10.5px;
+}
+.wif-stat-k { color: var(--text-muted); grid-column: 1; }
+.wif-stat-v { color: var(--white); font-weight: 500; grid-column: 2; font-size: 14px; line-height: 1; }
+.wif-stat-delta { grid-column: 1 / -1; font-size: 9.5px; }
+.wif-stat-delta.up { color: var(--g); }
+.wif-stat-delta.dn { color: var(--r); }
+
+/* ── Mini summary cards (bottom row) ──────────────────────────────────── */
+.mini-card { padding: 12px 14px; }
+.mini-head { font-size: 10px; color: var(--text-muted); letter-spacing: .5px; text-transform: uppercase; font-weight: 500; margin-bottom: 8px; }
+.mini-val { font-family: 'DM Mono', monospace; font-size: 22px; font-weight: 500; color: var(--white); line-height: 1; }
+.mini-val.bad { color: var(--r); }
+.mini-val.good { color: var(--g); }
+.mini-sub { font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
+.mini-spark { margin-top: 8px; height: 36px; }
+.mini-spark svg { display: block; width: 100%; height: 100%; }
+
+.takeaways-card { padding: 14px 16px; }
+.takeaways-list { display: flex; flex-direction: column; gap: 8px; }
+.takeaway {
+  display: flex; gap: 9px; align-items: flex-start;
+  font-family: 'DM Sans', sans-serif; font-size: 11.5px; color: var(--body); line-height: 1.5;
+}
+.takeaway b { color: var(--white); font-weight: 600; }
+.takeaway-icon {
+  width: 14px; height: 14px; border-radius: 50%;
+  flex-shrink: 0; display: grid; place-items: center; margin-top: 1px;
+  font-size: 9px; font-weight: 600;
+}
+.takeaway-icon.good { background: var(--g2); color: var(--g); }
+.takeaway-icon.warn { background: var(--gold2); color: var(--gold); }
+.takeaway-icon.bad  { background: var(--r2); color: var(--r); }
+
+.quote-card {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--violet) 18%, transparent), transparent);
+  border-color: color-mix(in srgb, var(--violet) 30%, var(--line));
+  padding: 16px 18px; display: flex; flex-direction: column; justify-content: center;
+}
+.quote-mark { font-size: 24px; color: var(--violet); line-height: 1; opacity: .8; }
+.quote-text { font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--white); font-weight: 500; line-height: 1.4; margin-top: 4px; font-style: italic; }
+.quote-author { font-family: 'DM Mono', monospace; font-size: 9.5px; color: var(--text-muted); margin-top: 10px; letter-spacing: .3px; }
+
+.muted { color: var(--text-muted); }
+.mono { font-family: 'DM Mono', monospace; }
+</style>
+</head>
+<body>
+
+<!-- ── Section header ─────────────────────────────────────────────────── -->
+<div class="section-head">
+  <div class="section-title-wrap">
+    <div class="section-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/>
+      </svg>
+    </div>
+    <div>
+      <h2 class="section-title">Drawdown Intelligence</h2>
+      <div class="section-sub">Understand risk · Control pain · Protect your edge</div>
+    </div>
+  </div>
+  <div class="section-controls">
+    <button class="ctl">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      Jan 2026 – May 2026
+    </button>
+    <button class="ctl">
+      <span style="color:var(--text-muted)">Preset:</span> P0 Raw Baseline
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <button class="ctl icon" title="Compare to baseline">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+    </button>
+    <button class="ctl icon" title="Hide section">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ── Row 1: 6 KPI cards with vs baseline ────────────────────────────── -->
+<div class="row kpis-6">
+
+  <div class="card kpi tone-bad">
+    <div class="kpi-head">Max Drawdown <span class="badge">all-time</span></div>
+    <div class="kpi-value tone-bad">-12.4<span class="unit">R</span></div>
+    <div class="kpi-sub"><a>Mar 14 → Mar 22</a> · 18 trades</div>
+    <div class="kpi-delta">vs P0 baseline <span class="kpi-delta-val up"><span class="arr">↑</span> 2.1R</span></div>
+  </div>
+
+  <div class="card kpi tone-good">
+    <div class="kpi-head">Recovery Factor <span class="badge good">healthy</span></div>
+    <div class="kpi-value tone-good">2.80<span class="unit">x</span></div>
+    <div class="kpi-sub">Total R / |Max DD| · > 2x is healthy</div>
+    <div class="kpi-delta">vs P0 baseline <span class="kpi-delta-val up"><span class="arr">↑</span> 0.62x</span></div>
+  </div>
+
+  <div class="card kpi tone-warn">
+    <div class="kpi-head">Current DD <span class="badge live">live</span></div>
+    <div class="kpi-value tone-gold">-3.2<span class="unit">R</span></div>
+    <div class="kpi-sub">Since 3 days · 4 trades from peak</div>
+    <div class="kpi-delta">avg recovery <span class="kpi-delta-val">6 trades</span></div>
+  </div>
+
+  <div class="card kpi tone-neutral">
+    <div class="kpi-head">Avg DD Duration</div>
+    <div class="kpi-value">6<span class="unit"> trades</span></div>
+    <div class="kpi-sub">~2.1 days · 88 drawdowns total</div>
+    <div class="kpi-delta">vs P0 baseline <span class="kpi-delta-val up"><span class="arr">↓</span> 0.8</span></div>
+  </div>
+
+  <div class="card kpi tone-violet">
+    <div class="kpi-head">Tail Risk <span class="badge">DD > 10R</span></div>
+    <div class="kpi-value">1<span class="unit"> event</span></div>
+    <div class="kpi-sub">1.1% of drawdowns · Mar 2026 only</div>
+    <div class="kpi-delta">vs P0 baseline <span class="kpi-delta-val flat">=</span></div>
+  </div>
+
+  <div class="card kpi tone-gold">
+    <div class="kpi-head">Calmar Ratio <span class="badge">annualized</span></div>
+    <div class="kpi-value tone-gold">6.7<span class="unit">x</span></div>
+    <div class="kpi-sub">Annual return / Max DD · top decile</div>
+    <div class="kpi-delta">vs P0 baseline <span class="kpi-delta-val up"><span class="arr">↑</span> 1.4x</span></div>
+  </div>
+
+</div>
+
+<!-- ── Row 2: Underwater curve + Profile sidebar ──────────────────────── -->
+<div class="row curve-side">
+  <div class="card underwater">
+    <div class="card-title">
+      <span>Equity Drawdown Curve <span style="text-transform:none;color:var(--text-muted);font-weight:400">— distance from peak over time</span></span>
+      <span class="badge">240 trades</span>
+    </div>
+    <div class="underwater-svg-wrap" id="uw-wrap">
+      <svg viewBox="0 0 1000 320" preserveAspectRatio="none" id="uw-svg">
+        <defs>
+          <linearGradient id="uw-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"  stop-color="#ef5350" stop-opacity="0.45"/>
+            <stop offset="100%" stop-color="#ef5350" stop-opacity="0.05"/>
+          </linearGradient>
+        </defs>
+        <g id="uw-grid"></g>
+        <line class="uw-peak-line" x1="40" y1="20" x2="990" y2="20"/>
+        <path id="uw-area" class="uw-area"/>
+        <path id="uw-line" class="uw-line"/>
+        <g class="uw-maxdd-marker" id="uw-maxdd"></g>
+        <line id="uw-cursor-line" class="uw-cursor" x1="0" y1="20" x2="0" y2="300" style="display:none"/>
+        <circle id="uw-cursor-dot" class="uw-cursor-dot" r="4"/>
+        <g id="uw-xaxis"></g>
+      </svg>
+      <div class="uw-tooltip" id="uw-tip"></div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div class="card">
+      <div class="card-title">Drawdown Profile</div>
+      <div class="profile-list">
+        <div class="profile-row"><span class="pk">Total drawdowns</span><span class="pv">88</span></div>
+        <div class="profile-row"><span class="pk">Average</span><span class="pv bad">-2.1R</span></div>
+        <div class="profile-row"><span class="pk">Median</span><span class="pv bad">-1.2R</span></div>
+        <div class="profile-row"><span class="pk">Best (smallest)</span><span class="pv good">-0.2R</span></div>
+        <div class="profile-row"><span class="pk">Worst</span><span class="pv bad">-12.4R</span></div>
+        <div class="profile-row"><span class="pk">Std deviation</span><span class="pv">2.45R</span></div>
+        <div class="profile-row"><span class="pk">Skewness</span><span class="pv">-1.4 <span class="muted">(left tail)</span></span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Time in Drawdown</div>
+      <div class="donut-wrap">
+        <div class="donut">
+          <svg viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--g3)" stroke-width="3.5"/>
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--r)" stroke-width="3.5"
+              stroke-dasharray="18 100" stroke-dashoffset="25" transform="rotate(-90 18 18)" stroke-linecap="butt"/>
+          </svg>
+          <div class="donut-center">
+            <div class="dc-pct">18%</div>
+            <div class="dc-sub">in DD</div>
+          </div>
+        </div>
+        <div class="donut-legend" style="flex:1">
+          <div class="donut-legend-row"><span class="donut-legend-dot" style="background:var(--r)"></span><span class="donut-legend-key">In DD</span><span class="donut-legend-val">27 days</span></div>
+          <div class="donut-legend-row"><span class="donut-legend-dot" style="background:var(--g3);border:1px solid var(--g)"></span><span class="donut-legend-key">Out of DD</span><span class="donut-legend-val">122 days</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 3: Monte Carlo equity projection ───────────────────────────── -->
+<div class="card">
+  <div class="card-title">
+    <span>Monte Carlo Projection <span style="text-transform:none;color:var(--text-muted);font-weight:400">— 10 000 simulated paths from your current edge</span></span>
+    <div class="mc-controls">
+      <button class="mc-tab">30 trades</button>
+      <button class="mc-tab active">100 trades</button>
+      <button class="mc-tab">500 trades</button>
+    </div>
+  </div>
+  <div class="mc-wrap" id="mc-wrap">
+    <svg viewBox="0 0 1200 280" preserveAspectRatio="none" id="mc-svg">
+      <g id="mc-grid"></g>
+      <line class="mc-zero" x1="40" y1="140" x2="1200" y2="140" stroke="var(--line2)" stroke-width="1" stroke-dasharray="2 4"/>
+      <path id="mc-band-90" class="mc-bands"/>
+      <path id="mc-band-50" class="mc-bands-mid"/>
+      <g id="mc-paths"></g>
+      <path id="mc-median" class="mc-median"/>
+      <line class="mc-now-line" x1="40" y1="20" x2="40" y2="260"/>
+      <g id="mc-xaxis"></g>
+      <g id="mc-yaxis"></g>
+    </svg>
+  </div>
+  <div class="mc-stats">
+    <div class="mc-stat">
+      <div class="mc-stat-k">Median R in 100 trades</div>
+      <div class="mc-stat-v good">+34.2R</div>
+      <div class="mc-stat-sub">50% of paths above this</div>
+    </div>
+    <div class="mc-stat">
+      <div class="mc-stat-k">P90 best case</div>
+      <div class="mc-stat-v good">+68.1R</div>
+      <div class="mc-stat-sub">Top 10% of paths</div>
+    </div>
+    <div class="mc-stat">
+      <div class="mc-stat-k">P10 worst case</div>
+      <div class="mc-stat-v warn">+8.4R</div>
+      <div class="mc-stat-sub">Still positive 90% of time</div>
+    </div>
+    <div class="mc-stat">
+      <div class="mc-stat-k">P(new ATH) in 100 trades</div>
+      <div class="mc-stat-v good">87%</div>
+      <div class="mc-stat-sub">Likely to set new peak</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 4: DD by Context | DD Duration | Risk of Ruin ──────────────── -->
+<div class="row three-bal">
+
+  <div class="card">
+    <div class="card-title">Drawdown by Context <span class="badge">click to drill</span></div>
+    <table class="dt-table">
+      <thead>
+        <tr><th>Session</th><th class="r">Max DD</th><th class="r">Avg DD</th><th class="r">DD &gt; 5R</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="dt-dot" style="background:var(--r)"></span>London</td>
+          <td class="r bad">-7.8R</td><td class="r">-1.6R</td><td class="r">6 (7%)</td>
+        </tr>
+        <tr>
+          <td><span class="dt-dot" style="background:color-mix(in srgb, var(--r) 70%, var(--gold) 30%)"></span>NY</td>
+          <td class="r bad">-5.4R</td><td class="r">-1.2R</td><td class="r">3 (5%)</td>
+        </tr>
+        <tr>
+          <td><span class="dt-dot" style="background:color-mix(in srgb, var(--r) 40%, var(--violet) 60%)"></span>Asia</td>
+          <td class="r bad">-3.1R</td><td class="r">-0.8R</td><td class="r">1 (2%)</td>
+        </tr>
+        <tr>
+          <td><span class="dt-dot" style="background:var(--warn)"></span>News window</td>
+          <td class="r bad">-6.2R</td><td class="r">-1.4R</td><td class="r">4 (9%)</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="dt-pair-bars">
+      <div style="font-size:9.5px;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">By pair · max DD</div>
+      <div class="dt-pair-bar-row"><span class="dt-pair-label">EUR/USD</span><div class="dt-pair-track"><div class="dt-pair-fill" style="width:100%"></div></div><span class="dt-pair-val">-8.2R</span></div>
+      <div class="dt-pair-bar-row"><span class="dt-pair-label">GBP/USD</span><div class="dt-pair-track"><div class="dt-pair-fill" style="width:38%"></div></div><span class="dt-pair-val">-3.1R</span></div>
+      <div class="dt-pair-bar-row"><span class="dt-pair-label">XAU/USD</span><div class="dt-pair-track"><div class="dt-pair-fill" style="width:24%"></div></div><span class="dt-pair-val">-2.0R</span></div>
+      <div class="dt-pair-bar-row"><span class="dt-pair-label">USD/JPY</span><div class="dt-pair-track"><div class="dt-pair-fill" style="width:5%"></div></div><span class="dt-pair-val">-0.4R</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Drawdown Duration <span class="badge">88 drawdowns</span></div>
+    <div class="dur-table">
+      <div class="dur-row" style="border-bottom-color:var(--line2);font-size:9.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;padding:4px 0">
+        <span>Duration</span><span></span><span class="dur-count" style="color:var(--text-muted)">N</span><span class="dur-pct">%</span><span class="dur-avg" style="color:var(--text-muted)">Avg R</span>
+      </div>
+      <div class="dur-row">
+        <span class="dur-label">1 – 3</span>
+        <div class="dur-bar-wrap"><div class="dur-bar" style="width:100%"></div></div>
+        <span class="dur-count">47</span><span class="dur-pct">53%</span><span class="dur-avg">-0.8R</span>
+      </div>
+      <div class="dur-row">
+        <span class="dur-label">4 – 7</span>
+        <div class="dur-bar-wrap"><div class="dur-bar" style="width:62%"></div></div>
+        <span class="dur-count">29</span><span class="dur-pct">33%</span><span class="dur-avg">-1.6R</span>
+      </div>
+      <div class="dur-row">
+        <span class="dur-label">8 – 15</span>
+        <div class="dur-bar-wrap"><div class="dur-bar warn" style="width:20%"></div></div>
+        <span class="dur-count">9</span><span class="dur-pct">10%</span><span class="dur-avg">-2.9R</span>
+      </div>
+      <div class="dur-row">
+        <span class="dur-label">16+</span>
+        <div class="dur-bar-wrap"><div class="dur-bar bad" style="width:7%"></div></div>
+        <span class="dur-count">3</span><span class="dur-pct">3%</span><span class="dur-avg">-5.6R</span>
+      </div>
+    </div>
+    <div class="insight-panel">
+      <div class="insight-panel-head">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-5 12c1 1 2 3 2 4h6c0-1 1-3 2-4a7 7 0 0 0-5-12z"/></svg>
+        Insight
+      </div>
+      <b>96.5%</b> of your drawdowns resolve in &lt; 15 trades — healthy patience profile. The 3 long tunnels (16+ trades) average <b>-5.6R</b> and deserve a review. <a style="color:var(--info);text-decoration:none;cursor:pointer">View trades →</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Risk of Ruin <span class="badge">interactive</span></div>
+    <div class="ror-sliders">
+      <div class="ror-slider">
+        <span class="ror-slider-label">Win rate</span>
+        <span class="ror-slider-value" id="ror-wr-v">52%</span>
+        <input type="range" id="ror-wr" min="30" max="75" value="52">
+      </div>
+      <div class="ror-slider">
+        <span class="ror-slider-label">Avg win</span>
+        <span class="ror-slider-value" id="ror-aw-v">1.8 R</span>
+        <input type="range" id="ror-aw" min="50" max="400" value="180">
+      </div>
+      <div class="ror-slider">
+        <span class="ror-slider-label">Avg loss</span>
+        <span class="ror-slider-value" id="ror-al-v">1.0 R</span>
+        <input type="range" id="ror-al" min="50" max="200" value="100">
+      </div>
+      <div class="ror-slider">
+        <span class="ror-slider-label">Risk per trade</span>
+        <span class="ror-slider-value" id="ror-rp-v">1.00%</span>
+        <input type="range" id="ror-rp" min="25" max="500" value="100">
+      </div>
+    </div>
+    <div class="ror-results">
+      <div class="ror-result-row"><span class="ror-result-key">Risk of -20R</span><span class="ror-result-val good" id="ror-r20"><span class="ror-result-dot"></span>< 0.01%</span></div>
+      <div class="ror-result-row"><span class="ror-result-key">Risk of -50R</span><span class="ror-result-val good" id="ror-r50"><span class="ror-result-dot"></span>< 0.01%</span></div>
+      <div class="ror-result-row"><span class="ror-result-key">Risk of -100R</span><span class="ror-result-val good" id="ror-r100"><span class="ror-result-dot"></span>< 0.01%</span></div>
+      <div class="ror-result-row"><span class="ror-result-key">Edge per trade</span><span class="ror-result-val good" id="ror-edge"><span class="ror-result-dot"></span>+0.46R</span></div>
+      <div class="ror-result-row"><span class="ror-result-key">Kelly fraction</span><span class="ror-result-val" id="ror-kelly" style="color:var(--info)"><span class="ror-result-dot"></span>25.3%</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Row 5: DD Heatmap (hour × session) ─────────────────────────────── -->
+<div class="card">
+  <div class="card-title">
+    <span>Drawdown Heatmap <span style="text-transform:none;color:var(--text-muted);font-weight:400">— Max DD contribution by hour × session (R)</span></span>
+    <span class="badge">timezone: Local UTC+1</span>
+  </div>
+  <div class="hm-wrap" id="hm-wrap">
+    <div class="hm-grid" id="hm-grid"></div>
+    <div class="hm-legend">
+      <div class="hm-legend-item"><span class="hm-legend-sq" style="background:var(--g3)"></span>Very low (&lt;0.5R)</div>
+      <div class="hm-legend-item"><span class="hm-legend-sq" style="background:color-mix(in srgb, var(--g) 35%, transparent)"></span>Low (0.5–1R)</div>
+      <div class="hm-legend-item"><span class="hm-legend-sq" style="background:color-mix(in srgb, var(--gold) 50%, transparent)"></span>Medium (1–2R)</div>
+      <div class="hm-legend-item"><span class="hm-legend-sq" style="background:color-mix(in srgb, var(--warn) 65%, transparent)"></span>High (2–3R)</div>
+      <div class="hm-legend-item"><span class="hm-legend-sq" style="background:var(--r)"></span>Very high (&gt;3R)</div>
+      <div style="margin-left:auto;color:var(--text-muted)">Click cell → drill into trades</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 6: Tilt Index + Streak distribution + Recovery patterns ────── -->
+<div class="row three">
+
+  <div class="card">
+    <div class="card-title">Tilt Index <span class="badge live">live</span></div>
+    <div class="gauge-wrap">
+      <div class="gauge">
+        <svg viewBox="0 0 200 110">
+          <path d="M 14 100 A 86 86 0 0 1 186 100" class="gauge-arc gauge-bg"/>
+          <path d="M 14 100 A 86 86 0 0 1 51 36" class="gauge-arc" stroke="var(--g)" stroke-dasharray="100" stroke-dashoffset="0"/>
+          <path d="M 51 36 A 86 86 0 0 1 149 36" class="gauge-arc" stroke="var(--gold)" stroke-dasharray="100" stroke-dashoffset="0"/>
+          <path d="M 149 36 A 86 86 0 0 1 186 100" class="gauge-arc" stroke="var(--r)" stroke-dasharray="100" stroke-dashoffset="0"/>
+          <!-- Needle at 42 (gold zone, mid-caution) -->
+          <line x1="100" y1="100" x2="146" y2="48" stroke="var(--white)" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="100" cy="100" r="6" fill="var(--bg3)" stroke="var(--white)" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="gauge-val">42<span style="font-size:14px;color:var(--text-muted)">/100</span></div>
+      <div class="gauge-status warn">⚠ Caution — recent loss streak</div>
+    </div>
+    <div class="tilt-factors">
+      <div class="tilt-factor">
+        <span class="tilt-factor-k">Consecutive losses (last 5 trades)</span>
+        <span class="tilt-factor-v"><span class="tilt-factor-dot" style="background:var(--gold)"></span>3</span>
+      </div>
+      <div class="tilt-factor">
+        <span class="tilt-factor-k">Size escalation</span>
+        <span class="tilt-factor-v"><span class="tilt-factor-dot" style="background:var(--g)"></span>+0% (controlled)</span>
+      </div>
+      <div class="tilt-factor">
+        <span class="tilt-factor-k">Trades today</span>
+        <span class="tilt-factor-v"><span class="tilt-factor-dot" style="background:var(--gold)"></span>5 (avg: 3)</span>
+      </div>
+      <div class="tilt-factor">
+        <span class="tilt-factor-k">Time since last loss</span>
+        <span class="tilt-factor-v"><span class="tilt-factor-dot" style="background:var(--r)"></span>22 min</span>
+      </div>
+      <div class="tilt-factor">
+        <span class="tilt-factor-k">Recommended action</span>
+        <span class="tilt-factor-v" style="color:var(--warn)">Take a 1h break</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Streak Distribution <span class="badge">240 trades</span></div>
+    <div class="streak-wrap">
+      <div style="display:grid;grid-template-columns:22px 1fr 22px;gap:4px;font-family:'DM Mono',monospace;font-size:9.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;padding:0 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px">
+        <span></span>
+        <span style="display:flex;justify-content:space-between"><span>Loss streaks ←</span><span>→ Win streaks</span></span>
+        <span></span>
+      </div>
+      <div class="streak-row">
+        <span class="streak-cnt-l">18</span>
+        <div class="streak-bars"><div class="streak-bar-l"><div style="width:60%"></div></div><div class="streak-axis"></div><div class="streak-bar-r"><div style="width:90%"></div></div></div>
+        <span class="streak-cnt-r">27</span>
+      </div>
+      <div class="streak-row" style="border-top:1px solid var(--line);padding-top:7px;margin-top:3px"><span class="streak-len" style="grid-column:2;text-align:center;color:var(--text-muted)">1</span></div>
+
+      <div class="streak-row">
+        <span class="streak-cnt-l">12</span>
+        <div class="streak-bars"><div class="streak-bar-l"><div style="width:40%"></div></div><div class="streak-axis"></div><div class="streak-bar-r"><div style="width:50%"></div></div></div>
+        <span class="streak-cnt-r">15</span>
+      </div>
+      <div class="streak-row"><span class="streak-len" style="grid-column:2;text-align:center;color:var(--text-muted)">2</span></div>
+
+      <div class="streak-row">
+        <span class="streak-cnt-l">5</span>
+        <div class="streak-bars"><div class="streak-bar-l"><div style="width:17%"></div></div><div class="streak-axis"></div><div class="streak-bar-r"><div style="width:28%"></div></div></div>
+        <span class="streak-cnt-r">8</span>
+      </div>
+      <div class="streak-row"><span class="streak-len" style="grid-column:2;text-align:center;color:var(--text-muted)">3</span></div>
+
+      <div class="streak-row">
+        <span class="streak-cnt-l">3</span>
+        <div class="streak-bars"><div class="streak-bar-l"><div style="width:10%"></div></div><div class="streak-axis"></div><div class="streak-bar-r"><div style="width:18%"></div></div></div>
+        <span class="streak-cnt-r">5</span>
+      </div>
+      <div class="streak-row"><span class="streak-len" style="grid-column:2;text-align:center;color:var(--text-muted)">4</span></div>
+
+      <div class="streak-row">
+        <span class="streak-cnt-l">1</span>
+        <div class="streak-bars"><div class="streak-bar-l"><div style="width:3%"></div></div><div class="streak-axis"></div><div class="streak-bar-r"><div style="width:10%"></div></div></div>
+        <span class="streak-cnt-r">3</span>
+      </div>
+      <div class="streak-row"><span class="streak-len" style="grid-column:2;text-align:center;color:var(--text-muted)">5+</span></div>
+    </div>
+    <div class="streak-summary">
+      <span class="ss-key">Longest L streak</span><span class="ss-val bad">5</span>
+      <span class="ss-key">Longest W streak</span><span class="ss-val good">7</span>
+      <span class="ss-key">Avg L streak</span><span class="ss-val">1.8</span>
+      <span class="ss-key">Avg W streak</span><span class="ss-val">2.1</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Recovery Patterns <span class="badge">how fast you bounce back</span></div>
+    <div class="rp-row">
+      <div class="rp-label">Small DD <span style="color:var(--text-muted);font-size:10px"><br>(&lt; 3R)</span></div>
+      <div class="rp-spark">
+        <svg viewBox="0 0 100 28" preserveAspectRatio="none">
+          <path d="M 0 14 L 5 18 L 10 22 L 15 18 L 20 14 L 30 10 L 50 6 L 75 3 L 100 2" fill="none" stroke="var(--g)" stroke-width="1.5"/>
+          <line x1="0" y1="14" x2="100" y2="14" stroke="var(--line2)" stroke-width=".5" stroke-dasharray="2 2"/>
+        </svg>
+      </div>
+      <div class="rp-val">3 trades<span class="sub">avg recovery</span></div>
+    </div>
+    <div class="rp-row">
+      <div class="rp-label">Medium DD <span style="color:var(--text-muted);font-size:10px"><br>(3–6R)</span></div>
+      <div class="rp-spark">
+        <svg viewBox="0 0 100 28" preserveAspectRatio="none">
+          <path d="M 0 14 L 8 19 L 16 23 L 24 24 L 32 21 L 48 16 L 65 11 L 82 6 L 100 4" fill="none" stroke="var(--gold)" stroke-width="1.5"/>
+          <line x1="0" y1="14" x2="100" y2="14" stroke="var(--line2)" stroke-width=".5" stroke-dasharray="2 2"/>
+        </svg>
+      </div>
+      <div class="rp-val">7 trades<span class="sub">avg recovery</span></div>
+    </div>
+    <div class="rp-row">
+      <div class="rp-label">Large DD <span style="color:var(--text-muted);font-size:10px"><br>(6–10R)</span></div>
+      <div class="rp-spark">
+        <svg viewBox="0 0 100 28" preserveAspectRatio="none">
+          <path d="M 0 14 L 6 19 L 14 23 L 24 26 L 38 25 L 50 23 L 65 19 L 80 14 L 100 9" fill="none" stroke="var(--warn)" stroke-width="1.5"/>
+          <line x1="0" y1="14" x2="100" y2="14" stroke="var(--line2)" stroke-width=".5" stroke-dasharray="2 2"/>
+        </svg>
+      </div>
+      <div class="rp-val">14 trades<span class="sub">avg recovery</span></div>
+    </div>
+    <div class="rp-row">
+      <div class="rp-label">Tail DD <span style="color:var(--text-muted);font-size:10px"><br>(&gt; 10R)</span></div>
+      <div class="rp-spark">
+        <svg viewBox="0 0 100 28" preserveAspectRatio="none">
+          <path d="M 0 14 L 4 18 L 10 23 L 18 26 L 30 27 L 45 25 L 60 22 L 78 17 L 100 12" fill="none" stroke="var(--r)" stroke-width="1.5"/>
+          <line x1="0" y1="14" x2="100" y2="14" stroke="var(--line2)" stroke-width=".5" stroke-dasharray="2 2"/>
+        </svg>
+      </div>
+      <div class="rp-val">43 trades<span class="sub">only 1 event</span></div>
+    </div>
+    <div class="insight-panel warn" style="margin-top:12px">
+      <div class="insight-panel-head">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-5 12c1 1 2 3 2 4h6c0-1 1-3 2-4a7 7 0 0 0-5-12z"/></svg>
+        Insight
+      </div>
+      Recovery time scales <b>~5x faster than DD depth</b>. After 3R you bounce in 3 trades; after 10R it takes 43. Plan position sizing accordingly.
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Row 7: What-If Lab ─────────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-title">
+    <span>What-If Lab <span style="text-transform:none;color:var(--text-muted);font-weight:400">— counterfactual simulator · toggle rules to see the impact</span></span>
+    <span class="badge">live recompute</span>
+  </div>
+  <div class="wif-tabs">
+    <button class="wif-tab active"><span class="tog"></span>Skip news window</button>
+    <button class="wif-tab"><span class="tog"></span>Hard cap -3R / day</button>
+    <button class="wif-tab"><span class="tog"></span>London only</button>
+    <button class="wif-tab"><span class="tog"></span>Skip after 2 losses</button>
+    <button class="wif-tab"><span class="tog"></span>Min 1.5R setup only</button>
+    <button class="wif-tab"><span class="tog"></span>Reduce size after -5R week</button>
+  </div>
+  <div class="wif-body">
+    <div class="wif-chart-wrap">
+      <svg viewBox="0 0 1000 200" preserveAspectRatio="none">
+        <line x1="0" y1="180" x2="1000" y2="180" class="wif-zero"/>
+        <!-- Baseline equity (dashed) -->
+        <path class="wif-eq-base"
+          d="M 0 180 Q 50 170 100 160 T 200 130 T 320 145 T 420 105 T 520 130 T 620 88 T 740 100 T 840 55 T 920 70 T 1000 35"/>
+        <!-- What-if equity (solid green, fill below) -->
+        <path class="wif-fill"
+          d="M 0 180 Q 50 168 100 152 T 200 118 T 320 128 T 420 88 T 520 105 T 620 65 T 740 75 T 840 28 T 920 38 T 1000 8 L 1000 200 L 0 200 Z"/>
+        <path class="wif-eq-actual"
+          d="M 0 180 Q 50 168 100 152 T 200 118 T 320 128 T 420 88 T 520 105 T 620 65 T 740 75 T 840 28 T 920 38 T 1000 8"/>
+        <!-- Labels -->
+        <text x="20" y="22" font-family="DM Mono" font-size="10" fill="var(--g)">— With rule applied</text>
+        <text x="20" y="38" font-family="DM Mono" font-size="10" fill="var(--text-muted)">- - Baseline (actual)</text>
+        <text x="980" y="20" font-family="DM Mono" font-size="10" fill="var(--g)" text-anchor="end">+42.1R</text>
+        <text x="980" y="36" font-family="DM Mono" font-size="10" fill="var(--text-muted)" text-anchor="end">+34.7R</text>
+      </svg>
+    </div>
+    <div class="wif-stats">
+      <div class="wif-stat">
+        <span class="wif-stat-k">Total R</span>
+        <span class="wif-stat-v">+42.1R</span>
+        <span class="wif-stat-delta up">↑ +7.4R vs baseline (+21%)</span>
+      </div>
+      <div class="wif-stat">
+        <span class="wif-stat-k">Max DD</span>
+        <span class="wif-stat-v">-7.1R</span>
+        <span class="wif-stat-delta up">↑ -5.3R better (-43%)</span>
+      </div>
+      <div class="wif-stat">
+        <span class="wif-stat-k">Recovery Factor</span>
+        <span class="wif-stat-v">5.93x</span>
+        <span class="wif-stat-delta up">↑ +3.13x (+112%)</span>
+      </div>
+      <div class="wif-stat">
+        <span class="wif-stat-k">Trades excluded</span>
+        <span class="wif-stat-v">28</span>
+        <span class="wif-stat-delta dn">↓ -12% of total volume</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 8: Worst DD + Recovery + Best Recovery + Takeaways + Quote ── -->
+<div class="row minicards">
+
+  <div class="card mini-card">
+    <div class="mini-head">Worst Drawdown</div>
+    <div class="mini-val bad">-12.4R</div>
+    <div class="mini-sub">Mar 14 → Mar 22<br>18 trades · 9 days</div>
+    <div class="mini-spark">
+      <svg viewBox="0 0 100 36" preserveAspectRatio="none">
+        <path d="M 0 6 L 10 8 L 18 14 L 25 18 L 33 22 L 42 28 L 50 32 L 58 30 L 68 26 L 78 18 L 88 12 L 100 4" fill="none" stroke="var(--r)" stroke-width="1.5"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="card mini-card">
+    <div class="mini-head">Recovery After Worst DD</div>
+    <div class="mini-val good">+34.7R</div>
+    <div class="mini-sub">43 trades to new peak<br>over 23 trading days</div>
+    <div class="mini-spark">
+      <svg viewBox="0 0 100 36" preserveAspectRatio="none">
+        <path d="M 0 32 Q 20 30 40 22 T 70 12 T 100 4" fill="none" stroke="var(--g)" stroke-width="1.5"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="card mini-card">
+    <div class="mini-head">Best Trading Streak</div>
+    <div class="mini-val good">+18.6R</div>
+    <div class="mini-sub">7 wins in a row<br>Apr 9 → Apr 15</div>
+    <div class="mini-spark">
+      <svg viewBox="0 0 100 36" preserveAspectRatio="none">
+        <path d="M 0 30 L 14 26 L 28 22 L 42 18 L 56 14 L 70 10 L 84 6 L 100 2" fill="none" stroke="var(--g)" stroke-width="1.5"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="card takeaways-card">
+    <div class="card-title" style="margin-bottom:10px">Key Takeaways <span class="badge">auto-generated</span></div>
+    <div class="takeaways-list">
+      <div class="takeaway">
+        <span class="takeaway-icon bad">!</span>
+        <span>Your biggest drawdowns concentrate in <b>London &amp; NY overlap</b> (62% of -8R+ events). Worth a session filter test.</span>
+      </div>
+      <div class="takeaway">
+        <span class="takeaway-icon warn">~</span>
+        <span>Long DDs (16+ trades) are rare (<b>3%</b>) but average <b>-5.6R</b> — consider a daily cap rule after -3R day.</span>
+      </div>
+      <div class="takeaway">
+        <span class="takeaway-icon good">✓</span>
+        <span>Risk management is <b>statistically sound</b>: ruin probability stays under 0.01% even for -100R target.</span>
+      </div>
+      <div class="takeaway">
+        <span class="takeaway-icon good">✓</span>
+        <span>Recovery Factor of <b>2.8x</b> sits in the top decile vs your community — keep it consistent.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card quote-card">
+    <div class="quote-mark">"</div>
+    <div class="quote-text">Drawdowns are the tuition you pay for long-term freedom.</div>
+    <div class="quote-author">— Trader's lore</div>
+  </div>
+
+</div>
+
+<script>
+/* ─── Underwater curve ─────────────────────────────────────────────── */
+(function () {
+  const W = 1000, H = 320;
+  const PADL = 40, PADT = 20, PADB = 40;
+  const PLOT_W = W - PADL - 16;
+  const PLOT_H = H - PADT - PADB;
+  const Y_MIN = -14, Y_MAX = 0;
+
+  const raw = [
+    0, -0.4, -1.2, -0.6, 0, -0.3, -1.0, -2.1, -1.4, -0.5,
+    0, -0.8, -1.6, -2.9, -3.2, -2.4, -1.8, -1.0, -0.3, 0,
+    -0.5, -1.4, -2.6, -3.8, -4.5, -5.2, -6.1, -5.4, -4.2, -3.0,
+    -1.8, -0.9, -0.2, 0, -0.6, -1.5, -2.4, -3.3, -4.8, -6.5,
+    -8.2, -9.7, -11.0, -12.0, -12.4, -11.6, -10.4, -9.2, -7.8, -6.4,
+    -5.1, -3.8, -2.6, -1.5, -0.6, -0.1, -0.4, -1.0, -1.7, -1.2,
+    -0.5, 0, -0.5, -1.2, -1.8, -2.4, -3.1, -3.2, -2.5, -1.7,
+    -1.0, -0.4, -0.1, -0.6, -1.3, -2.1, -2.9, -3.5, -3.2, -2.4
+  ];
+
+  function dateFor(i) {
+    const start = new Date(2026, 0, 5);
+    const days = Math.round(i * (140 / raw.length));
+    const d = new Date(start.getTime() + days * 86400000);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  function xAt(i) { return PADL + (i / (raw.length - 1)) * PLOT_W; }
+  function yAt(v) { return PADT + ((v - Y_MAX) / (Y_MIN - Y_MAX)) * PLOT_H; }
+  function smoothPath(pts) {
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1], p1 = pts[i];
+      const cpx = (p0.x + p1.x) / 2;
+      d += ` Q ${cpx} ${p0.y} ${cpx} ${(p0.y + p1.y) / 2} T ${p1.x} ${p1.y}`;
+    }
+    return d;
+  }
+
+  const pts = raw.map((v, i) => ({ x: xAt(i), y: yAt(v), v, i }));
+  const pathD = smoothPath(pts);
+  const areaD = pathD + ` L ${pts[pts.length - 1].x} ${yAt(0)} L ${pts[0].x} ${yAt(0)} Z`;
+  document.getElementById('uw-line').setAttribute('d', pathD);
+  document.getElementById('uw-area').setAttribute('d', areaD);
+
+  const ticks = [0, -3, -6, -10, -12];
+  const gridGroup = document.getElementById('uw-grid');
+  ticks.forEach(t => {
+    const y = yAt(t);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'uw-gridline');
+    line.setAttribute('x1', PADL); line.setAttribute('y1', y);
+    line.setAttribute('x2', W - 10); line.setAttribute('y2', y);
+    gridGroup.appendChild(line);
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('class', 'uw-axis-label');
+    label.setAttribute('x', PADL - 8); label.setAttribute('y', y + 3);
+    label.setAttribute('text-anchor', 'end');
+    label.textContent = t === 0 ? '0R' : t + 'R';
+    gridGroup.appendChild(label);
+  });
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May'];
+  const xaxis = document.getElementById('uw-xaxis');
+  months.forEach((m, idx) => {
+    const x = PADL + ((idx + 0.5) / months.length) * PLOT_W;
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('class', 'uw-axis-label');
+    t.setAttribute('x', x); t.setAttribute('y', H - 12);
+    t.setAttribute('text-anchor', 'middle');
+    t.textContent = m + ' 2026';
+    xaxis.appendChild(t);
+  });
+
+  let minIdx = 0;
+  for (let i = 1; i < raw.length; i++) if (raw[i] < raw[minIdx]) minIdx = i;
+  const minPt = pts[minIdx];
+  const marker = document.getElementById('uw-maxdd');
+  const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', minPt.x); c.setAttribute('cy', minPt.y); c.setAttribute('r', 4);
+  marker.appendChild(c);
+  const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  lbl.setAttribute('x', minPt.x); lbl.setAttribute('y', minPt.y + 18);
+  lbl.setAttribute('text-anchor', 'middle');
+  lbl.textContent = 'Max DD · -12.4R';
+  marker.appendChild(lbl);
+
+  const wrap = document.getElementById('uw-wrap');
+  const svg = document.getElementById('uw-svg');
+  const tip = document.getElementById('uw-tip');
+  const cursorLine = document.getElementById('uw-cursor-line');
+  const cursorDot = document.getElementById('uw-cursor-dot');
+  wrap.addEventListener('mousemove', (e) => {
+    const rect = svg.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const xSvg = (px / rect.width) * W;
+    const dataRatio = (xSvg - PADL) / PLOT_W;
+    const idx = Math.max(0, Math.min(raw.length - 1, Math.round(dataRatio * (raw.length - 1))));
+    const pt = pts[idx];
+    cursorLine.style.display = '';
+    cursorLine.setAttribute('x1', pt.x); cursorLine.setAttribute('x2', pt.x);
+    cursorDot.style.opacity = 1;
+    cursorDot.setAttribute('cx', pt.x); cursorDot.setAttribute('cy', pt.y);
+    const screenX = (pt.x / W) * rect.width;
+    const screenY = (pt.y / H) * rect.height;
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(rect.width - 170, Math.max(0, screenX + 12)) + 'px';
+    tip.style.top = Math.max(0, screenY - 50) + 'px';
+    tip.innerHTML = `
+      <div class="tt-row"><span class="tt-k">Date</span><span class="tt-v">${dateFor(idx)}</span></div>
+      <div class="tt-row"><span class="tt-k">DD</span><span class="tt-v bad">${pt.v.toFixed(1)}R</span></div>
+      <div class="tt-row"><span class="tt-k">Trades from peak</span><span class="tt-v">${pt.v < 0 ? Math.max(1, Math.round(Math.abs(pt.v) * 1.3)) : 0}</span></div>`;
+  });
+  wrap.addEventListener('mouseleave', () => {
+    cursorLine.style.display = 'none';
+    cursorDot.style.opacity = 0;
+    tip.style.opacity = 0;
+  });
+})();
+
+/* ─── Monte Carlo projection ───────────────────────────────────────── */
+(function () {
+  const W = 1200, H = 280;
+  const PADL = 40, PADT = 20, PADR = 20, PADB = 30;
+  const PLOT_W = W - PADL - PADR;
+  const PLOT_H = H - PADT - PADB;
+
+  const N = 100;           // trades into future
+  const SIM = 50;          // number of light grey paths to draw
+  const winRate = 0.52;
+  const avgWin = 1.8;
+  const avgLoss = -1.0;
+  const startR = 34.7;
+
+  // Y range
+  const Y_MIN = startR - 25;
+  const Y_MAX = startR + 90;
+
+  function rand() { return Math.random(); }
+  function simulate() {
+    const arr = [startR];
+    let r = startR;
+    for (let i = 0; i < N; i++) {
+      r += rand() < winRate ? avgWin : avgLoss;
+      arr.push(r);
+    }
+    return arr;
+  }
+
+  const paths = [];
+  for (let s = 0; s < SIM; s++) paths.push(simulate());
+
+  // Compute P10/P50/P90 across many more sims for the bands
+  const sims = [];
+  for (let s = 0; s < 1000; s++) sims.push(simulate());
+  const bands = [];
+  for (let i = 0; i <= N; i++) {
+    const vals = sims.map(p => p[i]).sort((a,b) => a-b);
+    bands.push({
+      p10: vals[Math.floor(0.10 * vals.length)],
+      p50: vals[Math.floor(0.50 * vals.length)],
+      p90: vals[Math.floor(0.90 * vals.length)],
+      p25: vals[Math.floor(0.25 * vals.length)],
+      p75: vals[Math.floor(0.75 * vals.length)],
+    });
+  }
+
+  function xAt(i) { return PADL + (i / N) * PLOT_W; }
+  function yAt(v) { return PADT + (1 - (v - Y_MIN) / (Y_MAX - Y_MIN)) * PLOT_H; }
+
+  function bandPath(loKey, hiKey) {
+    let d = `M ${xAt(0)} ${yAt(bands[0][hiKey])}`;
+    for (let i = 1; i <= N; i++) d += ` L ${xAt(i)} ${yAt(bands[i][hiKey])}`;
+    for (let i = N; i >= 0; i--) d += ` L ${xAt(i)} ${yAt(bands[i][loKey])}`;
+    return d + ' Z';
+  }
+
+  document.getElementById('mc-band-90').setAttribute('d', bandPath('p10', 'p90'));
+  document.getElementById('mc-band-50').setAttribute('d', bandPath('p25', 'p75'));
+
+  // Median
+  let mp = `M ${xAt(0)} ${yAt(bands[0].p50)}`;
+  for (let i = 1; i <= N; i++) mp += ` L ${xAt(i)} ${yAt(bands[i].p50)}`;
+  document.getElementById('mc-median').setAttribute('d', mp);
+
+  // Some sample paths
+  const pathsG = document.getElementById('mc-paths');
+  paths.forEach(p => {
+    let d = `M ${xAt(0)} ${yAt(p[0])}`;
+    for (let i = 1; i <= N; i++) d += ` L ${xAt(i)} ${yAt(p[i])}`;
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    el.setAttribute('d', d); el.setAttribute('class', 'mc-path');
+    pathsG.appendChild(el);
+  });
+
+  // Y axis labels (start, end of P50, target etc.)
+  const yaxis = document.getElementById('mc-yaxis');
+  const yTicks = [startR, startR + 20, startR + 40, startR + 60, startR + 80];
+  yTicks.forEach(v => {
+    const y = yAt(v);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', PADL); line.setAttribute('y1', y);
+    line.setAttribute('x2', W - PADR); line.setAttribute('y2', y);
+    line.setAttribute('stroke', 'var(--line)'); line.setAttribute('stroke-dasharray', '2 3');
+    line.setAttribute('opacity', '.4');
+    yaxis.appendChild(line);
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('class', 'mc-axis');
+    t.setAttribute('x', PADL - 6); t.setAttribute('y', y + 3);
+    t.setAttribute('text-anchor', 'end');
+    t.textContent = '+' + v.toFixed(0) + 'R';
+    yaxis.appendChild(t);
+  });
+
+  // X axis labels
+  const xaxis = document.getElementById('mc-xaxis');
+  [0, 25, 50, 75, 100].forEach(i => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('class', 'mc-axis');
+    t.setAttribute('x', xAt(i)); t.setAttribute('y', H - 10);
+    t.setAttribute('text-anchor', 'middle');
+    t.textContent = i === 0 ? 'now' : `+${i}`;
+    xaxis.appendChild(t);
+  });
+})();
+
+/* ─── Drawdown Heatmap (hour × session) ────────────────────────────── */
+(function () {
+  const grid = document.getElementById('hm-grid');
+  // Header row
+  grid.appendChild(Object.assign(document.createElement('div'), {className: 'hm-hourhead', textContent: ''}));
+  for (let h = 0; h < 24; h++) {
+    const c = document.createElement('div');
+    c.className = 'hm-hourhead';
+    c.textContent = String(h).padStart(2, '0');
+    grid.appendChild(c);
+  }
+  // Realistic-ish data: Max DD R per hour per session (0 = no activity, scale 0-3.5)
+  // Higher values where session is active
+  const data = {
+    London: [0.2,0.1,0.1,0.2,0.3,0.3,0.4,0.6,0.8,1.2,1.7,1.5,1.8,1.7,1.4,1.0,0.7,0.5,0.3,0.2,0.1,0.1,0.1,0.1],
+    'NY':   [0.1,0.1,0.2,0.1,0.2,0.3,0.4,0.6,0.7,1.0,1.3,2.4,2.6,2.5,2.2,1.8,1.5,1.2,0.8,0.5,0.3,0.2,0.1,0.1],
+    Asia:   [0.3,0.2,0.3,0.3,0.4,0.5,0.6,0.8,0.7,0.5,0.4,0.3,0.4,0.3,0.3,0.2,0.2,0.1,0.1,0.2,0.3,0.2,0.2,0.1],
+    News:   [0.4,0.3,0.5,0.5,0.6,0.8,1.4,1.8,2.3,2.6,2.8,2.8,2.7,1.9,1.4,0.9,0.6,0.4,0.3,0.2,0.1,0.1,0.1,0.1],
+  };
+  const dots = { London: 'var(--r)', 'NY': 'color-mix(in srgb, var(--r) 70%, var(--gold) 30%)', Asia: 'color-mix(in srgb, var(--r) 40%, var(--violet) 60%)', News: 'var(--warn)' };
+
+  Object.entries(data).forEach(([sess, vals]) => {
+    const lbl = document.createElement('div');
+    lbl.className = 'hm-row-label';
+    lbl.innerHTML = `<span class="dt-dot" style="background:${dots[sess]}"></span>${sess}`;
+    grid.appendChild(lbl);
+    vals.forEach(v => {
+      const c = document.createElement('div');
+      let lv;
+      if (v < 0.3) lv = 0;
+      else if (v < 0.5) lv = 0;
+      else if (v < 1) lv = 1;
+      else if (v < 2) lv = 2;
+      else if (v < 2.5) lv = 3;
+      else if (v < 3) lv = 4;
+      else lv = 5;
+      c.className = 'hm-cell l' + lv;
+      c.textContent = v < 0.3 ? '' : v.toFixed(1);
+      c.title = `${sess} · ${v.toFixed(1)}R max DD contribution`;
+      grid.appendChild(c);
+    });
+  });
+})();
+
+/* ─── Risk of Ruin sliders ─────────────────────────────────────────── */
+(function () {
+  const wr = document.getElementById('ror-wr');
+  const aw = document.getElementById('ror-aw');
+  const al = document.getElementById('ror-al');
+  const rp = document.getElementById('ror-rp');
+
+  function recompute() {
+    const winRate = parseInt(wr.value) / 100;
+    const avgWin  = parseInt(aw.value) / 100;
+    const avgLoss = parseInt(al.value) / 100;
+    const riskPct = parseInt(rp.value) / 100;
+    document.getElementById('ror-wr-v').textContent = (winRate * 100).toFixed(0) + '%';
+    document.getElementById('ror-aw-v').textContent = avgWin.toFixed(1) + ' R';
+    document.getElementById('ror-al-v').textContent = avgLoss.toFixed(1) + ' R';
+    document.getElementById('ror-rp-v').textContent = riskPct.toFixed(2) + '%';
+    const evR = winRate * avgWin - (1 - winRate) * avgLoss;
+
+    function pRuin(targetR) {
+      if (evR <= 0) return 1;
+      const edge = evR / avgLoss;
+      const r = (1 - edge) / (1 + edge);
+      return Math.pow(Math.max(0, r), targetR / avgLoss);
+    }
+    function kelly() {
+      if (avgWin <= 0 || avgLoss <= 0) return 0;
+      const b = avgWin / avgLoss;
+      const k = (winRate * (b + 1) - 1) / b;
+      return Math.max(0, k);
+    }
+    function fmtPct(p) {
+      if (p < 0.0001) return '< 0.01%';
+      if (p < 0.01) return (p * 100).toFixed(2) + '%';
+      if (p < 1) return (p * 100).toFixed(1) + '%';
+      return '100%';
+    }
+    function tone(p, kind) {
+      if (kind === 'ruin') {
+        if (p < 0.01) return 'good';
+        if (p < 0.10) return 'mid';
+        return 'bad';
+      }
+      return 'good';
+    }
+    function update(id, p, kind) {
+      const el = document.getElementById(id);
+      el.className = 'ror-result-val ' + tone(p, kind);
+      el.innerHTML = '<span class="ror-result-dot"></span>' + fmtPct(p);
+    }
+    update('ror-r20', pRuin(20), 'ruin');
+    update('ror-r50', pRuin(50), 'ruin');
+    update('ror-r100', pRuin(100), 'ruin');
+
+    const edgeEl = document.getElementById('ror-edge');
+    edgeEl.className = 'ror-result-val ' + (evR > 0.3 ? 'good' : evR > 0 ? 'mid' : 'bad');
+    edgeEl.innerHTML = '<span class="ror-result-dot"></span>' + (evR > 0 ? '+' : '') + evR.toFixed(2) + 'R';
+
+    const k = kelly();
+    const kEl = document.getElementById('ror-kelly');
+    kEl.innerHTML = '<span class="ror-result-dot"></span>' + (k * 100).toFixed(1) + '%';
+    kEl.style.color = k > 0.15 ? 'var(--info)' : 'var(--text-muted)';
+  }
+  [wr, aw, al, rp].forEach(s => s.addEventListener('input', recompute));
+  recompute();
+})();
+
+/* ─── What-If Lab tabs (visual toggle only) ────────────────────────── */
+(function () {
+  document.querySelectorAll('.wif-tab').forEach(t => {
+    t.addEventListener('click', () => t.classList.toggle('active'));
+  });
+})();
+</script>
+
+</body>
+</html>
