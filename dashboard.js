@@ -1525,6 +1525,11 @@ const _swRealtime = (() => {
   let _subscribedFor = null;
   let _toastedAt = 0; // throttle the "Synced from another device" toast
   const _TOAST_THROTTLE_MS = 10000;
+  // Phase 3 — refocus + reconnect detection
+  let _hiddenSince = 0;
+  let _hadInitialSubscribed = false; // first 'SUBSCRIBED' is initial; subsequent ones = reconnect
+  let _pullInFlight = false;
+  const _REFOCUS_FORCE_PULL_THRESHOLD_MS = 10000;
 
   function _lsSetUntracked(k, v) {
     if (typeof window._lsSetUntracked === 'function') window._lsSetUntracked(k, v);
@@ -1643,6 +1648,55 @@ const _swRealtime = (() => {
     _maybeToast('Trades synced from another device');
   }
 
+  // Phase 3 — force a full pull from all sync surfaces. Used by:
+  //   (a) visibilitychange → visible after >10s hidden (OS may suspend WS)
+  //   (b) WS reconnect detected via channel.subscribe() callback
+  // Reuses the canonical hydrate paths so the seen-cache + LS + appState
+  // all stay coherent. Debounced via _pullInFlight to avoid double-pulls
+  // when refocus + reconnect happen back-to-back.
+  async function _forcePull(reason) {
+    if (_pullInFlight) return;
+    if (!window._SW || !window._SW.getUser?.()) return;
+    _pullInFlight = true;
+    try {
+      debugLog('[Realtime] forcePull triggered —', reason);
+      // 1. user_data sync (presets, layout, theme, mappings, custom widgets…)
+      try { await window._SW.syncFromRemote?.(); } catch (e) { console.warn('[Realtime] forcePull syncFromRemote failed:', e?.message || e); }
+      // 2. journal_profiles re-hydrate (profile list + active id)
+      try {
+        if (typeof window.hydrateJournalProfilesFromRemote === 'function') {
+          await window.hydrateJournalProfilesFromRemote();
+        }
+      } catch (e) { console.warn('[Realtime] forcePull hydrate failed:', e?.message || e); }
+      // 3. trades blob re-download for the active profile (most expensive,
+      //    last in the chain so the cheaper pulls update first)
+      try {
+        if (typeof window._reloadJournalProfileSelection === 'function') {
+          await window._reloadJournalProfileSelection({});
+        }
+      } catch (e) { console.warn('[Realtime] forcePull reloadProfile failed:', e?.message || e); }
+    } finally {
+      _pullInFlight = false;
+    }
+  }
+
+  // Phase 3 — visibility refocus listener. Registered once at module init
+  // (not in connect()) so it survives signOut/signIn cycles. Acts only when
+  // a user is signed in.
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        _hiddenSince = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        const hiddenMs = _hiddenSince ? (Date.now() - _hiddenSince) : 0;
+        _hiddenSince = 0;
+        if (hiddenMs < _REFOCUS_FORCE_PULL_THRESHOLD_MS) return;
+        if (!window._SW?.getUser?.()) return;
+        _forcePull(`refocus (hidden ${(hiddenMs/1000).toFixed(0)}s)`);
+      }
+    });
+  }
+
   return {
     connect() {
       if (!window._SW) return;
@@ -1652,6 +1706,7 @@ const _swRealtime = (() => {
       if (_subscribedFor === user.id && _channel) return; // already subscribed
       if (_channel) this.disconnect();
       _subscribedFor = user.id;
+      _hadInitialSubscribed = false; // reset for this auth session
       _channel = c.channel(`realtime:user:${user.id}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'user_data',
             filter: `user_id=eq.${user.id}` }, _onUserData)
@@ -1661,7 +1716,21 @@ const _swRealtime = (() => {
             filter: `user_id=eq.${user.id}` }, _onNotionConnections)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'trades_blob_meta',
             filter: `user_id=eq.${user.id}` }, _onTradesBlobMeta)
-        .subscribe((status) => { debugLog('[Realtime] channel status:', status); });
+        .subscribe((status) => {
+          debugLog('[Realtime] channel status:', status);
+          // Phase 3 — reconnect detection. The first 'SUBSCRIBED' after
+          // connect() is the initial subscription; subsequent 'SUBSCRIBED'
+          // events are reconnects (Supabase Realtime auto-reconnects on
+          // CHANNEL_ERROR/CLOSED/TIMED_OUT). Force a full pull on reconnect
+          // since the WS may have missed events while disconnected.
+          if (status === 'SUBSCRIBED') {
+            if (_hadInitialSubscribed) {
+              _forcePull('WS reconnect');
+            } else {
+              _hadInitialSubscribed = true;
+            }
+          }
+        });
     },
     disconnect() {
       if (_channel && window._SW) {
@@ -1670,8 +1739,10 @@ const _swRealtime = (() => {
       }
       _channel = null;
       _subscribedFor = null;
+      _hadInitialSubscribed = false;
     },
     isConnected() { return !!_channel; },
+    forcePull(reason) { return _forcePull(reason || 'manual'); },
   };
 })();
 window._swRealtime = _swRealtime;
