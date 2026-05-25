@@ -7,7 +7,7 @@
 
 ## In Progress
 
-_(nothing — see Done below)_
+- [ ] **Supabase Realtime Push — cross-device live sync + zero-loss writes (5 phases)** — surfaced 2026-05-25 after Max lost data: PC A made changes → PC B (tab open 2h, in-memory state frozen) triggered an autosave → wrote stale blob over fresh PC A blob → irrecoverable loss. Goal: every write carries `expected_updated_at`, RPC raises `stale_write` if remote moved → client re-pulls + retries. Realtime subscribes on `user_data` + `journal_profiles` + `notion_connections` + new `trades_blob_meta` watcher → other tabs/PCs reflect changes within ~1-2s. `visibilitychange → visible` after >10s hidden forces a full re-pull. **Phase 0 done 2026-05-25** (5 migrations: triggers + 5 RPCs + watcher table + Realtime publication + harden). **Phase 1 next**: wrap client write sites with version-check + retry. **Phase 2**: subscribe + self-event mute. **Phase 3**: refocus + WS reconnect. **Phase 4**: cross-device QA. Detailed plan in DECISIONS.md § 2026-05-25.
 
 ---
 
@@ -18,8 +18,6 @@ _(nothing — see Done below)_
 ---
 
 ## TODO — Deferred
-
-- [ ] **Supabase Realtime push for "2 min after" without refresh (Session 4, optional)** — surfaced 2026-05-23. Today after PC A pushes a write to Supabase, PC B sees it only on next sign-in / hard refresh. For a truly magical "PC A → 30 s → PC B updates without F5", subscribe PC B to Supabase Realtime channels on `user_data` (for metadata) + a small `trades_meta` table (timestamp watcher for the trades blob, since Storage has no native realtime). On push event: re-download the affected key/blob, invalidate local caches, re-render. Cost: 1 WebSocket connection per open tab, Supabase free tier handles plenty. Implementation effort: ~2-3h. Defer until #3.10 ships + Max confirms he wants the no-refresh experience (current "refresh = instant sync" is already a huge UX upgrade vs pre-2026-05-23).
 
 - [ ] **`gs_layout_active` + `gs_layout_<preset>` twin-write** — surfaced 2026-05-20 during Bloc 4. `_saveActiveSlotLive` ([dashboard.js:35937](dashboard.js)) writes the same ~13.5KB payload to two LS keys on every drag/resize (autosave slot + per-preset slot). Semantically different (autosave vs preset-bound state) so global dedup wrap can't help. 27 KB/drag is inherent cost. Reducing requires either: (a) lazy-write per-preset slot only on preset switch (risk of crash-loss), (b) ref `dynamicWidgets` separately to dedupe between slots (major refactor of preset/layout architecture). Touch when preset architecture is next visited.
 
