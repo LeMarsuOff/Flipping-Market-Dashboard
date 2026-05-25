@@ -407,6 +407,47 @@ const _SW = (() => {
   let _dbId   = 'm15'; // dashboard_id actif
   let _signedInHook = null; // registered by hydrateJournalProfilesFromRemote
 
+  // ── Realtime Push / Optimistic Concurrency (2026-05-25, Phase 1) ──
+  // _lastSeenUpdatedAt: per-row updated_at observed at last pull or successful
+  // write. Sent as `p_seen_updated_at` to the *_if_unchanged RPCs so the
+  // server can refuse stale writes (the bug Max hit on 2026-05-25: PC B's
+  // 2-hour-stale tab clobbered PC A's fresh data). Keys:
+  //   'ud|<dashId>|<key>'              for user_data rows
+  //   'jp|<id>'                        for journal_profiles rows
+  //   'blob|<profileId>|<source>'      for trades_blob_meta rows
+  // Updated by: syncFromRemote, loadJournalProfilesFromRemote, downloadTradesBlob,
+  // every successful RPC (RPC returns new updated_at), Realtime events (Phase 2).
+  const _lastSeenUpdatedAt = new Map();
+  // _selfWrites: tracks (table|composite|updated_at) tuples we just wrote
+  // ourselves. The Realtime subscription (Phase 2) will check this set on
+  // every postgres_changes event and ignore matches — without this, every
+  // write would echo back as an event and either re-render uselessly or, in
+  // the worst case, retrigger autosaves in a loop. TTL = 5s (Realtime fanout
+  // is typically <500ms but reconnects/replays can spike; 5s is comfortable).
+  const _selfWrites = new Map();
+  const _SELF_WRITE_TTL_MS = 5000;
+  function _seenKey(...parts) { return parts.filter(Boolean).join('|'); }
+  function _markSelfWrite(table, composite, updatedAt) {
+    if (!updatedAt) return;
+    const k = `${table}|${composite}|${updatedAt}`;
+    const existing = _selfWrites.get(k);
+    if (existing) clearTimeout(existing);
+    _selfWrites.set(k, setTimeout(() => _selfWrites.delete(k), _SELF_WRITE_TTL_MS));
+  }
+  function _isSelfWriteFn(table, composite, updatedAt) {
+    if (!updatedAt) return false;
+    return _selfWrites.has(`${table}|${composite}|${updatedAt}`);
+  }
+  function _isStaleWriteError(error) {
+    return !!(error && error.code === 'P0001' && /stale_write/i.test(String(error.message || error.details || '')));
+  }
+  // Exposed for the Phase 2 Realtime subscriber (lives outside the closure).
+  // _setSeenInternal lets the Realtime handler write the new updated_at after
+  // applying a remote event, so the *next* local write carries the matching seen.
+  function _setSeenInternal(seenKey, updatedAt) { if (seenKey && updatedAt) _lastSeenUpdatedAt.set(seenKey, updatedAt); }
+  function _getSeenInternal(seenKey) { return _lastSeenUpdatedAt.get(seenKey) || null; }
+  function _deleteSeenInternal(seenKey) { _lastSeenUpdatedAt.delete(seenKey); }
+
   function _getClient() {
     if (!_client && window.supabase) {
       _client = window.supabase.createClient(_SB_URL, _SB_KEY);
@@ -553,45 +594,129 @@ const _SW = (() => {
     set(key, value) {
       _lsSet(key, value);
       if (!value || value === 'null') return;
-      if (_isSync(key) && _user) {
-        const c = _getClient();
-        if (!c) return;
-        // .catch added 2026-05-23 (Task #3.12). The previous .then-only handler
-        // surfaced Supabase {error} responses but silently swallowed promise
-        // rejections (network errors, CORS, aborted fetch). Adding .catch
-        // makes any failure visible in the console — paired with the self-
-        // healing reconcile in migrateProfileScopedKeys (no longer gated by
-        // the v2 flag), so any silent failure here is retried at the next
-        // sign-in / refresh.
-        c.from('user_data').upsert({
-          user_id     : _user.id,
-          dashboard_id: _dashId(key),
-          key         : _normKey(key),
-          value       : (() => { try { return JSON.parse(value); }
-                                 catch { return { _raw: value }; } })(),
-          updated_at  : new Date().toISOString()
-        }, { onConflict: 'user_id,dashboard_id,key' })
-        .then(({ error }) => {
-          if (error) console.warn('[SW] write error', key, error.message);
-        })
-        .catch(err => console.warn('[SW] upsert threw for', key, err?.message || err));
-      }
+      if (!_isSync(key) || !_user) return;
+      const c = _getClient();
+      if (!c) return;
+      const dashId = _dashId(key);
+      const normKey = _normKey(key);
+      const sk = _seenKey('ud', dashId, normKey);
+      const parsed = (() => { try { return JSON.parse(value); } catch { return { _raw: value }; } })();
+      // Optimistic-concurrency wrapper (Realtime Push Phase 1, 2026-05-25).
+      // Calls the RPC `upsert_user_data_if_unchanged` with the last seen
+      // updated_at; the server raises 'stale_write' (P0001) if remote has
+      // moved. On stale we re-pull the row (LWW: remote wins) and retry once.
+      // If the second attempt is also stale, abort + toast — the in-flight
+      // local edit is lost but the cloud version is guaranteed coherent.
+      const doCall = async (seenForCall, isRetry) => {
+        try {
+          const { data, error } = await c.rpc('upsert_user_data_if_unchanged', {
+            p_dashboard_id   : dashId,
+            p_key            : normKey,
+            p_value          : parsed,
+            p_seen_updated_at: seenForCall || null,
+          });
+          if (error) {
+            if (_isStaleWriteError(error)) {
+              if (isRetry) {
+                // Final stale — pull fresh remote and adopt it locally.
+                console.warn('[SW] stale_write final on', key, '— remote kept, local edit discarded');
+                try { _showToast('Sync conflict — refreshed from cloud', 'warn'); } catch {}
+                try {
+                  const { data: row } = await c.from('user_data')
+                    .select('value, updated_at')
+                    .eq('user_id', _user.id).eq('dashboard_id', dashId).eq('key', normKey)
+                    .maybeSingle();
+                  if (row) {
+                    const serialized = row.value?._raw !== undefined ? row.value._raw : JSON.stringify(row.value);
+                    _lsSet(key, serialized);
+                    _lastSeenUpdatedAt.set(sk, row.updated_at);
+                  }
+                } catch {}
+                return;
+              }
+              // First stale — re-pull, then retry ONCE silently.
+              try {
+                const { data: row } = await c.from('user_data')
+                  .select('updated_at')
+                  .eq('user_id', _user.id).eq('dashboard_id', dashId).eq('key', normKey)
+                  .maybeSingle();
+                if (row?.updated_at) _lastSeenUpdatedAt.set(sk, row.updated_at);
+                return doCall(row?.updated_at || null, true);
+              } catch (e) {
+                console.warn('[SW] stale re-pull threw for', key, e?.message || e);
+                return;
+              }
+            }
+            console.warn('[SW] write error', key, error.message);
+            return;
+          }
+          if (data) {
+            _lastSeenUpdatedAt.set(sk, data);
+            _markSelfWrite('user_data', `${dashId}|${normKey}`, data);
+          }
+        } catch (e) {
+          console.warn('[SW] upsert threw for', key, e?.message || e);
+        }
+      };
+      doCall(_lastSeenUpdatedAt.get(sk) || null, false);
     },
 
     remove(key) {
       _lsRemove(key);
-      if (_isSync(key) && _user) {
-        const c = _getClient();
-        if (!c) return;
-        c.from('user_data')
-          .delete()
-          .eq('user_id', _user.id)
-          .eq('dashboard_id', _dashId(key))
-          .eq('key', _normKey(key))
-          .then(({ error }) => {
-            if (error) console.warn('[SW] delete error', key, error.message);
+      if (!_isSync(key) || !_user) return;
+      const c = _getClient();
+      if (!c) return;
+      const dashId = _dashId(key);
+      const normKey = _normKey(key);
+      const sk = _seenKey('ud', dashId, normKey);
+      const doCall = async (seenForCall, isRetry) => {
+        try {
+          const { error } = await c.rpc('delete_user_data_if_unchanged', {
+            p_dashboard_id   : dashId,
+            p_key            : normKey,
+            p_seen_updated_at: seenForCall || null,
           });
-      }
+          if (error) {
+            if (_isStaleWriteError(error)) {
+              if (isRetry) {
+                console.warn('[SW] stale_write final on delete', key, '— remote kept');
+                try { _showToast('Sync conflict — refreshed from cloud', 'warn'); } catch {}
+                // Other client wrote a fresh value while we tried to delete —
+                // restore that value locally rather than dropping it.
+                try {
+                  const { data: row } = await c.from('user_data')
+                    .select('value, updated_at')
+                    .eq('user_id', _user.id).eq('dashboard_id', dashId).eq('key', normKey)
+                    .maybeSingle();
+                  if (row) {
+                    const serialized = row.value?._raw !== undefined ? row.value._raw : JSON.stringify(row.value);
+                    _lsSet(key, serialized);
+                    _lastSeenUpdatedAt.set(sk, row.updated_at);
+                  }
+                } catch {}
+                return;
+              }
+              try {
+                const { data: row } = await c.from('user_data')
+                  .select('updated_at')
+                  .eq('user_id', _user.id).eq('dashboard_id', dashId).eq('key', normKey)
+                  .maybeSingle();
+                if (row?.updated_at) _lastSeenUpdatedAt.set(sk, row.updated_at);
+                return doCall(row?.updated_at || null, true);
+              } catch (e) {
+                console.warn('[SW] stale delete re-pull threw for', key, e?.message || e);
+                return;
+              }
+            }
+            console.warn('[SW] delete error', key, error.message);
+            return;
+          }
+          _lastSeenUpdatedAt.delete(sk);
+        } catch (e) {
+          console.warn('[SW] delete threw for', key, e?.message || e);
+        }
+      };
+      doCall(_lastSeenUpdatedAt.get(sk) || null, false);
     },
 
     async syncFromRemote() {
@@ -624,6 +749,11 @@ const _SW = (() => {
           : JSON.stringify(row.value);
         // Utilise _lsSet pour bypasser le monkey-patch (évite re-sync inutile)
         _lsSet(lsKey, serialized);
+        // Record the version we just pulled so the next local write can
+        // pass it as `p_seen_updated_at` to the stale-write check (Phase 1).
+        if (row.updated_at) {
+          _lastSeenUpdatedAt.set(_seenKey('ud', row.dashboard_id, row.key), row.updated_at);
+        }
         merged++;
       }
       debugLog('[SW] syncFromRemote done —', merged, 'keys merged');
@@ -711,15 +841,24 @@ const _SW = (() => {
         if (existingSet.has(`${dashId}|${normKey}`)) { skipped++; continue; }
         const parsed = (() => { try { return JSON.parse(value); } catch { return { _raw: value }; } })();
         try {
-          const { error: upErr } = await c.from('user_data').upsert({
-            user_id: uid,
-            dashboard_id: dashId,
-            key: normKey,
-            value: parsed,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'user_id,dashboard_id,key' });
+          // Reconcile path uses the same stale-check RPC as _SW.set so the
+          // seen-cache stays consistent. seen=null here because we *know* this
+          // key isn't on remote yet (filtered by existingSet above) — the RPC
+          // accepts a null seen for INSERT. Returns the new updated_at.
+          const { data: newUpdatedAt, error: upErr } = await c.rpc('upsert_user_data_if_unchanged', {
+            p_dashboard_id   : dashId,
+            p_key            : normKey,
+            p_value          : parsed,
+            p_seen_updated_at: null,
+          });
           if (upErr) { failed++; console.warn('[SyncReconcile] upsert failed for', lsKey, upErr.message); }
-          else pushed++;
+          else {
+            pushed++;
+            if (newUpdatedAt) {
+              _lastSeenUpdatedAt.set(_seenKey('ud', dashId, normKey), newUpdatedAt);
+              _markSelfWrite('user_data', `${dashId}|${normKey}`, newUpdatedAt);
+            }
+          }
         } catch (e) {
           failed++;
           console.warn('[SyncReconcile] upsert threw for', lsKey, e?.message || e);
@@ -761,20 +900,70 @@ const _SW = (() => {
       if (!profileId) return { skipped: 'no-profile' };
       if (!Array.isArray(trades)) return { skipped: 'invalid-trades' };
       const src = (source === 'h4') ? 'h4' : 'm15';
+      const sk = _seenKey('blob', profileId, src);
       try {
         const json = JSON.stringify(trades);
         const blob = await _compressString(json);
         const path = `${uid}/${profileId}_${src}.json.gz`;
+        // Realtime Push Phase 1 — bump the watcher meta row FIRST, before
+        // touching Storage. The RPC raises 'stale_write' if remote.updated_at
+        // moved since our last seen, so a 2h-stale tab (the exact bug Max hit
+        // 2026-05-25) is refused at the meta layer and never reaches Storage
+        // — the fresh cloud blob stays intact. On rare bump-OK / upload-fail
+        // races, the meta row is briefly ahead of Storage content; self-heals
+        // on the next upload (which re-bumps with a fresh seen).
+        const tryBump = async (seenForCall, isRetry) => {
+          const { data: newUpdatedAt, error: bumpErr } = await c.rpc('bump_trades_blob_meta', {
+            p_profile_id      : profileId,
+            p_source          : src,
+            p_blob_size       : blob.size,
+            p_seen_updated_at : seenForCall || null,
+          });
+          if (bumpErr) {
+            if (_isStaleWriteError(bumpErr)) {
+              if (isRetry) {
+                console.warn('[TradesBlob] stale_write final — local upload skipped, cloud kept', { profileId, source: src });
+                try { _showToast('Sync conflict on trades — refreshed from cloud', 'warn'); } catch {}
+                try {
+                  const { data: m } = await c.from('trades_blob_meta')
+                    .select('updated_at').eq('user_id', uid).eq('profile_id', profileId).eq('source', src).maybeSingle();
+                  if (m?.updated_at) _lastSeenUpdatedAt.set(sk, m.updated_at);
+                } catch {}
+                return { stale: true };
+              }
+              try {
+                const { data: m } = await c.from('trades_blob_meta')
+                  .select('updated_at').eq('user_id', uid).eq('profile_id', profileId).eq('source', src).maybeSingle();
+                if (m?.updated_at) _lastSeenUpdatedAt.set(sk, m.updated_at);
+                return tryBump(m?.updated_at || null, true);
+              } catch (e) {
+                console.warn('[TradesBlob] stale meta re-pull threw:', e?.message || e);
+                return { error: 'stale-recover-failed' };
+              }
+            }
+            console.warn('[TradesBlob] bump failed:', bumpErr.message);
+            return { error: bumpErr.message };
+          }
+          return { ok: true, newUpdatedAt };
+        };
+        const bumpResult = await tryBump(_lastSeenUpdatedAt.get(sk) || null, false);
+        if (bumpResult.stale) return { skipped: 'stale_write' };
+        if (bumpResult.error) return { error: bumpResult.error };
+        // Bump won — Storage upload now.
         const { error } = await c.storage.from('notion-trades').upload(path, blob, {
           contentType: 'application/gzip',
           upsert: true,
           cacheControl: '0',
         });
         if (error) {
-          console.warn('[TradesBlob] upload failed:', error.message);
+          console.warn('[TradesBlob] upload failed (meta already bumped — self-heals on next upload):', error.message);
           return { error: error.message };
         }
-        debugLog('[TradesBlob] uploaded', { profileId, source: src, bytes: blob.size, count: trades.length });
+        if (bumpResult.newUpdatedAt) {
+          _lastSeenUpdatedAt.set(sk, bumpResult.newUpdatedAt);
+          _markSelfWrite('trades_blob_meta', `${profileId}|${src}`, bumpResult.newUpdatedAt);
+        }
+        debugLog('[TradesBlob] uploaded + bumped', { profileId, source: src, bytes: blob.size, count: trades.length });
         return { uploaded: true, bytes: blob.size, count: trades.length };
       } catch (e) {
         console.warn('[TradesBlob] upload exception:', e?.message || e);
@@ -790,9 +979,23 @@ const _SW = (() => {
       if (!uid) return { skipped: 'no-uid' };
       if (!profileId) return { skipped: 'no-profile' };
       const src = (source === 'h4') ? 'h4' : 'm15';
+      const sk = _seenKey('blob', profileId, src);
       try {
         const path = `${uid}/${profileId}_${src}.json.gz`;
-        const { data, error } = await c.storage.from('notion-trades').download(path);
+        // Parallel: Storage blob + meta row. Meta tells us the version we
+        // just pulled — the next local write passes it as `p_seen_updated_at`
+        // to the stale-write check (Realtime Push Phase 1).
+        const [storageResp, metaResp] = await Promise.all([
+          c.storage.from('notion-trades').download(path),
+          c.from('trades_blob_meta')
+            .select('updated_at')
+            .eq('user_id', uid).eq('profile_id', profileId).eq('source', src)
+            .maybeSingle(),
+        ]);
+        if (metaResp?.data?.updated_at) {
+          _lastSeenUpdatedAt.set(sk, metaResp.data.updated_at);
+        }
+        const { data, error } = storageResp;
         if (error) {
           // 404 = no blob yet for this profile (first-time pull). Not an error,
           // just a signal to fall back to the Notion fetch path. Supabase JS
@@ -846,20 +1049,64 @@ const _SW = (() => {
       if (!profileId) return { skipped: 'no-profile' };
       if (!Array.isArray(rawTrades)) return { skipped: 'invalid-trades' };
       const src = (source === 'h4') ? 'h4' : 'm15';
+      const watcherSrc = `${src}_raw`; // separate row from parsed blob
+      const sk = _seenKey('blob', profileId, watcherSrc);
       try {
         const json = JSON.stringify(rawTrades);
         const blob = await _compressString(json);
         const path = `${uid}/${profileId}_${src}_raw.json.gz`;
+        // Bump-first / upload-second order, same as uploadTradesBlob.
+        const tryBump = async (seenForCall, isRetry) => {
+          const { data: newUpdatedAt, error: bumpErr } = await c.rpc('bump_trades_blob_meta', {
+            p_profile_id      : profileId,
+            p_source          : watcherSrc,
+            p_blob_size       : blob.size,
+            p_seen_updated_at : seenForCall || null,
+          });
+          if (bumpErr) {
+            if (_isStaleWriteError(bumpErr)) {
+              if (isRetry) {
+                console.warn('[RawBlob] stale_write final — local upload skipped, cloud kept', { profileId, source: watcherSrc });
+                try { _showToast('Sync conflict on raw trades — refreshed from cloud', 'warn'); } catch {}
+                try {
+                  const { data: m } = await c.from('trades_blob_meta')
+                    .select('updated_at').eq('user_id', uid).eq('profile_id', profileId).eq('source', watcherSrc).maybeSingle();
+                  if (m?.updated_at) _lastSeenUpdatedAt.set(sk, m.updated_at);
+                } catch {}
+                return { stale: true };
+              }
+              try {
+                const { data: m } = await c.from('trades_blob_meta')
+                  .select('updated_at').eq('user_id', uid).eq('profile_id', profileId).eq('source', watcherSrc).maybeSingle();
+                if (m?.updated_at) _lastSeenUpdatedAt.set(sk, m.updated_at);
+                return tryBump(m?.updated_at || null, true);
+              } catch (e) {
+                console.warn('[RawBlob] stale meta re-pull threw:', e?.message || e);
+                return { error: 'stale-recover-failed' };
+              }
+            }
+            console.warn('[RawBlob] bump failed:', bumpErr.message);
+            return { error: bumpErr.message };
+          }
+          return { ok: true, newUpdatedAt };
+        };
+        const bumpResult = await tryBump(_lastSeenUpdatedAt.get(sk) || null, false);
+        if (bumpResult.stale) return { skipped: 'stale_write' };
+        if (bumpResult.error) return { error: bumpResult.error };
         const { error } = await c.storage.from('notion-trades').upload(path, blob, {
           contentType: 'application/gzip',
           upsert: true,
           cacheControl: '0',
         });
         if (error) {
-          console.warn('[RawBlob] upload failed:', error.message);
+          console.warn('[RawBlob] upload failed (meta already bumped — self-heals on next upload):', error.message);
           return { error: error.message };
         }
-        debugLog('[RawBlob] uploaded', { profileId, source: src, bytes: blob.size, count: rawTrades.length });
+        if (bumpResult.newUpdatedAt) {
+          _lastSeenUpdatedAt.set(sk, bumpResult.newUpdatedAt);
+          _markSelfWrite('trades_blob_meta', `${profileId}|${watcherSrc}`, bumpResult.newUpdatedAt);
+        }
+        debugLog('[RawBlob] uploaded + bumped', { profileId, source: src, bytes: blob.size, count: rawTrades.length });
         return { uploaded: true, bytes: blob.size, count: rawTrades.length };
       } catch (e) {
         console.warn('[RawBlob] upload exception:', e?.message || e);
@@ -875,9 +1122,21 @@ const _SW = (() => {
       if (!uid) return { skipped: 'no-uid' };
       if (!profileId) return { skipped: 'no-profile' };
       const src = (source === 'h4') ? 'h4' : 'm15';
+      const watcherSrc = `${src}_raw`;
+      const sk = _seenKey('blob', profileId, watcherSrc);
       try {
         const path = `${uid}/${profileId}_${src}_raw.json.gz`;
-        const { data, error } = await c.storage.from('notion-trades').download(path);
+        const [storageResp, metaResp] = await Promise.all([
+          c.storage.from('notion-trades').download(path),
+          c.from('trades_blob_meta')
+            .select('updated_at')
+            .eq('user_id', uid).eq('profile_id', profileId).eq('source', watcherSrc)
+            .maybeSingle(),
+        ]);
+        if (metaResp?.data?.updated_at) {
+          _lastSeenUpdatedAt.set(sk, metaResp.data.updated_at);
+        }
+        const { data, error } = storageResp;
         if (error) {
           const msg = String(error.message || '');
           const isMissing = error.statusCode === '404'
@@ -1028,7 +1287,6 @@ const _SW = (() => {
       const normalizedProfiles = Array.isArray(profiles) ? profiles : [];
       const rows = normalizedProfiles.map((p, i) => ({
         id                    : p.id,
-        user_id               : uid,
         name                  : p.name || 'Untitled Journal',
         type                  : p.type || 'm15',
         api_url               : p.apiUrl || '',
@@ -1043,7 +1301,6 @@ const _SW = (() => {
         template_choice       : ['m15', 'h4', 'other'].includes(p.templateChoice) ? p.templateChoice : null,
         is_active             : p.id === String(activeId || ''),
         sort_order            : i,
-        updated_at            : new Date().toISOString()
       }));
       debugLog('[DashboardDebug]');
       const { data: existing, error: fetchErr } = await c.from('journal_profiles')
@@ -1056,25 +1313,74 @@ const _SW = (() => {
       debugLog('[DashboardDebug]');
       debugLog('[DashboardDebug]');
       if (toDelete.length > 0) {
+        // Orphan cleanup: bulk DELETE is safe here. These IDs are gone from
+        // the local list, so we want them gone from remote regardless of
+        // updated_at — there's no concurrent edit to protect.
         const { error: delErr } = await c.from('journal_profiles').delete().eq('user_id', uid).in('id', toDelete);
         if (delErr) {
           console.warn('[JournalProfilesRemote] cleanup delete error:', delErr.message);
           return;
         }
         _clearPendingDeletedJournalProfileIds(toDelete);
+        for (const id of toDelete) _lastSeenUpdatedAt.delete(_seenKey('jp', id));
       }
       debugLog('[DashboardDebug]');
       if (rows.length === 0) {
         debugLog('[DashboardDebug]');
         return;
       }
-      const { data: upsertData, error } = await c.from('journal_profiles')
-        .upsert(rows, { onConflict: 'user_id,id' })
-        .select('id');
-      if (error) {
-        console.error('[JournalProfilesRemote] error:', error.message, error);
-        return;
-      }
+      // Per-row optimistic-concurrency upserts (Realtime Push Phase 1).
+      // Replaces the bulk upsert: each profile carries its own
+      // `p_seen_updated_at` so a stale row on PC B can't clobber a fresh
+      // edit on PC A. Promise.allSettled so a single stale row doesn't
+      // abort the whole batch — other rows still ship.
+      const upsertRow = async (row, seenForCall, isRetry) => {
+        const { data: newUpdatedAt, error } = await c.rpc('upsert_journal_profile_if_unchanged', {
+          p_id              : row.id,
+          p_row             : row,
+          p_seen_updated_at : seenForCall || null,
+        });
+        if (error) {
+          if (_isStaleWriteError(error)) {
+            if (isRetry) {
+              console.warn('[JournalProfilesRemote] stale_write final on profile', row.id, '— remote kept');
+              try { _showToast('Sync conflict on profile — refreshed from cloud', 'warn'); } catch {}
+              // Pull fresh remote and let the next hydrateJournalProfilesFromRemote
+              // cycle replace the local copy. Update the seen so future writes
+              // start from the post-conflict version.
+              try {
+                const { data: row2 } = await c.from('journal_profiles')
+                  .select('updated_at')
+                  .eq('user_id', uid).eq('id', row.id).maybeSingle();
+                if (row2?.updated_at) _lastSeenUpdatedAt.set(_seenKey('jp', row.id), row2.updated_at);
+              } catch {}
+              return { id: row.id, status: 'stale' };
+            }
+            try {
+              const { data: row2 } = await c.from('journal_profiles')
+                .select('updated_at')
+                .eq('user_id', uid).eq('id', row.id).maybeSingle();
+              if (row2?.updated_at) _lastSeenUpdatedAt.set(_seenKey('jp', row.id), row2.updated_at);
+              return upsertRow(row, row2?.updated_at || null, true);
+            } catch (e) {
+              console.warn('[JournalProfilesRemote] stale re-pull threw for profile', row.id, e?.message || e);
+              return { id: row.id, status: 'error' };
+            }
+          }
+          console.error('[JournalProfilesRemote] upsert error for profile', row.id, error.message);
+          return { id: row.id, status: 'error' };
+        }
+        if (newUpdatedAt) {
+          _lastSeenUpdatedAt.set(_seenKey('jp', row.id), newUpdatedAt);
+          _markSelfWrite('journal_profiles', row.id, newUpdatedAt);
+        }
+        return { id: row.id, status: 'ok' };
+      };
+      const results = await Promise.allSettled(
+        rows.map(r => upsertRow(r, _lastSeenUpdatedAt.get(_seenKey('jp', r.id)) || null, false))
+      );
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && r.value.status !== 'ok')).length;
+      if (failed > 0) debugLog('[JournalProfilesRemote] some profile upserts failed/stale —', failed, '/', rows.length);
       debugLog('[DashboardDebug]');
       debugLog('[DashboardDebug]');
     },
@@ -1094,6 +1400,7 @@ const _SW = (() => {
         return false;
       }
       _clearPendingDeletedJournalProfileIds([id]);
+      _lastSeenUpdatedAt.delete(_seenKey('jp', id));
       debugLog('[DashboardDebug]');
       return true;
     },
@@ -1111,7 +1418,7 @@ const _SW = (() => {
       if (legacyErr) console.warn('[JournalProfilesSource] user_data journalProfiles_v1 read error:', legacyErr.message);
       debugLog('[JournalProfilesSource] user_data journalProfiles_v1:', legacyRows || []);
       const { data, error } = await c.from('journal_profiles')
-        .select('id,name,type,api_url,source,notion_database_id,notion_database_title,notion_workspace_name,connection_type,notion_sync_state,notion_last_sync,notion_trade_count,template_choice,is_active,sort_order')
+        .select('id,name,type,api_url,source,notion_database_id,notion_database_title,notion_workspace_name,connection_type,notion_sync_state,notion_last_sync,notion_trade_count,template_choice,is_active,sort_order,updated_at')
         .eq('user_id', uid)
         .order('sort_order', { ascending: true });
       if (error) {
@@ -1121,6 +1428,12 @@ const _SW = (() => {
       debugLog('[DashboardDebug]');
       debugLog('[JournalProfilesSource] remote journal_profiles rows:', data || []);
       if (!data || data.length === 0) return { profiles: [], activeId: '' };
+      // Populate the seen-cache for every profile pulled so the next local
+      // edit on any of these carries the right `p_seen_updated_at` to the
+      // RPC. Critical for the stale-write check to ever fire.
+      for (const r of data) {
+        if (r?.id && r.updated_at) _lastSeenUpdatedAt.set(_seenKey('jp', r.id), r.updated_at);
+      }
       const pendingDeleted = _getPendingDeletedJournalProfileIds();
       if (pendingDeleted.length) {
         debugLog('[DashboardDebug]');
@@ -1156,6 +1469,18 @@ const _SW = (() => {
     setSignedInHook(fn) { _signedInHook = fn; },
 
     getUser() { return _user; },
+
+    // Phase 2 hooks — the Realtime subscription handler (defined outside the
+    // closure) needs to: (a) check if an incoming postgres_changes event is
+    // an echo of our own write (selfWrite), (b) update _lastSeenUpdatedAt
+    // after applying a remote event so the next local write carries the
+    // right `p_seen_updated_at`. The closure exposes minimal surface to
+    // keep the seen-cache private.
+    _isSelfWrite(table, composite, updatedAt) { return _isSelfWriteFn(table, composite, updatedAt); },
+    _setSeen(seenKey, updatedAt) { _setSeenInternal(seenKey, updatedAt); },
+    _getSeen(seenKey) { return _getSeenInternal(seenKey); },
+    _deleteSeen(seenKey) { _deleteSeenInternal(seenKey); },
+    _seenKey(...parts) { return _seenKey(...parts); },
 
     init() { _getClient(); }
   };
