@@ -36652,6 +36652,17 @@ function loadPresetLiveFilters() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return;
+    // Realtime hotfix 4 (2026-05-25): `savePresetLiveFilters` OMITS presets
+    // with empty live state (hasAny=false). If A clears their live filters,
+    // the saved JSON loses the key for that preset. Without resetting the
+    // in-memory cache first, this function becomes a merge-add — the stale
+    // slot survives in memory on B, and _hydrateChipsFromLiveSlot re-applies
+    // the (no-longer-saved) overrides. Reset all existing entries to blank
+    // before re-populating from the parsed LS, so missing-from-LS keys are
+    // properly cleared. Safe at boot (in-memory map is already empty).
+    for (const k of Object.keys(presetLiveFilters)) {
+      presetLiveFilters[k] = _blankLiveSlot();
+    }
     for (const [k, slot] of Object.entries(parsed)) {
       const dst = _blankLiveSlot();
       if (slot && slot.chips && typeof slot.chips === 'object') {
