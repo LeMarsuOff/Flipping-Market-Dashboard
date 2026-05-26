@@ -534,6 +534,22 @@ async function loadShare(id) {
   }
 
   try {
+    // Gate the view bump per-browser via localStorage — first visit from
+    // this browser counts (+1), subsequent reloads from the same browser
+    // are no-ops. Closest we can get to "unique devices" without auth or
+    // server-side IP tracking. Different browsers/incognito count as new.
+    const seenKey = `share_seen_${id}`;
+    let shouldBump = false;
+    try { shouldBump = !localStorage.getItem(seenKey); } catch (_) { /* private mode */ }
+
+    // Bump BEFORE the SELECT so the watermark reflects the current viewer
+    // in the count. Previous fire-and-forget AFTER the SELECT always showed
+    // the pre-bump value → looked stuck on reload.
+    if (shouldBump) {
+      try { localStorage.setItem(seenKey, '1'); } catch (_) {}
+      await sb.rpc('increment_share_view', { p_share_id: id });
+    }
+
     const { data, error } = await sb
       .from('shares')
       .select('chip_name, chip_kind, stats, trades, expires_at, view_count')
@@ -547,8 +563,6 @@ async function loadShare(id) {
     }
 
     renderShare(data);
-    // Fire-and-forget view bump (RPC bypasses RLS via security definer).
-    sb.rpc('increment_share_view', { p_share_id: id }).then(null, () => {});
   } catch (err) {
     console.error('[share] load failed', err);
     renderError("Couldn't load", 'Network error. Try refreshing the page in a moment.');
