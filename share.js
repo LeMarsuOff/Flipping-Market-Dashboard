@@ -283,12 +283,12 @@ function renderShare(d) {
             <div class="wm-meta-val">${escapeHtml(String(stats.trades || trades.length))}</div>
           </div>
           <div class="wm-meta-item">
-            <div class="wm-meta-lbl">Win rate</div>
-            <div class="wm-meta-val" style="color:${kpiWrColor(stats.winrate)}">${escapeHtml(winrate)}</div>
+            <div class="wm-meta-lbl">Total R</div>
+            <div class="wm-meta-val ${rClassNumeric(totalR)}">${escapeHtml(totalRSigned)}</div>
           </div>
           <div class="wm-meta-item">
-            <div class="wm-meta-lbl">Net R</div>
-            <div class="wm-meta-val ${rClassNumeric(totalR)}">${escapeHtml(totalRSigned)}</div>
+            <div class="wm-meta-lbl">Win rate</div>
+            <div class="wm-meta-val" style="color:${kpiWrColor(stats.winrate)}">${escapeHtml(winrate)}</div>
           </div>
           <div class="wm-meta-item">
             <div class="wm-meta-lbl">Avg R</div>
