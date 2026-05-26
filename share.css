@@ -575,6 +575,10 @@ html, body {
   font-size: var(--typo-base-size);
 }
 .trade-media-btn:hover { opacity: 1; }
+/* Kill the browser default blue focus ring — the `.is-active` amber outline
+   below already provides the canonical active-state indicator. */
+.trade-media-btn:focus,
+.trade-media-btn:focus-visible { outline: none; }
 .wd-media-item {
   display: flex;
   flex-direction: column;
