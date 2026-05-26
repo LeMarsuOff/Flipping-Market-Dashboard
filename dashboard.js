@@ -4306,6 +4306,9 @@ function handleActionClick(event) {
       break;
     }
     case 'close-widget-drawer': closeWidgetDrawer(); break;
+    case 'open-share-popover':  event.stopPropagation(); _handleOpenSharePopover(); break;
+    case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
+    case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
     case 'apply-theme-preset': applyPresetTheme(parseInt(actionEl.dataset.themePreset, 10)); break;
     case 'export-theme': exportTheme(); break;
@@ -22391,6 +22394,223 @@ function _wdTradeCard(t) {
     </div>`;
 }
 
+/* ─── Share Link feature ─────────────────────────────────────────────
+   Snapshot the current drawer's trade-cards to public.shares (Supabase),
+   render a 7-day shareable link in a popover. Spec: docs/share-link-feature.md */
+
+const _SHARE_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const _SHARE_EXPIRY_DAYS = 7;
+
+function _generateShareId() {
+  let out = '';
+  const buf = new Uint8Array(8);
+  (window.crypto || window.msCrypto).getRandomValues(buf);
+  for (let i = 0; i < 8; i++) out += _SHARE_ID_ALPHABET[buf[i] % 62];
+  return out;
+}
+
+function _shareViewerBaseUrl() {
+  return location.origin + location.pathname.replace(/[^/]*$/, '');
+}
+
+/* Mirror _wdTradeCard's display-R logic so the snapshot's "r" matches
+   exactly what each trade-card shows on screen (SL keeps the realised
+   magnitude, others use effectiveR). */
+function _shareTradeDisplayR(t, tpConfig) {
+  if (t.outcome === 'SL') {
+    return (typeof t.tp1_rr === 'number' && Number.isFinite(t.tp1_rr) && t.tp1_rr < 0)
+      ? t.tp1_rr
+      : t.r;
+  }
+  const ef = t.effectiveR ?? computeEffectiveRR(t, tpConfig);
+  return (typeof ef === 'number' && Number.isFinite(ef)) ? ef : t.r;
+}
+
+/* Resolve a trade's media slot to a stable `{ url, orig }` pair for the
+   share snapshot. The viewer is anonymous — it has no access to Max's
+   `appState` or the live media queue — so we hard-prefer the deterministic
+   Supabase Storage URL whenever the trade has a `_notionId`. The Supabase
+   URL is the same path the dashboard's lightbox would resolve to via
+   `_resolveLightboxImageUrl`, and it's stable for the lifetime of the
+   trade. `orig` carries the TradingView /x/ share URL when present —
+   the viewer falls back to it if Supabase 404s (e.g., media-queue upload
+   hasn't completed yet for very recent trades). */
+function _shareResolveMediaSlot(t, field) {
+  const raw  = (t[field]        || '').trim();
+  const orig = (t[field + 'Orig'] || '').trim();
+  if (!raw && !orig) return { url: '', orig: '' };
+
+  // No `_notionId` → can't compute the deterministic Supabase path.
+  // Keep `raw` if it's already a non-Notion URL (Supabase / custom CDN);
+  // drop it if it's an expired Notion S3 link.
+  if (!t._notionId) {
+    const url = (raw && _isNotionFileUrl(raw)) ? '' : raw;
+    return { url, orig };
+  }
+
+  const slotName = (field === 'imgH4Before')
+    ? 'h4_before'
+    : (field === 'imgM15')
+      ? 'm15_before'
+      : (typeof _getCurrentHTFSource === 'function' && _getCurrentHTFSource() === 'h4')
+        ? 'h4_after'
+        : 'm15_after';
+  const url = `${_SUPABASE_SCREENSHOTS_BASE}/${t._notionId}_${slotName}.png`;
+  return { url, orig };
+}
+
+function _buildShareSnapshot(sortedTrades, tpConfig) {
+  return sortedTrades.map(t => ({
+    pair: t.pair || '',
+    date: t.date || '',
+    side: t.direction || '',
+    outcome: t.outcome || '',
+    r: _shareTradeDisplayR(t, tpConfig),
+    rrMax: (typeof t.rrMax === 'number' && Number.isFinite(t.rrMax)) ? t.rrMax : null,
+    style: t.setupDetail || t.setup || '',
+    session: t.session || '',
+    sessionTime: (t.hour != null) ? String(t.hour).padStart(2,'0') + ':00' : '',
+    obsH4:  Array.isArray(t.h4)        ? [...t.h4]        : (t.h4        ? [t.h4]        : []),
+    obsM15: Array.isArray(t.obstacles) ? [...t.obstacles] : (t.obstacles ? [t.obstacles] : []),
+    media: {
+      h4:   _shareResolveMediaSlot(t, 'imgH4Before'),
+      m15:  _shareResolveMediaSlot(t, 'imgM15'),
+      m15a: _shareResolveMediaSlot(t, 'imgM15After'),
+    },
+  }));
+}
+
+function _buildShareStats(sortedTrades, totalR, wins, n, tpConfig) {
+  let posSum = 0, negSum = 0;
+  for (const t of sortedTrades) {
+    const r = _shareTradeDisplayR(t, tpConfig);
+    if (typeof r === 'number' && Number.isFinite(r)) {
+      if (r > 0) posSum += r;
+      else if (r < 0) negSum += -r;
+    }
+  }
+  const pf = negSum > 0 ? (posSum / negSum) : (posSum > 0 ? Infinity : 0);
+  return {
+    trades: n,
+    wins,
+    losses: n - wins,
+    winrate: n > 0 ? +(100 * wins / n).toFixed(2) : 0,
+    netR:  +totalR.toFixed(2),
+    avgR:  n > 0 ? +(totalR / n).toFixed(3) : 0,
+    profitFactor: Number.isFinite(pf) ? +pf.toFixed(2) : null,
+  };
+}
+
+async function _createShareRow(shareCtx) {
+  const sb = window._SW?.getClient?.();
+  const user = window._SW?.getUser?.();
+  if (!sb || !user) throw new Error('You must be signed in to share.');
+
+  const id = _generateShareId();
+  const expiresAt = new Date(Date.now() + _SHARE_EXPIRY_DAYS * 86400000).toISOString();
+
+  const { error } = await sb.from('shares').insert({
+    id,
+    created_by: user.id,
+    chip_name: shareCtx.title || 'Trade cards',
+    chip_kind: shareCtx.chipKind || 'custom',
+    stats:  _buildShareStats(shareCtx.sorted, shareCtx.totalR, shareCtx.wins, shareCtx.n, shareCtx.tpConfig),
+    trades: _buildShareSnapshot(shareCtx.sorted, shareCtx.tpConfig),
+    expires_at: expiresAt,
+  });
+  if (error) throw error;
+  return { id, expiresAt };
+}
+
+function _renderSharePopoverLoading(popEl) {
+  popEl.innerHTML = `
+    <div class="wd-share-popover-title">Creating shareable link</div>
+    <div class="wd-share-popover-status">Snapshotting trade cards…</div>`;
+}
+
+function _renderSharePopoverError(popEl, message) {
+  popEl.innerHTML = `
+    <div class="wd-share-popover-title">Couldn't create link</div>
+    <div class="wd-share-popover-status is-error">${_escapeHtml(String(message || 'Unknown error'))}</div>
+    <button class="wd-share-popover-retry" data-action="retry-share-create" type="button">Retry</button>`;
+}
+
+function _renderSharePopoverSuccess(popEl, shareUrl) {
+  popEl.innerHTML = `
+    <div class="wd-share-popover-title">Shareable trade-cards link</div>
+    <div class="wd-share-popover-row">
+      <div class="wd-share-popover-url" title="${_escapeHtml(shareUrl)}">${_escapeHtml(shareUrl)}</div>
+      <button class="wd-share-popover-copy" data-action="copy-share-url" data-share-url="${_escapeHtml(shareUrl)}" type="button">Copy</button>
+    </div>
+    <div class="wd-share-popover-meta">
+      <span><span class="wd-share-popover-meta-dot"></span><strong>Active</strong> · expires in 7d</span>
+      <span>0 views</span>
+    </div>`;
+}
+
+function _shareCtxKey(ctx) {
+  // Cheap key so repeated clicks on Share for the same drawer state reuse
+  // the just-created link instead of generating a new row each time.
+  return `${ctx.title}|${ctx.chipKind}|${ctx.n}|${ctx.totalR.toFixed(2)}`;
+}
+
+async function _handleOpenSharePopover(opts = {}) {
+  const drawer = document.getElementById('wd-drawer');
+  const ctx = drawer && drawer._shareCtx;
+  if (!ctx) return;
+  const popEl = drawer.querySelector('.wd-share-popover');
+  if (!popEl) return;
+
+  // Toggle behavior — repeated clicks on the Share button hide/show the
+  // popover. `opts.force=true` is used by the Retry button (never hide).
+  if (!opts.force && !popEl.hasAttribute('hidden')) {
+    popEl.setAttribute('hidden', '');
+    return;
+  }
+  popEl.removeAttribute('hidden');
+
+  const ctxKey = _shareCtxKey(ctx);
+  if (drawer._shareLastUrl && drawer._shareLastCtxKey === ctxKey) {
+    _renderSharePopoverSuccess(popEl, drawer._shareLastUrl);
+    return;
+  }
+
+  _renderSharePopoverLoading(popEl);
+  try {
+    const { id } = await _createShareRow(ctx);
+    const url = `${_shareViewerBaseUrl()}share.html?id=${id}`;
+    drawer._shareLastUrl = url;
+    drawer._shareLastCtxKey = ctxKey;
+    _renderSharePopoverSuccess(popEl, url);
+  } catch (err) {
+    console.error('[share] create failed', err);
+    const msg = err?.message || err?.error_description || 'Network error';
+    _renderSharePopoverError(popEl, msg);
+  }
+}
+
+function _copyShareUrl(actionEl) {
+  const url = actionEl?.dataset?.shareUrl || '';
+  if (!url) return;
+  try { navigator.clipboard?.writeText(url); } catch (_) { /* blocked */ }
+  actionEl.textContent = 'Copied';
+  actionEl.classList.add('is-copied');
+  setTimeout(() => {
+    actionEl.textContent = 'Copy';
+    actionEl.classList.remove('is-copied');
+  }, 1800);
+}
+
+// Close popover on clicks outside (capture phase so we run before the
+// drawer's own click delegation re-toggles it).
+document.addEventListener('click', (e) => {
+  const pop = document.querySelector('#wd-drawer .wd-share-popover:not([hidden])');
+  if (!pop) return;
+  if (pop.contains(e.target)) return;
+  if (e.target.closest('[data-action="open-share-popover"]')) return;
+  pop.setAttribute('hidden', '');
+}, true);
+
 /* Open the shared widget drawer with a filtered set of trades.
    Trades are always sorted by date asc → hour asc regardless of widget source. */
 function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts = {}) {
@@ -22476,6 +22696,17 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
 
   const sub = subtitle || `${n} trade${n>1?'s':''} · ${wins}W ${n-wins}L`;
 
+  // Share button visible only when user is authenticated. Snapshot context
+  // is stashed on the drawer DOM node so the click handler can access the
+  // sorted trade list + stats without re-deriving them. Spec: docs/share-link-feature.md
+  const _shareEnabled = !!window._SW?.getUser?.();
+  const _shareBtnHtml = _shareEnabled
+    ? `<button class="wd-drawer-share-btn" data-action="open-share-popover" type="button" title="Share these trade cards">
+         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+       </button>
+       <div class="wd-share-popover" hidden></div>`
+    : '';
+
   drawer.innerHTML = `
     <div class="wd-drawer-head">
       <div class="wd-drawer-head-main">
@@ -22484,6 +22715,7 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
       </div>
       <div class="wd-drawer-head-side">
         <div class="wd-drawer-total ${totalR >= 0 ? 'wd-drawer-total-pos' : 'wd-drawer-total-neg'}">${sign}${totalR.toFixed(1)}R</div>
+        ${_shareBtnHtml}
         <button class="wd-drawer-close" data-action="close-widget-drawer">×</button>
       </div>
     </div>
@@ -22499,6 +22731,15 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
           }).join('')
         : sorted.map(_wdTradeCard).join('')
     }</div>`;
+
+  // Stash share context on the drawer DOM node for _handleOpenSharePopover.
+  // Kept across drawer renders; the ctxKey check inside the handler decides
+  // whether to reuse a previously-created share or generate a fresh row.
+  if (_shareEnabled) {
+    drawer._shareCtx = { title, chipKind: opts.chipKind || 'custom', sorted, totalR, wins, n, tpConfig };
+  } else {
+    delete drawer._shareCtx;
+  }
 
   if (highlightTrade) {
     const idx = sorted.findIndex(t => t === highlightTrade) !== -1

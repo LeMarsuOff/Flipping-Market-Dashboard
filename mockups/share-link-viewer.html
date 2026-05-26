@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Share Link Viewer — Trade Cards</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Anybody:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Light theme — single warm "sand" palette across the whole viewer */
+
+  /* Watermark (left) — slightly lighter & cooler than the drawer so the
+     drawer still reads as the primary surface */
+  --wm-bg:        #ede5d2;
+  --wm-bg-soft:   #f4eedd;
+  --wm-line:      rgba(48,40,28,.07);
+  --wm-line-2:    rgba(48,40,28,.12);
+
+  /* Drawer / card palette — matches Max's current "warm sand" theme
+     from the reference screenshot */
+  --drawer-bg:    #c9b889;
+  --drawer-head:  #b8a373;
+  --drawer-line:  rgba(0,0,0,.15);
+
+  --card-tp:      #c5d39d;   /* TP = green tint */
+  --card-sl:      #d9b3b3;
+  --card-betp:    #bccdd9;
+  --card-besl:    #d9c2e0;
+
+  /* Shared ink (used on both sides for consistency) */
+  --ink:          #1f1e1c;
+  --ink-dim:      #6c6353;
+  --ink-mute:     #8e8676;
+  --ink-faint:    #a89e8c;
+
+  --g:            #4f7e44;   /* +R green */
+  --r:            #b04246;
+  --pink:         #e3739d;   /* Vente */
+  --blue:         #5e90d8;   /* obstacles + chips + brand accent */
+  --gold:         #d9a52e;   /* star highlight */
+
+  --rad-card: 5px;
+  --shadow-drawer: -12px 0 40px rgba(48,40,28,.22);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--wm-bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ── Toggle bar (mockup-only — not in final product) ──────────────── */
+.toggle-bar {
+  position: fixed;
+  top: 14px; left: 14px;
+  z-index: 100;
+  display: flex;
+  gap: 4px;
+  background: rgba(255,255,255,.78);
+  border: 1px solid var(--wm-line-2);
+  border-radius: 6px;
+  padding: 3px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(48,40,28,.08);
+}
+.toggle-bar button {
+  background: transparent;
+  border: none;
+  color: var(--ink-mute);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  transition: all .15s;
+}
+.toggle-bar button:hover { color: var(--ink); }
+.toggle-bar button.is-active {
+  background: rgba(94,144,216,.16);
+  color: var(--ink);
+}
+.toggle-bar-label {
+  padding: 6px 10px 6px 8px;
+  color: var(--ink-faint);
+  font-size: 9px;
+  border-right: 1px solid var(--wm-line);
+  margin-right: 2px;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Layout shell ─────────────────────────────────────────────────── */
+.share-shell {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── Left side: watermark (default state) ─────────────────────────── */
+.watermark {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 60px;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 38%, var(--wm-bg-soft) 0%, transparent 70%),
+    linear-gradient(180deg, var(--wm-bg) 0%, #e4dac3 100%);
+}
+
+/* Subtle dotted grid backdrop — evokes "blueprint / data" without showing real data */
+.watermark::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(48,40,28,.06) 1px, transparent 0);
+  background-size: 22px 22px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 50%, #000 30%, transparent 100%);
+}
+
+/* Faint axis crosshair — same trick as the dashboard's grid, very subtle */
+.watermark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0%, transparent 49.9%, rgba(48,40,28,.05) 49.9%, rgba(48,40,28,.05) 50.1%, transparent 50.1%, transparent 100%),
+    linear-gradient(180deg, transparent 0%, transparent 49.9%, rgba(48,40,28,.05) 49.9%, rgba(48,40,28,.05) 50.1%, transparent 50.1%, transparent 100%);
+  pointer-events: none;
+}
+
+.wm-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 780px;
+}
+
+.wm-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--wm-line-2);
+  border-radius: 100px;
+  background: rgba(255,255,255,.4);
+}
+.wm-brand-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 8px rgba(94,144,216,.6);
+}
+
+.wm-chip-eyebrow {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 14px;
+}
+
+.wm-chip-name {
+  font-family: 'Anybody', sans-serif;
+  font-size: clamp(34px, 4vw, 52px);
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--ink);
+  letter-spacing: -.8px;
+  margin: 0;
+}
+
+/* Stats row — mirrors the dashboard topbar (label above value, mono) */
+.wm-meta {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-top: 40px;
+  border-top: 1px solid var(--wm-line-2);
+  border-bottom: 1px solid var(--wm-line-2);
+}
+.wm-meta-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 26px;
+  border-right: 1px solid var(--wm-line);
+}
+.wm-meta-item:last-child { border-right: none; }
+.wm-meta-lbl {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.wm-meta-val {
+  font-family: 'Anybody', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -.3px;
+  line-height: 1;
+}
+.wm-meta-val.pos { color: var(--g); }
+.wm-meta-val.neg { color: var(--r); }
+
+.wm-cta {
+  margin-top: 56px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.wm-cta-arrow {
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+  background: var(--ink-mute);
+  position: relative;
+  animation: pulse-arrow 2.4s ease-in-out infinite;
+}
+.wm-cta-arrow::after {
+  content: '';
+  position: absolute;
+  right: -1px; top: -3px;
+  width: 7px; height: 7px;
+  border-right: 1px solid var(--ink-mute);
+  border-top: 1px solid var(--ink-mute);
+  transform: rotate(45deg);
+}
+@keyframes pulse-arrow {
+  0%, 100% { transform: translateX(0); opacity: .55; }
+  50%      { transform: translateX(6px); opacity: 1; }
+}
+
+.wm-footer {
+  position: absolute;
+  bottom: 22px;
+  left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 32px;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ── Left side: screenshot view (when a camera icon is clicked) ──── */
+.screenshot-view {
+  position: relative;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 38%, var(--wm-bg-soft) 0%, transparent 70%),
+    linear-gradient(180deg, var(--wm-bg) 0%, #e4dac3 100%);
+  padding: 40px 60px;
+}
+.screenshot-view::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(48,40,28,.06) 1px, transparent 0);
+  background-size: 22px 22px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 50%, #000 30%, transparent 100%);
+}
+.share-shell[data-state="screenshot"] .watermark { display: none; }
+.share-shell[data-state="screenshot"] .screenshot-view { display: flex; }
+.share-shell[data-state="source"] .watermark { display: none; }
+.share-shell[data-state="source"] .source-view { display: flex; }
+.share-shell[data-state="source"] .drawer-share-btn { display: inline-flex; }
+.share-shell[data-state="source"] .share-popover { display: block; }
+
+.sv-frame {
+  width: 100%;
+  max-width: 1100px;
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(90deg, rgba(94,144,216,.05) 0 1px, transparent 1px 80px),
+    repeating-linear-gradient(0deg, rgba(94,144,216,.05) 0 1px, transparent 1px 60px),
+    radial-gradient(ellipse at 30% 70%, rgba(176,66,70,.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 40%, rgba(79,126,68,.14) 0%, transparent 55%),
+    linear-gradient(180deg, #0a0f1c 0%, #050a14 100%);
+  border: 1px solid var(--wm-line-2);
+  box-shadow: 0 12px 32px rgba(48,40,28,.18);
+  position: relative;
+  overflow: hidden;
+  z-index: 2;
+}
+/* Fake candlestick silhouettes to suggest a chart screenshot */
+.sv-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 60%, rgba(79,126,68,.5) 60%, rgba(79,126,68,.5) 62%, transparent 62%),
+    linear-gradient(180deg, transparent 64%, rgba(176,66,70,.4) 64%, rgba(176,66,70,.4) 67%, transparent 67%);
+  background-size: 60% 100%, 30% 100%;
+  background-position: 20% center, 55% center;
+  background-repeat: no-repeat;
+  opacity: .6;
+}
+.sv-frame::after {
+  content: 'EURAUD · M15A';
+  position: absolute;
+  top: 16px; left: 20px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: rgba(180,206,238,.7);
+  background: rgba(0,0,0,.4);
+  padding: 4px 10px;
+  border-radius: 3px;
+}
+
+.sv-caption {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  z-index: 2;
+}
+.sv-caption-pair {
+  font-family: 'Anybody', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.sv-caption-r {
+  font-family: 'Anybody', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--g);
+  text-transform: none;
+}
+.sv-caption-tf {
+  padding: 3px 8px;
+  background: rgba(94,144,216,.12);
+  border: 1px solid rgba(94,144,216,.3);
+  border-radius: 3px;
+  color: var(--blue);
+}
+
+.sv-brand-corner {
+  position: absolute;
+  bottom: 22px; left: 32px;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  z-index: 2;
+}
+.sv-brand-corner span { color: var(--blue); }
+
+/* ── Left side: source view (the dashboard behind your drawer) ────── */
+.source-view {
+  position: relative;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: hidden;
+  background: #0a0f1c;
+  /* Hint that this is the dashboard side — kept dark + abstract */
+}
+.source-view::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(180,206,238,.05) 1px, transparent 0);
+  background-size: 22px 22px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 50%, #000 30%, transparent 100%);
+}
+/* Faint backdrop overlay to suggest "dashboard behind a drawer" */
+.source-view::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(5,10,20,.55);
+  pointer-events: none;
+}
+
+.sv-topbar {
+  position: relative;
+  display: flex;
+  gap: 0;
+  padding: 14px 22px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  z-index: 2;
+}
+.sv-topbar-brand {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(180,206,238,.5);
+  align-self: center;
+  margin-right: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sv-topbar-brand::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 6px var(--blue);
+}
+.sv-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 18px;
+  border-left: 1px solid rgba(255,255,255,.04);
+}
+.sv-kpi-lbl {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(180,206,238,.4);
+}
+.sv-kpi-val {
+  font-family: 'Anybody', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(180,206,238,.75);
+  letter-spacing: -.2px;
+  line-height: 1;
+}
+.sv-kpi-val.pos { color: #6fc59a; }
+
+.sv-body {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  padding: 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 14px;
+}
+.sv-widget {
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 6px;
+  background: rgba(94,144,216,.02);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.sv-widget-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(180,206,238,.35);
+  margin-bottom: 10px;
+}
+/* Abstract bar silhouettes (no real data) */
+.sv-bars { display: flex; flex-direction: column; gap: 6px; }
+.sv-bar { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 10px; }
+.sv-bar-lbl {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: rgba(180,206,238,.25);
+  letter-spacing: .5px;
+}
+.sv-bar-track {
+  height: 7px;
+  background: rgba(94,144,216,.05);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+.sv-bar-fill {
+  height: 100%;
+  background: rgba(79,126,68,.35);
+  border-radius: 1px;
+}
+.sv-bar-fill.is-highlight {
+  background: rgba(94,144,216,.45);
+  box-shadow: 0 0 0 1px rgba(94,144,216,.5);
+}
+
+.sv-source-cta {
+  position: absolute;
+  bottom: 28px;
+  left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  z-index: 3;
+}
+.sv-source-cta-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(8,13,27,.85);
+  border: 1px solid rgba(94,144,216,.25);
+  border-radius: 100px;
+  padding: 10px 18px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(180,206,238,.85);
+  backdrop-filter: blur(6px);
+}
+.sv-source-cta-arrow {
+  display: inline-block;
+  width: 24px;
+  height: 1px;
+  background: rgba(180,206,238,.6);
+  position: relative;
+  animation: pulse-arrow 2.4s ease-in-out infinite;
+}
+.sv-source-cta-arrow::after {
+  content: '';
+  position: absolute;
+  right: -1px; top: -3px;
+  width: 7px; height: 7px;
+  border-right: 1px solid rgba(180,206,238,.6);
+  border-top: 1px solid rgba(180,206,238,.6);
+  transform: rotate(45deg);
+}
+
+/* ── Drawer Share button (only visible in "source" state) ─────────── */
+.drawer-head-side { position: relative; }
+.drawer-share-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(94,144,216,.18);
+  border: 1px solid rgba(94,144,216,.5);
+  border-radius: 4px;
+  color: #1a3a66;
+  cursor: pointer;
+  transition: all .15s;
+  padding: 0;
+}
+.drawer-share-btn:hover {
+  background: rgba(94,144,216,.28);
+  border-color: rgba(94,144,216,.7);
+}
+.drawer-share-btn svg {
+  width: 14px; height: 14px;
+}
+
+/* Share popover (anchored below the Share button) */
+.share-popover {
+  display: none;
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 320px;
+  background: #fff;
+  border: 1px solid rgba(48,40,28,.18);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(48,40,28,.18);
+  padding: 16px;
+  z-index: 50;
+}
+.share-popover::before {
+  content: '';
+  position: absolute;
+  top: -7px; right: 22px;
+  width: 12px; height: 12px;
+  background: #fff;
+  border-top: 1px solid rgba(48,40,28,.18);
+  border-left: 1px solid rgba(48,40,28,.18);
+  transform: rotate(45deg);
+}
+.share-popover-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-bottom: 10px;
+}
+.share-popover-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.share-popover-url {
+  flex: 1;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--ink);
+  background: #f4eedd;
+  border: 1px solid var(--wm-line-2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-popover-copy {
+  background: var(--blue);
+  border: none;
+  color: #fff;
+  border-radius: 4px;
+  padding: 0 14px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter .15s;
+}
+.share-popover-copy:hover { filter: brightness(1.1); }
+.share-popover-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-top: 10px;
+  border-top: 1px solid var(--wm-line);
+}
+.share-popover-meta strong {
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+.share-popover-meta-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--g);
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
+/* ── Right side: drawer ───────────────────────────────────────────── */
+.drawer {
+  background: var(--drawer-bg);
+  border-left: 1px solid rgba(0,0,0,.25);
+  box-shadow: var(--shadow-drawer);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+}
+
+.drawer-head {
+  padding: 18px 20px;
+  background: var(--drawer-head);
+  border-bottom: 1px solid var(--drawer-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 14px;
+}
+.drawer-head-main { min-width: 0; }
+.drawer-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -.2px;
+}
+.drawer-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--ink-mute);
+  margin-top: 3px;
+  letter-spacing: .5px;
+}
+.drawer-head-side {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.drawer-total {
+  font-family: 'Anybody', sans-serif;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--g);
+  letter-spacing: -.5px;
+  line-height: 1;
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 14px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,.2) transparent;
+}
+.drawer-body::-webkit-scrollbar { width: 6px; }
+.drawer-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,.18); border-radius: 3px; }
+
+/* ── Trade card ───────────────────────────────────────────────────── */
+.trade-card {
+  background: var(--card-tp);
+  border-radius: var(--rad-card);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border: 1.5px solid transparent;
+  transition: border-color .15s, transform .15s;
+  cursor: pointer;
+}
+.trade-card:hover { border-color: rgba(0,0,0,.15); }
+.trade-card.is-active {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(217,165,46,.4);
+}
+
+.tc-top {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.tc-pair-block { min-width: 0; }
+.tc-pair {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tc-link {
+  display: inline-block;
+  width: 11px; height: 11px;
+  opacity: .35;
+  color: var(--ink);
+}
+.tc-date {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--ink-mute);
+  margin-top: 2px;
+  letter-spacing: .3px;
+}
+
+.tc-r {
+  font-family: 'Anybody', sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--g);
+  letter-spacing: -.5px;
+}
+
+.tc-cams {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+.tc-cam {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  opacity: .55;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.tc-cam:hover { opacity: 1; }
+.tc-cam-icon {
+  width: 18px; height: 14px;
+  background: var(--ink);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z'/></svg>") no-repeat center / contain;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z'/></svg>") no-repeat center / contain;
+}
+.tc-cam-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  color: var(--ink-dim);
+  letter-spacing: .4px;
+}
+.tc-cam.has-star { opacity: 1; }
+.tc-cam.has-star::before {
+  content: '★';
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-size: 10px;
+  color: var(--gold);
+  line-height: 1;
+  text-shadow: 0 0 4px rgba(217,165,46,.5);
+}
+
+.tc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+.tc-side {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pink);
+}
+.tc-side.buy { color: #6fa55c; }
+.tc-outcome {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  font-weight: 500;
+  color: var(--g);
+}
+.tc-outcome.sl { color: var(--r); }
+
+.tc-style {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-top: 6px;
+}
+
+.tc-session {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-mute);
+  margin-top: 3px;
+  letter-spacing: .3px;
+}
+
+.tc-rrmax {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--ink);
+  margin-top: 8px;
+}
+.tc-rrmax-val { color: var(--blue); margin-left: 4px; }
+
+.tc-obs {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--ink);
+  margin-top: 6px;
+  line-height: 1.55;
+}
+.tc-obs-lbl { color: var(--ink); }
+.tc-obs-vals { color: var(--blue); }
+
+/* ── Day separator (sticky) ──────────────────────────────────────── */
+.day-sep {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0 -14px 8px;
+  padding: 8px 14px;
+  background: var(--drawer-head);
+  border-bottom: 1px solid var(--drawer-line);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+}
+
+</style>
+</head>
+<body>
+
+<div class="toggle-bar">
+  <div class="toggle-bar-label">mockup state</div>
+  <button class="is-active" data-state="default">Recipient · Watermark</button>
+  <button data-state="screenshot">Recipient · Screenshot</button>
+  <button data-state="source">Source · Your drawer</button>
+</div>
+
+<div class="share-shell" id="shell" data-state="default">
+
+  <!-- ── LEFT: WATERMARK (default state) ────────────────────────── -->
+  <div class="watermark">
+    <div class="wm-inner">
+      <div class="wm-brand">
+        <span class="wm-brand-dot"></span>
+        Flipping Research · Shared trade cards
+      </div>
+
+      <div class="wm-chip-eyebrow">H4 Obstacle</div>
+      <h1 class="wm-chip-name">Contre Order Flow</h1>
+
+      <div class="wm-meta">
+        <div class="wm-meta-item">
+          <div class="wm-meta-lbl">Trades</div>
+          <div class="wm-meta-val">48</div>
+        </div>
+        <div class="wm-meta-item">
+          <div class="wm-meta-lbl">Win rate</div>
+          <div class="wm-meta-val">56.3%</div>
+        </div>
+        <div class="wm-meta-item">
+          <div class="wm-meta-lbl">Net R</div>
+          <div class="wm-meta-val pos">+43.8R</div>
+        </div>
+        <div class="wm-meta-item">
+          <div class="wm-meta-lbl">Avg R</div>
+          <div class="wm-meta-val pos">+0.91R</div>
+        </div>
+        <div class="wm-meta-item">
+          <div class="wm-meta-lbl">Profit factor</div>
+          <div class="wm-meta-val">2.15</div>
+        </div>
+      </div>
+
+      <div class="wm-cta">
+        <span class="wm-cta-arrow"></span>
+        Click a camera icon to view its screenshot
+      </div>
+    </div>
+
+    <div class="wm-footer">
+      <span>Link expires in 7 days</span>
+      <span>flipping-market.app · shared 2026-05-26</span>
+    </div>
+  </div>
+
+  <!-- ── LEFT: SCREENSHOT VIEW (toggled state) ──────────────────── -->
+  <div class="screenshot-view">
+    <div class="sv-frame"></div>
+    <div class="sv-caption">
+      <span class="sv-caption-pair">EURAUD</span>
+      <span>2025-09-02</span>
+      <span class="sv-caption-tf">M15 — After</span>
+      <span class="sv-caption-r">+2.4R</span>
+    </div>
+    <div class="sv-brand-corner">
+      <span>•</span> Flipping Research — shared view
+    </div>
+  </div>
+
+  <!-- ── LEFT: SOURCE VIEW (Max's dashboard behind his drawer) ─── -->
+  <div class="source-view">
+    <div class="sv-topbar">
+      <div class="sv-topbar-brand">Flipping Research</div>
+      <div class="sv-kpi"><div class="sv-kpi-lbl">Trades</div><div class="sv-kpi-val">176</div></div>
+      <div class="sv-kpi"><div class="sv-kpi-lbl">Total R</div><div class="sv-kpi-val pos">+130.0R</div></div>
+      <div class="sv-kpi"><div class="sv-kpi-lbl">Win rate</div><div class="sv-kpi-val">51.1%</div></div>
+      <div class="sv-kpi"><div class="sv-kpi-lbl">Avg R</div><div class="sv-kpi-val pos">+0.739R</div></div>
+      <div class="sv-kpi"><div class="sv-kpi-lbl">Prof. factor</div><div class="sv-kpi-val">2.512</div></div>
+    </div>
+    <div class="sv-body">
+      <div class="sv-widget">
+        <div class="sv-widget-title">H4 Obstacle Performance</div>
+        <div class="sv-bars">
+          <div class="sv-bar"><div class="sv-bar-lbl">Contre OF</div><div class="sv-bar-track"><div class="sv-bar-fill is-highlight" style="width:88%"></div></div></div>
+          <div class="sv-bar"><div class="sv-bar-lbl">Fib Interne</div><div class="sv-bar-track"><div class="sv-bar-fill" style="width:74%"></div></div></div>
+          <div class="sv-bar"><div class="sv-bar-lbl">Structure</div><div class="sv-bar-track"><div class="sv-bar-fill" style="width:66%"></div></div></div>
+          <div class="sv-bar"><div class="sv-bar-lbl">Volume</div><div class="sv-bar-track"><div class="sv-bar-fill" style="width:42%"></div></div></div>
+          <div class="sv-bar"><div class="sv-bar-lbl">After Sweep</div><div class="sv-bar-track"><div class="sv-bar-fill" style="width:32%"></div></div></div>
+        </div>
+      </div>
+      <div class="sv-widget">
+        <div class="sv-widget-title">Streak Analytics</div>
+        <div class="sv-bars">
+          <div class="sv-bar"><div class="sv-bar-lbl">1 trade</div><div class="sv-bar-track"><div class="sv-bar-fill" style="width:80%"></div></div></div>
+          <div class="sv-bar"><div class="sv-bar-lbl">2 trades</div><div class="sv-bar-track"><div class="sv-bar-fill" style="width:55%"></div></div></div>
+          <div class="sv-bar"><div class="sv-bar-lbl">3 trades</div><div class="sv-bar-track"><div class="sv-bar-fill" style="width:30%"></div></div></div>
+        </div>
+      </div>
+      <div class="sv-widget">
+        <div class="sv-widget-title">Post-Drawdown Recovery</div>
+      </div>
+      <div class="sv-widget">
+        <div class="sv-widget-title">Pair × Session</div>
+      </div>
+    </div>
+    <div class="sv-source-cta">
+      <div class="sv-source-cta-inner">
+        Your dashboard view <span class="sv-source-cta-arrow"></span> Click "Share" in the drawer
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: DRAWER ─────────────────────────────────────────── -->
+  <aside class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-head-main">
+        <div class="drawer-title">Contre Order Flow</div>
+        <div class="drawer-sub">48 trades · 27W 21L</div>
+      </div>
+      <div class="drawer-head-side">
+        <div class="drawer-total">+43.8R</div>
+        <button class="drawer-share-btn" type="button" title="Share these trade cards">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+        </button>
+        <div class="share-popover">
+          <div class="share-popover-title">Shareable trade-cards link</div>
+          <div class="share-popover-row">
+            <div class="share-popover-url">flipping-market.app/s/k7d9-mw2a</div>
+            <button class="share-popover-copy" type="button">Copy</button>
+          </div>
+          <div class="share-popover-meta">
+            <span><span class="share-popover-meta-dot"></span><strong>Active</strong> · expires in 7d</span>
+            <span>0 views</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawer-body">
+
+      <div class="day-sep">September 2025</div>
+
+      <!-- Card 1 — EURAUD (active in screenshot state) -->
+      <div class="trade-card" id="card-1">
+        <div class="tc-top">
+          <div class="tc-pair-block">
+            <div class="tc-pair">
+              EURAUD
+              <svg class="tc-link" viewBox="0 0 24 24" fill="currentColor"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+            </div>
+            <div class="tc-date">2025-09-02</div>
+          </div>
+          <div class="tc-r">+2.4R</div>
+          <div class="tc-cams">
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">H4</div></div>
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15</div></div>
+            <div class="tc-cam has-star"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15A</div></div>
+          </div>
+        </div>
+        <div class="tc-row">
+          <div class="tc-side">Vente</div>
+          <div class="tc-outcome">TP</div>
+        </div>
+        <div class="tc-style">Re-confirmation X — Type A</div>
+        <div class="tc-session">New-York · 16:00</div>
+        <div class="tc-rrmax">RR Max :<span class="tc-rrmax-val">10.2R</span></div>
+        <div class="tc-obs">
+          <span class="tc-obs-lbl">Obstacles H4 : </span>
+          <span class="tc-obs-vals">1 Candle PB Sweep · Contre Order Flow · Sweep – Internal · Volume – Mèche</span>
+        </div>
+        <div class="tc-obs">
+          <span class="tc-obs-lbl">Obstacles M15 : </span>
+          <span class="tc-obs-vals">1 Candle Pull-back Break · 1 Candle Pull-back Sweep</span>
+        </div>
+      </div>
+
+      <div class="day-sep">October 2025</div>
+
+      <!-- Card 2 — EURUSD -->
+      <div class="trade-card">
+        <div class="tc-top">
+          <div class="tc-pair-block">
+            <div class="tc-pair">
+              EURUSD
+              <svg class="tc-link" viewBox="0 0 24 24" fill="currentColor"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+            </div>
+            <div class="tc-date">2025-10-02</div>
+          </div>
+          <div class="tc-r">+2.4R</div>
+          <div class="tc-cams">
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">H4</div></div>
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15</div></div>
+            <div class="tc-cam has-star"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15A</div></div>
+          </div>
+        </div>
+        <div class="tc-row">
+          <div class="tc-side">Vente</div>
+          <div class="tc-outcome">TP</div>
+        </div>
+        <div class="tc-style">Continuation — Type A</div>
+        <div class="tc-session">London · 09:00</div>
+        <div class="tc-rrmax">RR Max :<span class="tc-rrmax-val">4.4R</span></div>
+        <div class="tc-obs">
+          <span class="tc-obs-lbl">Obstacles H4 : </span>
+          <span class="tc-obs-vals">Contre Order Flow · Fib Externe atteint · No-Sweep</span>
+        </div>
+        <div class="tc-obs">
+          <span class="tc-obs-lbl">Obstacles M15 : </span>
+          <span class="tc-obs-vals">Setup Geant · Sweep – Fake Accumulation · Volume – Mèche</span>
+        </div>
+      </div>
+
+      <!-- Card 3 — USDCHF -->
+      <div class="trade-card">
+        <div class="tc-top">
+          <div class="tc-pair-block">
+            <div class="tc-pair">
+              USDCHF
+              <svg class="tc-link" viewBox="0 0 24 24" fill="currentColor"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+            </div>
+            <div class="tc-date">2025-10-14</div>
+          </div>
+          <div class="tc-r">+2.4R</div>
+          <div class="tc-cams">
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">H4</div></div>
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15</div></div>
+            <div class="tc-cam has-star"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15A</div></div>
+          </div>
+        </div>
+        <div class="tc-row">
+          <div class="tc-side">Vente</div>
+          <div class="tc-outcome">TP</div>
+        </div>
+        <div class="tc-style">External Confirmation — Type A</div>
+        <div class="tc-session">Lunch Time Zone · 13:00</div>
+        <div class="tc-rrmax">RR Max :<span class="tc-rrmax-val">4.8R</span></div>
+        <div class="tc-obs">
+          <span class="tc-obs-lbl">Obstacles H4 : </span>
+          <span class="tc-obs-vals">Contre Order Flow · Fib Externe atteint · No-Sweep</span>
+        </div>
+        <div class="tc-obs">
+          <span class="tc-obs-lbl">Obstacles M15 : </span>
+          <span class="tc-obs-vals">Accumula-Sweep · Asian Box – Break · Large Sweep · Setup Geant</span>
+        </div>
+      </div>
+
+      <!-- Card 4 — USDCHF -->
+      <div class="trade-card">
+        <div class="tc-top">
+          <div class="tc-pair-block">
+            <div class="tc-pair">
+              USDCHF
+              <svg class="tc-link" viewBox="0 0 24 24" fill="currentColor"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+            </div>
+            <div class="tc-date">2025-10-15</div>
+          </div>
+          <div class="tc-r">+2.4R</div>
+          <div class="tc-cams">
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">H4</div></div>
+            <div class="tc-cam"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15</div></div>
+            <div class="tc-cam has-star"><div class="tc-cam-icon"></div><div class="tc-cam-label">M15A</div></div>
+          </div>
+        </div>
+        <div class="tc-row">
+          <div class="tc-side">Vente</div>
+          <div class="tc-outcome">TP</div>
+        </div>
+        <div class="tc-style">Continuation — Type A</div>
+        <div class="tc-session">Lunch Time Zone · 12:00</div>
+        <div class="tc-rrmax">RR Max :<span class="tc-rrmax-val">10.3R</span></div>
+        <div class="tc-obs">
+          <span class="tc-obs-lbl">Obstacles H4 : </span>
+          <span class="tc-obs-vals">Contre Order Flow · No-Sweep · Sweep – Internal</span>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+</div>
+
+<script>
+  const shell = document.getElementById('shell');
+  const buttons = document.querySelectorAll('.toggle-bar button');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      shell.dataset.state = btn.dataset.state;
+      // when toggling to screenshot, mark first card active
+      const card1 = document.getElementById('card-1');
+      if (btn.dataset.state === 'screenshot') card1.classList.add('is-active');
+      else card1.classList.remove('is-active');
+      // also unhighlight card in source state — no card is "active" there
+      if (btn.dataset.state === 'source') card1.classList.remove('is-active');
+    });
+  });
+</script>
+
+</body>
+</html>
