@@ -145,25 +145,6 @@ html, body {
   background: linear-gradient(180deg, var(--bg) 0%, var(--bg1) 100%);
 }
 .watermark[hidden] { display: none; }
-.watermark::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(30,24,16,.06) 1px, transparent 0);
-  background-size: 22px 22px;
-  pointer-events: none;
-  mask-image: radial-gradient(ellipse 90% 80% at 50% 50%, #000 30%, transparent 100%);
-}
-.watermark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg, transparent 0%, transparent 49.9%, rgba(30,24,16,.04) 49.9%, rgba(30,24,16,.04) 50.1%, transparent 50.1%, transparent 100%),
-    linear-gradient(180deg, transparent 0%, transparent 49.9%, rgba(30,24,16,.04) 49.9%, rgba(30,24,16,.04) 50.1%, transparent 50.1%, transparent 100%);
-  pointer-events: none;
-}
 
 .wm-inner {
   position: relative;
@@ -627,7 +608,7 @@ html, body {
     height: auto;
     min-height: 100vh;
   }
-  .watermark, .screenshot-view {
+  .watermark {
     min-height: 50vh;
     padding: 40px 24px;
   }

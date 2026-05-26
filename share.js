@@ -52,6 +52,46 @@ function rClassNumeric(r) {
   return r > 0 ? 'pos' : r < 0 ? 'neg' : '';
 }
 
+/* KPI tier color helpers — mirror dashboard.js _cwTableWrColor /
+   _cwTableAvgColor / _cwTablePfColor (canonical thresholds at lines
+   15270-15296). Returned values are CSS color strings ready to drop into
+   inline `style="color:..."`. Empty string = no tier (use default text). */
+const _KPI_PALETTE = {
+  red:    'var(--r)',
+  orange: '#f39a3d',
+  yellow: 'var(--a)',
+  green:  'var(--g)',
+  blue:   'var(--b)',
+  purple: '#9b6dff',
+};
+function kpiWrColor(wr) {
+  if (!Number.isFinite(wr)) return '';
+  if (wr > 55)  return _KPI_PALETTE.purple;
+  if (wr >= 48) return _KPI_PALETTE.blue;
+  if (wr >= 40) return _KPI_PALETTE.green;
+  if (wr >= 35) return _KPI_PALETTE.yellow;
+  if (wr >= 30) return _KPI_PALETTE.orange;
+  return _KPI_PALETTE.red;
+}
+function kpiAvgColor(avg) {
+  if (!Number.isFinite(avg)) return '';
+  if (avg >= 1)   return _KPI_PALETTE.purple;
+  if (avg >= 0.6) return _KPI_PALETTE.blue;
+  if (avg >= 0.3) return _KPI_PALETTE.green;
+  if (avg >= 0.1) return _KPI_PALETTE.yellow;
+  if (avg >= 0)   return _KPI_PALETTE.orange;
+  return _KPI_PALETTE.red;
+}
+function kpiPfColor(pf) {
+  if (!Number.isFinite(pf)) return _KPI_PALETTE.purple; // ∞ → top tier
+  if (pf >= 3)   return _KPI_PALETTE.purple;
+  if (pf >= 2.2) return _KPI_PALETTE.blue;
+  if (pf >= 1.7) return _KPI_PALETTE.green;
+  if (pf >= 1.3) return _KPI_PALETTE.yellow;
+  if (pf >= 1)   return _KPI_PALETTE.orange;
+  return _KPI_PALETTE.red;
+}
+
 function rClassByOutcome(outcome, r) {
   // Mirror _wdTradeCard's R color class logic
   if (outcome === 'BE-TP') return 'wd-trade-r-betp';
@@ -244,7 +284,7 @@ function renderShare(d) {
           </div>
           <div class="wm-meta-item">
             <div class="wm-meta-lbl">Win rate</div>
-            <div class="wm-meta-val">${escapeHtml(winrate)}</div>
+            <div class="wm-meta-val" style="color:${kpiWrColor(stats.winrate)}">${escapeHtml(winrate)}</div>
           </div>
           <div class="wm-meta-item">
             <div class="wm-meta-lbl">Net R</div>
@@ -252,11 +292,11 @@ function renderShare(d) {
           </div>
           <div class="wm-meta-item">
             <div class="wm-meta-lbl">Avg R</div>
-            <div class="wm-meta-val ${rClassNumeric(stats.avgR)}">${escapeHtml(avgR)}</div>
+            <div class="wm-meta-val" style="color:${kpiAvgColor(stats.avgR)}">${escapeHtml(avgR)}</div>
           </div>
           <div class="wm-meta-item">
             <div class="wm-meta-lbl">Profit factor</div>
-            <div class="wm-meta-val">${escapeHtml(pf)}</div>
+            <div class="wm-meta-val" style="color:${kpiPfColor(stats.profitFactor)}">${escapeHtml(pf)}</div>
           </div>
         </div>
         <div class="wm-cta">
