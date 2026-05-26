@@ -22554,6 +22554,41 @@ function _shareCtxKey(ctx) {
   return `${ctx.title}|${ctx.chipKind}|${ctx.n}|${ctx.totalR.toFixed(2)}`;
 }
 
+/* Persistent URL cache so a refresh doesn't generate a new share row for
+   the same chip + same trade set. Scoped by `auth.uid()` so two users on
+   the same browser don't see each other's URLs. Expired entries are
+   ignored at read time (no separate cleanup pass). */
+const _SHARE_URL_CACHE_KEY = 'flipping_share_url_cache_v1';
+
+function _readShareUrlCache() {
+  try {
+    const raw = localStorage.getItem(_SHARE_URL_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (_) { return {}; }
+}
+function _writeShareUrlCache(map) {
+  try { localStorage.setItem(_SHARE_URL_CACHE_KEY, JSON.stringify(map)); } catch (_) {}
+}
+function _shareCacheKeyScoped(ctxKey) {
+  const user = window._SW?.getUser?.();
+  const uid = user?.id || 'anon';
+  return `${uid}::${ctxKey}`;
+}
+function _getCachedShareUrl(ctxKey) {
+  const map = _readShareUrlCache();
+  const entry = map[_shareCacheKeyScoped(ctxKey)];
+  if (!entry || !entry.url || !entry.expiresAt) return null;
+  if (Date.now() >= new Date(entry.expiresAt).getTime()) return null;
+  return entry.url;
+}
+function _putCachedShareUrl(ctxKey, url, expiresAt) {
+  const map = _readShareUrlCache();
+  map[_shareCacheKeyScoped(ctxKey)] = { url, expiresAt };
+  _writeShareUrlCache(map);
+}
+
 async function _handleOpenSharePopover(opts = {}) {
   const drawer = document.getElementById('wd-drawer');
   const ctx = drawer && drawer._shareCtx;
@@ -22570,17 +22605,29 @@ async function _handleOpenSharePopover(opts = {}) {
   popEl.removeAttribute('hidden');
 
   const ctxKey = _shareCtxKey(ctx);
+  // 1. In-memory cache (this session, just-clicked).
   if (drawer._shareLastUrl && drawer._shareLastCtxKey === ctxKey) {
     _renderSharePopoverSuccess(popEl, drawer._shareLastUrl);
+    return;
+  }
+  // 2. Persistent cache (localStorage) — same chip + same trade set across
+  // refreshes returns the same URL until expiry. Avoids cluttering the DB
+  // with duplicate rows when the user re-shares the same chip.
+  const cachedUrl = _getCachedShareUrl(ctxKey);
+  if (cachedUrl) {
+    drawer._shareLastUrl = cachedUrl;
+    drawer._shareLastCtxKey = ctxKey;
+    _renderSharePopoverSuccess(popEl, cachedUrl);
     return;
   }
 
   _renderSharePopoverLoading(popEl);
   try {
-    const { id } = await _createShareRow(ctx);
+    const { id, expiresAt } = await _createShareRow(ctx);
     const url = `${_shareViewerBaseUrl()}share.html?id=${id}`;
     drawer._shareLastUrl = url;
     drawer._shareLastCtxKey = ctxKey;
+    _putCachedShareUrl(ctxKey, url, expiresAt);
     _renderSharePopoverSuccess(popEl, url);
   } catch (err) {
     console.error('[share] create failed', err);
