@@ -22535,7 +22535,14 @@ function _renderSharePopoverError(popEl, message) {
     <button class="wd-share-popover-retry" data-action="retry-share-create" type="button">Retry</button>`;
 }
 
-function _renderSharePopoverSuccess(popEl, shareUrl) {
+function _renderSharePopoverSuccess(popEl, shareUrl, viewCount) {
+  // viewCount: a number = display N views ; '…' = pending fetch ;
+  // null/undefined = unknown (hide the segment).
+  let vcLabel;
+  if (viewCount === '…') vcLabel = '…';
+  else if (typeof viewCount === 'number')
+    vcLabel = (viewCount === 1) ? '1 view' : `${viewCount} views`;
+  else vcLabel = '';
   popEl.innerHTML = `
     <div class="wd-share-popover-title">Shareable trade-cards link</div>
     <div class="wd-share-popover-row">
@@ -22544,8 +22551,30 @@ function _renderSharePopoverSuccess(popEl, shareUrl) {
     </div>
     <div class="wd-share-popover-meta">
       <span><span class="wd-share-popover-meta-dot"></span><strong>Active</strong> · expires in 7d</span>
-      <span>0 views</span>
+      <span>${_escapeHtml(vcLabel)}</span>
     </div>`;
+}
+
+/* Fetch the current view_count for a share. Returns null on any error
+   (RLS, network, expired). Used by _handleOpenSharePopover to surface the
+   live count when re-opening a cached link. */
+async function _getShareViewCount(shareId) {
+  if (!shareId) return null;
+  const sb = window._SW?.getClient?.();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb.from('shares')
+      .select('view_count')
+      .eq('id', shareId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return (typeof data.view_count === 'number') ? data.view_count : null;
+  } catch (_) { return null; }
+}
+
+function _extractIdFromShareUrl(url) {
+  try { return new URL(url).searchParams.get('id') || ''; }
+  catch (_) { return ''; }
 }
 
 function _shareCtxKey(ctx) {
@@ -22605,19 +22634,22 @@ async function _handleOpenSharePopover(opts = {}) {
   popEl.removeAttribute('hidden');
 
   const ctxKey = _shareCtxKey(ctx);
-  // 1. In-memory cache (this session, just-clicked).
+  // 1. In-memory cache (this session, just-clicked). Re-fetch view_count
+  //    so the popover shows the live number on every re-open.
   if (drawer._shareLastUrl && drawer._shareLastCtxKey === ctxKey) {
-    _renderSharePopoverSuccess(popEl, drawer._shareLastUrl);
+    _renderSharePopoverSuccess(popEl, drawer._shareLastUrl, '…');
+    _refreshSharePopoverViewCount(popEl, drawer._shareLastUrl);
     return;
   }
   // 2. Persistent cache (localStorage) — same chip + same trade set across
-  // refreshes returns the same URL until expiry. Avoids cluttering the DB
-  // with duplicate rows when the user re-shares the same chip.
+  //    refreshes returns the same URL until expiry. Avoids cluttering the DB
+  //    with duplicate rows when the user re-shares the same chip.
   const cachedUrl = _getCachedShareUrl(ctxKey);
   if (cachedUrl) {
     drawer._shareLastUrl = cachedUrl;
     drawer._shareLastCtxKey = ctxKey;
-    _renderSharePopoverSuccess(popEl, cachedUrl);
+    _renderSharePopoverSuccess(popEl, cachedUrl, '…');
+    _refreshSharePopoverViewCount(popEl, cachedUrl);
     return;
   }
 
@@ -22628,12 +22660,25 @@ async function _handleOpenSharePopover(opts = {}) {
     drawer._shareLastUrl = url;
     drawer._shareLastCtxKey = ctxKey;
     _putCachedShareUrl(ctxKey, url, expiresAt);
-    _renderSharePopoverSuccess(popEl, url);
+    _renderSharePopoverSuccess(popEl, url, 0);
   } catch (err) {
     console.error('[share] create failed', err);
     const msg = err?.message || err?.error_description || 'Network error';
     _renderSharePopoverError(popEl, msg);
   }
+}
+
+/* Fire-and-forget refresh of the views label inside an already-rendered
+   success popover. Idempotent against popover re-renders: aborts if the
+   popover's URL no longer matches (user clicked away to another chip). */
+async function _refreshSharePopoverViewCount(popEl, expectedUrl) {
+  const id = _extractIdFromShareUrl(expectedUrl);
+  if (!id) return;
+  const vc = await _getShareViewCount(id);
+  if (vc == null) return;
+  const urlEl = popEl.querySelector('.wd-share-popover-url');
+  if (!urlEl || urlEl.textContent !== expectedUrl) return;
+  _renderSharePopoverSuccess(popEl, expectedUrl, vc);
 }
 
 function _copyShareUrl(actionEl) {
