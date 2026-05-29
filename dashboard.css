@@ -11858,7 +11858,7 @@ body.ms-sidebar-open .view-tabs {
   gap: 4px;
   overflow: hidden;
 }
-.sv-cal-month-day-empty { background: rgba(36,40,53,0.96); }
+.sv-cal-month-day-empty { background: var(--bg3); }
 .sv-cal-month-day-value { background: var(--sv-cal-bg, var(--bg3)); }
 /* Header row: day number on the left, day total R on the right, baseline-aligned. */
 .sv-cal-month-head {
@@ -11871,9 +11871,9 @@ body.ms-sidebar-open .view-tabs {
   font-family: 'DM Mono', monospace;
   font-size: var(--sv-fs-header);
   font-weight: 700;
-  color: var(--sv-cal-daynum, rgba(235,242,255,0.74));
+  color: var(--sv-cal-daynum, var(--body));
 }
-.sv-cal-month-daynum-empty { color: rgba(255,255,255,0.16); }
+.sv-cal-month-daynum-empty { color: var(--dim); opacity: 0.6; }
 .sv-cal-month-total {
   font-family: 'Anybody', sans-serif;
   font-size: var(--sv-fs-week);
@@ -11909,18 +11909,18 @@ body.ms-sidebar-open .view-tabs {
 }
 .sv-cal-month-trade-dot.is-win   { background: var(--g, #34d399); }
 .sv-cal-month-trade-dot.is-loss  { background: var(--r, #f43f5e); }
-.sv-cal-month-trade-dot.is-be    { background: rgba(255,255,255,0.42); }
+.sv-cal-month-trade-dot.is-be    { background: var(--dim); }
 .sv-cal-month-trade-dot.is-be-tp { background: var(--oc-betp); }
 .sv-cal-month-trade-dot.is-be-sl { background: var(--oc-besl); }
 .sv-cal-month-trade-pair {
-  color: rgba(235,242,255,0.86);
+  color: var(--body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: 0.02em;
 }
 .sv-cal-month-trade-time {
-  color: rgba(235,242,255,0.50);
+  color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
 .sv-cal-month-trade-r {

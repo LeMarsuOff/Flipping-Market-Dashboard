@@ -43480,7 +43480,7 @@ function _svMonthlyCalDayCell(day, data, maxAbs, colors) {
   // stay near the 5% baseline (matches the resting tile colour); the
   // strongest day of the month maxes out at 30%.
   const intensity = Math.min(Math.abs(data.r) / maxAbs, 1);
-  const pct = 5 + 25 * intensity;
+  const pct = 10 + 35 * intensity;
   const bg = data.r > 0
     ? `color-mix(in srgb, var(--g) ${pct}%, var(--bg2))`
     : data.r < 0
@@ -43609,14 +43609,14 @@ function _svRenderCalMonth(yearMonth) {
   const firstDow    = (new Date(parseInt(year, 10), mo, 1).getDay() + 6) % 7;
   const cG = tc('--g') || '#5dd6a8';
   const cR = tc('--r') || '#e05a6e';
-  const calWkBg = 'rgba(32,36,49,0.98)';
+  const calWkBg = 'var(--bg3)';
   const calPosBase = [20, 55, 47];
   const calNegBase = [67, 36, 44];
   const calPosHi = _calHexToRgb(cG).split(',').map(Number);
   const calNegHi = _calHexToRgb(cR).split(',').map(Number);
   const calPosTxt = cG;
   const calNegTxt = cR;
-  const calDayTxt = 'rgba(235,242,255,0.74)';
+  const calDayTxt = 'var(--body)';
   const colorCfg = { posBase: calPosBase, negBase: calNegBase, posHi: calPosHi, negHi: calNegHi, dayTxt: calDayTxt };
 
   const mTrades = Object.keys(_svCalDayMap)
