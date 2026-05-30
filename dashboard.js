@@ -4650,18 +4650,27 @@ function _hashTpConfig(cfg) {
 // to a one-shot computeEffectiveRR + sign read. The optional cfg arg defaults
 // to the active TP config; calcStats threads its presetTpConfig through here
 // so preset live preview chips classify under the preset's config, not active.
+//
+// cfg MUST be a tpConfig object. The guard rejects any non-object (notably the
+// array index when these are passed directly as callbacks — `arr.filter(isWinner)`
+// invokes isWinner(t, index), and a numeric cfg silently fell back to raw
+// trade.r, classifying every element past the first by the journaled outcome
+// instead of the effective-R under the active plan).
+function _normTpCfgArg(cfg) {
+  return (cfg && typeof cfg === 'object') ? cfg : appState.ui.tpConfig;
+}
 function isWinner(t, cfg) {
-  cfg = cfg || appState.ui.tpConfig;
+  cfg = _normTpCfgArg(cfg);
   if (t._effectiveClassMode === _hashTpConfig(cfg)) return t.effectiveClass === 'win';
   return computeEffectiveRR(t, cfg) > 0;
 }
 function isLoser(t, cfg) {
-  cfg = cfg || appState.ui.tpConfig;
+  cfg = _normTpCfgArg(cfg);
   if (t._effectiveClassMode === _hashTpConfig(cfg)) return t.effectiveClass === 'loss';
   return computeEffectiveRR(t, cfg) < 0;
 }
 function isBE(t, cfg) {
-  cfg = cfg || appState.ui.tpConfig;
+  cfg = _normTpCfgArg(cfg);
   if (t._effectiveClassMode === _hashTpConfig(cfg)) return t.effectiveClass === 'be';
   return computeEffectiveRR(t, cfg) === 0;
 }
