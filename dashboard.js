@@ -2166,6 +2166,7 @@ function _normalizeCustomWidgetDef(def) {
         sortDir: settings.sortDir === 'asc' ? 'asc' : 'desc',
         barsMode,
         labelMinWidth,
+        monthSplitYear: settings.monthSplitYear !== false,
       },
     };
   }
@@ -2456,7 +2457,11 @@ function _createCustomTableWidget({ field, label, propertySource = 'mapped', inf
     inferredType,
     createdFrom,
     createdAt: Date.now(),
-    settings: { sortKey: 'total', sortDir: 'desc', barsMode: true },
+    // Date fields bucket by month → default to chronological label sort and
+    // split-by-year ON. Everything else keeps the Total-R-desc default.
+    settings: (field === 'date' || inferredType === 'date')
+      ? { sortKey: 'label', sortDir: 'asc', barsMode: true, monthSplitYear: true }
+      : { sortKey: 'total', sortDir: 'desc', barsMode: true },
   };
   _addCustomWidgetDef(cwDef);
   _eagerBakeAfterWidgetCreate();
@@ -4031,6 +4036,26 @@ function handleActionClick(event) {
       }
       break;
     }
+    case 'set-table-month-split': {
+      event.stopPropagation();
+      const cwId = actionEl.dataset.cwId;
+      if (!cwId) break;
+      if (_customTableSyncEnabled) {
+        _customTableMasterSettings.monthSplitYear = !(_customTableMasterSettings.monthSplitYear !== false);
+        _rerenderAllCustomTables();
+      } else {
+        const updated = _updateCustomWidgetDef(cwId, current => {
+          const prev = current?.settings || {};
+          return { ...current, settings: { ...prev, monthSplitYear: !(prev.monthSplitYear !== false) } };
+        });
+        if (updated) {
+          actionEl.classList.toggle('active', updated.settings.monthSplitYear !== false);
+          const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
+          renderCustomTable(updated, filtered);
+        }
+      }
+      break;
+    }
     case 'toggle-custom-table-sync': {
       event.stopPropagation();
       const cwId = actionEl.dataset.cwId;
@@ -4080,13 +4105,20 @@ function handleActionClick(event) {
       if (!def) break;
       const filtered = (typeof getFiltered === 'function') ? getFiltered() : [];
       // Find every trade whose expanded field values include this row's label.
+      // Date fields are bucketed by month, so match on the same month label
+      // (split or merged by year) rather than the raw day value.
+      const isDateField = _cwIsDateField(def);
+      const splitYear = isDateField && _getCustomTableEffectiveSettings(def).monthSplitYear !== false;
       const matching = [];
       for (const t of filtered) {
         const vals = _cwExpandFieldValues(
           _cwGetFieldValue(t, def.field, def, def.fieldSource || def.propertySource),
           def.inferredType
         );
-        if (vals.some(v => String(v) === rowLabel)) matching.push(t);
+        const hit = isDateField
+          ? vals.some(v => { const mb = _cwMonthBucket(v, splitYear); return (mb ? mb.label : String(v)) === rowLabel; })
+          : vals.some(v => String(v) === rowLabel);
+        if (hit) matching.push(t);
       }
       if (matching.length && typeof openWidgetDrawer === 'function') {
         const title = `${def.label || def.field} — ${rowLabel}`.trim();
@@ -15141,8 +15173,9 @@ function _isLowVolume(n) {
 
 // Read a field value from a trade: top-level first, then .extras
 function _cwGetFieldValue(t, fieldKey, def = null, sourceOverride = '') {
-  if (t[fieldKey] !== undefined && t[fieldKey] !== null) return t[fieldKey];
-  if (t.extras && t.extras[fieldKey] !== undefined) return t.extras[fieldKey];
+  const vk = (typeof _CW_DIM_ALIAS !== 'undefined' && _CW_DIM_ALIAS[fieldKey]?.value) || fieldKey;
+  if (t[vk] !== undefined && t[vk] !== null) return t[vk];
+  if (t.extras && t.extras[vk] !== undefined) return t.extras[vk];
   const mode = localStorage.getItem(DS_KEY) || 'demo';
   const source = sourceOverride || def?.propertySource || '';
   if (source && source === mode && (mode === 'csv' || mode === 'api')) {
@@ -15314,12 +15347,24 @@ function _renderCustomTableToolbarHTML(def) {
     ? _customTableMasterSettings.barsMode === true
     : def?.settings?.barsMode !== false;
   const cwAttr = ` data-cw-id="${_escapeAttr(def.id)}"`;
+  // The Year toggle only applies to date-grouped tables (month buckets):
+  // ON splits months by year (Jan 2025 vs Jan 2026), OFF merges by month name.
+  const yearBtn = _cwIsDateField(def) ? (() => {
+    const split = synced
+      ? _customTableMasterSettings.monthSplitYear !== false
+      : def?.settings?.monthSplitYear !== false;
+    return `
+      <button class="cc-tab cw-table-year-btn${split ? ' active' : ''}"
+              type="button"
+              data-action="set-table-month-split"${cwAttr}
+              title="Split months by year (Jan 2025 vs Jan 2026) instead of merging month names">Year</button>`;
+  })() : '';
   return `
     <div class="cc-head-controls cc-head-controls-sm">
       <button class="bar-sort-btn cw-table-sync-btn${synced ? ' active' : ''}"
               type="button"
               data-action="toggle-custom-table-sync"${cwAttr}
-              title="Sync all table widgets — share sort + bar mode">⛓</button>
+              title="Sync all table widgets — share sort + bar mode">⛓</button>${yearBtn}
       <button class="cc-tab cw-table-bars-btn${barsMode ? ' active' : ''}"
               type="button"
               data-action="set-table-bars-mode"${cwAttr}
@@ -15334,7 +15379,7 @@ function _renderCustomTableToolbarHTML(def) {
 // then all tables re-render in lockstep. Turning sync off commits the
 // current master state to every widget's def.settings.
 let _customTableSyncEnabled = false;
-let _customTableMasterSettings = { sortKey: 'total', sortDir: 'desc', barsMode: true, labelMinWidth: null };
+let _customTableMasterSettings = { sortKey: 'total', sortDir: 'desc', barsMode: true, labelMinWidth: null, monthSplitYear: true };
 
 // Resolve the effective sort + bars + label-min-width settings for a table
 // widget, accounting for sync mode. Returns { sortKey, sortDir, barsMode,
@@ -15346,6 +15391,7 @@ function _getCustomTableEffectiveSettings(def) {
       sortDir: _customTableMasterSettings.sortDir,
       barsMode: _customTableMasterSettings.barsMode === true,
       labelMinWidth: _customTableMasterSettings.labelMinWidth ?? null,
+      monthSplitYear: _customTableMasterSettings.monthSplitYear !== false,
     };
   }
   const s = def?.settings || {};
@@ -15354,6 +15400,7 @@ function _getCustomTableEffectiveSettings(def) {
     sortDir: s.sortDir === 'asc' ? 'asc' : 'desc',
     barsMode: s.barsMode !== false,
     labelMinWidth: Number.isFinite(Number(s.labelMinWidth)) ? Number(s.labelMinWidth) : null,
+    monthSplitYear: s.monthSplitYear !== false,
   };
 }
 
@@ -15446,15 +15493,93 @@ function toggleCustomTableSync(cwId) {
 //      menu can show the include/exclude buttons and the widget filters
 //      itself. Declaring the field later picks up the state automatically if
 //      the safe key happens to match.
+// A handful of JOURNAL_DIMS keys differ from where the value lives on the
+// trade AND from their filter-chip key: H4 Obstacles (dim key `h4` → chip
+// `h4obs`) and Position Type (dim key `positionType` → trade prop + chip
+// `tradeType`). Maps dim key → { value: trade property, chip: chips key }.
+// Without this, a table grouped by Position Type reads the empty
+// `t.positionType` and right-click routes filters to a phantom `custom:` chip
+// that no sidebar renders.
+const _CW_DIM_ALIAS = {
+  h4:           { value: 'h4',        chip: 'h4obs' },
+  positionType: { value: 'tradeType', chip: 'tradeType' },
+};
+
 function _cwResolveChipKey(def) {
   const f = def?.field;
   if (!f) return null;
+  const aliasChip = _CW_DIM_ALIAS[f]?.chip;
+  if (aliasChip && appState?.filters?.chips?.[aliasChip]) return aliasChip;
   if (appState?.filters?.chips?.[f]) return f;
   if (typeof loadCustomProps === 'function') {
     const declared = loadCustomProps().find(p => p?.notionSourceName === f || p?.key === f);
     if (declared?.key) return 'custom:' + declared.key;
   }
   return 'custom:' + f;
+}
+
+// Returns a chip key that is guaranteed to be backed by a real filter — either
+// a native dim chip or a *declared* custom property. When a Custom Table is
+// grouped by a field with no hardcoded chip and no declared custom prop,
+// `_cwResolveChipKey` would hand back a phantom `custom:<field>` that no
+// sidebar renders and `_resolveChipEntry` resolves to null, so right-click
+// include/exclude silently does nothing. Here we auto-declare that field as an
+// Additional Filter (custom prop) so the chip appears in the sidebar and the
+// menu can mutate it. Custom-chip filtering reads `t.extras[notionSourceName]`,
+// so we only auto-declare when the field's values actually live in extras —
+// otherwise the chip could never match a trade. Returns null when no filterable
+// chip can be produced.
+function _cwEnsureFilterableChipKey(def) {
+  const chipKey = _cwResolveChipKey(def);
+  if (!chipKey) return null;
+  if (!chipKey.startsWith('custom:')) return chipKey; // native dim chip
+  const key = chipKey.slice(7);
+  const props = (typeof loadCustomProps === 'function') ? loadCustomProps() : [];
+  if (props.some(p => p.key === key)) return chipKey; // already a real Additional Filter
+  const f = def.field;
+  const items = appState.trades?.items || [];
+  const hasExtras = items.some(t => {
+    const v = t?.extras?.[f];
+    return v !== undefined && v !== null && v !== ''
+      && !(Array.isArray(v) && v.length === 0);
+  });
+  if (!hasExtras || typeof addCustomProp !== 'function') return null;
+  const name = def.fieldLabel || def.label || f;
+  const it = String(def.inferredType || '').toLowerCase();
+  const type = it.includes('multi') ? 'multi-select' : (it === 'checkbox' ? 'checkbox' : 'select');
+  let base = (typeof suggestCustomPropKey === 'function' && suggestCustomPropKey(name)) || '';
+  if (!base || !/^[a-z]/.test(base)) base = 'field';
+  let newKey = base, n = 1;
+  while (typeof validateCustomPropKey === 'function' && validateCustomPropKey(newKey) && n < 100) {
+    n++; newKey = base + n;
+  }
+  const res = addCustomProp({ name, key: newKey, type, showInFilters: true, notionSourceName: f });
+  if (!res || !res.ok) return null;
+  if (typeof renderCustomFilterChips === 'function') renderCustomFilterChips();
+  return 'custom:' + res.prop.key;
+}
+
+// True when a Custom Table's grouping field is a date — either the mapped
+// `date` dim or any source property inferred as a date. Date fields fold
+// into month buckets instead of one row per day.
+function _cwIsDateField(def) {
+  return !!def && (def.field === 'date' || def.inferredType === 'date');
+}
+
+// Folds an ISO-ish date value ("2025-01-15") into a month bucket. splitYear
+// ON → { label:'Jan 2025', sortKey:'2025-01' } so each year stays separate
+// and rows order chronologically. splitYear OFF → month names merge across
+// years ({ label:'Jan', sortKey:'00' }). Returns null when the value can't
+// be parsed as a date.
+function _cwMonthBucket(rawVal, splitYear) {
+  const m = String(rawVal == null ? '' : rawVal).trim().match(/^(\d{4})-(\d{2})/);
+  if (!m) return null;
+  const mIdx = parseInt(m[2], 10) - 1;
+  if (mIdx < 0 || mIdx > 11) return null;
+  const name = MONTH_NAMES[mIdx];
+  return splitYear
+    ? { label: `${name} ${m[1]}`, sortKey: `${m[1]}-${m[2]}` }
+    : { label: name, sortKey: String(mIdx).padStart(2, '0') };
 }
 
 // Renders a custom Table widget: one row per category (field value) with
@@ -15473,6 +15598,14 @@ function renderCustomTable(def, trades) {
 
   const tpConfig = appState?.ui?.tpConfig;
 
+  // Effective settings — pulled from the sync master if the chain is active,
+  // else from this widget's own def.settings. Read before bucketing because
+  // date fields fold into month buckets (split or merged by year per
+  // monthSplitYear) rather than one row per day.
+  const eff = _getCustomTableEffectiveSettings(def);
+  const { sortKey, sortDir, barsMode, labelMinWidth, monthSplitYear } = eff;
+  const isDateField = _cwIsDateField(def);
+
   // Single-pass per-category bucket: count, sumR, winners, gross win/loss
   // (for profit factor), and the matching trades array for drill-down.
   const buckets = new Map();
@@ -15487,10 +15620,16 @@ function renderCustomTable(def, trades) {
       : (Number(t.r) || 0);
     const isWin = (typeof isWinner === 'function') ? isWinner(t, tpConfig) : (effR > 0);
     for (const v of vals) {
-      const key = String(v);
+      let key = String(v);
+      let bucketSortKey = null;
+      if (isDateField) {
+        const mb = _cwMonthBucket(v, monthSplitYear);
+        if (mb) { key = mb.label; bucketSortKey = mb.sortKey; }
+        else { bucketSortKey = '~' + key; }  // unparseable date sorts last
+      }
       let b = buckets.get(key);
       if (!b) {
-        b = { count: 0, sumR: 0, winners: 0, sumWins: 0, sumLosses: 0 };
+        b = { count: 0, sumR: 0, winners: 0, sumWins: 0, sumLosses: 0, sortKey: bucketSortKey };
         buckets.set(key, b);
       }
       b.count++;
@@ -15511,16 +15650,13 @@ function renderCustomTable(def, trades) {
     const pf = b.sumLosses > 0
       ? b.sumWins / b.sumLosses
       : (b.sumWins > 0 ? Infinity : 0);
-    rows.push({ label, count: b.count, sumR: b.sumR, avgR, wr, pf });
+    rows.push({ label, count: b.count, sumR: b.sumR, avgR, wr, pf, _sortKey: b.sortKey });
   }
 
-  // Effective settings — pulled from the sync master if the chain is active,
-  // else from this widget's own def.settings.
-  const eff = _getCustomTableEffectiveSettings(def);
-  const { sortKey, sortDir, barsMode, labelMinWidth } = eff;
-
   const cmpFn = {
-    label: (a, b) => String(a.label).localeCompare(String(b.label)),
+    label: (a, b) => (a._sortKey != null && b._sortKey != null)
+      ? String(a._sortKey).localeCompare(String(b._sortKey))
+      : String(a.label).localeCompare(String(b.label)),
     count: (a, b) => a.count - b.count,
     wr:    (a, b) => a.wr - b.wr,
     avg:   (a, b) => a.avgR - b.avgR,
@@ -15620,23 +15756,24 @@ function renderCustomTable(def, trades) {
   // via _showHeatmapContextMenu (1-dim array) so custom Notion props
   // (chipKey = 'custom:<field>') work transparently alongside native dims —
   // _resolveChipEntry inside the menu handler does the dispatch.
-  const chipKey = _cwResolveChipKey(def);
-  if (chipKey) {
-    const dimLabel = def.fieldLabel || def.label || def.field;
-    host.querySelectorAll('.cw-td-label').forEach(cell => {
-      cell.addEventListener('contextmenu', e => {
-        const rawKey = cell.dataset.rowLabel;
-        if (!rawKey) return;
-        e.preventDefault();
-        e.stopPropagation();
-        _showHeatmapContextMenu(
-          [{ chipKey, rawKey, displayLabel: rawKey, dimLabel }],
-          rawKey,
-          e
-        );
-      });
+  const dimLabel = def.fieldLabel || def.label || def.field;
+  host.querySelectorAll('.cw-td-label').forEach(cell => {
+    cell.addEventListener('contextmenu', e => {
+      const rawKey = cell.dataset.rowLabel;
+      if (!rawKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Resolve lazily so an undeclared field is auto-added to Additional
+      // Filters at the moment the user expresses intent to filter it.
+      const chipKey = _cwEnsureFilterableChipKey(def);
+      if (!chipKey) return;
+      _showHeatmapContextMenu(
+        [{ chipKey, rawKey, displayLabel: rawKey, dimLabel }],
+        rawKey,
+        e
+      );
     });
-  }
+  });
 }
 
 // ── Property-column resize for custom Table widgets ────────────────────────
