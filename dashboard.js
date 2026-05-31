@@ -3562,12 +3562,15 @@ const _MONTH_MAP = {
   july:'07',august:'08',september:'09',october:'10',november:'11',december:'12',
 };
 const OUTCOME_VALUE_MAPPING_KEY = 'outcomeValueMapping_v1';
-const OUTCOME_VALUE_CATEGORIES = ['Take Profit', 'Stop Loss', 'BE-SL', 'BE-TP', 'Other'];
+const OUTCOME_VALUE_CATEGORIES = ['Take Profit', 'Stop Loss', 'BE-SL', 'BE-TP', 'Break Even', 'Other'];
 const OUTCOME_CATEGORY_TO_INTERNAL = {
   'Take Profit': 'TP',
   'Stop Loss': 'SL',
   'BE-SL': 'BE-SL',
   'BE-TP': 'BE-TP',
+  // Directionless break-even, for journals that don't split BE into BE-TP/BE-SL.
+  // Always classified neutral (0R) — see _mapR + computeEffectiveRR guards.
+  'Break Even': 'BE',
   'Other': 'Other',
 };
 const OUTCOME_AUTO_MAP_RULES = {
@@ -3575,6 +3578,7 @@ const OUTCOME_AUTO_MAP_RULES = {
   'Stop Loss': new Set(['stop-loss', 'sl', 'loss', 'loser', 'lost', 'stopped', 'invalidated']),
   'BE-SL': new Set(['be-sl']),
   'BE-TP': new Set(['be-tp']),
+  'Break Even': new Set(['be', 'break-even', 'breakeven', 'break-even-flat', 'flat']),
   'Other': new Set(['cancelled', 'canceled', 'invalid', 'no-trade', 'skipped', 'partial', 'other', 'unknown']),
 };
 function _isValidOutcomeCategory(category) {
@@ -4610,6 +4614,9 @@ function _mapOutcome(raw, { record = true } = {}) {
   return mapped;
 }
 function _mapR(oc, rrRaw) {
+  // Directionless break-even is always flat: force 0R regardless of any value
+  // pre-filled in the RR column (some journals leave the planned target there).
+  if (oc === 'BE') return 0;
   const parsed = _parseNumeric(rrRaw);
   if (parsed !== null && Number.isFinite(parsed)) return parsed;
   // Fallback to system defaults when rrTp1 is absent
@@ -4753,6 +4760,12 @@ function computeEffectiveRR(trade, tpConfig) {
   // convergence between the sticky-bar KPIs, the ORR widget, and the Partial
   // Optimizer's "Full TP <tp>R" model).
   if (trade && trade._simulated) return trade.r;
+
+  // Directionless break-even is flat in every TP mode. Short-circuit before the
+  // BE-aware simulator (which is reserved for BE-TP/BE-SL, where the post-BE
+  // price direction + beManagement chips drive the partial payout). A plain BE
+  // has no direction, so it must never route through _resolveBeR / _ppSimTrade.
+  if (trade && trade.outcome === 'BE') return 0;
 
   const mode = tpConfig && tpConfig.mode;
   switch (mode) {
@@ -13915,7 +13928,11 @@ function calcStats(trades, tpConfigArg) {
 
   const be_tp = trades.filter(t=>t.outcome==='BE-TP').length;
   const be_sl = trades.filter(t=>t.outcome==='BE-SL').length;
-  const be    = be_tp + be_sl;
+  // be_plain = directionless break-even (internal 'BE'), mode-independent like
+  // be_tp/be_sl. Folded into the Notion-pure `be` count so the BE KPI / donut
+  // surface them alongside the directional BEs.
+  const be_plain = trades.filter(t=>t.outcome==='BE').length;
+  const be    = be_tp + be_sl + be_plain;
   // Outcome-Notion-pure counts: immutable across TP modes. Distinct from w/l
   // (R-effective classification, mode-dependent). Use cnt_tp/cnt_sl for
   // outcome breakdowns (donut slices, Trades Count tooltip); use w/l for
@@ -13926,7 +13943,7 @@ function calcStats(trades, tpConfigArg) {
   const avgWin  = w > 0 ? gross_w / w   : null;
   const avgLoss = l > 0 ? -gross_l / l  : null;
 
-  return { n, w, l, bes:bes.length, be, be_tp, be_sl, cnt_tp, cnt_sl, wr, ev, totalR, pf, curve, maxDD, maxW, maxL, avgWin, avgLoss, avgWinStreakR, avgLossStreakR, maxConsecProfitR, maxConsecLossR };
+  return { n, w, l, bes:bes.length, be, be_tp, be_sl, be_plain, cnt_tp, cnt_sl, wr, ev, totalR, pf, curve, maxDD, maxW, maxL, avgWin, avgLoss, avgWinStreakR, avgLossStreakR, maxConsecProfitR, maxConsecLossR };
 }
 
 // ══════════════════════════════════════════════════════
@@ -17243,7 +17260,7 @@ function _selTradeRow(t, highlighted) {
   const _rEff   = t.effectiveR ?? computeEffectiveRR(t, appState.ui.tpConfig);
   const rSign   = _rEff >= 0 ? '+' : '';
   const outcome = t.outcome || '?';
-  const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl' };
+  const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl', 'BE': 'oc-be' };
   const rowBg   = {
     'TP':    getWinColorAlpha(.25),
     'SL':    getLossColorAlpha(.27),
@@ -17708,12 +17725,17 @@ function drawDonut(stats) {
   };
   const cBETP = tc('--oc-betp');
   const cBESL = tc('--oc-besl');
+  // Plain (directionless) BE uses the gold token directly — tc() can't resolve
+  // the nested var() in `--oc-be: var(--gold)`, and gold already carries the BE
+  // visual language (BE Trades KPI tile, Monthly P&L BE bar).
+  const cBE   = tc('--gold') || tc('--a');
 
   const data = [
-    { label:'TP',    n: (stats||{}).cnt_tp||0, color: cG    },
-    { label:'BE-TP', n: (stats||{}).be_tp ||0, color: cBETP },
-    { label:'BE-SL', n: (stats||{}).be_sl ||0, color: cBESL },
-    { label:'SL',    n: (stats||{}).cnt_sl||0, color: cR    },
+    { label:'TP',    n: (stats||{}).cnt_tp  ||0, color: cG    },
+    { label:'BE-TP', n: (stats||{}).be_tp   ||0, color: cBETP },
+    { label:'BE-SL', n: (stats||{}).be_sl   ||0, color: cBESL },
+    { label:'BE',    n: (stats||{}).be_plain||0, color: cBE   },
+    { label:'SL',    n: (stats||{}).cnt_sl  ||0, color: cR    },
   ].filter(d => d.n > 0);
 
   const total = data.reduce((s, d) => s + d.n, 0) || 1;
@@ -18815,8 +18837,8 @@ function renderTable(trades) {
   // can mirror the exact same order.
   const sorted = _sortTradesForTradeLog(trades);
 
-  const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl' };
-  const rowBg = { 'TP': getWinColorAlpha(.25), 'SL': getLossColorAlpha(.27), 'BE-TP': 'rgba(41,98,255,.22)', 'BE-SL': 'rgba(180,120,240,.22)' };
+  const ocClass = { TP: 'oc-tp', SL: 'oc-sl', 'BE-TP': 'oc-betp', 'BE-SL': 'oc-besl', 'BE': 'oc-be' };
+  const rowBg = { 'TP': getWinColorAlpha(.25), 'SL': getLossColorAlpha(.27), 'BE-TP': 'rgba(41,98,255,.22)', 'BE-SL': 'rgba(180,120,240,.22)', 'BE': 'rgba(90,156,245,.20)' };
   const createTradeMediaButton = (url, step, emoji, title, meta) => url
     ? `<button class="trade-media-btn" data-action="open-img-lightbox"
          data-scope="#trade-tbody"
@@ -18998,15 +19020,27 @@ function _getBeOutcomeExcludedTrades() {
   return matched;
 }
 
+// Trades whose Notion outcome is a directionless break-even (internal 'BE').
+// Read from the context-filtered dataset, so an outcome chip that excludes 'BE'
+// correctly drops them from the count.
+function _getBePlainOutcomeTrades() {
+  const out = new Set();
+  for (const t of _getContextFiltered(true)) {
+    if (t.outcome === 'BE') out.add(t);
+  }
+  return out;
+}
+
 // Combined BE count at a given TP: (BE-out trades at tp) ∪ (BE Mgmt chips) ∪
-// (outcome-chip-excluded BE-TP/BE-SL), deduplicated. This is what the
-// summary's "W / L / BE" cell shows and what _computeBeTradesKpi reports for
-// the active bubble.
+// (outcome-chip-excluded BE-TP/BE-SL) ∪ (plain BE outcomes), deduplicated. This
+// is what the summary's "W / L / BE" cell shows and what _computeBeTradesKpi
+// reports for the active bubble.
 function _getBeColumnCountAtTp(tp) {
   const beOut = _getBeOutTradesAtTp(tp);
   const chips = _getBeMgmtChipMatchedTrades();
   const outcomeExcl = _getBeOutcomeExcludedTrades();
-  const union = new Set([...beOut, ...chips, ...outcomeExcl]);
+  const bePlain = _getBePlainOutcomeTrades();
+  const union = new Set([...beOut, ...chips, ...outcomeExcl, ...bePlain]);
   return union.size;
 }
 
@@ -19129,10 +19163,11 @@ function _buildKpiTooltipBreakdown(kpiKey, stats, beStats) {
     if (total <= 0) return '';
     const pct = (n) => (n / total * 100).toFixed(0) + '%';
     const rows = [
-      { color: 'var(--g)',                                          label: 'TP',    n: stats.cnt_tp || 0 },
-      { color: 'var(--oc-betp)',                                    label: 'BE-TP', n: stats.be_tp  || 0 },
-      { color: 'var(--oc-besl)',                                    label: 'BE-SL', n: stats.be_sl  || 0 },
-      { color: 'var(--r)',                                          label: 'SL',    n: stats.cnt_sl || 0 },
+      { color: 'var(--g)',                                          label: 'TP',    n: stats.cnt_tp   || 0 },
+      { color: 'var(--oc-betp)',                                    label: 'BE-TP', n: stats.be_tp    || 0 },
+      { color: 'var(--oc-besl)',                                    label: 'BE-SL', n: stats.be_sl    || 0 },
+      { color: 'var(--oc-be)',                                      label: 'BE',    n: stats.be_plain || 0 },
+      { color: 'var(--r)',                                          label: 'SL',    n: stats.cnt_sl   || 0 },
     ].filter(r => r.n > 0)
      .map(r => row(r.color, r.label, `${r.n} (${pct(r.n)})`));
     return rows.length ? `<div class="utip-threshold-legend">${rows.join('')}</div>` : '';
@@ -19165,13 +19200,20 @@ function _buildKpiTooltipBreakdown(kpiKey, stats, beStats) {
     const src = beStats || stats;
     const beTp = src.be_tp || 0;
     const beSl = src.be_sl || 0;
-    const total = beTp + beSl;
+    const bePlain = src.be_plain || 0;
+    const total = beTp + beSl + bePlain;
     if (total <= 0) return '';
     const cBETP = tc('--oc-betp');
     const cBESL = tc('--oc-besl');
+    const cBE   = tc('--gold') || tc('--a');
     const rows = [];
-    if (beTp > 0) rows.push(row(cBETP, 'BE-TP', `${beTp} (${(beTp / total * 100).toFixed(0)}%)`));
-    if (beSl > 0) rows.push(row(cBESL, 'BE-SL', `${beSl} (${(beSl / total * 100).toFixed(0)}%)`));
+    if (beTp > 0)    rows.push(row(cBETP, 'BE-TP', `${beTp} (${(beTp / total * 100).toFixed(0)}%)`));
+    if (beSl > 0)    rows.push(row(cBESL, 'BE-SL', `${beSl} (${(beSl / total * 100).toFixed(0)}%)`));
+    if (bePlain > 0) rows.push(row(cBE,   'BE',    `${bePlain} (${(bePlain / total * 100).toFixed(0)}%)`));
+    // Column-pure aggregate (how often the trade reached break-even, mode-independent).
+    // Distinct from the headline KPI, which is the action-driven BE Management count.
+    const nzComponents = [beTp, beSl, bePlain].filter(n => n > 0).length;
+    if (nzComponents > 1) rows.push(row(tc('--text-muted') || '#9aa0a6', 'Total BE', `${total}`));
     return rows.length ? `<div class="utip-threshold-legend">${rows.join('')}</div>` : '';
   }
 
@@ -19548,8 +19590,8 @@ function renderStreakTimeline(trades) {
   _streakTimelineRuns = runs;
 
   const colMap = { w:'var(--g)', l:'var(--r)', be:'var(--oc-betp)', besl:'var(--oc-besl)' };
-  const outcomeColMap    = { 'TP':'var(--g)', 'SL':'var(--r)', 'BE-TP':'var(--oc-betp)', 'BE-SL':'var(--oc-besl)' };
-  const harmonizedColMap = { 'TP':'var(--g)', 'SL':'var(--r)', 'BE-TP':'var(--g)',       'BE-SL':'var(--r)' };
+  const outcomeColMap    = { 'TP':'var(--g)', 'SL':'var(--r)', 'BE-TP':'var(--oc-betp)', 'BE-SL':'var(--oc-besl)', 'BE':'var(--oc-be)' };
+  const harmonizedColMap = { 'TP':'var(--g)', 'SL':'var(--r)', 'BE-TP':'var(--g)',       'BE-SL':'var(--r)', 'BE':'var(--oc-be)' };
   const activeColMap     = _streakBeColorMode ? outcomeColMap : harmonizedColMap;
   const tt = document.getElementById('stl-tooltip') || (() => {
     const el = document.createElement('div');
@@ -22366,18 +22408,20 @@ function renderPairSession(trades) {
 // Detail panel reused by all performance widgets.
 // Opens on click from bar rows and heatmap cells.
 // ══════════════════════════════════════════════════════
-const _WD_OC_CLASS = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl' };
+const _WD_OC_CLASS = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl', 'BE':'oc-be' };
 const _WD_ROW_BG   = {
   TP:    'rgba(110,224,180,.12)',
   SL:    'rgba(224,90,114,.12)',
   'BE-TP':'rgba(41,98,255,.10)',
-  'BE-SL':'rgba(180,120,240,.10)'
+  'BE-SL':'rgba(180,120,240,.10)',
+  'BE':'rgba(90,156,245,.10)'
 };
 const _WD_BG_CLASS = {
   TP: 'wd-trade-card-tp',
   SL: 'wd-trade-card-sl',
   'BE-TP': 'wd-trade-card-betp',
   'BE-SL': 'wd-trade-card-besl',
+  'BE': 'wd-trade-card-be',
 };
 
 /* Build one trade card HTML for the shared drawer */
@@ -22500,7 +22544,7 @@ function _wdTradeCard(t) {
         ${t.date?`<div class="wd-trade-date">${_escapeHtml(t.date)}</div>`:''}
       </div>
       <div class="wd-trade-side">
-        <div class="wd-trade-r ${t.outcome==='BE-TP'?'wd-trade-r-betp':t.outcome==='BE-SL'?'wd-trade-r-besl':t.r>0?'wd-trade-r-pos':t.r<0?'wd-trade-r-neg':'wd-trade-r-neu'}">
+        <div class="wd-trade-r ${t.outcome==='BE-TP'?'wd-trade-r-betp':t.outcome==='BE-SL'?'wd-trade-r-besl':t.outcome==='BE'?'wd-trade-r-be':t.r>0?'wd-trade-r-pos':t.r<0?'wd-trade-r-neg':'wd-trade-r-neu'}">
           ${(() => {
             // Display value logic:
             //   - SL: show the realized SL magnitude. If tp1_rr is a finite negative
@@ -23352,7 +23396,7 @@ let _calYearMap   = {};
 
 const _CAL_MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const _CAL_DAY_LABELS = ['Mo','Tu','We','Th','Fr','Sa','Su'];
-const _CAL_OC_CLASS = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl' };
+const _CAL_OC_CLASS = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl', 'BE':'oc-be' };
 const _CAL_ROW_BG = {
   TP:'rgba(110,224,180,.12)',
   SL:'rgba(224,90,114,.12)',
@@ -43073,7 +43117,7 @@ function _renderMobTradeLogPage(wrap) {
   }
 
   const ocClass = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl' };
-  const rowTone = { TP:'is-tp', SL:'is-sl', 'BE-TP':'is-betp', 'BE-SL':'is-besl' };
+  const rowTone = { TP:'is-tp', SL:'is-sl', 'BE-TP':'is-betp', 'BE-SL':'is-besl', 'BE':'is-be' };
 
   let lastDate = null;
   let rows = '';
@@ -44109,6 +44153,7 @@ function renderShareView() {
     ..._getBeOutTradesAtTp(_svBeTp),
     ..._getBeMgmtChipMatchedTrades(),
     ..._getBeOutcomeExcludedTrades(),
+    ..._getBePlainOutcomeTrades(),
   ]);
   let _svBeCount;
   if (_shareMode === 'month' && selectedPeriod.ym) {

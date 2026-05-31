@@ -76,6 +76,7 @@ body.is-booting #dhb-badge {
   --chip-excluded:   #f07890;
   --oc-betp:         #2962ff;
   --oc-besl:         #b478f0;
+  --oc-be:           var(--gold);   /* directionless break-even — neutral gold */
   --streak-purple:   #9b6dff;
   --streak-orange:   #f39a3d;
 
@@ -821,6 +822,7 @@ body {
 .mob-tradelog-row.is-sl { background: color-mix(in srgb, var(--r) 18%, transparent); }
 .mob-tradelog-row.is-betp { background: color-mix(in srgb, var(--oc-betp) 15%, transparent); }
 .mob-tradelog-row.is-besl { background: color-mix(in srgb, var(--oc-besl) 15%, transparent); }
+.mob-tradelog-row.is-be { background: color-mix(in srgb, var(--oc-be) 15%, transparent); }
 .mob-tradelog-pair,
 .mob-tradelog-r,
 .mob-tradelog-total {
@@ -5404,6 +5406,7 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
 .oc-sl  { color: var(--r); font-weight:600 }
 .oc-betp{ color: var(--oc-betp); font-weight:600 }
 .oc-besl{ color: var(--oc-besl); font-weight:600 }
+.oc-be  { color: var(--oc-be); font-weight:600 }
 
 /* ══ EMPTY & NO DATA ══ */
 .empty-state {
@@ -11110,6 +11113,7 @@ body.ms-sidebar-open .view-tabs {
 .wd-trade-card-sl { background: color-mix(in srgb, var(--r) 12%, transparent); }
 .wd-trade-card-betp { background: color-mix(in srgb, var(--oc-betp) 10%, transparent); }
 .wd-trade-card-besl { background: color-mix(in srgb, var(--oc-besl) 10%, transparent); }
+.wd-trade-card-be { background: color-mix(in srgb, var(--oc-be) 10%, transparent); }
 .wd-trade-card.is-active {
   border-color: var(--gold);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent);
@@ -11287,6 +11291,7 @@ body.ms-sidebar-open .view-tabs {
 .wd-trade-r-neu { color: var(--gold); }
 .wd-trade-r-betp { color: var(--oc-betp); }
 .wd-trade-r-besl { color: var(--oc-besl); }
+.wd-trade-r-be { color: var(--oc-be); }
 .wd-trade-direction {
   font-size: var(--typo-micro-size);
   font-weight: 700;
