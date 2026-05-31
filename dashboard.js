@@ -43254,7 +43254,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ════════════════════════════════════════════════════════
 //  SHARE VIEW
 // ════════════════════════════════════════════════════════
-let _shareMode = 'year';   // 'year' | 'month'
+let _shareMode = 'month';   // 'year' | 'month'
 // Set to true while the share-view PNG export is mutating the DOM, so the
 // ResizeObserver doesn't trigger a mid-capture renderShareView and undo the
 // micro-hidden classes that the live view had already computed.
@@ -43400,7 +43400,11 @@ function _svPopulateMonthSel(trades, year) {
     '<option value="' + mo + '">' + _CAL_MONTHS[parseInt(mo, 10) - 1] + '</option>'
   )).join('');
 
+  // Default to the current calendar month when present in the data (mirrors
+  // _svPopulateYearSel's current-year preference), else the most recent month.
+  const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
   if (prev && sorted.includes(prev)) sel.value = prev;
+  else if (sorted.includes(currentMonth)) sel.value = currentMonth;
   else if (sorted.length) sel.value = sorted[0];
   else sel.value = '';
 
