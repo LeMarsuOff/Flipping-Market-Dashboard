@@ -1563,6 +1563,10 @@ const _swRealtime = (() => {
     _isApplyingRemoteTimer = setTimeout(() => {
       _isApplyingRemote = false;
       _isApplyingRemoteTimer = null;
+      // Drain any mapping-config writes that were deferred while the window
+      // was open (monkey-patch echo-guard branch). _SW.set bypasses the
+      // monkey-patch so this uploads cleanly now that the flag is cleared.
+      try { window._flushPendingSyncWrites?.(); } catch (e) {}
     }, _APPLY_REMOTE_WINDOW_MS);
   }
   // Exposed for the monkey-patch (and any other top-level write site)
@@ -1972,6 +1976,22 @@ function _flushPendingSyncWrites() {
 }
 window._flushPendingSyncWrites = _flushPendingSyncWrites;
 
+// Mapping-config keys (per-profile field overrides + field names). These are
+// written ONLY by deliberate user actions (pencil-pick in the Mapping panel,
+// screenshot auto-map, template (re)apply) — never by the remote-apply
+// re-render cascade. That distinction matters for the echo-guard below: it's
+// safe to keep syncing these even while the apply-remote window is open,
+// because _onUserData does not trigger a re-render for mapping keys, so there
+// is no echo loop to protect against. Dropping them was the root cause of the
+// "mapping reverts to default" bug (a pencil-pick inside the 1.5s window
+// stayed local-only, then the next remote-wins pull restored the stale
+// template default).
+function _isMappingConfigKey(key) {
+  if (!key) return false;
+  const base = String(key).replace(/_h4$/, '');
+  return base.startsWith('apiFieldOverrides_v1_') || base.startsWith('apiFieldNames_v1_');
+}
+
 ((() => {
   const _origSet    = localStorage.setItem.bind(localStorage);
   const _origRemove = localStorage.removeItem.bind(localStorage);
@@ -1993,7 +2013,19 @@ window._flushPendingSyncWrites = _flushPendingSyncWrites;
     // → another Realtime event → re-render → infinite echo loop. Skip the
     // Supabase push while the apply-remote window is active.
     if (typeof window._isApplyingRemoteRealtime === 'function'
-        && window._isApplyingRemoteRealtime()) return;
+        && window._isApplyingRemoteRealtime()) {
+      // Mapping-config writes are exempt from the blanket drop: they are
+      // user-initiated and never part of the cascade, so they can't echo-loop.
+      // Queue them and drain when the window closes (see _enterApplyingRemote)
+      // so a pencil-pick made inside the window still reaches the cloud and
+      // isn't reverted to the template default by the next remote-wins pull.
+      if (_isMappingConfigKey(key)
+          && window._SW && window._SW.getUser && window._SW.getUser()
+          && _pendingSyncWrites.length < 200) {
+        _pendingSyncWrites.push({ key, value, kind: 'set' });
+      }
+      return;
+    }
     if (window._SW && window._SW.getUser && window._SW.getUser()) {
       window._SW.set(key, value);
     } else if (window._SW && window._SW.set) {
