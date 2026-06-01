@@ -683,6 +683,9 @@ const _SW = (() => {
           if (data) {
             _lastSeenUpdatedAt.set(sk, data);
             _markSelfWrite('user_data', `${dashId}|${normKey}`, data);
+            // Cloud confirmed the mapping write — clear the dirty flag so future
+            // remote-wins pulls adopt normally (local and cloud now agree).
+            if (_isMappingConfigKey(key)) { try { _clearMappingDirty(key); } catch (e) {} }
           }
         } catch (e) {
           console.warn('[SW] upsert threw for', key, e?.message || e);
@@ -772,6 +775,22 @@ const _SW = (() => {
         }
         const lsKey = row.dashboard_id === 'h4'
           ? row.key + '_h4' : row.key;
+        // Dirty-guard (2026-06-01): a mapping override edited locally but not
+        // yet confirmed on the cloud must NOT be clobbered by a (possibly stale)
+        // remote value. Seed the seen-cache with the remote updated_at so the
+        // re-push's optimistic-concurrency check matches on the first try, then
+        // re-push the local value — this HEALS a stale cloud row instead of
+        // reverting the user's mapping. _SW.set clears the dirty flag on success.
+        if (_isMappingConfigKey(lsKey) && _isMappingDirty(lsKey)) {
+          if (row.updated_at) {
+            _lastSeenUpdatedAt.set(_seenKey('ud', row.dashboard_id, row.key), row.updated_at);
+          }
+          const localVal = localStorage.getItem(lsKey);
+          if (localVal && localVal !== 'null') {
+            try { window._SW?.set(lsKey, localVal); } catch (e) {}
+          }
+          continue;
+        }
         // Remote toujours prioritaire sur local au sync
         // (last-write-wins : Supabase est la source de vérité cross-device)
         const serialized = row.value?._raw !== undefined
@@ -888,6 +907,8 @@ const _SW = (() => {
               _lastSeenUpdatedAt.set(_seenKey('ud', dashId, normKey), newUpdatedAt);
               _markSelfWrite('user_data', `${dashId}|${normKey}`, newUpdatedAt);
             }
+            // Reconcile confirmed a previously-missing mapping key — clear dirty.
+            if (_isMappingConfigKey(lsKey)) { try { _clearMappingDirty(lsKey); } catch (e) {} }
           }
         } catch (e) {
           failed++;
@@ -1603,8 +1624,20 @@ const _swRealtime = (() => {
       window._SW._deleteSeen(window._SW._seenKey('ud', row.dashboard_id, row.key));
     } else {
       const serialized = row.value?._raw !== undefined ? row.value._raw : JSON.stringify(row.value);
-      _lsSetUntracked(lsKey, serialized);
-      window._SW._setSeen(window._SW._seenKey('ud', row.dashboard_id, row.key), row.updated_at);
+      // Dirty-guard (2026-06-01): same protection as syncFromRemote, but for the
+      // live Realtime path. Don't let an inbound (possibly stale) mapping value
+      // clobber an unconfirmed local edit — seed the seen-cache and re-push the
+      // local value so the cloud heals. _SW.set clears the dirty flag on success.
+      if (_isMappingConfigKey(lsKey) && _isMappingDirty(lsKey)) {
+        window._SW._setSeen(window._SW._seenKey('ud', row.dashboard_id, row.key), row.updated_at);
+        const localVal = localStorage.getItem(lsKey);
+        if (localVal && localVal !== 'null') {
+          try { window._SW.set(lsKey, localVal); } catch (e) {}
+        }
+      } else {
+        _lsSetUntracked(lsKey, serialized);
+        window._SW._setSeen(window._SW._seenKey('ud', row.dashboard_id, row.key), row.updated_at);
+      }
     }
     _maybeToast();
 
@@ -1991,6 +2024,51 @@ function _isMappingConfigKey(key) {
   const base = String(key).replace(/_h4$/, '');
   return base.startsWith('apiFieldOverrides_v1_') || base.startsWith('apiFieldNames_v1_');
 }
+
+// ── Mapping-config "dirty" tracking (2026-06-01, durable revert fix) ─────────
+// The mapping override key (apiFieldOverrides_v1_<profile>) is the one piece of
+// user-edited config that kept "reverting to template default" for members:
+//   1. their cloud row was stuck on a stale value (pre-fix corruption),
+//   2. every remote-wins pull (sign-in / refresh / refocus via _forcePull)
+//      unconditionally overwrote the local edit with that stale cloud value, and
+//   3. the reconcile pass only re-pushes keys MISSING from the cloud, never a
+//      present-but-stale one — so the stale cloud was never healed.
+// The earlier fixes (queue + force-flush) only protected the WRITE side. This
+// closes the loop: a deliberate local mapping edit is flagged DIRTY until a
+// cloud write is confirmed. A remote-wins pull must NOT clobber a dirty key —
+// it re-pushes the local value instead, which heals the stale cloud row. The
+// flag clears the moment _SW.set's RPC (or the reconcile push) confirms the
+// write. Local-only store (never synced), survives a hard refresh, keyed by the
+// full LS key (the `_h4` variant gets its own entry).
+const _MAPPING_DIRTY_LS_KEY = 'flipping_mapping_dirty_v1';
+function _getMappingDirtySet() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(_MAPPING_DIRTY_LS_KEY) || '[]');
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch { return new Set(); }
+}
+function _saveMappingDirtySet(set) {
+  const payload = JSON.stringify([...set]);
+  try {
+    // Untracked write: the dirty store is local-only and must never echo into
+    // Supabase or the apply-remote queue.
+    if (typeof window._lsSetUntracked === 'function') window._lsSetUntracked(_MAPPING_DIRTY_LS_KEY, payload);
+    else localStorage.setItem(_MAPPING_DIRTY_LS_KEY, payload);
+  } catch (e) {}
+}
+function _markMappingDirty(lsKey) {
+  if (!_isMappingConfigKey(lsKey)) return;
+  const s = _getMappingDirtySet();
+  if (!s.has(lsKey)) { s.add(lsKey); _saveMappingDirtySet(s); }
+}
+function _clearMappingDirty(lsKey) {
+  const s = _getMappingDirtySet();
+  if (s.has(lsKey)) { s.delete(lsKey); _saveMappingDirtySet(s); }
+}
+function _isMappingDirty(lsKey) {
+  try { return _getMappingDirtySet().has(lsKey); } catch { return false; }
+}
+window._isMappingDirty = _isMappingDirty;
 
 ((() => {
   const _origSet    = localStorage.setItem.bind(localStorage);
@@ -8069,6 +8147,12 @@ function _getAPIFieldOverrides(_source = null) {
 function _saveAPIFieldOverrides(obj) {
   const key = _fieldOverridesKey();
   debugLog('[DashboardDebug]');
+  // Flag the override key DIRTY *before* the write so the cloud-push success
+  // handler (_SW.set) can clear it once Supabase confirms. Set first because
+  // the push is fire-and-forget async — clearing only happens on confirmation,
+  // and a dropped/deduped push leaves the flag set so the next remote-wins pull
+  // re-pushes the local value instead of reverting it (see _isMappingDirty).
+  try { _markMappingDirty(key); } catch (e) {}
   try { safeSetLocalStorage(key, JSON.stringify(obj || {}), { kind: 'apiFieldOverrides' }); }
   catch (e) { console.warn('[DS] API overrides save failed:', e.message); }
   try { _clearNotionSyncCursor(); } catch (e) {}
