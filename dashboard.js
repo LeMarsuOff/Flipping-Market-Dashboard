@@ -8081,6 +8081,22 @@ function _saveAPIFieldOverrides(obj) {
   // manual force-sync). All current callers re-render synchronously, so
   // the invalidate-then-rewrite window is microseconds in the happy path.
   try { _invalidateNormalizedTradesCache(null, 'overrides-saved'); } catch (e) {}
+  // ── Force-flush pending sync writes (2026-06-01 follow-up) ────────────────
+  // The 2026-05-31 fix queues mapping writes during the `_isApplyingRemote`
+  // window and flushes them when the 1.5 s timer expires. But the timer is
+  // RESET every time `_enterApplyingRemote()` re-fires (preset/theme/blob
+  // Realtime event during the same window), so a burst of inbound events can
+  // keep the window open and starve the flush indefinitely. Symptom for the
+  // user: pencil-pick lands locally (LS updated) but never reaches the cloud
+  // because the queue keeps growing without draining — then the next remote-
+  // wins pull (refresh, sign-in, refocus) overwrites the local LS with the
+  // stale cloud value, and the mapping appears to "revert to default" again
+  // despite the user just re-saving. Flushing here guarantees that every
+  // deliberate mapping write reaches Supabase in the same tick as the LS
+  // write, regardless of how long the apply-remote window stays open.
+  // No-op when the queue is already empty (apply-remote window closed), so
+  // the happy path pays one function-call cost.
+  try { if (typeof window._flushPendingSyncWrites === 'function') window._flushPendingSyncWrites(); } catch (e) {}
 }
 
 // Wipe the parsed-trades cache (LS + sessionStorage + in-memory) for a
