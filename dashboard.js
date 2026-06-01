@@ -8494,7 +8494,7 @@ function _detectTemplateFromTitle(title) {
 // profile that was first-synced before a detection-logic fix kept the
 // stale template id forever (the banner lied about what the DB actually
 // looks like today).
-function _maybeAutoApplyTemplateMapping(rawTrades, profileOverride = null) {
+function _maybeAutoApplyTemplateMapping(rawTrades, profileOverride = null, opts = {}) {
   // Respect the explicit bucket the user picked at profile creation. Three
   // possible values on profile.templateChoice : 'm15' / 'h4' / 'other'.
   // Existing profiles created before the chooser default to 'other' via
@@ -8596,6 +8596,38 @@ function _maybeAutoApplyTemplateMapping(rawTrades, profileOverride = null) {
   }
 
   if (!mapping || !Object.keys(mapping).length) return null;
+
+  // ── Revert guard (2026-05-31) ────────────────────────────────────────────
+  // We only reach the template-default WRITE when the override set read EMPTY.
+  // On a genuine FIRST connect that's correct — seed the template baseline.
+  // But on a profile that has ALREADY synced before, an empty override set is
+  // anomalous (the user's mapping should be present) and writing template
+  // defaults here is exactly the "RR Max / screenshots revert to default on
+  // re-sync" bug: whatever transiently emptied the set (a stale/empty `{}`
+  // pulled from the cloud, an LS wipe, a scope race) gets cemented as the
+  // template default, clobbering the user's real mapping on every sync.
+  // So: NEVER auto-write template defaults over an established profile. The
+  // real overrides come from the cloud pull / already-present LS, and the
+  // explicit "Reapply template defaults" button (opts.forceWrite) is the only
+  // sanctioned way to re-seed defaults on demand. Banner was already refreshed
+  // above; we just decline the destructive write and keep the set as-is.
+  const _profileSyncedBefore = !!(profile?.notionLastSync
+    || Number(profile?.notionTradeCount || 0) > 0
+    || profile?.notionSyncState === 'synced');
+  if (_profileSyncedBefore && !opts.forceWrite) {
+    try {
+      const _gKey = _fieldOverridesKey();
+      let _gRaw = null; try { _gRaw = localStorage.getItem(_gKey); } catch (e) {}
+      console.warn('[MappingRevert] blocked an automatic template-default rewrite on an already-synced profile with an empty override set — kept the existing mapping instead of reverting to defaults.', {
+        profileId: profile?.id || '(none)', overrideKey: _gKey, rawLSValue: _gRaw,
+        notionLastSync: profile?.notionLastSync || null,
+        notionSyncState: profile?.notionSyncState || null,
+        notionTradeCount: profile?.notionTradeCount || 0, bucket, detected,
+      });
+    } catch (e) {}
+    return trackingId;
+  }
+
   _saveAPIFieldOverrides({ ...mapping });
   // Tag every dim as "auto-mapped" so the Mapping panel renders them green
   // (is-auto-mapped) instead of blue (is-remapped). The flag is per-dim:
@@ -8768,6 +8800,13 @@ function _autoMapScreenshotsByRawKeys(rawTrades, source = null) {
   if (!sample) return;
   const effectiveSource = String(source || _getCurrentHTFSource() || 'm15').toLowerCase();
   const overrides = _getAPIFieldOverrides();
+  // Dims still flagged auto-mapped are the only ones eligible for re-derivation.
+  // pickAPIField removes a dim from this set the moment the user pencil-picks
+  // it, so a screenshot override that is PRESENT but NOT in the set is a
+  // deliberate user choice and must never be re-derived (the "F&M wins" branch
+  // below was overwriting user-picked screenshot mappings on every sync/reload,
+  // producing the "screenshots remap / duplicate on re-sync" report).
+  const autoMappedDims = _getAutoMappedDims();
   const newAutoKeys = [];
   let changed = false;
 
@@ -8790,6 +8829,10 @@ function _autoMapScreenshotsByRawKeys(rawTrades, source = null) {
   for (const dimKey of Object.keys(_SCREENSHOT_CAMEL_ALIASES)) {
     const existing = String(overrides[dimKey] || '').trim();
     if (_isNoMappingValue(existing)) continue;
+    // User-owned override (present but not auto-mapped) → authoritative, leave
+    // it untouched. Only auto-mapped dims (still in the set) and empty dims are
+    // eligible for (re-)derivation / the stale-URL → permanent-F&M upgrade.
+    if (existing && !autoMappedDims.has(dimKey)) continue;
 
     const existingKind = existing && Object.prototype.hasOwnProperty.call(sample, existing)
       ? _classifyScreenshotValue(sample[existing])
@@ -9046,8 +9089,10 @@ function _reapplyTemplateMapping() {
   // mapping from TEMPLATE_MAPPINGS, writes it to gs_api_field_overrides_<id>,
   // and tags every key in the auto-mapped set. rawTrades param is
   // unused inside (kept for signature stability) so we pass undefined.
+  // forceWrite:true bypasses the established-profile revert guard — this IS
+  // the sanctioned "re-seed defaults on demand" path the guard defers to.
   if (typeof _maybeAutoApplyTemplateMapping === 'function') {
-    try { _maybeAutoApplyTemplateMapping(); }
+    try { _maybeAutoApplyTemplateMapping(undefined, null, { forceWrite: true }); }
     catch (e) { console.error('[ReapplyTemplate] auto-map failed:', e); }
   }
 
