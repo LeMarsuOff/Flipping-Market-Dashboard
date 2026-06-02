@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=291">
+<link rel="stylesheet" href="dashboard.css?v=306">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -2384,10 +2384,24 @@
     <div class="chart-card gs-widget" data-gs-id="w-recovery" data-section="global">
       <div class="cc-head">
         <span class="cc-title">Post-Drawdown Recovery</span>
-        <span class="cc-hint">DD (R) × Trades to recover peak</span>
+        <div class="cc-head-controls cc-head-controls-sm">
+          <!-- View toggle: scatter ↔ histogram -->
+          <div class="control-group control-group-calendar" id="recovery-view-toggle">
+            <button data-action="set-recovery-view" data-view="scatter" class="bar-sort-btn bar-sort-btn-segment active" title="Scatter — DD depth × recovery time">Scatter</button>
+            <button data-action="set-recovery-view" data-view="histogram" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Histogram — distribution of drawdown depths">Distribution</button>
+          </div>
+          <!-- Percentile selector (histogram mode only) -->
+          <div class="control-group control-group-calendar is-hidden" id="recovery-pct-group">
+            <button data-action="set-recovery-pct" data-pct="50" class="bar-sort-btn bar-sort-btn-segment" title="50th percentile (median)">P50</button>
+            <button data-action="set-recovery-pct" data-pct="60" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split">P60</button>
+            <button data-action="set-recovery-pct" data-pct="75" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split">P75</button>
+            <button data-action="set-recovery-pct" data-pct="90" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split active">P90</button>
+          </div>
+        </div>
       </div>
       <div class="canvas-stage">
         <canvas id="recoveryCanvas" class="canvas-absolute-fill"></canvas>
+        <div id="recoveryHistogram" class="recovery-histogram is-hidden"></div>
       </div>
     </div>
 
@@ -2869,6 +2883,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=861"></script>
+<script src="dashboard.js?v=873"></script>
 </body>
 </html>

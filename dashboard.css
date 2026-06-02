@@ -5292,6 +5292,202 @@ body.cw-col-resizing * {
 }
 .dd-toggle-icon { font-size: var(--typo-panel-size); }
 
+/* ══ POST-DRAWDOWN RECOVERY — Distribution view ══
+   HTML histogram of drawdown depths. Lives inside the same canvas-stage as
+   the scatter canvas; visibility is mutex-toggled via .is-hidden by the
+   renderRecovery dispatcher. Bars use the canonical red gradient (--r2 → --r3)
+   with the percentile bucket promoted to gold for a clear focal point. */
+.recovery-histogram {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-4) var(--space-3);
+  font-family: 'DM Mono', monospace;
+  color: var(--body);
+  overflow: hidden;
+}
+.recovery-histogram.is-hidden { display: none; }
+.recovery-hist-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+.recovery-hist-title {
+  /* G04 — Widget Titles (.cc-title family). All four props read from the
+     typo token so the Theme Editor's "Widget Titles" slider drives this. */
+  font-size: var(--typo-widget-title-size);
+  font-weight: var(--typo-widget-title-weight);
+  letter-spacing: var(--typo-widget-title-ls);
+  text-transform: var(--typo-widget-title-tt);
+  color: var(--r);
+}
+.recovery-hist-sub {
+  /* G05 — Widget Secondary Text (subtitles, meta info). */
+  font-size: var(--typo-widget-sub-size);
+  font-weight: var(--typo-widget-sub-weight);
+  letter-spacing: var(--typo-widget-sub-ls);
+  color: var(--dim);
+}
+.recovery-hist-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 4px;
+  min-height: 0;
+  overflow: hidden;
+}
+.recovery-hist-row {
+  /* Fixed grid: [label] [bar] [meta] [badge slot]. The badge slot is ALWAYS
+     reserved so rows without a P-badge keep the same count+% column position
+     as the percentile row that does carry one. */
+  display: grid;
+  grid-template-columns: 64px 1fr 96px 38px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: box-shadow .12s ease;
+}
+.recovery-hist-row.is-empty { cursor: default; }
+/* Click selection — matches Performance Bars (.bar-row.lb-active) and Partial
+   Optimizer RR-distribution chips (.pp-gchip.lb-active): inset 2px gold
+   outline, no background fill. Cleared by closeWidgetDrawer when the
+   drawer dismisses. */
+.recovery-hist-row.is-selected {
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+.recovery-hist-label {
+  /* G08 — Chart Axis / Legend / Labels (same group as Performance Bars
+     bar-label so they scale together via the Theme Editor slider). */
+  font-size: var(--typo-chart-axis-size);
+  font-weight: var(--typo-chart-axis-weight);
+  letter-spacing: var(--typo-chart-axis-ls);
+  color: var(--dim);
+  text-align: right;
+  padding-right: 2px;
+}
+.recovery-hist-row.is-percentile .recovery-hist-label {
+  /* Drawdown context — use the amber/warning token (--a) rather than --gold,
+     which resolves to teal/blue in the light themes (Dawn / Flipping) and
+     reads as off-context for a "deepest cases" highlight. */
+  color: var(--a);
+  font-weight: 600;
+}
+.recovery-hist-track {
+  /* Match Performance Bars (.bar-track) — flat --bg3 track, --r solid fill,
+     so the histogram reads as part of the same visual family as the H4
+     Obstacles / Setup / Pair bars. */
+  position: relative;
+  height: 14px;
+  background: var(--bg3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.recovery-hist-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--r);
+  transition: width .25s ease;
+}
+.recovery-hist-row.is-percentile .recovery-hist-fill {
+  /* Percentile bucket — switch to --a (warning amber/orange), same red-family
+     direction as the rest of the histogram but pushed to a "more severe red"
+     so it reads distinctly without leaving the loss color spectrum. */
+  background: var(--a);
+}
+.recovery-hist-meta {
+  /* Sub-grid keeps the count, separator and percentage columns at fixed X
+     positions across every row regardless of how many digits each cell
+     carries — "33 · 42.1%" lines up byte-for-byte with "1 · 2.6%". */
+  display: grid;
+  grid-template-columns: 28px 10px 1fr;
+  align-items: center;
+  /* G09 — Chart Value Labels (inline bar values). Same group as the
+     Performance Bars right-side count + R value so all dashboard bar
+     widgets scale in lockstep with the Theme Editor slider. */
+  font-size: var(--typo-chart-val-size);
+  font-weight: var(--typo-chart-val-weight);
+  letter-spacing: var(--typo-chart-val-ls);
+  color: var(--body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.recovery-hist-count { text-align: right; }
+.recovery-hist-sep   { text-align: center; color: var(--dim); }
+.recovery-hist-pct   { text-align: right;  color: var(--dim); }
+.recovery-hist-row.is-empty .recovery-hist-meta { color: var(--dim); opacity: .7; }
+/* Dedicated slot keeps the badge from displacing the count + pct columns
+   on the row that carries it. Empty on every other row so vertical
+   alignment of the count column stays pixel-clean. */
+.recovery-hist-badge-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.recovery-hist-badge {
+  padding: 1px 6px;
+  border-radius: var(--rad);
+  background: color-mix(in srgb, var(--a) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--a) 45%, transparent);
+  color: var(--a);
+  /* G15 — Micro / Helper Text (badges, ds-status, annotations). Weight kept
+     hardcoded bold so the badge stays visually a pill rather than inheriting
+     the regular-weight micro text used in legends. */
+  font-size: var(--typo-micro-size);
+  font-weight: 700;
+  letter-spacing: var(--typo-micro-ls);
+}
+.recovery-hist-foot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+.recovery-hist-foot-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.recovery-hist-foot-lbl {
+  /* G07 — KPI Labels. Same group as "TRADES / TOTAL R / WIN RATE / …" in the
+     Statistics Overview tiles, so a typography tweak on KPI labels in the
+     editor instantly propagates here too. */
+  font-size: var(--typo-kpi-lbl-size);
+  font-weight: var(--typo-kpi-lbl-weight);
+  letter-spacing: var(--typo-kpi-lbl-ls);
+  text-transform: var(--typo-kpi-lbl-tt);
+  color: var(--dim);
+}
+.recovery-hist-foot-val {
+  /* G06 — KPI Values. Matches the big-number convention of Statistics
+     Overview tile values so the footer's P/DDMAX read as first-class KPIs. */
+  font-size: var(--typo-kpi-val-size);
+  font-weight: var(--typo-kpi-val-weight);
+  letter-spacing: var(--typo-kpi-val-ls);
+  line-height: var(--typo-kpi-val-lh);
+  /* Match the percentile bucket highlight (amber/warning) — same family as
+     the loss color but pushed toward the "more severe red" end of the spec. */
+  color: var(--a);
+}
+.recovery-hist-foot-val-r { color: var(--r); }
+.recovery-hist-foot-note {
+  /* G05 — Widget Secondary Text. Same family as the head's "N observations"
+     sub so the two annotation rows stay visually consistent. */
+  font-size: var(--typo-widget-sub-size);
+  font-weight: var(--typo-widget-sub-weight);
+  letter-spacing: var(--typo-widget-sub-ls);
+  color: var(--dim);
+}
+
 /* ══ TRADE TABLE ══ */
 .trade-table-wrap {
   background: var(--bg1);

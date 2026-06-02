@@ -4412,6 +4412,35 @@ function handleActionClick(event) {
       if (sec) sec.classList.toggle('is-expanded');
       break;
     }
+    case 'set-recovery-view': setRecoveryView(actionEl.dataset.view); break;
+    case 'set-recovery-pct':  setRecoveryPercentile(actionEl.dataset.pct); break;
+    case 'recovery-hist-bar': {
+      const idx = parseInt(actionEl.dataset.bucketIdx, 10);
+      if (!Number.isFinite(idx)) break;
+      const entry = _recoveryHistBuckets[idx];
+      if (!entry || !entry.occurrences.length) break;
+      // Bucket may contain ANY mix of recovered + active DDs. The drawer
+      // schema groups by single (x, y) — for the histogram we fabricate a
+      // virtual bucket whose x/y/n reflect the bucket range. isActive in
+      // openRecoveryDrawer's opts mirrors "the worst occurrence is active",
+      // which keeps the "ongoing" subtitle accurate when the active DD lives
+      // in this bucket.
+      const occs = entry.occurrences;
+      const worstActive = occs.some(o => o.isActive);
+      const fakeBucket = {
+        x: `${entry.bucket.lo}–${entry.bucket.hi}`,
+        y: occs.length,
+        n: occs.length,
+        occurrences: occs,
+      };
+      openRecoveryDrawer(fakeBucket, entry.sorted, { isActive: worstActive });
+      // Visual selection state — clear scatter selection, set bar one, redraw.
+      _recoveryActiveIdx       = null;
+      _recoveryActiveCrossIdx  = null;
+      _recoveryHistActiveIdx   = idx;
+      renderRecovery(getFiltered());
+      break;
+    }
     // (legacy confirm-overwrite-* actions removed in v2 — the Save dropdown replaces the overwrite confirm flow)
     case 'open-tradelog-drawer': {
       const date = actionEl.dataset.tradeDate || '';
@@ -21032,23 +21061,29 @@ let _recoveryActiveIdx = null;
 // across both bubble and cross markers.
 let _recoveryActiveCrossIdx = null;
 
-function renderRecovery(trades) {
-  const canvas = getByIdSafe('recoveryCanvas');
-  if (!canvas) return;
-  if (_recoveryChart) { _recoveryChart.destroy(); _recoveryChart = null; }
-  const RECOVERY_WRAP = '.chart-card[data-gs-id="w-recovery"] .canvas-stage';
-  if (!trades.length) {
-    renderCanvasEmptyState(RECOVERY_WRAP, ['recoveryCanvas']);
-    return;
-  }
-  clearCanvasEmptyState(RECOVERY_WRAP);
-  if (trades.length < 5 || !hasChartJs()) return;
+// View mode (scatter | histogram) and percentile (50/60/75/90) for the
+// Distribution sub-view. Both persisted per-machine in localStorage — purely
+// presentational, no cross-device sync needed.
+const _RECOVERY_VIEW_KEY = 'recoveryViewMode_v1';
+const _RECOVERY_PCT_KEY  = 'recoveryPercentile_v1';
+let _recoveryViewMode  = (() => {
+  try { const v = localStorage.getItem(_RECOVERY_VIEW_KEY); return v === 'histogram' ? 'histogram' : 'scatter'; }
+  catch (_) { return 'scatter'; }
+})();
+let _recoveryPercentile = (() => {
+  try {
+    const v = parseInt(localStorage.getItem(_RECOVERY_PCT_KEY), 10);
+    return [50, 60, 75, 90].includes(v) ? v : 90;
+  } catch (_) { return 90; }
+})();
+// Index of the highlighted bucket in the histogram (null = none clicked).
+let _recoveryHistActiveIdx = null;
 
-  // Sort by date+hour
+/* Extract the chronological list of drawdown-recovery objects from a trade set.
+   Shared between the scatter (renderRecoveryScatter) and the histogram
+   (renderRecoveryHistogram) so both views compute on exactly the same data. */
+function _computeRecoverySequences(trades) {
   const sorted = _sortTradesChronological(trades);
-
-  // Find all drawdown recovery sequences
-  // A "recovery" = trades from a local peak drop to recovery back to that peak
   const tpConfig = appState.ui.tpConfig;
   let eq = 0, peak = 0;
   const recoveries = [];
@@ -21059,12 +21094,12 @@ function renderRecovery(trades) {
     if (eq >= peak) {
       if (inDD && i - ddStart > 0) {
         recoveries.push({
-          ddDepth:  Math.abs(ddDepth),
-          trades:   i - ddStart,
+          ddDepth:    Math.abs(ddDepth),
+          trades:     i - ddStart,
           rToRecover: eq - ddPeak,
-          startIdx: ddStart,
-          troughIdx: ddTroughIdx,
-          endIdx:   i,
+          startIdx:   ddStart,
+          troughIdx:  ddTroughIdx,
+          endIdx:     i,
         });
       }
       peak = eq;
@@ -21075,9 +21110,8 @@ function renderRecovery(trades) {
     }
   });
 
-  // If dataset ends inside an active drawdown (not yet recovered),
-  // add a dedicated point with isActive: true. This ensures the widget
-  // reflects the Max DD from calcStats, which includes unrecovered DDs.
+  // If dataset ends inside an active drawdown (not yet recovered), add a
+  // dedicated entry with isActive: true so the widget mirrors calcStats Max DD.
   if (inDD) {
     recoveries.push({
       ddDepth:    Math.abs(ddDepth),
@@ -21089,7 +21123,83 @@ function renderRecovery(trades) {
       isActive:   true,
     });
   }
+  return { sorted, recoveries };
+}
 
+/* Toggle between scatter and histogram views. Persists the choice to LS and
+   re-renders with the currently filtered dataset. */
+function setRecoveryView(mode) {
+  const next = mode === 'histogram' ? 'histogram' : 'scatter';
+  if (next === _recoveryViewMode) return;
+  _recoveryViewMode = next;
+  try { localStorage.setItem(_RECOVERY_VIEW_KEY, next); } catch (_) {}
+  // Reset selections so a leftover highlight from the other view doesn't bleed in.
+  _recoveryActiveIdx = null;
+  _recoveryActiveCrossIdx = null;
+  _recoveryHistActiveIdx = null;
+  _syncRecoveryToolbar();
+  renderRecovery(getFiltered());
+}
+
+/* Change the percentile used in histogram mode (50/60/75/90). */
+function setRecoveryPercentile(pctRaw) {
+  const pct = parseInt(pctRaw, 10);
+  if (![50, 60, 75, 90].includes(pct)) return;
+  if (pct === _recoveryPercentile) return;
+  _recoveryPercentile = pct;
+  try { localStorage.setItem(_RECOVERY_PCT_KEY, String(pct)); } catch (_) {}
+  _syncRecoveryToolbar();
+  if (_recoveryViewMode === 'histogram') renderRecovery(getFiltered());
+}
+
+/* Sync the toolbar (toggle active state + percentile group visibility + hint
+   text) to the current module state. Called on view/percentile changes and on
+   boot so refreshes survive. */
+function _syncRecoveryToolbar() {
+  document.querySelectorAll('#recovery-view-toggle [data-action="set-recovery-view"]').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === _recoveryViewMode);
+  });
+  const pctGroup = document.getElementById('recovery-pct-group');
+  if (pctGroup) pctGroup.classList.toggle('is-hidden', _recoveryViewMode !== 'histogram');
+  document.querySelectorAll('#recovery-pct-group [data-action="set-recovery-pct"]').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.pct, 10) === _recoveryPercentile);
+  });
+}
+
+/* Top-level dispatcher: routes to scatter or histogram renderer based on the
+   active view mode. Both renderers share the canvas-stage container — the
+   inactive surface is hidden via .is-hidden. */
+function renderRecovery(trades) {
+  const canvas    = getByIdSafe('recoveryCanvas');
+  const histEl    = document.getElementById('recoveryHistogram');
+  if (!canvas && !histEl) return;
+  // Swap visibility of canvas vs HTML surface based on view mode.
+  if (canvas) canvas.classList.toggle('is-hidden', _recoveryViewMode === 'histogram');
+  if (histEl) histEl.classList.toggle('is-hidden', _recoveryViewMode !== 'histogram');
+  _syncRecoveryToolbar();
+  if (_recoveryViewMode === 'histogram') {
+    if (_recoveryChart) { _recoveryChart.destroy(); _recoveryChart = null; }
+    renderRecoveryHistogram(trades);
+  } else {
+    if (histEl) histEl.innerHTML = '';
+    renderRecoveryScatter(trades);
+  }
+}
+
+/* Original scatter view — DD depth × trades to recover peak. */
+function renderRecoveryScatter(trades) {
+  const canvas = getByIdSafe('recoveryCanvas');
+  if (!canvas) return;
+  if (_recoveryChart) { _recoveryChart.destroy(); _recoveryChart = null; }
+  const RECOVERY_WRAP = '.chart-card[data-gs-id="w-recovery"] .canvas-stage';
+  if (!trades.length) {
+    renderCanvasEmptyState(RECOVERY_WRAP, ['recoveryCanvas']);
+    return;
+  }
+  clearCanvasEmptyState(RECOVERY_WRAP);
+  if (trades.length < 5 || !hasChartJs()) return;
+
+  const { sorted, recoveries } = _computeRecoverySequences(trades);
   if (!recoveries.length) {
     canvas.getContext?.('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     return;
@@ -21258,6 +21368,180 @@ function renderRecovery(trades) {
       }
     }]
   });
+}
+
+/* Build the adaptive bucket schema for the drawdown distribution.
+   1R-wide buckets up to 5R, 2R-wide buckets beyond — same breakpoints as
+   the reference design. The last bucket always extends to ceil(maxDepth),
+   even if it's the only one with observations there, so the worst DD
+   always falls inside a bucket.
+
+   Bucket convention: lo <= d < hi (right-exclusive) so the ranges don't
+   overlap at the integer edges. Labels reflect this with .9 upper bounds
+   ("0–0.9R", "1–1.9R", "5–6.9R", …) — a DD of exactly 1.0R unambiguously
+   lands in the [1, 2) bucket, never in [0, 1). */
+function _recoveryBuckets(maxDepth) {
+  // Up to 5R: 0-1, 1-2, 2-3, 3-4, 4-5
+  // Beyond:   5-7, 7-9, 9-11, 11-13, 13-15, …
+  const buckets = [
+    { lo: 0, hi: 1 }, { lo: 1, hi: 2 }, { lo: 2, hi: 3 },
+    { lo: 3, hi: 4 }, { lo: 4, hi: 5 },
+  ];
+  const top = Math.max(5, Math.ceil(maxDepth));
+  for (let lo = 5; lo < top; lo += 2) {
+    buckets.push({ lo, hi: lo + 2 });
+  }
+  // Format the label to make the right-exclusive convention readable.
+  // Upper bound is shown as (hi - 0.1) which renders as "0.9", "1.9", "6.9", …
+  const _fmt = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return buckets.map((b, i, arr) => ({
+    lo: b.lo,
+    hi: b.hi,
+    label: `${_fmt(b.lo)}–${_fmt(b.hi - 0.1)}R`,
+    isLast: i === arr.length - 1,
+  }));
+}
+
+/* Compute the requested quantile from a numeric array using linear
+   interpolation (the same convention as NumPy's default).
+   Returns NaN on an empty input. */
+function _recoveryQuantile(values, pct) {
+  if (!values || !values.length) return NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 1) return sorted[0];
+  const rank = (pct / 100) * (sorted.length - 1);
+  const lo = Math.floor(rank), hi = Math.ceil(rank);
+  if (lo === hi) return sorted[lo];
+  const frac = rank - lo;
+  return sorted[lo] + frac * (sorted[hi] - sorted[lo]);
+}
+
+// Cache of {bucketIdx → occurrences[]} keyed by render — populated by
+// renderRecoveryHistogram, read by the click delegation in dispatcher.
+let _recoveryHistBuckets = [];
+
+/* Histogram view — distribution of drawdown depths.
+   - Bars colored with the same red gradient as the rest of the DD UI.
+   - The bucket containing the selected percentile gets a gold highlight + badge.
+   - The active (unrecovered) DD is shown with a dashed gold inner border in
+     its bucket so it remains distinguishable.
+   - Clicking a bar opens the existing recovery drawer with all occurrences
+     in that bucket sorted deepest-first. */
+function renderRecoveryHistogram(trades) {
+  const host = document.getElementById('recoveryHistogram');
+  if (!host) return;
+  const RECOVERY_WRAP = '.chart-card[data-gs-id="w-recovery"] .canvas-stage';
+
+  if (!trades.length) {
+    host.innerHTML = '';
+    renderCanvasEmptyState(RECOVERY_WRAP, ['recoveryCanvas']);
+    return;
+  }
+  clearCanvasEmptyState(RECOVERY_WRAP);
+  if (trades.length < 5) { host.innerHTML = ''; return; }
+
+  const { sorted, recoveries } = _computeRecoverySequences(trades);
+  if (!recoveries.length) { host.innerHTML = ''; return; }
+
+  // Depths drive both the bucket schema and the percentile.
+  const depths = recoveries.map(r => r.ddDepth);
+  const maxDepth = depths.reduce((m, d) => Math.max(m, d), 0);
+  const buckets  = _recoveryBuckets(maxDepth);
+
+  // Fold each recovery into its bucket. The last bucket is inclusive on both
+  // edges so an exact-edge worst DD still lands somewhere.
+  const folded = buckets.map(() => ({ occurrences: [], hasActive: false }));
+  recoveries.forEach(r => {
+    const idx = buckets.findIndex(b => b.isLast
+      ? r.ddDepth >= b.lo && r.ddDepth <= b.hi
+      : r.ddDepth >= b.lo && r.ddDepth <  b.hi);
+    if (idx < 0) return;
+    folded[idx].occurrences.push(r);
+    if (r.isActive) folded[idx].hasActive = true;
+  });
+
+  // Persist the click-route cache so the dispatcher can resolve occurrences
+  // without re-running the full extraction. Cache uses the ORIGINAL bucket
+  // indexes (pre-trim) so click-bucket-idx attributes stay stable across
+  // re-renders and match what _recoveryHistBuckets stores.
+  _recoveryHistBuckets = folded.map((b, i) => ({
+    bucket: buckets[i],
+    occurrences: b.occurrences.slice().sort((a, c) => c.ddDepth - a.ddDepth),
+    sorted,
+  }));
+
+  const total = recoveries.length;
+  const maxCount = folded.reduce((m, b) => Math.max(m, b.occurrences.length), 1);
+  const pct = _recoveryPercentile;
+  const pctValue = _recoveryQuantile(depths, pct);
+  const pctBucketIdx = buckets.findIndex(b => b.isLast
+    ? pctValue >= b.lo && pctValue <= b.hi
+    : pctValue >= b.lo && pctValue <  b.hi);
+  const ddMax = depths.reduce((m, d) => Math.max(m, d), 0);
+  const aboveCount = depths.filter(d => d > pctValue).length;
+  const abovePct = total > 0 ? (aboveCount / total) * 100 : 0;
+
+  const fmtR = v => (Number.isFinite(v) ? `−${v.toFixed(2)}R` : '—');
+  const fmtPct1 = v => `${v.toFixed(1)}%`;
+
+  // Trim leading empty buckets — 0–0.9R, 1–1.9R, … (consecutive zeros from
+  // the start) get hidden so the visible range starts at the first bucket
+  // with at least one observation. Trailing empty buckets between populated
+  // ones are kept to preserve the scale (e.g. a gap at 7–8.9R between the
+  // 5–6.9 and 9–10.9 populated buckets stays visible).
+  let firstVisibleIdx = folded.findIndex(b => b.occurrences.length > 0);
+  if (firstVisibleIdx < 0) firstVisibleIdx = 0;
+
+  const rowsHtml = folded.map((b, i) => {
+    if (i < firstVisibleIdx) return '';
+    const n = b.occurrences.length;
+    const pctOfTotal = total > 0 ? (n / total) * 100 : 0;
+    const widthPct = maxCount > 0 ? (n / maxCount) * 100 : 0;
+    const isPct = i === pctBucketIdx;
+    const cls = [
+      'recovery-hist-row',
+      n === 0 ? 'is-empty' : '',
+      isPct ? 'is-percentile' : '',
+      i === _recoveryHistActiveIdx ? 'is-selected' : '',
+    ].filter(Boolean).join(' ');
+    // Badge lives in its OWN grid column so it never displaces the count + pct
+    // columns. When this row isn't the percentile bucket, the column renders
+    // empty space of the same width so every row stays vertically aligned.
+    const badge = isPct ? `<span class="recovery-hist-badge">P${pct}</span>` : '';
+    return `
+      <div class="${cls}" data-action="recovery-hist-bar" data-bucket-idx="${i}"
+           title="DD ${buckets[i].label} · ${n} observation${n>1?'s':''} · ${fmtPct1(pctOfTotal)}">
+        <span class="recovery-hist-label">${buckets[i].label}</span>
+        <span class="recovery-hist-track">
+          <span class="recovery-hist-fill" style="width:${widthPct}%"></span>
+        </span>
+        <span class="recovery-hist-meta">
+          <span class="recovery-hist-count">${n}</span>
+          <span class="recovery-hist-sep">·</span>
+          <span class="recovery-hist-pct">${fmtPct1(pctOfTotal)}</span>
+        </span>
+        <span class="recovery-hist-badge-slot">${badge}</span>
+      </div>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div class="recovery-hist-head">
+      <span class="recovery-hist-title">Drawdown Distribution</span>
+      <span class="recovery-hist-sub">${total} observation${total > 1 ? 's' : ''}</span>
+    </div>
+    <div class="recovery-hist-body">${rowsHtml}</div>
+    <div class="recovery-hist-foot">
+      <div class="recovery-hist-foot-stat">
+        <span class="recovery-hist-foot-lbl">P${pct}</span>
+        <span class="recovery-hist-foot-val">${fmtR(pctValue)}</span>
+        <span class="recovery-hist-foot-note">${fmtPct1(abovePct)} of cases deeper</span>
+      </div>
+      <div class="recovery-hist-foot-stat">
+        <span class="recovery-hist-foot-lbl">DDMAX</span>
+        <span class="recovery-hist-foot-val recovery-hist-foot-val-r">${fmtR(ddMax)}</span>
+        <span class="recovery-hist-foot-note">worst on record</span>
+      </div>
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════
@@ -23249,12 +23533,28 @@ function openRecoveryDrawer(bucket, sorted, opts = {}) {
 
   const isActive = !!opts.isActive;
   const n = bucket.occurrences.length;
-  const title = isActive
-    ? `Active Drawdown  −${bucket.x}R × ${bucket.y} trades (ongoing)`
-    : `DD Recovery  −${bucket.x}R × ${bucket.y} trades`;
-  const sub = isActive
-    ? 'Not yet recovered'
-    : `${n} occurrence${n > 1 ? 's' : ''}`;
+  // Histogram bars route here with a range string (e.g. "5–7") in bucket.x;
+  // the scatter bubble routes with a numeric depth. Detect and format
+  // accordingly so the title stays readable in both contexts.
+  const xIsRange = typeof bucket.x === 'string' && bucket.x.includes('–');
+  // A histogram bucket can mix active + recovered DDs — count actives so the
+  // title/sub stay accurate without over-claiming "Active Drawdown" for the
+  // whole bucket.
+  const activeCount = bucket.occurrences.filter(o => o.isActive).length;
+  const titleAuto = xIsRange
+    ? `DD Recovery — ${bucket.x}R bucket`
+    : (isActive
+        ? `Active Drawdown  −${bucket.x}R × ${bucket.y} trades (ongoing)`
+        : `DD Recovery  −${bucket.x}R × ${bucket.y} trades`);
+  const subAuto = xIsRange
+    ? (activeCount > 0
+        ? `${n} occurrence${n>1?'s':''} · ${activeCount} ongoing`
+        : `${n} occurrence${n>1?'s':''}`)
+    : (isActive
+        ? 'Not yet recovered'
+        : `${n} occurrence${n > 1 ? 's' : ''}`);
+  const title = opts.title || titleAuto;
+  const sub   = opts.sub   || subAuto;
 
   const _tradeMs = t => {
     const [y, m, d] = (t?.date || '').split('-').map(Number);
@@ -23280,7 +23580,11 @@ function openRecoveryDrawer(bucket, sorted, opts = {}) {
     const ddDur  = _fmtSeqDuration(ddTrades);
     const recDur = _fmtSeqDuration(recTrades);
 
-    if (isActive) {
+    // Per-occurrence active/recovered branch — drives the "Active Drawdown"
+    // label, the (ongoing) markers, and the remaining-R subtotal. A histogram
+    // bucket can mix both states, so we MUST read occ.isActive (not the
+    // bucket-level opts.isActive) to render each card correctly.
+    if (occ.isActive) {
       const rangeLabel = `${sorted[occ.startIdx]?.date || '—'} → ${sorted[occ.endIdx]?.date || '—'} (ongoing)`;
 
       // R still owed to climb back to the pre-DD peak. ddDepth is the max
@@ -23545,10 +23849,13 @@ function closeWidgetDrawer() {
     _streakHistActiveIdx     = null;
     if (_streakTab === 'histogram') renderStreakHistogram(getFiltered());
   }
-  // Clear recovery scatter selection (both bubble + cross)
-  if (_recoveryActiveIdx !== null || _recoveryActiveCrossIdx !== null) {
+  // Clear recovery scatter selection (both bubble + cross) AND the histogram
+  // bucket selection — drawer close drops all sources of selection state and
+  // re-renders the active view (scatter or histogram) without the gold ring.
+  if (_recoveryActiveIdx !== null || _recoveryActiveCrossIdx !== null || _recoveryHistActiveIdx !== null) {
     _recoveryActiveIdx      = null;
     _recoveryActiveCrossIdx = null;
+    _recoveryHistActiveIdx  = null;
     renderRecovery(getFiltered());
   }
   // Remove monthly canvas bar highlight
