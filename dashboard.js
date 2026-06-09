@@ -508,6 +508,7 @@ const _SW = (() => {
             // covers the case where the user logs in with Data & Integrations
             // already visible (badge would otherwise sit on "Checking…").
             try { if (typeof _checkNotionIntegrationStatus === 'function') _checkNotionIntegrationStatus(); } catch (e) {}
+            try { _SW.touchLastActive(); } catch (e) {}
           }
         if (event === 'SIGNED_OUT') {
             // Phase 2 — tear down the Realtime channel so we don't keep a
@@ -537,6 +538,7 @@ const _SW = (() => {
             _SW.migrateProfileScopedKeys().catch(e => console.warn('[SyncMigration] failed:', e?.message || e));
             // Phase 2 — Realtime sub on hard-refresh path too.
             try { window._swRealtime?.connect(); } catch (e) {}
+            try { _SW.touchLastActive(); } catch (e) {}
           }
       });
       _client.auth.getSession().then(({ data }) => {
@@ -1520,6 +1522,35 @@ const _SW = (() => {
     setSignedInHook(fn) { _signedInHook = fn; },
 
     getUser() { return _user; },
+
+    // ── Retention — touch user_retention.last_active_at, debounced 1×/day ──
+    // Called from the SIGNED_IN / INITIAL_SESSION auth handlers. Idempotent and
+    // best-effort: a failure just leaves the LS flag untouched so the next
+    // call retries on its own. Journal Evolution P0, 2026-06-09.
+    async touchLastActive() {
+      if (!_user) return;
+      const LS_KEY = 'lastActiveTouch_v1';
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      let last = 0;
+      try { last = Number(localStorage.getItem(LS_KEY) || 0); } catch (e) {}
+      const now = Date.now();
+      if (last && (now - last) < DAY_MS) return;
+      const c = _getClient();
+      if (!c) return;
+      try {
+        const { error } = await c.from('user_retention').upsert({
+          user_id: _user.id,
+          last_active_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+        if (error) {
+          console.warn('[Retention] touch failed:', error.message);
+          return;
+        }
+        try { localStorage.setItem(LS_KEY, String(now)); } catch (e) {}
+      } catch (e) {
+        console.warn('[Retention] touch exception:', e?.message || e);
+      }
+    },
 
     // Phase 2 hooks — the Realtime subscription handler (defined outside the
     // closure) needs to: (a) check if an incoming postgres_changes event is
@@ -4022,6 +4053,7 @@ function handleActionClick(event) {
     case 'toggle-attention-panel': event.stopPropagation(); toggleAttentionPanel(); break;
     case 'toggle-journal-panel':   event.stopPropagation(); toggleJournalPanel(); break;
     case 'toggle-guide-panel':     event.stopPropagation(); toggleGuidePanel(actionEl); break;
+    case 'export-all-data':        event.stopPropagation(); _handleExportAllData(); break;
     case 'cw-open-create-modal':   event.stopPropagation(); _openCreateWidgetModal(actionEl.dataset.cwType); break;
     case 'cw-create-close':        event.stopPropagation(); _closeCreateWidgetBuilder(); break;
     case 'cw-create-select-field': event.stopPropagation(); _selectCreateWidgetField(actionEl.dataset.cwId); break;
@@ -9381,7 +9413,19 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     }
   }
 
+  // Unified stable trade id — single field every read site can rely on
+  // (Journal Evolution P0, 2026-06-09). Priority: existing _notionId / notionId
+  // (set by sync paths) → t.id (Notion page UUID) → positional fallback for the
+  // rare case where nothing is present (sample data normalised through this
+  // path, etc.). The positional fallback is stable within a load but NOT
+  // cross-session — that's fine because anything without a source id never
+  // becomes a candidate for overlays (no key to join on).
+  const _resolvedTradeId =
+    String(t._notionId || t.notionId || t.id || '').trim() ||
+    (_rawRowIndex != null ? `idx:${_rawRowIndex}` : '');
+
   return {
+    tradeId:     _resolvedTradeId,
     date:        dateRaw,
     month:       dateRaw.slice(0, 7),
     pair:        _firstText(_pick('pair', t.pair || t['Pair'] || t.paire || t['Paire'])),
@@ -9485,6 +9529,88 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     _rawRowIndex,
     _lastEditedTime: t._lastEditedTime || '',
   };
+}
+
+// ── Full-data export — canonical JSON v1 ───────────────────────────────────
+// Journal Evolution P0 (2026-06-09). Per spec docs/journal-evolution.md §5,
+// the export must be a versioned canonical JSON shape so a user can leave
+// the dashboard with all their data in a portable form.
+//
+// Shape:
+//   { version, exported_at, profile_id, profile_meta, schema,
+//     custom_widgets, trade_count, trades }
+//
+// `schema` is a stub at P0 (no user_schemas wired yet). P1 will populate
+// `schema.props` from public.user_schemas. `custom_widgets` already carry
+// dashboard-side user-defined properties and ship today so the export is
+// useful immediately.
+function _buildFullDataExport() {
+  const profile = (typeof getActiveJournalProfile === 'function')
+    ? getActiveJournalProfile()
+    : null;
+  const profileId = profile?.id || '';
+  const trades = (appState?.trades?.items || []).slice();
+  const schema = { version: 1, props: [] };
+  const customWidgets = (typeof _loadCustomWidgetDefs === 'function')
+    ? _loadCustomWidgetDefs()
+    : [];
+  return {
+    version:        1,
+    exported_at:    new Date().toISOString(),
+    profile_id:     profileId,
+    profile_meta:   profile ? {
+      id:               profile.id,
+      name:             profile.name,
+      type:             profile.type,
+      source:           profile.source,
+      connection_type:  profile.connectionType,
+    } : null,
+    schema,
+    custom_widgets: customWidgets,
+    trade_count:    trades.length,
+    trades,
+  };
+}
+
+function downloadFullDataExport() {
+  const data = _buildFullDataExport();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const profileSlug = (data.profile_id || 'no-profile').replace(/[^A-Za-z0-9_-]/g, '_');
+  a.href = url;
+  a.download = `flipping-export-${profileSlug}-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return data;
+}
+
+// Bind a stable global so a user can invoke the export from devtools when
+// the UI button isn't reachable (e.g. during a recovery scenario).
+window.flippingExportData = downloadFullDataExport;
+
+// UI handler — wired to the "Export all data" button in the Data Setup panel.
+// Triggers the download and surfaces a one-line confirm via the existing toast
+// channel when available; otherwise just returns silently so the click doesn't
+// look broken.
+function _handleExportAllData() {
+  try {
+    const data = downloadFullDataExport();
+    const msg = `Exported ${data.trade_count} trade${data.trade_count === 1 ? '' : 's'} to JSON.`;
+    if (typeof showThemeToast === 'function') {
+      showThemeToast(msg);
+    } else {
+      console.log('[Export]', msg);
+    }
+  } catch (e) {
+    console.warn('[Export] failed:', e?.message || e);
+    if (typeof showThemeToast === 'function') {
+      showThemeToast('Export failed — see console for details.', true);
+    }
+  }
 }
 
 // ── Cache helpers ──
@@ -11086,6 +11212,7 @@ function setDataSource(mode) {
 function loadBuiltinCSV(savedState) {
   const parsed = DEMO_TRADES.map((t, _rawRowIndex) => ({
     _rawRowIndex,
+    tradeId:    `demo:${_rawRowIndex}`,
     date:       t.d,
     month:      t.m,
     pair:       t.p,
@@ -30470,6 +30597,7 @@ function parseFlippingMarketCSV(text) {
       notionUrl:   iNotionUrl  >= 0 ? get(iNotionUrl)  : '',
       extras:      _collectCustomExtrasFromCSV(headers, get),
       _rawRowIndex: i - 1,
+      tradeId:      `csv:${i - 1}`,
     });
   }
 
@@ -30571,6 +30699,7 @@ function parseProTemplateCSV(text) {
       })(),
       extras:     _collectCustomExtrasFromCSV(headers, get),
       _rawRowIndex: i - 1,
+      tradeId:     `csv:${i - 1}`,
     });
   }
   if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: missing outcome value`);
@@ -30669,6 +30798,7 @@ function parseBeginnerCSV(text) {
       })(),
       extras:    _collectCustomExtrasFromCSV(headers, get),
       _rawRowIndex: i - 1,
+      tradeId:    `csv:${i - 1}`,
     });
   }
   if (skippedOutcome > 0) warnings.push(`${skippedOutcome} row${skippedOutcome > 1 ? 's' : ''} skipped: missing outcome value`);
