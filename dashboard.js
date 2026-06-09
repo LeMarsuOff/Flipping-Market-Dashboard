@@ -23298,6 +23298,9 @@ body[data-img-filter][data-cols="2"] .page{grid-template-columns:1fr 1fr;}
 body[data-img-filter][data-cols="3"] .page{grid-template-columns:1fr 1fr 1fr;}
 .cols-wrap{display:inline-flex;}
 body:not([data-img-filter]) .cols-wrap{display:none;}
+.layout-wrap{display:inline-flex;}
+body[data-img-filter] .layout-wrap{display:none;}
+@media screen{body[data-layout="page"]:not([data-img-filter]) .card{position:relative;margin-bottom:36px;}body[data-layout="page"]:not([data-img-filter]) .card::after{content:"";position:absolute;left:0;right:0;bottom:-19px;border-top:1px dashed var(--bg4);}}
 .prop-dd{position:relative;display:inline-flex;}
 .prop-panel{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--bg4);border-radius:8px;padding:6px;min-width:190px;max-height:320px;overflow:auto;z-index:30;box-shadow:0 8px 24px rgba(0,0,0,.5);}
 .prop-panel[hidden]{display:none;}
@@ -23320,6 +23323,7 @@ body:not([data-img-filter]) .cols-wrap{display:none;}
   const colsOpts = `<option value="1">1 / row</option><option value="2">2 / row</option><option value="3">3 / row</option>`;
   const toolbarHtml = `<div class="toolbar"><div class="tb-title">Export preview · <b>${n} trade${n > 1 ? 's' : ''}</b></div>`
     + `<div class="tb-right"><select class="img-sel" id="img-filter" title="Choose which screenshot to display">${selOpts}</select>`
+    + `<span class="layout-wrap"><select class="img-sel" id="layout-sel" title="Page layout"><option value="inline">Inline</option><option value="page">One per page</option></select></span>`
     + `<span class="cols-wrap"><select class="img-sel cols-sel" id="cols-sel" title="Screenshots per row">${colsOpts}</select></span>`
     + `<div class="prop-dd"><button class="img-sel" id="prop-btn" type="button" title="Choose which fields to show on each card">Card fields ▾</button><div class="prop-panel" id="prop-panel" hidden>${propOpts}</div></div>`
     + `<button class="dl-btn" type="button" onclick="downloadPdf()"><svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>Download PDF</button></div></div>`;
@@ -23349,31 +23353,65 @@ async function downloadPdf(){
     // per block keeps every raster well under the canvas-size limit and never
     // splits a card across pages.
     var single=!!document.body.getAttribute('data-img-filter');
+    var layout=single?'inline':(document.body.getAttribute('data-layout')||'inline');
     var cols=single?(parseInt(document.body.getAttribute('data-cols'),10)||1):1;
     var colW=(cW-GAP*(cols-1))/cols;
-    var kids=page.children,n=kids.length,x=M,y=M,rowH=0,col=0;
-    function flushRow(){if(col>0){y+=rowH+GAP;x=M;col=0;rowH=0;}}
-    for(var i=0;i<n;i++){
-      _busy(btn,true,'Generating… '+(i+1)+'/'+n);
-      var node=kids[i];
-      var cv=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
-      if(!cv.width||!cv.height)continue;
-      if(!node.classList.contains('card')||cols===1){
-        flushRow();
-        var w=cW,h=cv.height*w/cv.width;
-        if(h>ph-2*M){var k=(ph-2*M)/h;h=ph-2*M;w=w*k;}
-        if(y+h>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
-        pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',M+(cW-w)/2,y,w,h);
-        y+=h+GAP;
-      }else{
-        var w2=colW,h2=cv.height*w2/cv.width;
-        if(col===0&&y+h2>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
-        pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',x,y,w2,h2);
-        rowH=Math.max(rowH,h2);col++;x+=colW+GAP;
-        if(col>=cols){y+=rowH+GAP;x=M;col=0;rowH=0;}
+    var kids=page.children,n=kids.length;
+    if(layout==='page'){
+      // One trade per page: header blocks stack on page 1 (cover), then every
+      // card gets its own page, scaled up to fill it (aspect kept, centred), with
+      // its setup label re-drawn at the top for context.
+      var y=M,curSep=null;
+      for(var i=0;i<n;i++){
+        _busy(btn,true,'Generating… '+(i+1)+'/'+n);
+        var node=kids[i];
+        if(node.classList.contains('card')){
+          pdf.addPage();bg();
+          var yy=M;
+          if(curSep){var sw=cW,sh=curSep.height*sw/curSep.width;pdf.addImage(curSep.toDataURL('image/jpeg',0.92),'JPEG',M,yy,sw,sh);yy+=sh+GAP;}
+          var cc=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+          if(!cc.width||!cc.height)continue;
+          var availH=ph-M-yy,w=cW,h=cc.height*w/cc.width;
+          if(h>availH){var k=availH/h;h=availH;w=w*k;}
+          pdf.addImage(cc.toDataURL('image/jpeg',0.92),'JPEG',M+(cW-w)/2,yy+(availH-h)/2,w,h);
+        }else if(node.classList.contains('setup-sep')){
+          curSep=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+        }else{
+          var hc=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+          if(!hc.width||!hc.height)continue;
+          var hw=cW,hh=hc.height*hw/hc.width;
+          if(hh>ph-2*M){var kk=(ph-2*M)/hh;hh=ph-2*M;hw=hw*kk;}
+          if(y+hh>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
+          pdf.addImage(hc.toDataURL('image/jpeg',0.92),'JPEG',M,y,hw,hh);y+=hh+GAP;
+        }
       }
+    }else{
+      // Inline: mirror the on-screen grid (1/2/3 cards per row in single mode,
+      // one full-width card per row otherwise). New page when a row won't fit.
+      var x=M,y=M,rowH=0,col=0;
+      var flushRow=function(){if(col>0){y+=rowH+GAP;x=M;col=0;rowH=0;}};
+      for(var i=0;i<n;i++){
+        _busy(btn,true,'Generating… '+(i+1)+'/'+n);
+        var node=kids[i];
+        var cv=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+        if(!cv.width||!cv.height)continue;
+        if(!node.classList.contains('card')||cols===1){
+          flushRow();
+          var w=cW,h=cv.height*w/cv.width;
+          if(h>ph-2*M){var k=(ph-2*M)/h;h=ph-2*M;w=w*k;}
+          if(y+h>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
+          pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',M+(cW-w)/2,y,w,h);
+          y+=h+GAP;
+        }else{
+          var w2=colW,h2=cv.height*w2/cv.width;
+          if(col===0&&y+h2>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
+          pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',x,y,w2,h2);
+          rowH=Math.max(rowH,h2);col++;x+=colW+GAP;
+          if(col>=cols){y+=rowH+GAP;x=M;col=0;rowH=0;}
+        }
+      }
+      flushRow();
     }
-    flushRow();
     pdf.save((DOC_TITLE.replace(/[\\\\/:*?"<>|]+/g,' ').trim()||'Trade Cards')+'.pdf');
   }catch(e){alert('PDF generation failed — opening print instead. ('+((e&&e.message)||e)+')');window.print();}
   finally{_busy(btn,false);}
@@ -23384,6 +23422,8 @@ var imgSel=document.getElementById('img-filter');
 if(imgSel)imgSel.addEventListener('change',function(){if(imgSel.value==='all')document.body.removeAttribute('data-img-filter');else document.body.setAttribute('data-img-filter',imgSel.value);});
 var colsSel=document.getElementById('cols-sel');
 if(colsSel)colsSel.addEventListener('change',function(){document.body.setAttribute('data-cols',colsSel.value);});
+var layoutSel=document.getElementById('layout-sel');
+if(layoutSel)layoutSel.addEventListener('change',function(){document.body.setAttribute('data-layout',layoutSel.value);});
 var propBtn=document.getElementById('prop-btn'),propPanel=document.getElementById('prop-panel');
 if(propBtn&&propPanel){
   propBtn.addEventListener('click',function(e){e.stopPropagation();propPanel.hidden=!propPanel.hidden;});
@@ -23406,7 +23446,7 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'){var lb=docu
     + `<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@800&family=DM+Mono&display=swap" rel="stylesheet">`
     + `<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>`
     + `<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>`
-    + `<style>:root{${rootVars}}${CSS}</style></head><body data-cols="1" data-show="${defaultShow}">${toolbarHtml}<div class="page">`
+    + `<style>:root{${rootVars}}${CSS}</style></head><body data-cols="1" data-layout="inline" data-show="${defaultShow}">${toolbarHtml}<div class="page">`
     + `<div class="doc-head"><div><div class="doc-title">Trade Cards — Export</div><div class="doc-brand">Flipping Research</div></div>`
     + `<div class="doc-meta">Generated <b>${esc(genDate)}</b><br>Selection: <b>${esc(ctx.title || '—')}</b><br>TP mode <b>${esc(modeLabel)}</b></div></div>`
     + `<div class="ctx-strip"><span><span class="kpi">${n}</span> trades</span>`
