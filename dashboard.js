@@ -23295,7 +23295,7 @@ ${PROP_RULES}
 .shot{position:relative;background:var(--bg);overflow:hidden;}
 .shot::before{content:"";display:block;padding-top:56.25%;}
 .shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;}
-.shot-lbl{position:absolute;top:7px;left:7px;z-index:1;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--white);background:rgba(0,0,0,.6);padding:3px 8px;border-radius:4px;text-transform:uppercase;}
+.shot-lbl{position:absolute;top:7px;left:7px;z-index:1;font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--white);background:rgba(0,0,0,.28);padding:3px 8px;border-radius:4px;text-transform:uppercase;}
 .shot-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px;}
 .ch-notion{font-size:13px;line-height:1;text-decoration:none;opacity:.6;margin-left:2px;flex-shrink:0;}
 .ch-notion:hover{opacity:1;}
@@ -23307,13 +23307,16 @@ ${PROP_RULES}
 .dl-btn{background:var(--gold);color:var(--white);border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
 .dl-btn svg{width:16px;height:16px;display:block;fill:currentColor;}
 .dl-btn:hover{filter:brightness(1.08);}
-body[data-img-filter] .shots{grid-template-columns:1fr;}
+body[data-img-filter] .shots{grid-template-columns:1fr;margin-top:auto;}
 body[data-img-filter="h4"] .shot:not(.shot-h4){display:none;}
 body[data-img-filter="m15"] .shot:not(.shot-m15){display:none;}
 body[data-img-filter="after"] .shot:not(.shot-after){display:none;}
-body[data-img-filter] .page{display:grid;gap:12px;align-items:start;}
-body[data-img-filter] .doc-head,body[data-img-filter] .ctx-strip,body[data-img-filter] .setup-sep{grid-column:1/-1;}
-body[data-img-filter] .card{margin-bottom:0;}
+/* Raw gallery: stretch every card in a row to the row height and push the
+   screenshot to the bottom (margin-top:auto) so the charts align across the
+   row even when heads have different heights (variable obstacle lists). */
+body[data-img-filter] .page{display:grid;gap:12px;align-items:stretch;}
+body[data-img-filter] .doc-head,body[data-img-filter] .ctx-strip,body[data-img-filter] .setup-sep{grid-column:1/-1;align-self:start;}
+body[data-img-filter] .card{margin-bottom:0;display:flex;flex-direction:column;}
 body[data-img-filter][data-cols="1"] .page{grid-template-columns:1fr;}
 body[data-img-filter][data-cols="2"] .page{grid-template-columns:1fr 1fr;}
 body[data-img-filter][data-cols="3"] .page{grid-template-columns:1fr 1fr 1fr;}
