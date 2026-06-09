@@ -11171,6 +11171,27 @@ body.ms-sidebar-open .view-tabs {
 }
 .wd-drawer-share-btn svg { width: 13px; height: 13px; display: block; }
 
+/* ── Drawer PDF-export button (mirrors the share button) ──────────── */
+.wd-drawer-pdf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 4px;
+  color: var(--gold);
+  cursor: pointer;
+  padding: 0;
+  transition: background var(--ease-fast), border-color var(--ease-fast);
+}
+.wd-drawer-pdf-btn:hover {
+  background: color-mix(in srgb, var(--gold) 26%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 65%, transparent);
+}
+.wd-drawer-pdf-btn svg { width: 14px; height: 14px; display: block; }
+
 .wd-share-popover {
   position: absolute;
   top: calc(100% + 10px);

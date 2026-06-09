@@ -4482,6 +4482,7 @@ function handleActionClick(event) {
     }
     case 'close-widget-drawer': closeWidgetDrawer(); break;
     case 'open-share-popover':  event.stopPropagation(); _handleOpenSharePopover(); break;
+    case 'export-trades-pdf':   event.stopPropagation(); _exportTradesPdf(); break;
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
@@ -23045,6 +23046,394 @@ function _wdTradeCard(t) {
     </div>`;
 }
 
+/* ─── PDF export ──────────────────────────────────────────────────────
+   Export the current drawer's trade-cards (with INLINE screenshots),
+   grouped by setup, as a self-contained document opened in a new tab. The
+   document carries its own toolbar with a "Télécharger le PDF" button
+   (→ window.print() → Save as PDF). No CDN dependency, never touches the
+   dashboard's own DOM/CSS. Theme tokens + effective-R mirror the live UI.
+   Reads drawer._pdfCtx (stashed by openWidgetDrawer, auth-independent). */
+function _pdfAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Parse a CSS color token (#rgb / #rrggbb / rgb[a](...)) to an [r,g,b] array.
+// Used to pre-compute color-mix() blends as plain rgb() — html2canvas (the
+// PDF rasteriser) cannot evaluate color-mix(), so the export CSS must ship
+// literal colors instead of relying on the browser to resolve the mix.
+function _pdfHexToRgb(s) {
+  s = String(s || '').trim();
+  if (s[0] === '#') {
+    let h = s.slice(1);
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    return [parseInt(h.slice(0, 2), 16) || 0, parseInt(h.slice(2, 4), 16) || 0, parseInt(h.slice(4, 6), 16) || 0];
+  }
+  const m = s.match(/rgba?\(([^)]+)\)/);
+  if (m) { const p = m[1].split(',').map(x => parseFloat(x)); return [p[0] || 0, p[1] || 0, p[2] || 0]; }
+  return [0, 0, 0];
+}
+
+function _pdfBuildDoc(ctx) {
+  const tpConfig = ctx.tpConfig || appState.ui.tpConfig;
+  const esc = _escapeHtml;
+  const attr = _pdfAttr;
+
+  // Effective-R for a trade, mirroring _wdTradeCard's display logic so the
+  // PDF figures match exactly what the on-screen card shows.
+  const effR = (t) => {
+    let rd;
+    if (t.outcome === 'SL') {
+      rd = (typeof t.tp1_rr === 'number' && Number.isFinite(t.tp1_rr) && t.tp1_rr < 0) ? t.tp1_rr : t.r;
+    } else {
+      rd = (t.effectiveR != null) ? t.effectiveR : computeEffectiveRR(t, tpConfig);
+    }
+    return (typeof rd === 'number' && Number.isFinite(rd)) ? rd : (Number(t.r) || 0);
+  };
+
+  // Pull the live theme tokens so the export matches the user's current theme.
+  const cs = getComputedStyle(document.documentElement);
+  const TOK = ['--bg','--bg1','--bg2','--bg3','--bg4','--body','--dim','--white','--gold','--g','--r','--oc-betp','--oc-besl'];
+  const rootVars = TOK.map(k => `${k}:${(cs.getPropertyValue(k) || '').trim() || 'initial'};`).join('');
+
+  // Pre-compute color-mix() blends as literal rgb()/rgba() (html2canvas can't
+  // resolve color-mix). mix(a, pa, b) = a·pa + b·(1−pa) in sRGB, matching
+  // `color-mix(in srgb, A (pa·100)%, B)` exactly.
+  const _rgb = (k) => _pdfHexToRgb((cs.getPropertyValue(k) || '').trim());
+  const _G = _rgb('--g'), _R = _rgb('--r'), _BG = _rgb('--bg'), _BG1 = _rgb('--bg1'), _BG4 = _rgb('--bg4'), _BETP = _rgb('--oc-betp'), _BESL = _rgb('--oc-besl');
+  const mix = (a, pa, b) => `rgb(${Math.round(a[0]*pa + b[0]*(1-pa))},${Math.round(a[1]*pa + b[1]*(1-pa))},${Math.round(a[2]*pa + b[2]*(1-pa))})`;
+  const C = {
+    tpBg: mix(_G, 0.09, _BG1),   tpBd: mix(_G, 0.30, _BG4),
+    slBg: mix(_R, 0.09, _BG1),   slBd: mix(_R, 0.30, _BG4),
+    betpBg: mix(_BETP, 0.08, _BG1), beslBg: mix(_BESL, 0.08, _BG1),
+    bgCss: `rgb(${_BG[0]},${_BG[1]},${_BG[2]})`, bgRgb: _BG,
+  };
+
+  // Step labels (respect any per-profile customisation of the 3 media slots).
+  let LBL;
+  try { LBL = [ _getTradeMediaStepLabel('h4Before'), _getTradeMediaStepLabel('m15Before'), _getTradeMediaStepLabel('m15After') ]; }
+  catch (e) { LBL = ['H4 Before', 'M15 Before', 'M15 After']; }
+
+  // Toggleable card fields. Standard fields default to ON (mirror the classic
+  // trade card); custom Notion properties (read from t.extras) default to OFF
+  // and are only offered when at least one exported trade carries data for them.
+  const _customProps = (typeof loadCustomProps === 'function') ? loadCustomProps() : [];
+  const _presentSrc = new Set();
+  ctx.sorted.forEach(t => { const e = t.extras; if (e) for (const k in e) { const v = e[k]; if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) _presentSrc.add(k); } });
+  const CUSTOM_PROPS = _customProps
+    .map(p => ({ label: String(p.name || p.notionSourceName || p.key || '').trim(), src: (p.notionSourceName || p.key) }))
+    .filter(p => p.src && p.label && _presentSrc.has(p.src))
+    .map((p, idx) => ({ key: 'c' + idx, label: p.label, src: p.src, block: false, def: false }));
+  const STD_PROPS = [
+    { key: 'direction', label: 'Direction', block: false, def: true },
+    { key: 'date',  label: 'Date', block: true, def: true },
+    { key: 'sess',  label: 'Session & hour', block: true, def: true },
+    { key: 'setup', label: 'Setup', block: true, def: true },
+    { key: 'rrmax', label: 'RR Max', block: false, def: true },
+    { key: 'tphits', label: 'TP hits', block: false, def: true },
+    { key: 'h4',  label: 'Obstacles H4', block: false, def: true },
+    { key: 'm15', label: 'Obstacles M15', block: false, def: true },
+  ];
+  const ALL_PROPS = STD_PROPS.concat(CUSTOM_PROPS);
+  const PROP_RULES = ALL_PROPS.map(p => `body[data-show~="${p.key}"] .p-${p.key}{display:${p.block ? 'block' : 'inline-block'};}`).join('');
+  const propOpts = ALL_PROPS.map(p => `<label class="prop-opt"><input type="checkbox" data-key="${p.key}"${p.def ? ' checked' : ''}> ${esc(p.label)}</label>`).join('');
+  const defaultShow = STD_PROPS.map(p => p.key).join(' ');
+
+  const shot = (url, orig, label, slot) => {
+    const src = ((url || '').trim()) || ((orig || '').trim());
+    if (!src) return `<div class="shot shot-${slot}"><span class="shot-lbl">${esc(label)}</span><div class="shot-empty">— no screenshot —</div></div>`;
+    return `<div class="shot shot-${slot}"><span class="shot-lbl">${esc(label)}</span><img src="${attr(src)}" alt=""></div>`;
+  };
+
+  const R_CLASS  = { TP:'r-pos', SL:'r-neg', 'BE-TP':'r-betp', 'BE-SL':'r-besl', BE:'r-neu' };
+  const OC_CLASS = { TP:'oc-tp', SL:'oc-sl', 'BE-TP':'oc-betp', 'BE-SL':'oc-besl', BE:'oc-be' };
+  const BG_CLASS = { TP:'tp', SL:'sl', 'BE-TP':'betp', 'BE-SL':'besl', BE:'' };
+
+  const card = (t) => {
+    const rNum = effR(t);
+    const rTxt = `${rNum > 0 ? '+' : ''}${rNum.toFixed(1)}R`;
+
+    const dir = t.direction;
+    const dirCls = dir === 'Achat' ? 'dir-buy' : dir === 'Vente' ? 'dir-sell' : '';
+    const dirHtml = dir ? `<span class="ch-dir prop p-direction ${dirCls}">${esc(dir)}</span>` : '';
+
+    const dateHtml = t.date ? `<div class="ch-date prop p-date">${esc(t.date)}</div>` : '';
+    const sessBits = [];
+    if (t.session) sessBits.push(esc(t.session));
+    if (t.hour != null) sessBits.push(`${String(t.hour).padStart(2, '0')}:00`);
+    const sessHtml = sessBits.length ? `<div class="ch-sess prop p-sess">${sessBits.join(' · ')}</div>` : '';
+
+    const setupDetail = (t.setupDetail || '').trim();
+    const detailHtml = setupDetail ? `<div class="ch-setup prop p-setup">${esc(setupDetail)}</div>` : '';
+
+    const metaBits = [];
+    if (typeof t.rrMax === 'number' && Number.isFinite(t.rrMax)) metaBits.push(`<span class="prop p-rrmax">RR Max : <span class="mv">${t.rrMax.toFixed(1)}R</span></span>`);
+    const mode = tpConfig && tpConfig.mode;
+    if ((mode === 'multi' || mode === 'personalised') && t.effectiveClass === 'win') {
+      const cnt = (mode === 'multi' ? (tpConfig.multi && tpConfig.multi.tpCount) : (tpConfig.personalised && tpConfig.personalised.tpCount)) || 2;
+      const slots = [{ l:'TP1', v:t.tp1_rr }, { l:'TP2', v:t.tp2_rr }];
+      if (cnt === 3) slots.push({ l:'TP3', v:t.tp3_rr });
+      const parts = slots.filter(s => typeof s.v === 'number' && Number.isFinite(s.v)).map(s => `${s.l}: ${s.v.toFixed(1)}R`);
+      if (parts.length) metaBits.push(`<span class="prop p-tphits">TP hits : <span class="mv">${parts.join(' · ')}</span></span>`);
+    }
+    const h4Arr = Array.isArray(t.h4) ? t.h4 : (t.h4 ? [t.h4] : []);
+    if (h4Arr.length) metaBits.push(`<span class="prop p-h4">Obstacles H4 : <span class="mv">${esc([...h4Arr].sort().join(' · '))}</span></span>`);
+    const obsArr = Array.isArray(t.obstacles) ? t.obstacles : (t.obstacles ? [t.obstacles] : []);
+    if (obsArr.length) metaBits.push(`<span class="prop p-m15">Obstacles M15 : <span class="mv">${esc([...obsArr].sort().join(' · '))}</span></span>`);
+    for (const cp of CUSTOM_PROPS) {
+      const raw = t.extras ? t.extras[cp.src] : undefined;
+      if (raw == null || raw === '' || (Array.isArray(raw) && !raw.length)) continue;
+      const val = Array.isArray(raw) ? raw.join(' · ') : String(raw);
+      metaBits.push(`<span class="prop p-${cp.key}">${esc(cp.label)} : <span class="mv">${esc(val)}</span></span>`);
+    }
+    const metaHtml = `<div class="ch-meta">${metaBits.join('')}</div>`;
+
+    const notionUrl = (t.notionUrl || '').trim();
+    const notionHtml = notionUrl ? `<a class="ch-notion" href="${attr(notionUrl)}" target="_blank" rel="noopener" title="Open in Notion">🔗</a>` : '';
+
+    const shots = `<div class="shots">${shot(t.imgH4Before, t.imgH4BeforeOrig, LBL[0], 'h4')}${shot(t.imgM15, t.imgM15Orig, LBL[1], 'm15')}${shot(t.imgM15After, t.imgM15AfterOrig, LBL[2], 'after')}</div>`;
+
+    return `<div class="card ${BG_CLASS[t.outcome] || ''}">`
+      + `<div class="card-head"><div class="ch-left">`
+      + `<div class="ch-pair">${esc(t.pair || '—')}${notionHtml}${dirHtml}</div>${dateHtml}${sessHtml}${detailHtml}${metaHtml}`
+      + `</div><div class="ch-right">`
+      + `<div class="ch-r ${R_CLASS[t.outcome] || 'r-neu'}">${rTxt}</div>`
+      + `<div class="ch-oc ${OC_CLASS[t.outcome] || ''}">${esc(t.outcome || '—')}</div>`
+      + `</div></div>${shots}</div>`;
+  };
+
+  // Group by setup, preserving first-seen order.
+  const groups = new Map();
+  ctx.sorted.forEach(t => {
+    const key = ((t.setup || t.setupDetail || '') + '').trim() || 'No setup';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  });
+
+  let sections = '';
+  groups.forEach((trades, setup) => {
+    const gn = trades.length;
+    const gw = trades.filter(t => effR(t) > 0).length;
+    const gr = trades.reduce((a, t) => a + effR(t), 0);
+    sections += `<div class="setup-sep"><span class="lbl">${esc(setup)}</span>`
+      + `<span class="count">${gn} trade${gn > 1 ? 's' : ''} · ${gw}W ${gn - gw}L · ${gr > 0 ? '+' : ''}${gr.toFixed(1)}R</span>`
+      + `<span class="rule"></span></div>`;
+    sections += trades.map(card).join('');
+  });
+
+  const MODE_LABEL = { fixed:'Fixed', multi:'Multi-TP', personalised:'Personalised' };
+  const modeLabel = MODE_LABEL[(tpConfig && tpConfig.mode) || 'fixed'] || 'Fixed';
+  const genDate = new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
+  const n = ctx.n || ctx.sorted.length;
+  const wins = ctx.wins != null ? ctx.wins : ctx.sorted.filter(t => effR(t) > 0).length;
+  const totalR = Number(ctx.totalR != null ? ctx.totalR : ctx.sorted.reduce((a, t) => a + effR(t), 0)) || 0;
+  const wr = n ? Math.round((wins / n) * 100) : 0;
+
+  const CSS = `
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+html,body{margin:0;padding:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:var(--body);}
+@page{size:A4;margin:9mm;}
+.page{background:var(--bg);padding:0;}
+.doc-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1.5px solid var(--bg4);padding-bottom:12px;margin-bottom:8px;}
+.doc-title{font-size:20px;font-weight:800;color:var(--white);letter-spacing:.3px;}
+.doc-brand{font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1.4px;margin-top:3px;}
+.doc-meta{text-align:right;font-size:10px;color:var(--dim);line-height:1.6;}
+.doc-meta b{color:var(--body);}
+.ctx-strip{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0 4px;font-size:11px;color:var(--dim);}
+.ctx-strip .kpi{color:var(--white);font-weight:700;}
+.ctx-strip .pos{color:var(--g);}.ctx-strip .neg{color:var(--r);}
+.setup-sep{display:flex;align-items:center;gap:10px;margin:18px 0 10px;break-after:avoid;page-break-after:avoid;}
+.setup-sep .lbl{font-family:'DM Mono',ui-monospace,monospace;font-size:12px;letter-spacing:1px;color:var(--white);text-transform:uppercase;font-weight:700;white-space:nowrap;}
+.setup-sep .count{font-size:10px;color:var(--dim);background:var(--bg2);border:1px solid var(--bg4);padding:2px 8px;border-radius:20px;white-space:nowrap;}
+.setup-sep .rule{flex:1;height:1px;background:var(--bg4);}
+.card{border:1.5px solid var(--bg4);border-radius:6px;margin-bottom:10px;background:var(--bg1);overflow:hidden;break-inside:avoid;page-break-inside:avoid;}
+.card.tp{background:${C.tpBg};border-color:${C.tpBd};}
+.card.sl{background:${C.slBg};border-color:${C.slBd};}
+.card.betp{background:${C.betpBg};}
+.card.besl{background:${C.beslBg};}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;padding:11px 14px 9px;gap:14px;}
+.ch-left{min-width:0;}
+.ch-pair{font-size:15px;font-weight:700;color:var(--white);display:flex;align-items:center;gap:8px;}
+.ch-dir{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;}
+.dir-buy{color:#5b9cf6;background:rgba(91,156,246,.14);}
+.dir-sell{color:#f472b6;background:rgba(244,114,182,.14);}
+.ch-date{font-size:11px;color:var(--dim);margin-top:2px;}
+.ch-sess{font-size:11px;color:var(--dim);margin-top:2px;}
+.ch-setup{font-size:11px;color:var(--body);margin-top:3px;}
+.prop{display:none;}
+${PROP_RULES}
+.ch-meta{font-size:11px;color:var(--dim);margin-top:5px;display:flex;gap:12px;flex-wrap:wrap;}
+.ch-meta .mv{color:var(--gold);}
+.ch-right{text-align:right;flex-shrink:0;}
+.ch-r{font-size:24px;font-weight:800;line-height:1;font-family:'Anybody',sans-serif;}
+.r-pos{color:var(--g);}.r-neg{color:var(--r);}.r-neu{color:var(--gold);}.r-betp{color:var(--oc-betp);}.r-besl{color:var(--oc-besl);}
+.ch-oc{font-size:12px;font-weight:700;margin-top:3px;}
+.oc-tp{color:var(--g);}.oc-sl{color:var(--r);}.oc-betp{color:var(--oc-betp);}.oc-besl{color:var(--oc-besl);}.oc-be{color:var(--gold);}
+.shots{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;background:var(--bg3);}
+.shot{position:relative;background:var(--bg);overflow:hidden;}
+.shot::before{content:"";display:block;padding-top:56.25%;}
+.shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;}
+.shot-lbl{position:absolute;top:7px;left:7px;z-index:1;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--white);background:rgba(0,0,0,.6);padding:3px 8px;border-radius:4px;text-transform:uppercase;}
+.shot-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px;}
+.ch-notion{font-size:13px;line-height:1;text-decoration:none;opacity:.6;margin-left:2px;flex-shrink:0;}
+.ch-notion:hover{opacity:1;}
+.toolbar{position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 20px;background:var(--bg1);border-bottom:1px solid var(--bg4);}
+.toolbar .tb-title{font-size:13px;color:var(--dim);}
+.toolbar .tb-title b{color:var(--white);}
+.tb-right{display:flex;align-items:center;gap:12px;}
+.img-sel{background:var(--bg2);color:var(--white);border:1px solid var(--bg4);border-radius:7px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer;}
+.dl-btn{background:var(--gold);color:var(--white);border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+.dl-btn svg{width:16px;height:16px;display:block;fill:currentColor;}
+.dl-btn:hover{filter:brightness(1.08);}
+body[data-img-filter] .shots{grid-template-columns:1fr;}
+body[data-img-filter="h4"] .shot:not(.shot-h4){display:none;}
+body[data-img-filter="m15"] .shot:not(.shot-m15){display:none;}
+body[data-img-filter="after"] .shot:not(.shot-after){display:none;}
+body[data-img-filter] .page{display:grid;gap:12px;align-items:start;}
+body[data-img-filter] .doc-head,body[data-img-filter] .ctx-strip,body[data-img-filter] .setup-sep{grid-column:1/-1;}
+body[data-img-filter] .card{margin-bottom:0;}
+body[data-img-filter][data-cols="1"] .page{grid-template-columns:1fr;}
+body[data-img-filter][data-cols="2"] .page{grid-template-columns:1fr 1fr;}
+body[data-img-filter][data-cols="3"] .page{grid-template-columns:1fr 1fr 1fr;}
+.cols-wrap{display:inline-flex;}
+body:not([data-img-filter]) .cols-wrap{display:none;}
+.prop-dd{position:relative;display:inline-flex;}
+.prop-panel{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--bg4);border-radius:8px;padding:6px;min-width:190px;max-height:320px;overflow:auto;z-index:30;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.prop-panel[hidden]{display:none;}
+.prop-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:13px;color:var(--body);cursor:pointer;border-radius:5px;white-space:nowrap;}
+.prop-opt:hover{background:var(--bg3);}
+.prop-opt input{cursor:pointer;margin:0;}
+.shot img{cursor:zoom-in;}
+.lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:100;align-items:center;justify-content:center;cursor:zoom-out;padding:2vmin;}
+.lb.open{display:flex;}
+.lb img{max-width:96vw;max-height:96vh;object-fit:contain;box-shadow:0 8px 40px rgba(0,0,0,.6);}
+@media screen{.page{padding:22px 28px 44px;}}
+@media print{.toolbar{display:none !important;}.lb{display:none !important;}}`;
+
+  const safeTitle = String(ctx.title || 'Export').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Export';
+  const docTitle = `Trade Cards — ${safeTitle}`;
+  const selOpts = `<option value="all">All screenshots</option>`
+    + `<option value="h4">${esc(LBL[0])}</option>`
+    + `<option value="m15">${esc(LBL[1])}</option>`
+    + `<option value="after">${esc(LBL[2])}</option>`;
+  const colsOpts = `<option value="1">1 / row</option><option value="2">2 / row</option><option value="3">3 / row</option>`;
+  const toolbarHtml = `<div class="toolbar"><div class="tb-title">Export preview · <b>${n} trade${n > 1 ? 's' : ''}</b></div>`
+    + `<div class="tb-right"><select class="img-sel" id="img-filter" title="Choose which screenshot to display">${selOpts}</select>`
+    + `<span class="cols-wrap"><select class="img-sel cols-sel" id="cols-sel" title="Screenshots per row">${colsOpts}</select></span>`
+    + `<div class="prop-dd"><button class="img-sel" id="prop-btn" type="button" title="Choose which fields to show on each card">Card fields ▾</button><div class="prop-panel" id="prop-panel" hidden>${propOpts}</div></div>`
+    + `<button class="dl-btn" type="button" onclick="downloadPdf()"><svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>Download PDF</button></div></div>`;
+
+  // Self-contained client-side PDF generation (jsPDF + html2canvas, loaded from
+  // CDN in the head). Captures the .page node, slices it on card boundaries so
+  // cards are never split across pages, and saves a real .pdf — no print dialog.
+  // Falls back to window.print() if the libs failed to load or rasterising throws.
+  const DOWNLOAD_SCRIPT = `
+var DOC_TITLE=${JSON.stringify(docTitle)};
+var PDF_BG_RGB=${JSON.stringify(C.bgRgb)};
+function _busy(b,on,txt){if(on){if(!b.dataset.old)b.dataset.old=b.innerHTML;b.textContent=txt;b.disabled=true;}else{if(b.dataset.old){b.innerHTML=b.dataset.old;b.dataset.old='';}b.disabled=false;}}
+async function downloadPdf(){
+  var btn=document.querySelector('.dl-btn');
+  if(typeof html2canvas==='undefined'||!window.jspdf){window.print();return;}
+  _busy(btn,true,'Generating…');
+  try{
+    var page=document.querySelector('.page');
+    var jsPDF=window.jspdf.jsPDF;
+    var pdf=new jsPDF({orientation:'p',unit:'pt',format:'a4'});
+    var pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight();
+    var M=14,cW=pw-2*M,GAP=8;
+    function bg(){pdf.setFillColor(PDF_BG_RGB[0],PDF_BG_RGB[1],PDF_BG_RGB[2]);pdf.rect(0,0,pw,ph,'F');}
+    bg();
+    // Mirror the on-screen layout: in single-screenshot mode the user can pack
+    // 1/2/3 cards per row; otherwise one full-width card per row. One html2canvas
+    // per block keeps every raster well under the canvas-size limit and never
+    // splits a card across pages.
+    var single=!!document.body.getAttribute('data-img-filter');
+    var cols=single?(parseInt(document.body.getAttribute('data-cols'),10)||1):1;
+    var colW=(cW-GAP*(cols-1))/cols;
+    var kids=page.children,n=kids.length,x=M,y=M,rowH=0,col=0;
+    function flushRow(){if(col>0){y+=rowH+GAP;x=M;col=0;rowH=0;}}
+    for(var i=0;i<n;i++){
+      _busy(btn,true,'Generating… '+(i+1)+'/'+n);
+      var node=kids[i];
+      var cv=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+      if(!cv.width||!cv.height)continue;
+      if(!node.classList.contains('card')||cols===1){
+        flushRow();
+        var w=cW,h=cv.height*w/cv.width;
+        if(h>ph-2*M){var k=(ph-2*M)/h;h=ph-2*M;w=w*k;}
+        if(y+h>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
+        pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',M+(cW-w)/2,y,w,h);
+        y+=h+GAP;
+      }else{
+        var w2=colW,h2=cv.height*w2/cv.width;
+        if(col===0&&y+h2>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
+        pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',x,y,w2,h2);
+        rowH=Math.max(rowH,h2);col++;x+=colW+GAP;
+        if(col>=cols){y+=rowH+GAP;x=M;col=0;rowH=0;}
+      }
+    }
+    flushRow();
+    pdf.save((DOC_TITLE.replace(/[\\\\/:*?"<>|]+/g,' ').trim()||'Trade Cards')+'.pdf');
+  }catch(e){alert('PDF generation failed — opening print instead. ('+((e&&e.message)||e)+')');window.print();}
+  finally{_busy(btn,false);}
+}`;
+
+  const UI_SCRIPT = `(function(){
+var imgSel=document.getElementById('img-filter');
+if(imgSel)imgSel.addEventListener('change',function(){if(imgSel.value==='all')document.body.removeAttribute('data-img-filter');else document.body.setAttribute('data-img-filter',imgSel.value);});
+var colsSel=document.getElementById('cols-sel');
+if(colsSel)colsSel.addEventListener('change',function(){document.body.setAttribute('data-cols',colsSel.value);});
+var propBtn=document.getElementById('prop-btn'),propPanel=document.getElementById('prop-panel');
+if(propBtn&&propPanel){
+  propBtn.addEventListener('click',function(e){e.stopPropagation();propPanel.hidden=!propPanel.hidden;});
+  document.addEventListener('click',function(e){if(!e.target.closest('.prop-dd'))propPanel.hidden=true;});
+  propPanel.addEventListener('change',function(){
+    var ks=[].slice.call(propPanel.querySelectorAll('input:checked')).map(function(i){return i.getAttribute('data-key');});
+    document.body.setAttribute('data-show',ks.join(' '));
+  });
+}
+document.addEventListener('click',function(e){
+  var im=e.target.closest('.shot img');
+  if(im){var lb=document.getElementById('lb');if(lb){lb.querySelector('img').src=im.src;lb.classList.add('open');}return;}
+  if(e.target.closest('#lb')){var l=document.getElementById('lb');if(l)l.classList.remove('open');}
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){var lb=document.getElementById('lb');if(lb)lb.classList.remove('open');}});
+})();`;
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${esc(docTitle)}</title>`
+    + `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>`
+    + `<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@800&family=DM+Mono&display=swap" rel="stylesheet">`
+    + `<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>`
+    + `<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>`
+    + `<style>:root{${rootVars}}${CSS}</style></head><body data-cols="1" data-show="${defaultShow}">${toolbarHtml}<div class="page">`
+    + `<div class="doc-head"><div><div class="doc-title">Trade Cards — Export</div><div class="doc-brand">Flipping Research</div></div>`
+    + `<div class="doc-meta">Generated <b>${esc(genDate)}</b><br>Selection: <b>${esc(ctx.title || '—')}</b><br>TP mode <b>${esc(modeLabel)}</b></div></div>`
+    + `<div class="ctx-strip"><span><span class="kpi">${n}</span> trades</span>`
+    + `<span><span class="kpi">${wr}%</span> Win Rate</span>`
+    + `<span><span class="kpi">${wins}W</span> / <span class="kpi">${n - wins}L</span></span>`
+    + `<span>Total: <span class="kpi ${totalR >= 0 ? 'pos' : 'neg'}">${totalR > 0 ? '+' : ''}${totalR.toFixed(1)}R</span></span></div>`
+    + sections
+    + `</div><div id="lb" class="lb"><img alt=""></div><script>${DOWNLOAD_SCRIPT}\n${UI_SCRIPT}</script></body></html>`;
+}
+
+function _exportTradesPdf() {
+  const drawer = document.getElementById('wd-drawer');
+  const ctx = drawer && drawer._pdfCtx;
+  if (!ctx || !Array.isArray(ctx.sorted) || !ctx.sorted.length) return;
+
+  const docHtml = _pdfBuildDoc(ctx);
+
+  // Open the rendered document in a new tab. The user reviews it there and
+  // clicks the in-page "Télécharger le PDF" button (→ window.print() → Save as
+  // PDF). A direct-click window.open is not popup-blocked.
+  const w = window.open('', '_blank');
+  if (!w) { alert('Allow pop-ups to open the PDF export.'); return; }
+  w.document.open();
+  w.document.write(docHtml);
+  w.document.close();
+}
+
 /* ─── Share Link feature ─────────────────────────────────────────────
    Snapshot the current drawer's trade-cards to public.shares (Supabase),
    render a 7-day shareable link in a popover. Spec: docs/share-link-feature.md */
@@ -23450,6 +23839,12 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
        <div class="wd-share-popover" hidden></div>`
     : '';
 
+  // PDF export — always available (local, no auth needed). Sits next to the
+  // share button; exports the drawer's trade-cards + inline screenshots.
+  const _pdfBtnHtml = `<button class="wd-drawer-pdf-btn" data-action="export-trades-pdf" type="button" title="Exporter ces trade cards en PDF (screenshots inclus)">
+         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm0 2 4 4h-4V4zM8 13.5h8V15H8v-1.5zm0 3h8V18H8v-1.5zm0-6h4V12H8v-1.5z"/></svg>
+       </button>`;
+
   drawer.innerHTML = `
     <div class="wd-drawer-head">
       <div class="wd-drawer-head-main">
@@ -23458,6 +23853,7 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
       </div>
       <div class="wd-drawer-head-side">
         <div class="wd-drawer-total ${totalR >= 0 ? 'wd-drawer-total-pos' : 'wd-drawer-total-neg'}">${sign}${totalR.toFixed(1)}R</div>
+        ${_pdfBtnHtml}
         ${_shareBtnHtml}
         <button class="wd-drawer-close" data-action="close-widget-drawer">×</button>
       </div>
@@ -23483,6 +23879,8 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
   } else {
     delete drawer._shareCtx;
   }
+  // Always stash the PDF-export context (auth-independent — export is local).
+  drawer._pdfCtx = { title, sorted, totalR, wins, n, tpConfig };
 
   if (highlightTrade) {
     const idx = sorted.findIndex(t => t === highlightTrade) !== -1
