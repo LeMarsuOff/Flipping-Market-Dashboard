@@ -252,7 +252,12 @@ function renderShare(d) {
   const totalRSigned = `${totalR >= 0 ? '+' : ''}${totalR.toFixed(1)}R`;
   const totalCls = totalR >= 0 ? 'wd-drawer-total-pos' : 'wd-drawer-total-neg';
   const sub = `${stats.trades || trades.length} trades · ${stats.wins || 0}W ${stats.losses || 0}L`;
-  const kindLabel = CHIP_KIND_LABEL[d.chip_kind] || CHIP_KIND_LABEL.custom;
+  // Prefer the real dimension/property name carried in the snapshot (stats.dim)
+  // so the viewer eyebrow matches the Discord OG card; fall back to the
+  // chip_kind taxonomy label.
+  const kindLabel = (stats.dim && String(stats.dim).trim())
+    ? String(stats.dim).trim()
+    : (CHIP_KIND_LABEL[d.chip_kind] || CHIP_KIND_LABEL.custom);
 
   const groups = groupTradesByMonth(trades);
   const bodyHtml = groups.map(g => `

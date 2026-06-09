@@ -18127,7 +18127,7 @@ document.addEventListener('click', e => {
     trades = filtered.filter(t => t.outcome === zone);
     label = zone;
   }
-  if (trades.length) openWidgetDrawer(label, `${trades.length} trade${trades.length > 1 ? 's' : ''}`, trades);
+  if (trades.length) openWidgetDrawer(label, `${trades.length} trade${trades.length > 1 ? 's' : ''}`, trades, null, { dim: zone === 'center' ? null : 'Outcome' });
 });
 
 // ══════════════════════════════════════════════════════
@@ -18613,7 +18613,7 @@ function drawMonthly(trades) {
         const s = mStats[i];
         appState.ui.monthlySelectedMonth = month;
         drawMonthly(trades);
-        openWidgetDrawer(month, `${s.n} trade${s.n>1?'s':''} · ${s.wins}W ${s.losses}L`, monthTrades);
+        openWidgetDrawer(month, `${s.n} trade${s.n>1?'s':''} · ${s.wins}W ${s.losses}L`, monthTrades, null, { dim: 'Month' });
         return;
       }
     }
@@ -22840,7 +22840,7 @@ function renderPairSession(trades) {
           if (!cellTrades.length) return;
           document.querySelectorAll('#pair-session-container .wd-cell-active').forEach(el => el.classList.remove('wd-cell-active'));
           cell.classList.add('wd-cell-active');
-          openWidgetDrawer(`${p} × ${SESSION_SHORT[s]||s}`, `${v.n} trades`, cellTrades);
+          openWidgetDrawer(`${p} × ${SESSION_SHORT[s]||s}`, `${v.n} trades`, cellTrades, null, { dim: 'Pair × Session' });
         });
         bindManagedEvent(cell, '_managedCtxMenu', 'contextmenu', e => {
           e.preventDefault();
@@ -23490,7 +23490,12 @@ function _generateShareId() {
 }
 
 function _shareViewerBaseUrl() {
-  return location.origin + location.pathname.replace(/[^/]*$/, '');
+  // SSR endpoint (Vercel) that serves crawler-parseable HTML with dynamic
+  // Open Graph tags + a per-share og:image (the Supabase `share` edge
+  // function). GitHub Pages can't SSR and the Supabase functions domain
+  // neuters HTML, so the share link points here. The page sets <base href>
+  // back to github.io so the interactive viewer (share.css/js) still runs.
+  return 'https://flipping-share-og.vercel.app/share';
 }
 
 /* Mirror _wdTradeCard's display-R logic so the snapshot's "r" matches
@@ -23589,12 +23594,19 @@ async function _createShareRow(shareCtx) {
   const id = _generateShareId();
   const expiresAt = new Date(Date.now() + _SHARE_EXPIRY_DAYS * 86400000).toISOString();
 
+  const stats = _buildShareStats(shareCtx.sorted, shareCtx.totalR, shareCtx.wins, shareCtx.n, shareCtx.tpConfig);
+  // Carry the dimension/property display name (e.g. "Session", "Setup",
+  // a custom Notion property) so the share preview eyebrow shows the real
+  // name instead of the generic "Custom Filter". Lives inside `stats` so no
+  // table-schema migration is needed.
+  if (shareCtx.dim) stats.dim = String(shareCtx.dim);
+
   const { error } = await sb.from('shares').insert({
     id,
     created_by: user.id,
     chip_name: shareCtx.title || 'Trade cards',
     chip_kind: shareCtx.chipKind || 'custom',
-    stats:  _buildShareStats(shareCtx.sorted, shareCtx.totalR, shareCtx.wins, shareCtx.n, shareCtx.tpConfig),
+    stats,
     trades: _buildShareSnapshot(shareCtx.sorted, shareCtx.tpConfig),
     expires_at: expiresAt,
   });
@@ -23736,7 +23748,7 @@ async function _handleOpenSharePopover(opts = {}) {
   _renderSharePopoverLoading(popEl);
   try {
     const { id, expiresAt } = await _createShareRow(ctx);
-    const url = `${_shareViewerBaseUrl()}share.html?id=${id}`;
+    const url = `${_shareViewerBaseUrl()}?id=${id}`;
     drawer._shareLastUrl = url;
     drawer._shareLastCtxKey = ctxKey;
     _putCachedShareUrl(ctxKey, url, expiresAt);
@@ -23915,7 +23927,7 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
   // Kept across drawer renders; the ctxKey check inside the handler decides
   // whether to reuse a previously-created share or generate a fresh row.
   if (_shareEnabled) {
-    drawer._shareCtx = { title, chipKind: opts.chipKind || 'custom', sorted, totalR, wins, n, tpConfig };
+    drawer._shareCtx = { title, chipKind: opts.chipKind || 'custom', dim: opts.dim || null, sorted, totalR, wins, n, tpConfig };
   } else {
     delete drawer._shareCtx;
   }
@@ -24770,7 +24782,7 @@ function _calOpenDay(dateStr) {
   if (el) el.classList.add('wd-cell-active');
   // Delegate to shared drawer
   const subtitle = `${day.n} trade${day.n>1?'s':''} · ${day.wins}W ${day.n-day.wins}L`;
-  openWidgetDrawer(dateStr, subtitle, data);
+  openWidgetDrawer(dateStr, subtitle, data, null, { dim: 'Date' });
 }
 
 function _calCloseDrawer() {
@@ -29629,7 +29641,7 @@ function _poRRGchipDrawer(lv, label) {
   });
   if (!trades.length) return;
   if (typeof openWidgetDrawer === 'function') {
-    openWidgetDrawer(label, `${trades.length} trade${trades.length > 1 ? 's' : ''} · rrMax ≥ ${lv}R`, trades);
+    openWidgetDrawer(label, `${trades.length} trade${trades.length > 1 ? 's' : ''} · rrMax ≥ ${lv}R`, trades, null, { dim: 'RR Max' });
   }
 }
 
@@ -31067,7 +31079,24 @@ function _openDrawerFromBarRow(containerId, row) {
   document.querySelectorAll('.bar-row.lb-active').forEach(r => r.classList.remove('lb-active'));
   row.classList.add('lb-active');
 
-  openWidgetDrawer(label, null, trades);
+  openWidgetDrawer(label, null, trades, null, { dim: _barChartDimLabel(chartId) });
+}
+
+/* Human dimension label for a bar chart id — used as the share-preview
+   eyebrow ("Session", "Setup"…). Custom widgets resolve to their own label. */
+function _barChartDimLabel(chartId) {
+  const map = {
+    setup: 'Setup', session: 'Session', pair: 'Pair', day: 'Day of Week',
+    obs: 'M15 Obstacle', h4obs: 'H4 Obstacle', hour: 'Session Time',
+  };
+  if (map[chartId]) return map[chartId];
+  if (String(chartId || '').startsWith('w-cust-')) {
+    const def = (typeof _loadCustomWidgetDefs === 'function')
+      ? _loadCustomWidgetDefs().find(d => d.id === chartId)
+      : null;
+    if (def && (def.label || def.field)) return def.label || def.field;
+  }
+  return null;
 }
 
 // ── Right-click context menu on bar charts: Include / Exclude ──
