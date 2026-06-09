@@ -23229,6 +23229,27 @@ function _pdfBuildDoc(ctx) {
   const wins = ctx.wins != null ? ctx.wins : ctx.sorted.filter(t => effR(t) > 0).length;
   const totalR = Number(ctx.totalR != null ? ctx.totalR : ctx.sorted.reduce((a, t) => a + effR(t), 0)) || 0;
   const wr = n ? Math.round((wins / n) * 100) : 0;
+  const avgR = n ? (totalR / n) : 0;
+  let _gw = 0, _gl = 0;
+  ctx.sorted.forEach(t => { const r = effR(t); if (r > 0) _gw += r; else if (r < 0) _gl += -r; });
+  const pf = _gl > 0 ? (_gw / _gl) : (_gw > 0 ? Infinity : 0);
+  const pfTxt = !isFinite(pf) ? '∞' : pf.toFixed(2);
+  const eyebrow = ctx.dim || 'Selection';
+
+  // Page-layout cover (one-per-page mode only): a share-style watermark card —
+  // brand pill, dimension eyebrow, big selection title, 5 coloured stat tiles.
+  // Hidden in inline layout; doc-head/ctx-strip are hidden in page layout instead.
+  const coverHtml = `<div class="cover"><div class="cover-inner">`
+    + `<div class="cover-pill"><span class="dot"></span>Flipping Research · Trade Cards</div>`
+    + `<div class="cover-eyebrow">${esc(eyebrow)}</div>`
+    + `<div class="cover-title">${esc(ctx.title || '—')}</div>`
+    + `<div class="cover-stats">`
+    + `<div class="cv-tile"><div class="cv-k">Trades</div><div class="cv-v">${n}</div></div>`
+    + `<div class="cv-tile"><div class="cv-k">Total R</div><div class="cv-v ${totalR >= 0 ? 'pos' : 'neg'}">${totalR > 0 ? '+' : ''}${totalR.toFixed(1)}R</div></div>`
+    + `<div class="cv-tile"><div class="cv-k">Win Rate</div><div class="cv-v wr">${wr}%</div></div>`
+    + `<div class="cv-tile"><div class="cv-k">Avg R</div><div class="cv-v ${avgR >= 0 ? 'pos' : 'neg'}">${avgR > 0 ? '+' : ''}${avgR.toFixed(2)}R</div></div>`
+    + `<div class="cv-tile"><div class="cv-k">Profit Factor</div><div class="cv-v pf">${pfTxt}</div></div>`
+    + `</div></div></div>`;
 
   const CSS = `
 *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -23300,6 +23321,38 @@ body[data-img-filter][data-cols="3"] .page{grid-template-columns:1fr 1fr 1fr;}
 body:not([data-img-filter]) .cols-wrap{display:none;}
 .layout-wrap{display:inline-flex;}
 body[data-img-filter] .layout-wrap{display:none;}
+/* One-per-page: stack the 3 screenshots vertically (not inline) so the card
+   grows tall and the page-fit scaler fills the whole page height → large shots. */
+body[data-layout="page"]:not([data-img-filter]) .shots{grid-template-columns:1fr;}
+/* Page layout: pin the column to a fixed width so the rasterised text size is
+   independent of the (variable) browser-tab width — otherwise a wide tab makes
+   the card render huge and the px fonts come out tiny once scaled to the PDF
+   page. Header strips are replaced by the cover; per-card text is enlarged. */
+body[data-layout="page"]:not([data-img-filter]) .page{max-width:780px;margin-left:auto;margin-right:auto;}
+body[data-layout="page"]:not([data-img-filter]) .doc-head,body[data-layout="page"]:not([data-img-filter]) .ctx-strip{display:none;}
+/* Every card keeps all 3 screenshot slots (empty ones show a placeholder hole)
+   so trade cards render identically regardless of how many screenshots exist. */
+body[data-layout="page"]:not([data-img-filter]) .card-head{padding:16px 24px 12px;gap:16px;}
+body[data-layout="page"]:not([data-img-filter]) .ch-pair{font-size:29px;gap:10px;}
+body[data-layout="page"]:not([data-img-filter]) .ch-r{font-size:40px;}
+body[data-layout="page"]:not([data-img-filter]) .ch-oc{font-size:20px;margin-top:5px;}
+body[data-layout="page"]:not([data-img-filter]) .ch-date,body[data-layout="page"]:not([data-img-filter]) .ch-sess,body[data-layout="page"]:not([data-img-filter]) .ch-setup{font-size:19px;margin-top:4px;}
+body[data-layout="page"]:not([data-img-filter]) .ch-meta{font-size:18px;gap:14px;margin-top:7px;}
+body[data-layout="page"]:not([data-img-filter]) .ch-dir{font-size:15px;padding:2px 9px;}
+body[data-layout="page"]:not([data-img-filter]) .ch-notion{font-size:20px;}
+body[data-layout="page"]:not([data-img-filter]) .shot-lbl{font-size:16px;font-weight:600;letter-spacing:1.2px;padding:4px 10px;top:10px;left:10px;background:rgba(0,0,0,.28);border-radius:5px;}
+.cover{display:none;}
+body[data-layout="page"]:not([data-img-filter]) .cover{display:flex;justify-content:center;}
+.cover-inner{width:100%;max-width:720px;border:1.5px solid var(--bg4);border-radius:26px;background:var(--bg1);padding:64px 44px;text-align:center;}
+.cover-pill{display:inline-flex;align-items:center;gap:11px;font-size:18px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--body);border:1.5px solid var(--bg4);border-radius:999px;padding:13px 28px;margin-bottom:52px;}
+.cover-pill .dot{width:12px;height:12px;border-radius:50%;background:var(--gold);display:inline-block;}
+.cover-eyebrow{font-size:22px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--dim);margin-bottom:14px;}
+.cover-title{font-size:104px;font-weight:800;line-height:1.02;color:var(--white);letter-spacing:.5px;margin-bottom:52px;font-family:'Anybody',sans-serif;word-break:break-word;}
+.cover-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--bg4);border:1.5px solid var(--bg4);border-radius:16px;overflow:hidden;}
+.cv-tile{background:var(--bg1);padding:26px 8px;}
+.cv-k{font-size:15px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:14px;}
+.cv-v{font-size:26px;font-weight:800;color:var(--white);font-family:'Anybody',sans-serif;line-height:1;}
+.cv-v.pos{color:var(--g);}.cv-v.neg{color:var(--r);}.cv-v.wr{color:var(--oc-besl);}.cv-v.pf{color:var(--oc-betp);}
 @media screen{body[data-layout="page"]:not([data-img-filter]) .card{position:relative;margin-bottom:36px;}body[data-layout="page"]:not([data-img-filter]) .card::after{content:"";position:absolute;left:0;right:0;bottom:-19px;border-top:1px dashed var(--bg4);}}
 .prop-dd{position:relative;display:inline-flex;}
 .prop-panel{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--bg4);border-radius:8px;padding:6px;min-width:190px;max-height:320px;overflow:auto;z-index:30;box-shadow:0 8px 24px rgba(0,0,0,.5);}
@@ -23358,31 +23411,35 @@ async function downloadPdf(){
     var colW=(cW-GAP*(cols-1))/cols;
     var kids=page.children,n=kids.length;
     if(layout==='page'){
-      // One trade per page: header blocks stack on page 1 (cover), then every
-      // card gets its own page, scaled up to fill it (aspect kept, centred), with
-      // its setup label re-drawn at the top for context.
-      var y=M,curSep=null;
+      // One trade per page: a styled cover fills page 1, then every card gets
+      // its own page, scaled up to fill it (aspect kept, centred). The header
+      // strips (doc-head / ctx-strip) and the per-group setup separators are
+      // not drawn here — every block is rasterised on a page-bg backdrop so no
+      // transparent area renders BLACK in the JPEG.
+      var sepBg='rgb('+PDF_BG_RGB[0]+','+PDF_BG_RGB[1]+','+PDF_BG_RGB[2]+')';
       for(var i=0;i<n;i++){
-        _busy(btn,true,'Generating… '+(i+1)+'/'+n);
         var node=kids[i];
-        if(node.classList.contains('card')){
+        if(window.getComputedStyle(node).display==='none')continue;
+        if(!node.classList.contains('cover')&&!node.classList.contains('card'))continue;
+        _busy(btn,true,'Generating… '+(i+1)+'/'+n);
+        if(node.classList.contains('cover')){
+          // Capture only the inner card (not the full-width flex wrapper) so there
+          // are no transparent gutters — those render BLACK in JPEG. Fill the
+          // rounded-corner gaps with the page bg so they blend into the page.
+          var coverCard=node.querySelector('.cover-inner')||node;
+          var cov=await html2canvas(coverCard,{scale:2,useCORS:true,backgroundColor:sepBg,logging:false});
+          if(!cov.width||!cov.height)continue;
+          var availHc=ph-2*M,wc=cW,hcv=cov.height*wc/cov.width;
+          if(hcv>availHc){var kc=availHc/hcv;hcv=availHc;wc=wc*kc;}
+          pdf.addImage(cov.toDataURL('image/jpeg',0.92),'JPEG',M+(cW-wc)/2,M+(availHc-hcv)/2,wc,hcv);
+        }else{
           pdf.addPage();bg();
           var yy=M;
-          if(curSep){var sw=cW,sh=curSep.height*sw/curSep.width;pdf.addImage(curSep.toDataURL('image/jpeg',0.92),'JPEG',M,yy,sw,sh);yy+=sh+GAP;}
-          var cc=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+          var cc=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:sepBg,logging:false});
           if(!cc.width||!cc.height)continue;
           var availH=ph-M-yy,w=cW,h=cc.height*w/cc.width;
           if(h>availH){var k=availH/h;h=availH;w=w*k;}
           pdf.addImage(cc.toDataURL('image/jpeg',0.92),'JPEG',M+(cW-w)/2,yy+(availH-h)/2,w,h);
-        }else if(node.classList.contains('setup-sep')){
-          curSep=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
-        }else{
-          var hc=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
-          if(!hc.width||!hc.height)continue;
-          var hw=cW,hh=hc.height*hw/hc.width;
-          if(hh>ph-2*M){var kk=(ph-2*M)/hh;hh=ph-2*M;hw=hw*kk;}
-          if(y+hh>ph-M+0.5&&y>M){pdf.addPage();bg();y=M;}
-          pdf.addImage(hc.toDataURL('image/jpeg',0.92),'JPEG',M,y,hw,hh);y+=hh+GAP;
         }
       }
     }else{
@@ -23391,8 +23448,9 @@ async function downloadPdf(){
       var x=M,y=M,rowH=0,col=0;
       var flushRow=function(){if(col>0){y+=rowH+GAP;x=M;col=0;rowH=0;}};
       for(var i=0;i<n;i++){
-        _busy(btn,true,'Generating… '+(i+1)+'/'+n);
         var node=kids[i];
+        if(window.getComputedStyle(node).display==='none')continue;
+        _busy(btn,true,'Generating… '+(i+1)+'/'+n);
         var cv=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,logging:false});
         if(!cv.width||!cv.height)continue;
         if(!node.classList.contains('card')||cols===1){
@@ -23447,6 +23505,7 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'){var lb=docu
     + `<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>`
     + `<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>`
     + `<style>:root{${rootVars}}${CSS}</style></head><body data-cols="1" data-layout="inline" data-show="${defaultShow}">${toolbarHtml}<div class="page">`
+    + coverHtml
     + `<div class="doc-head"><div><div class="doc-title">Trade Cards — Export</div><div class="doc-brand">Flipping Research</div></div>`
     + `<div class="doc-meta">Generated <b>${esc(genDate)}</b><br>Selection: <b>${esc(ctx.title || '—')}</b><br>TP mode <b>${esc(modeLabel)}</b></div></div>`
     + `<div class="ctx-strip"><span><span class="kpi">${n}</span> trades</span>`
@@ -23932,7 +23991,7 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
     delete drawer._shareCtx;
   }
   // Always stash the PDF-export context (auth-independent — export is local).
-  drawer._pdfCtx = { title, sorted, totalR, wins, n, tpConfig };
+  drawer._pdfCtx = { title, sorted, totalR, wins, n, tpConfig, dim: opts.dim || null };
 
   if (highlightTrade) {
     const idx = sorted.findIndex(t => t === highlightTrade) !== -1
