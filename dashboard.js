@@ -14559,8 +14559,8 @@ function resetAll() {
   // null (où l'on va atterrir). Les slots des autres presets restent intacts —
   // resetAll est un reset du contexte courant, pas du monde entier.
   const prevActiveId = appState.presets.activeId;
-  presetLiveFilters[_liveKey(prevActiveId)] = _blankLiveSlot();
-  if (prevActiveId !== null) presetLiveFilters['null'] = _blankLiveSlot();
+  presetLiveFilters[_liveKey(prevActiveId)] = _blankLiveSlotKeepPO(prevActiveId);
+  if (prevActiveId !== null) presetLiveFilters['null'] = _blankLiveSlotKeepPO(null);
   savePresetLiveFilters();
 
   clearChipFilters();
@@ -20609,7 +20609,7 @@ function _commitLiveFiltersConfirmed(id) {
   // bas). Ce choix fait que cliquer Update ne "fige" pas un filtre heatmap
   // dans le preset, ce qui est intentionnel : ces filtres sont exploratoires
   // et ne font pas partie de la définition canonique d'un preset.
-  presetLiveFilters[_liveKey(id)] = _blankLiveSlot();
+  presetLiveFilters[_liveKey(id)] = _blankLiveSlotKeepPO(id);
   _clearComboFilters();
   savePresetLiveFilters();
   _closeSaveDropdown();
@@ -20646,7 +20646,7 @@ function resetLiveFilters() {
   _removeAllLiveChips();
   _hydrateChipsFromSnapshot(presetSnapshots[id]);
   _clearComboFilters();
-  presetLiveFilters[_liveKey(id)] = _blankLiveSlot();
+  presetLiveFilters[_liveKey(id)] = _blankLiveSlotKeepPO(id);
   savePresetLiveFilters();
   invalidateFilterCache();
   Object.keys(appState.filters.chips).forEach(key => _syncChipModeButtons(key));
@@ -38636,6 +38636,23 @@ function _blankLiveSlot() {
   // dataset on every render. null = empty slot.
   slot.poPresetSlots = { P1: null, P2: null, P3: null };
   return slot;
+}
+
+/** Build a blank live slot for `id` but CARRY OVER its saved Partial Optimizer
+ *  slots (poPresetSlots). The PO slots are user-saved presets, not live chip
+ *  filters — they only happen to be stored inside the live slot. Filter-reset
+ *  operations (Update preset, Reset to preset values, Clear all) blank the live
+ *  slot via `presetLiveFilters[id] = _blankLiveSlot()`, which silently wiped the
+ *  saved PO slots. Use this instead so an Update/Reset of the chips leaves the
+ *  saved PO presets intact. (Deleting a preset still drops everything — that
+ *  goes through `delete presetLiveFilters[...]`, not this helper.) */
+function _blankLiveSlotKeepPO(id) {
+  const existing = presetLiveFilters[_liveKey(id)];
+  const fresh = _blankLiveSlot();
+  if (existing && existing.poPresetSlots && typeof existing.poPresetSlots === 'object') {
+    fresh.poPresetSlots = existing.poPresetSlots;
+  }
+  return fresh;
 }
 
 function getPresetLiveSlot(id) {
