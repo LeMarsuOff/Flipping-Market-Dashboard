@@ -13025,14 +13025,23 @@ function savePresetsList() {
   try { localStorage.setItem(_htfKey(PRESET_LS_KEY), JSON.stringify(PRESETS)); } catch(e) {}
 }
 
-// Return max(existing id) + 1 — ids are stable and never recycled, so all
-// LS-keyed state (snapshots, overrides, live filters) stays coherent even
-// after a preset is deleted. The PRESET_MAX cap applies to the number of
-// active presets, not to the id space.
+// Return the LOWEST free id in [0, PRESET_MAX). IDs must stay inside this
+// range because the snapshot/override persistence layer is keyed on
+// 0..PRESET_MAX-1 (savePresetSnapshots/savePresetOverrides loop `id < PRESET_MAX`
+// and loadPresetSnapshots/loadPresetOverrides skip `id >= PRESET_MAX`). The old
+// `max(id)+1` allocator could return an out-of-range id after create/delete
+// churn (e.g. fill 0..9, delete one, create → id 10) — its snapshot was then
+// silently dropped on save, surfacing as a freshly-created/duplicated preset
+// reverting to blank after the next reload or cross-device sync pull.
+// Recycling a freed id is safe: deletePreset() wipes the deleted slot's
+// snapshot/override/live state, so there is no stale carry-over.
 function _nextPresetId() {
   if (PRESETS.length >= PRESET_MAX) return -1;
-  const maxId = PRESETS.reduce((m, p) => Math.max(m, p.id), -1);
-  return maxId + 1;
+  const used = new Set(PRESETS.map(p => p.id));
+  for (let id = 0; id < PRESET_MAX; id++) {
+    if (!used.has(id)) return id;
+  }
+  return -1;
 }
 
 /** Visual display number for a preset id: contiguous P0, P1, P2... based on
@@ -27274,6 +27283,26 @@ function _poGetPresetSlots() {
   return slot.poPresetSlots;
 }
 
+/** Force-push the per-preset live-filters blob (which carries the PO slots) to
+ *  Supabase, bypassing the apply-remote window drop. savePresetLiveFilters writes
+ *  through the localStorage monkey-patch, which DROPS any non-mapping write that
+ *  lands while a remote Realtime event is being applied (~1.5s window, re-armed on
+ *  every inbound preset/theme/blob event) to avoid an echo loop. But a PO-slot
+ *  save/delete is a deliberate user action — never part of that re-render cascade
+ *  — so when the drop hit, the slot stayed local-only, never reached the cloud,
+ *  and was then wiped by the next remote-wins pull (lost across sessions AND
+ *  devices). Mirrors the 2026-05-31 mapping force-flush. _SW.set self-marks the
+ *  write so it does not echo back. No-op when signed out (plain LS already
+ *  persists). */
+function _poSyncPresetSlotsToCloud() {
+  try {
+    if (!(window._SW && window._SW.getUser && window._SW.getUser())) return;
+    const key = _htfKey(PRESET_LIVE_FILTERS_LS_KEY);
+    const value = localStorage.getItem(key);
+    if (value != null) window._SW.set(key, value);
+  } catch (e) { console.warn('[poPresetSlot] cloud force-sync failed:', e.message); }
+}
+
 /** Saves a model to the given slot key (P1/P2/P3). Stores only params (tpFinal, legs,
  *  type, name). Persists immediately. Returns true on success. */
 function _poSavePresetSlot(slotKey, model) {
@@ -27291,6 +27320,7 @@ function _poSavePresetSlot(slotKey, model) {
     console.warn('[poPresetSlot] save failed:', e.message);
     return false;
   }
+  _poSyncPresetSlotsToCloud();
   return true;
 }
 
@@ -27303,6 +27333,7 @@ function _poDeletePresetSlot(slotKey) {
     console.warn('[poPresetSlot] delete failed:', e.message);
     return false;
   }
+  _poSyncPresetSlotsToCloud();
   // PR-D: cleanup hidden-curve state — if the slot is re-saved later, the
   // curve should reappear by default, not stay hidden from a previous toggle.
   if (window._poState?.hiddenPresetCurves) {
