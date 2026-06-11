@@ -295,6 +295,10 @@ const _SYNC_KEYS = new Set([
 const _SYNC_KEY_PREFIXES = [
   'apiFieldOverrides_v1_',
   'apiFieldNames_v1_',
+  // Per-profile display order of the 3 screenshot slots (Data Setup → Screenshots
+  // reorder ▲▼). Synced so the chosen order follows the profile across devices,
+  // same as the mapping it sits next to.
+  'screenshotOrder_v1_',
   'outcomeValueMapping_v1_',
   'flipping_notion_properties_',
   'flipping_custom_widgets_',
@@ -4006,6 +4010,8 @@ function handleActionClick(event) {
     case 'notion-profile-rebuild-arm': event.stopPropagation(); _armJournalProfileRebuild(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-rebuild-confirm': event.stopPropagation(); _confirmJournalProfileRebuild(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-rebuild-cancel': event.stopPropagation(); _disarmJournalProfileRebuild(); break;
+    case 'screenshot-order-up':   event.stopPropagation(); if (_moveScreenshotStep(actionEl.dataset.step || '', -1)) { try { updateJournalPanel(); } catch (e) {} } break;
+    case 'screenshot-order-down': event.stopPropagation(); if (_moveScreenshotStep(actionEl.dataset.step || '', 1))  { try { updateJournalPanel(); } catch (e) {} } break;
     case 'toggle-more-menu': {
       const menu = document.getElementById('topbar-more-menu');
       if (!menu) break;
@@ -15251,6 +15257,50 @@ let _lbKeyHandler = null;
 
 const _LB_STEPS       = ['h4Before', 'm15Before', 'm15After'];
 const _LB_STEP_LABELS = { h4Before: 'TV Image 1', m15Before: 'TV Image 2', m15After: 'TV Image 3' };
+
+// ── Screenshot display order (per profile) ──────────────────────────────────
+// The 3 screenshot slots render in a user-configurable order (Data Setup →
+// Screenshots ▲▼). Default = canonical h4Before → m15Before → m15After. Stored
+// per profile (getProfileScopedKey) and synced via the screenshotOrder_v1_
+// prefix. All render sites (trade-row drawer, widget drawer, PDF) + the lightbox
+// step navigation read _getScreenshotStepOrder() so the order is honoured
+// everywhere from one source of truth. Labels stay driven by the user's mapping
+// (_getTradeMediaStepLabel) — only the ORDER is configurable, never hardcoded.
+const SCREENSHOT_ORDER_LS_KEY = 'screenshotOrder_v1';
+const _DIM_KEY_TO_LB_STEP = { img_h4_before: 'h4Before', img_m15: 'm15Before', img_m15_after: 'm15After' };
+function _getScreenshotStepOrder() {
+  let order = null;
+  try {
+    const raw = (typeof getProfileScopedKey === 'function')
+      ? localStorage.getItem(getProfileScopedKey(SCREENSHOT_ORDER_LS_KEY))
+      : null;
+    order = raw ? JSON.parse(raw) : null;
+  } catch (e) { order = null; }
+  // Sanitize to exactly the 3 canonical steps in the stored order, appending
+  // any missing/dropping any invalid so callers always get a full valid perm.
+  const seen = new Set();
+  const clean = [];
+  if (Array.isArray(order)) {
+    for (const s of order) {
+      if (_LB_STEPS.includes(s) && !seen.has(s)) { seen.add(s); clean.push(s); }
+    }
+  }
+  for (const s of _LB_STEPS) if (!seen.has(s)) clean.push(s);
+  return clean;
+}
+function _setScreenshotStepOrder(order) {
+  if (!Array.isArray(order) || typeof getProfileScopedKey !== 'function') return;
+  try { localStorage.setItem(getProfileScopedKey(SCREENSHOT_ORDER_LS_KEY), JSON.stringify(order)); } catch (e) {}
+}
+function _moveScreenshotStep(step, dir) {
+  const order = _getScreenshotStepOrder();
+  const i = order.indexOf(step);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return false;
+  [order[i], order[j]] = [order[j], order[i]];
+  _setScreenshotStepOrder(order);
+  return true;
+}
 // Lightbox step → JOURNAL_DIMS key. Used by _getTradeMediaStepLabel to look
 // up the mapped Notion column name and surface it as the modal title (e.g.
 // "URL H4 Before" instead of the generic "TV Image 1") — same auto-rename
@@ -15294,11 +15344,13 @@ function _getTradeLightboxId(trade) {
 }
 
 function _lbGetStepOrder() {
+  const order = _getScreenshotStepOrder();
   // In API+H4 mode, M15 Before is intentionally defaulted to No Mapping, so
   // keyboard navigation should cycle only through the two visible screenshot
-  // slots to match the smoother M15 behavior the user expects.
-  if (_isH4ApiMode()) return ['h4Before', 'm15After'];
-  return _LB_STEPS;
+  // slots to match the smoother M15 behavior the user expects — but still in
+  // the user's chosen order.
+  if (_isH4ApiMode()) return order.filter(s => s !== 'm15Before');
+  return order;
 }
 
 function _lbRemoveKeyHandler() {
@@ -17794,8 +17846,13 @@ function _selTradeRow(t, highlighted) {
          data-trade-h4before-orig="${safeH4bOrig}" data-trade-m15before-orig="${safeM15bOrig}" data-trade-m15after-orig="${safeM15aOrig}"
          title="${title}">${emoji}</button>`
     : '';
+  const _selByStep = {
+    h4Before:  _selBtn(safeH4b,'h4Before','📷',_getTradeMediaStepLabel('h4Before')),
+    m15Before: _selBtn(safeM15b,'m15Before','📷',_getTradeMediaStepLabel('m15Before')),
+    m15After:  _selBtn(safeM15a,'m15After','📸',_getTradeMediaStepLabel('m15After')),
+  };
   const imgBtns    = `<div class="trade-media-group">
-    ${_selBtn(safeH4b,'h4Before','📷',_getTradeMediaStepLabel('h4Before'))}${_selBtn(safeM15b,'m15Before','📷',_getTradeMediaStepLabel('m15Before'))}${_selBtn(safeM15a,'m15After','📸',_getTradeMediaStepLabel('m15After'))}
+    ${_getScreenshotStepOrder().map(s => _selByStep[s] || '').join('')}
   </div>`;
   const notionUrl  = (t.notionUrl || '').trim();
   const notionBtn  = notionUrl
@@ -19363,10 +19420,13 @@ function renderTable(trades) {
       safeM15bOrig: (t.imgM15Orig      || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'),
       safeM15aOrig: (t.imgM15AfterOrig || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'),
     };
+    const _mediaByStep = {
+      h4Before:  createTradeMediaButton(meta.safeH4b, 'h4Before', '📷', _getTradeMediaStepLabel('h4Before'), meta),
+      m15Before: createTradeMediaButton(meta.safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before'), meta),
+      m15After:  createTradeMediaButton(meta.safeM15a, 'm15After', '📸', _getTradeMediaStepLabel('m15After'), meta),
+    };
     const imgBtns = `<div class="trade-media-group">
-      ${createTradeMediaButton(meta.safeH4b, 'h4Before', '📷', _getTradeMediaStepLabel('h4Before'), meta)}
-      ${createTradeMediaButton(meta.safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before'), meta)}
-      ${createTradeMediaButton(meta.safeM15a, 'm15After', '📸', _getTradeMediaStepLabel('m15After'), meta)}
+      ${_getScreenshotStepOrder().map(s => _mediaByStep[s] || '').join('')}
     </div>`;
     const notionUrl = (t.notionUrl || '').trim();
     const notionBtn = notionUrl
@@ -23207,11 +23267,12 @@ function _wdTradeCard(t) {
        </div>`
     : '';
 
-  const imgBtn = [
-    _wdBtn(safeH4b,  'h4Before',  '📷', _getTradeMediaStepLabel('h4Before')),
-    _wdBtn(safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before')),
-    _wdBtn(safeM15a, 'm15After',  '📸', _getTradeMediaStepLabel('m15After')),
-  ].filter(Boolean).join('');
+  const _wdByStep = {
+    h4Before:  _wdBtn(safeH4b,  'h4Before',  '📷', _getTradeMediaStepLabel('h4Before')),
+    m15Before: _wdBtn(safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before')),
+    m15After:  _wdBtn(safeM15a, 'm15After',  '📸', _getTradeMediaStepLabel('m15After')),
+  };
+  const imgBtn = _getScreenshotStepOrder().map(s => _wdByStep[s]).filter(Boolean).join('');
 
   // Notion page button
   const notionUrl = (t.notionUrl || '').trim();
@@ -23403,6 +23464,11 @@ function _pdfBuildDoc(ctx) {
   let LBL;
   try { LBL = [ _getTradeMediaStepLabel('h4Before'), _getTradeMediaStepLabel('m15Before'), _getTradeMediaStepLabel('m15After') ]; }
   catch (e) { LBL = ['H4 Before', 'M15 Before', 'M15 After']; }
+  // Per-profile screenshot display order (baked at build time — the exported
+  // doc is a self-contained HTML string, so we resolve the order here).
+  let SHOT_ORDER;
+  try { SHOT_ORDER = _getScreenshotStepOrder(); }
+  catch (e) { SHOT_ORDER = ['h4Before', 'm15Before', 'm15After']; }
 
   // Toggleable card fields. Standard fields default to ON (mirror the classic
   // trade card); custom Notion properties (read from t.extras) default to OFF
@@ -23481,7 +23547,12 @@ function _pdfBuildDoc(ctx) {
     const notionUrl = (t.notionUrl || '').trim();
     const notionHtml = notionUrl ? `<a class="ch-notion" href="${attr(notionUrl)}" target="_blank" rel="noopener" title="Open in Notion">🔗</a>` : '';
 
-    const shots = `<div class="shots">${shot(t.imgH4Before, t.imgH4BeforeOrig, LBL[0], 'h4')}${shot(t.imgM15, t.imgM15Orig, LBL[1], 'm15')}${shot(t.imgM15After, t.imgM15AfterOrig, LBL[2], 'after')}</div>`;
+    const _shotByStep = {
+      h4Before:  shot(t.imgH4Before, t.imgH4BeforeOrig, LBL[0], 'h4'),
+      m15Before: shot(t.imgM15, t.imgM15Orig, LBL[1], 'm15'),
+      m15After:  shot(t.imgM15After, t.imgM15AfterOrig, LBL[2], 'after'),
+    };
+    const shots = `<div class="shots">${SHOT_ORDER.map(s => _shotByStep[s]).join('')}</div>`;
 
     return `<div class="card ${BG_CLASS[t.outcome] || ''}">`
       + `<div class="card-head"><div class="ch-left">`
@@ -23661,10 +23732,13 @@ body[data-layout="page"]:not([data-img-filter]) .cover{display:flex;justify-cont
 
   const safeTitle = String(ctx.title || 'Export').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Export';
   const docTitle = `Trade Cards — ${safeTitle}`;
+  const _optByStep = {
+    h4Before:  `<option value="h4">${esc(LBL[0])}</option>`,
+    m15Before: `<option value="m15">${esc(LBL[1])}</option>`,
+    m15After:  `<option value="after">${esc(LBL[2])}</option>`,
+  };
   const selOpts = `<option value="all">All screenshots</option>`
-    + `<option value="h4">${esc(LBL[0])}</option>`
-    + `<option value="m15">${esc(LBL[1])}</option>`
-    + `<option value="after">${esc(LBL[2])}</option>`;
+    + SHOT_ORDER.map(s => _optByStep[s] || '').join('');
   const colsOpts = `<option value="1">1 / row</option><option value="2">2 / row</option><option value="3">3 / row</option>`;
   const toolbarHtml = `<div class="toolbar"><div class="tb-title">Export preview · <b>${n} trade${n > 1 ? 's' : ''}</b></div>`
     + `<div class="tb-right"><select class="img-sel" id="img-filter" title="Choose which screenshot to display">${selOpts}</select>`
@@ -34322,6 +34396,21 @@ function _renderMappingTableRow(dim, st) {
   // CSS subgrid: Dot · Label · Value · Coverage · Action. Empty rows still
   // emit empty placeholder spans so column widths line up across all rows.
   const coverage = st.coverageHtml || '';
+  // Screenshots tier: a compact ▲▼ reorder control so the user sets the display
+  // order of the 3 slots (never hardcoded). Sits before the pencil in the action
+  // column; disabled at the ends of the order.
+  let reorderHtml = '';
+  if (dim.tier === 'screenshot' && _DIM_KEY_TO_LB_STEP[dim.key]) {
+    const step = _DIM_KEY_TO_LB_STEP[dim.key];
+    const ord = _getScreenshotStepOrder();
+    const idx = ord.indexOf(step);
+    const upDis = idx <= 0 ? ' disabled' : '';
+    const downDis = idx === ord.length - 1 ? ' disabled' : '';
+    reorderHtml = `<span class="ljp-shot-reorder">
+      <button class="ljp-shot-move" type="button" data-action="screenshot-order-up" data-step="${step}" title="Move screenshot earlier" aria-label="Move screenshot earlier"${upDis}>▲</button>
+      <button class="ljp-shot-move" type="button" data-action="screenshot-order-down" data-step="${step}" title="Move screenshot later" aria-label="Move screenshot later"${downDis}>▼</button>
+    </span>`;
+  }
   const mainRow = `<div class="ljp-mapping-row ${st.status}${st.rowClass ? ' ' + st.rowClass : ''}" data-dim-key="${_escapeHtml(dim.key)}">
     <span class="ljp-status-dot ${st.status}" aria-label="${_escapeHtml(st.statusTxt || '')}"></span>
     <span class="ljp-chip-label-col">
@@ -34329,7 +34418,7 @@ function _renderMappingTableRow(dim, st) {
     </span>
     <span class="ljp-chip-value-col">${valueBlock}</span>
     <span class="ljp-chip-coverage-col">${coverage}</span>
-    <span class="ljp-chip-action-col">${pencil}</span>
+    <span class="ljp-chip-action-col">${reorderHtml}${pencil}</span>
   </div>`;
   return st.reportHtml
     ? mainRow + `<div class="ljp-mapping-report-row">${st.reportHtml}</div>`
@@ -34435,6 +34524,15 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     const byLabelAsc = (a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
     missingDims.sort(byLabelAsc);
     otherDims.sort(byLabelAsc);
+    // Screenshots tier: honour the user's configured display order (▲▼) instead
+    // of alphabetical, so the Mapping panel mirrors how the slots actually render.
+    if (sect.tier === 'screenshot') {
+      const ord = _getScreenshotStepOrder();
+      const rank = x => { const i = ord.indexOf(_DIM_KEY_TO_LB_STEP[x.dim.key]); return i < 0 ? 99 : i; };
+      const byOrder = (a, b) => rank(a) - rank(b);
+      missingDims.sort(byOrder);
+      otherDims.sort(byOrder);
+    }
     const missingLabels = missingDims.map(x => x.label);
 
     // Each group (Missing / Mapped) is its own nested <details> with its own

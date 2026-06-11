@@ -1980,8 +1980,42 @@ body.layout-edit-mode #layout-toolbar * {
 #ljp-list .ljp-chip-action-col {
   display: inline-flex;
   justify-content: flex-end;
-  width: 22px;
+  align-items: center;
+  gap: 6px;
+  min-width: 22px;
   min-height: 22px;
+}
+/* Screenshots reorder ▲▼ — compact vertical stack before the pencil. Lets the
+   user set the display order of the 3 screenshot slots (Data Setup → Screenshots). */
+#ljp-list .ljp-shot-reorder {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+}
+#ljp-list .ljp-shot-move {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 11px;
+  padding: 0;
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  background: var(--bg3);
+  color: var(--text-secondary, var(--body));
+  font-size: 7px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all .12s ease;
+}
+#ljp-list .ljp-shot-move:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--bg3));
+}
+#ljp-list .ljp-shot-move:disabled {
+  opacity: .3;
+  cursor: default;
 }
 #ljp-list .ljp-chip-label {
   font-family: 'DM Mono', monospace;
