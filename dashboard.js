@@ -27901,6 +27901,23 @@ function _poInternalApplyLayout(layoutOverride) {
   });
   // Drive total rows dynamically — lets the user grow blocks beyond default.
   grid.style.setProperty('--po-grid-rows', String(Math.max(280, maxRow)));
+  // Auto-grow the OUTER widget so internal sections never spill outside it
+  // ("the window adapts"). The internal grid is height:100% of the tile, so when
+  // the user pushes a section past the default 280-row canvas, the tile itself
+  // must get taller to keep everything contained. Grow-only — we never auto-
+  // shrink, so a user who deliberately sized the outer widget isn't fought.
+  // Anchored on the registry default (280 internal rows ↔ gs-h 236).
+  try {
+    const PO_DEFAULT_INTERNAL_ROWS = 280, PO_DEFAULT_GS_H = 236;
+    if (maxRow > PO_DEFAULT_INTERNAL_ROWS && typeof _grid !== 'undefined' && _grid) {
+      const poItem = grid.closest('.grid-stack-item');
+      if (poItem) {
+        const neededH = Math.ceil(PO_DEFAULT_GS_H * maxRow / PO_DEFAULT_INTERNAL_ROWS);
+        const curH = parseInt(poItem.getAttribute('gs-h'), 10) || PO_DEFAULT_GS_H;
+        if (neededH > curH) _grid.update(poItem, { h: neededH });
+      }
+    }
+  } catch (e) { console.warn('[poLayout] outer auto-grow failed:', e.message); }
   // Recompute per-block typo scale: each PO section block scales based on its
   // OWN rect vs default, independent of the outer w-partial-optimizer size.
   if (typeof _applyAutoTypoScaleForInternalBlocks === 'function') {
