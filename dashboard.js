@@ -7192,7 +7192,7 @@ async function _handleNotionProfileFullResync(profileId) {
 // queue, which re-enqueues every slot with force:true → the backend re-downloads
 // from Notion and overwrites the stored object + a cache-buster forces the
 // browser to refetch. One click, no manual steps.
-async function _handleNotionProfileRebuildScreenshots(profileId) {
+function _handleNotionProfileRebuildScreenshots(profileId) {
   const profile = _getJournalProfileById(profileId);
   if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
   if (_journalProfileRowMenuOpenId === profile.id) {
@@ -7207,11 +7207,56 @@ async function _handleNotionProfileRebuildScreenshots(profileId) {
     showThemeToast('A screenshot rebuild is already running…');
     return;
   }
-  const ok = (typeof confirm === 'function')
-    ? confirm('Rebuild all screenshots for this profile?\n\nThis re-fetches every screenshot from Notion and overwrites the stored copies. Use it if trades show the same image in different screenshot slots. May take up to a minute.')
-    : true;
-  if (!ok) return;
+  // Themed in-app confirm (matches the dashboard DA) instead of the native
+  // browser confirm() — mirrors _showUserThemeDeleteConfirm's .layout-confirm
+  // modal. Runs _runScreenshotRebuild on OK.
+  _showRebuildScreenshotsConfirm(profile.id);
+}
 
+// Themed confirm dialog for the screenshot rebuild — reuses the shared
+// .layout-confirm modal (backdrop + head + body + Cancel/OK, Esc/Enter, click
+// outside to close), same pattern as theme delete / database change.
+function _showRebuildScreenshotsConfirm(profileId) {
+  document.getElementById('rebuild-shots-backdrop')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.id = 'rebuild-shots-backdrop';
+  backdrop.className = 'layout-confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="layout-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rebuild-shots-title">
+      <div class="layout-confirm-head">
+        <span class="layout-confirm-icon">↻</span>
+        <span class="layout-confirm-title" id="rebuild-shots-title">Rebuild screenshots</span>
+      </div>
+      <div class="layout-confirm-body">
+        <div class="layout-confirm-sub">Re-fetches every screenshot from Notion and overwrites the stored copies for this profile.</div>
+        <div class="layout-confirm-sub" style="margin-top:4px;opacity:.6">Use it if trades show the same image in different screenshot slots. May take up to a minute.</div>
+      </div>
+      <div class="layout-confirm-actions">
+        <button class="lt-btn layout-confirm-cancel" type="button">Cancel</button>
+        <button class="lt-btn layout-confirm-ok" type="button">Rebuild</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+  const commit = () => { close(); _runScreenshotRebuild(profileId); };
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+  backdrop.querySelector('.layout-confirm-cancel').addEventListener('click', close);
+  backdrop.querySelector('.layout-confirm-ok').addEventListener('click', commit);
+  const onKey = e => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'Enter') commit();
+  };
+  document.addEventListener('keydown', onKey);
+}
+
+async function _runScreenshotRebuild(profileId) {
+  const profile = _getJournalProfileById(profileId);
+  if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
+  if (_screenshotRebuildForce) {
+    showThemeToast('A screenshot rebuild is already running…');
+    return;
+  }
   _screenshotRebuildForce = true;
   _screenshotRebuildStamp = String(Date.now());
   showThemeToast('Rebuilding screenshots — re-syncing from Notion…');
