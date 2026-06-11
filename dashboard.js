@@ -10301,6 +10301,17 @@ function _serializeTradesForStorage(trades, mode = 'full') {
   const keys = mode === 'compact'
     ? _STORAGE_COMPACT_KEYS
     : (mode === 'minimal' ? _STORAGE_MINIMAL_KEYS : _STORAGE_ULTRA_KEYS);
+  // During a screenshot rebuild the trade image fields hold FRESH Notion S3 URLs
+  // (preservation is skipped so they flow to the re-upload queue). Stripping
+  // them to '' here — the normal behaviour for expiring Notion URLs — would
+  // leave the persisted cache with empty screenshots, so a page reload mid-
+  // rebuild loses them entirely ("no values detected"). Instead, persist the
+  // deterministic Supabase path (the object exists / is being overwritten), so
+  // a reload still shows the screenshot. Only active during a rebuild.
+  const _rbActive = !!_screenshotRebuildProfileId;
+  const _rbSlot = _rbActive
+    ? { imgM15: 'm15_before', imgH4Before: 'h4_before', imgM15After: (_getCurrentHTFSource() === 'h4' ? 'h4_after' : 'm15_after') }
+    : null;
   return {
     __format: `api-cache-${mode}-v1`,
     keys,
@@ -10319,7 +10330,13 @@ function _serializeTradesForStorage(trades, mode = 'full') {
         // Never persist Notion S3 pre-signed URLs — they expire in ~1h and inflate the
         // payload past the 2MB localStorage guard on large datasets (658 trades × 6 img
         // fields × ~1700 chars ≈ 6.7 MB). Only persist permanent Supabase Storage URLs.
-        return (val && !_isNotionFileUrl(val)) ? val : '';
+        if (val && !_isNotionFileUrl(val)) return val;
+        // Rebuild: keep the slot non-empty by persisting the deterministic
+        // Supabase path instead of stripping to '' (see header comment).
+        if (val && _rbActive && t._notionId && _rbSlot[key]) {
+          return `${_SUPABASE_SCREENSHOTS_BASE}/${t._notionId}_${_rbSlot[key]}.png`;
+        }
+        return '';
       }
       return t[key] ?? (key === 'notionUrl' || key === 'timeUtc1' || key === '_notionId' ? '' : null);
     })),
