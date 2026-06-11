@@ -4003,6 +4003,7 @@ function handleActionClick(event) {
     case 'notion-db-picker-confirm': event.stopPropagation(); _handleNotionDbPickerConfirm(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-sync-now':  event.stopPropagation(); _handleNotionProfileSyncNow(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-full-resync': event.stopPropagation(); _handleNotionProfileFullResync(actionEl.dataset.profileId || ''); break;
+    case 'notion-profile-rebuild-screenshots': event.stopPropagation(); _handleNotionProfileRebuildScreenshots(actionEl.dataset.profileId || ''); break;
     case 'toggle-more-menu': {
       const menu = document.getElementById('topbar-more-menu');
       if (!menu) break;
@@ -7182,6 +7183,75 @@ async function _handleNotionProfileFullResync(profileId) {
     showThemeToast(`Full resync complete · ${tradeCount} trades · no ghosts.`);
   }
 }
+
+// "Rebuild screenshots" — repairs trades whose screenshot slots hold the wrong
+// image (e.g. M15 Before === M15 After) because they were migrated to Supabase
+// under an early/incorrect mapping and then frozen (the media backend never
+// overwrites an existing object). Runs a full resync with the rebuild flag set:
+// _preservePermanentImageUrls is skipped so fresh Notion S3 URLs reach the media
+// queue, which re-enqueues every slot with force:true → the backend re-downloads
+// from Notion and overwrites the stored object + a cache-buster forces the
+// browser to refetch. One click, no manual steps.
+async function _handleNotionProfileRebuildScreenshots(profileId) {
+  const profile = _getJournalProfileById(profileId);
+  if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
+  if (_journalProfileRowMenuOpenId === profile.id) {
+    _journalProfileRowMenuOpenId = '';
+    try { _syncJournalProfileUI(); } catch (e) {}
+  }
+  if (profile.notionSyncState === 'disconnected') {
+    showThemeToast('Reconnect Notion to enable syncing.', true);
+    return;
+  }
+  if (_screenshotRebuildForce) {
+    showThemeToast('A screenshot rebuild is already running…');
+    return;
+  }
+  const ok = (typeof confirm === 'function')
+    ? confirm('Rebuild all screenshots for this profile?\n\nThis re-fetches every screenshot from Notion and overwrites the stored copies. Use it if trades show the same image in different screenshot slots. May take up to a minute.')
+    : true;
+  if (!ok) return;
+
+  _screenshotRebuildForce = true;
+  _screenshotRebuildStamp = String(Date.now());
+  showThemeToast('Rebuilding screenshots — re-syncing from Notion…');
+
+  const beforeRun = _lastFullSyncResult.ranAt;
+  try {
+    await _loadNotionTrades(profile, { force: true });
+  } catch (e) {
+    _screenshotRebuildForce = false;
+    _screenshotRebuildStamp = '';
+    console.warn('[RebuildShots] resync failed:', e?.message || e);
+    showThemeToast('Screenshot rebuild failed — check the Notion connection.', true);
+    return;
+  }
+  // Resync done; queue items are already tagged force, so close the global
+  // window now. The cache-buster stamp stays until the queue drains.
+  _screenshotRebuildForce = false;
+
+  if (_lastFullSyncResult.ranAt === beforeRun) {
+    _screenshotRebuildStamp = '';
+    showThemeToast('Screenshot rebuild failed — check the Notion connection.', true);
+    return;
+  }
+  if (String(getActiveJournalProfile()?.id || '') === String(profileId)) {
+    try { _restoreActivePresetForCurrentSlot(); } catch (e) {}
+  }
+
+  // Re-render once every force re-upload has landed (fires immediately if the
+  // queue was empty — e.g. all screenshots external/already permanent).
+  _mediaQueue.onDrain(() => {
+    _screenshotRebuildStamp = '';
+    try {
+      if (String(getActiveJournalProfile()?.id || '') === String(profileId)) {
+        applyPreset(appState.presets.activeId);
+      }
+    } catch (e) { console.warn('[RebuildShots] re-render failed:', e?.message || e); }
+    showThemeToast('Screenshots rebuilt — updated from Notion.');
+  });
+}
+
 function _renderJournalProfileModalList() {
   return;
 }
@@ -7399,6 +7469,7 @@ function _renderJournalProfileSwitchList() {
                      To use a different DB, the user creates a new profile.
                      See ROADMAP "Template chooser" architectural decision. */ ''}
                 ${profile.connectionType === 'notion' ? `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-full-resync" data-profile-id="${pid}" title="Reload every trade from Notion. Detects deletions and removes ghost rows."${canSync ? '' : ' disabled'}>Full resync</button>` : ''}
+                ${profile.connectionType === 'notion' ? `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-rebuild-screenshots" data-profile-id="${pid}" title="Re-fetch every screenshot from Notion and overwrite the stored copies. Fixes trades showing the same image in different slots."${canSync ? '' : ' disabled'}>Rebuild screenshots</button>` : ''}
                 <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-rename" data-profile-id="${_escapeHtml(profile.id)}">Rename</button>
                 ${_journalProfileRowDeleteArmedId === profile.id
                   ? `<div class="journal-profile-row-menu-item journal-profile-row-menu-item--danger jp-del-armed">
@@ -9790,6 +9861,12 @@ function _substitutePermanentImageUrls(rawTrades, source) {
 // swapped trades and same refs for untouched trades.
 function _preservePermanentImageUrls(freshParsed, source = null, priorTrades = null) {
   if (!Array.isArray(freshParsed) || !freshParsed.length) return freshParsed;
+  // Screenshot rebuild: skip preservation entirely so the fresh Notion S3 URLs
+  // flow through to the media queue (which re-uploads with force:true,
+  // overwriting the stale duplicates). Without this, preserve would swap them
+  // back to the already-cached stale Supabase URLs and the rebuild would be a
+  // no-op. See _handleNotionProfileRebuildScreenshots / _screenshotRebuildForce.
+  if (_screenshotRebuildForce) return freshParsed;
   const IMG_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig'];
   const lookup = new Map();
   const addToLookup = (trades) => {
@@ -11407,6 +11484,16 @@ function _isNotionFileUrl(url) {
 // Priority: newest trades first (sorted by date DESC on enqueue). Call
 // _mediaQueue.bump(notionId) to move a specific trade to the front — useful
 // when the user opens a trade drawer for an older month.
+// ── Screenshot rebuild state ──────────────────────────────────────────────────
+// Set by _handleNotionProfileRebuildScreenshots for the duration of a manual
+// "Rebuild screenshots" resync. While true: _preservePermanentImageUrls is
+// skipped (fresh Notion URLs reach the queue), the media queue ignores its
+// per-session _done set and tags every item force:true, and _processBatch sends
+// force:true (backend bypasses its DB/storage cache and overwrites the object)
+// + appends a cache-buster to the patched URL so the browser refetches.
+let _screenshotRebuildForce = false;
+let _screenshotRebuildStamp = '';
+
 const _mediaQueue = (() => {
   const _fieldToSlot = (field, source) => {
     if (field === 'imgM15') return 'm15_before';
@@ -11421,12 +11508,18 @@ const _mediaQueue = (() => {
   let _running = false;
   const _done = new Set(); // "notionId|slot" already uploaded or queued
   const _lsPersistTimers = new Map(); // source → debounce timer id
+  let _drainCbs = [];      // one-shot callbacks fired when the queue empties
 
   // ── Public: add trades to the queue ────────────────────────────────────────
   function enqueue(parsedTrades, source, userId, profileIdOverride = '') {
     const newItems = [];
     const src = source || _getCurrentHTFSource();
     const profileId = String(profileIdOverride || getActiveJournalProfile()?.id || '').trim();
+    // Rebuild: drop the per-session dedup so every slot re-enqueues even if it
+    // was already uploaded this session, and capture the force flag for the
+    // items below (read at processing time, independent of the global flag).
+    const forceRebuild = _screenshotRebuildForce;
+    if (forceRebuild) _done.clear();
     let urlsFound = 0;
     const slotsSeen = new Set();
     for (const trade of parsedTrades) {
@@ -11440,9 +11533,9 @@ const _mediaQueue = (() => {
           slotsSeen.add(slot);
         }
         const key = `${userId || ''}|${profileId}|${src}|${trade._notionId}|${slot}`;
-        if (url && _isNotionFileUrl(url) && !_done.has(key)) {
+        if (url && _isNotionFileUrl(url) && (forceRebuild || !_done.has(key))) {
           _done.add(key);
-          debugLog('[MediaQueue] queued:', trade._notionId, slot, 'source:', src);
+          debugLog('[MediaQueue] queued:', trade._notionId, slot, 'source:', src, forceRebuild ? '(force)' : '');
           newItems.push({
             trade,
             tradesRef: parsedTrades,
@@ -11454,6 +11547,7 @@ const _mediaQueue = (() => {
             source: src,
             profileId,
             userId,
+            force: forceRebuild,
           });
         }
       }
@@ -11511,21 +11605,39 @@ const _mediaQueue = (() => {
       }
     } finally {
       _running = false;
-      if (!_queue.length) debugLog('[MediaQueue] completed');
+      if (!_queue.length) {
+        debugLog('[MediaQueue] completed');
+        if (_drainCbs.length) {
+          const cbs = _drainCbs; _drainCbs = [];
+          for (const cb of cbs) { try { cb(); } catch (e) { console.warn('[MediaQueue] drain cb failed:', e?.message || e); } }
+        }
+      }
     }
+  }
+
+  // Register a one-shot callback fired when the queue next becomes idle. If the
+  // queue is already idle, fire on the next microtask. Used by the screenshot
+  // rebuild flow to re-render once all force re-uploads land.
+  function onDrain(cb) {
+    if (typeof cb !== 'function') return;
+    if (!_running && !_queue.length) { Promise.resolve().then(cb); return; }
+    _drainCbs.push(cb);
   }
 
   async function _processBatch(batch) {
     // All items in a batch share the same userId (one sync session)
     const { userId, source } = batch[0];
     const items = batch.map(({ notionId, slot, notionUrl }) => ({ notionId, slot, notionUrl }));
+    // Force rebuild: tell the backend to bypass its caches and overwrite the
+    // stored object. A batch is force when it carries any rebuild item.
+    const forceBatch = batch.some(i => i.force === true);
 
     let results;
     try {
       const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/notion/media-sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, items }),
+        body: JSON.stringify({ user_id: userId, items, force: forceBatch }),
       });
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       results = (await resp.json()).results || [];
@@ -11546,15 +11658,23 @@ const _mediaQueue = (() => {
     let patchCount = 0;
     for (const item of batch) {
       const perm = lookup[`${item.notionId}|${item.slot}`];
-      if (perm && item.trade[item.field] !== perm) {
-        item.trade[item.field] = perm;
+      // On a force rebuild the backend overwrote the object at the SAME public
+      // URL — append a cache-buster so the browser (and CDN) refetch the new
+      // content instead of serving the stale cached image. Harmless query param
+      // (Supabase ignores it; _isNotionFileUrl stays false so preserve/queue are
+      // unaffected). Stamp is shared across the rebuild so it's stable per run.
+      const finalUrl = (item.force && perm && _screenshotRebuildStamp)
+        ? perm + (perm.includes('?') ? '&' : '?') + 'cb=' + _screenshotRebuildStamp
+        : perm;
+      if (finalUrl && item.trade[item.field] !== finalUrl) {
+        item.trade[item.field] = finalUrl;
         updatedRefs.set(`${item.profileId || ''}|${item.source}`, {
           source: item.source,
           profileId: item.profileId || '',
           tradesRef: item.tradesRef,
         });
         patchCount++;
-        debugLog('[MediaQueue] patched permanent url:', item.notionId, item.slot, perm.slice(0, 60));
+        debugLog('[MediaQueue] patched permanent url:', item.notionId, item.slot, finalUrl.slice(0, 60));
       }
     }
     if (patchCount > 0) {
@@ -11590,7 +11710,7 @@ const _mediaQueue = (() => {
     }
   }
 
-  return { enqueue, bump, priorityBoost };
+  return { enqueue, bump, priorityBoost, onDrain };
 })();
 
 // ── Media boost deduplication ─────────────────────────────────────────────────
