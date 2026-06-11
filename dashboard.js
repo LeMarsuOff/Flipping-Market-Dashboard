@@ -7225,11 +7225,11 @@ function _confirmJournalProfileRebuild(profileId) {
 async function _runScreenshotRebuild(profileId) {
   const profile = _getJournalProfileById(profileId);
   if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
-  if (_screenshotRebuildForce) {
+  if (_screenshotRebuildProfileId) {
     showThemeToast('A screenshot rebuild is already running…');
     return;
   }
-  _screenshotRebuildForce = true;
+  _screenshotRebuildProfileId = String(profileId);
   _screenshotRebuildStamp = String(Date.now());
   showThemeToast('Rebuilding screenshots — re-syncing from Notion…');
 
@@ -7237,15 +7237,15 @@ async function _runScreenshotRebuild(profileId) {
   try {
     await _loadNotionTrades(profile, { force: true });
   } catch (e) {
-    _screenshotRebuildForce = false;
+    _screenshotRebuildProfileId = '';
     _screenshotRebuildStamp = '';
     console.warn('[RebuildShots] resync failed:', e?.message || e);
     showThemeToast('Screenshot rebuild failed — check the Notion connection.', true);
     return;
   }
-  // Resync done; queue items are already tagged force, so close the global
+  // Resync done; queue items are already tagged force, so close the rebuild
   // window now. The cache-buster stamp stays until the queue drains.
-  _screenshotRebuildForce = false;
+  _screenshotRebuildProfileId = '';
 
   if (_lastFullSyncResult.ranAt === beforeRun) {
     _screenshotRebuildStamp = '';
@@ -9884,14 +9884,15 @@ function _substitutePermanentImageUrls(rawTrades, source) {
 // fresh trade whose image fields are still Notion S3 URLs, swap to the cached
 // permanent URL when available. Returns a new array with shallow-copies for
 // swapped trades and same refs for untouched trades.
-function _preservePermanentImageUrls(freshParsed, source = null, priorTrades = null) {
+function _preservePermanentImageUrls(freshParsed, source = null, priorTrades = null, profileId = '') {
   if (!Array.isArray(freshParsed) || !freshParsed.length) return freshParsed;
-  // Screenshot rebuild: skip preservation entirely so the fresh Notion S3 URLs
-  // flow through to the media queue (which re-uploads with force:true,
-  // overwriting the stale duplicates). Without this, preserve would swap them
-  // back to the already-cached stale Supabase URLs and the rebuild would be a
-  // no-op. See _runScreenshotRebuild / _screenshotRebuildForce.
-  if (_screenshotRebuildForce) return freshParsed;
+  // Screenshot rebuild (scoped to the target profile only): skip preservation
+  // so the fresh Notion S3 URLs flow through to the media queue (which
+  // re-uploads with force:true, overwriting the stale duplicates). Without this,
+  // preserve would swap them back to the already-cached stale Supabase URLs and
+  // the rebuild would be a no-op. A parallel sync of another profile passes a
+  // non-matching (or empty) profileId and keeps normal preservation.
+  if (_isRebuildingProfile(profileId)) return freshParsed;
   const IMG_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig'];
   const lookup = new Map();
   const addToLookup = (trades) => {
@@ -11510,14 +11511,20 @@ function _isNotionFileUrl(url) {
 // _mediaQueue.bump(notionId) to move a specific trade to the front — useful
 // when the user opens a trade drawer for an older month.
 // ── Screenshot rebuild state ──────────────────────────────────────────────────
-// Set by _runScreenshotRebuild for the duration of a manual
-// "Rebuild screenshots" resync. While true: _preservePermanentImageUrls is
-// skipped (fresh Notion URLs reach the queue), the media queue ignores its
-// per-session _done set and tags every item force:true, and _processBatch sends
-// force:true (backend bypasses its DB/storage cache and overwrites the object)
-// + appends a cache-buster to the patched URL so the browser refetches.
-let _screenshotRebuildForce = false;
+// Holds the profileId currently being rebuilt by _runScreenshotRebuild ('' =
+// none). SCOPED to that one profile so a concurrent sync of ANOTHER profile
+// (cross-profile syncs run in parallel by design) is never affected. For the
+// matching profile only: _preservePermanentImageUrls is skipped (fresh Notion
+// URLs reach the queue), the media queue ignores its per-session _done set and
+// tags every item force:true, and _processBatch sends force:true (backend
+// bypasses its DB/storage cache and overwrites the object) + appends a
+// cache-buster to the patched URL so the browser refetches. Same-profile
+// concurrency is already prevented upstream by the _notionSyncInFlight mutex.
+let _screenshotRebuildProfileId = '';
 let _screenshotRebuildStamp = '';
+function _isRebuildingProfile(profileId) {
+  return !!_screenshotRebuildProfileId && String(profileId || '') === _screenshotRebuildProfileId;
+}
 
 const _mediaQueue = (() => {
   const _fieldToSlot = (field, source) => {
@@ -11540,10 +11547,11 @@ const _mediaQueue = (() => {
     const newItems = [];
     const src = source || _getCurrentHTFSource();
     const profileId = String(profileIdOverride || getActiveJournalProfile()?.id || '').trim();
-    // Rebuild: drop the per-session dedup so every slot re-enqueues even if it
-    // was already uploaded this session, and capture the force flag for the
-    // items below (read at processing time, independent of the global flag).
-    const forceRebuild = _screenshotRebuildForce;
+    // Rebuild: only when THIS profile is the one being rebuilt (scoped — a
+    // parallel sync of another profile must not inherit force). Drop the
+    // per-session dedup so every slot re-enqueues, and tag the items below
+    // (read at processing time, independent of the flag).
+    const forceRebuild = _isRebuildingProfile(profileId);
     if (forceRebuild) _done.clear();
     let urlsFound = 0;
     const slotsSeen = new Set();
@@ -12202,7 +12210,7 @@ async function _loadNotionTrades(profile, options = {}) {
     // overwrite the permanent URLs the media queue uploaded in a previous
     // session. Pass existingCache explicitly so the lookup is exhaustive even
     // when appState is still empty (cold start before injection).
-    const preservedParsed = _preservePermanentImageUrls(parsed, source, existingCache);
+    const preservedParsed = _preservePermanentImageUrls(parsed, source, existingCache, profileId);
     const parsedMerge = fullSync
       ? { merged: preservedParsed, added: preservedParsed.length, updated: 0 }
       : _mergeTradesByNotionId(existingCache, preservedParsed);
