@@ -9776,6 +9776,20 @@ body.ms-sidebar-open .view-tabs {
   border-color: color-mix(in srgb, var(--gold) 45%, transparent);
   color: var(--white);
 }
+/* Rebuild screenshots inline confirm — neutral/accent (non-destructive),
+   reuses the .jp-del-armed layout but overrides the danger-red prompt + Yes. */
+.jp-rebuild-armed-text {
+  color: var(--body);
+}
+.jp-rebuild-armed-yes {
+  background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg1));
+  border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent);
+  color: color-mix(in srgb, var(--accent-primary) 88%, var(--white));
+}
+.jp-rebuild-armed-yes:hover {
+  background: color-mix(in srgb, var(--accent-primary) 28%, var(--bg1));
+  border-color: color-mix(in srgb, var(--accent-primary) 65%, transparent);
+}
 
 /* ── Themed confirm modal for layout slot deletion ── */
 .layout-confirm-backdrop {

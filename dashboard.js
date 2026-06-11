@@ -4003,7 +4003,9 @@ function handleActionClick(event) {
     case 'notion-db-picker-confirm': event.stopPropagation(); _handleNotionDbPickerConfirm(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-sync-now':  event.stopPropagation(); _handleNotionProfileSyncNow(actionEl.dataset.profileId || ''); break;
     case 'notion-profile-full-resync': event.stopPropagation(); _handleNotionProfileFullResync(actionEl.dataset.profileId || ''); break;
-    case 'notion-profile-rebuild-screenshots': event.stopPropagation(); _handleNotionProfileRebuildScreenshots(actionEl.dataset.profileId || ''); break;
+    case 'notion-profile-rebuild-arm': event.stopPropagation(); _armJournalProfileRebuild(actionEl.dataset.profileId || ''); break;
+    case 'notion-profile-rebuild-confirm': event.stopPropagation(); _confirmJournalProfileRebuild(actionEl.dataset.profileId || ''); break;
+    case 'notion-profile-rebuild-cancel': event.stopPropagation(); _disarmJournalProfileRebuild(); break;
     case 'toggle-more-menu': {
       const menu = document.getElementById('topbar-more-menu');
       if (!menu) break;
@@ -5795,6 +5797,9 @@ let _journalProfileRowMenuOpenId = '';
 // for Notion custom property delete. Cleared by Yes (after delete), No,
 // or any outside click (see the mousedown listener near _syncJournalProfileUI).
 let _journalProfileRowDeleteArmedId = '';
+// Same inline-arming pattern for "Rebuild screenshots" — the menu item morphs
+// into "Rebuild? Yes No". Cleared by Yes (after launch), No, or outside click.
+let _journalProfileRowRebuildArmedId = '';
 let _journalProfileSwitcherOpen = false;
 let _journalProfileCheckState = 'idle';
 let _journalProfileCheckResetTimer = null;
@@ -7192,62 +7197,29 @@ async function _handleNotionProfileFullResync(profileId) {
 // queue, which re-enqueues every slot with force:true → the backend re-downloads
 // from Notion and overwrites the stored object + a cache-buster forces the
 // browser to refetch. One click, no manual steps.
-function _handleNotionProfileRebuildScreenshots(profileId) {
-  const profile = _getJournalProfileById(profileId);
-  if (!profile || profile.connectionType !== 'notion' || !profile.notionDatabaseId) return;
-  if (_journalProfileRowMenuOpenId === profile.id) {
-    _journalProfileRowMenuOpenId = '';
-    try { _syncJournalProfileUI(); } catch (e) {}
-  }
-  if (profile.notionSyncState === 'disconnected') {
-    showThemeToast('Reconnect Notion to enable syncing.', true);
-    return;
-  }
-  if (_screenshotRebuildForce) {
-    showThemeToast('A screenshot rebuild is already running…');
-    return;
-  }
-  // Themed in-app confirm (matches the dashboard DA) instead of the native
-  // browser confirm() — mirrors _showUserThemeDeleteConfirm's .layout-confirm
-  // modal. Runs _runScreenshotRebuild on OK.
-  _showRebuildScreenshotsConfirm(profile.id);
+// Confirm is an inline "Rebuild? Yes No" morph of the menu item — same arming
+// pattern as the sibling "Delete source" row (_journalProfileRowDeleteArmedId).
+// Small, in-place under the button, no detached popover / z-index dance with
+// the Data Setup panel. Arm → re-render the menu row morphed; Yes → run.
+function _armJournalProfileRebuild(id) {
+  if (!id) return;
+  _journalProfileRowDeleteArmedId = ''; // never both armed at once
+  // Toggle: clicking Rebuild again on the already-armed row disarms.
+  _journalProfileRowRebuildArmedId = (_journalProfileRowRebuildArmedId === id) ? '' : id;
+  _syncJournalProfileUI();
 }
 
-// Themed confirm dialog for the screenshot rebuild — reuses the shared
-// .layout-confirm modal (backdrop + head + body + Cancel/OK, Esc/Enter, click
-// outside to close), same pattern as theme delete / database change.
-function _showRebuildScreenshotsConfirm(profileId) {
-  document.getElementById('rebuild-shots-backdrop')?.remove();
-  const backdrop = document.createElement('div');
-  backdrop.id = 'rebuild-shots-backdrop';
-  backdrop.className = 'layout-confirm-backdrop';
-  backdrop.innerHTML = `
-    <div class="layout-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="rebuild-shots-title">
-      <div class="layout-confirm-head">
-        <span class="layout-confirm-icon">↻</span>
-        <span class="layout-confirm-title" id="rebuild-shots-title">Rebuild screenshots</span>
-      </div>
-      <div class="layout-confirm-body">
-        <div class="layout-confirm-sub">Re-fetches every screenshot from Notion and overwrites the stored copies for this profile.</div>
-        <div class="layout-confirm-sub" style="margin-top:4px;opacity:.6">Use it if trades show the same image in different screenshot slots. May take up to a minute.</div>
-      </div>
-      <div class="layout-confirm-actions">
-        <button class="lt-btn layout-confirm-cancel" type="button">Cancel</button>
-        <button class="lt-btn layout-confirm-ok" type="button">Rebuild</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(backdrop);
-  const close = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
-  const commit = () => { close(); _runScreenshotRebuild(profileId); };
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
-  backdrop.querySelector('.layout-confirm-cancel').addEventListener('click', close);
-  backdrop.querySelector('.layout-confirm-ok').addEventListener('click', commit);
-  const onKey = e => {
-    if (e.key === 'Escape') close();
-    else if (e.key === 'Enter') commit();
-  };
-  document.addEventListener('keydown', onKey);
+function _disarmJournalProfileRebuild() {
+  if (!_journalProfileRowRebuildArmedId) return;
+  _journalProfileRowRebuildArmedId = '';
+  _syncJournalProfileUI();
+}
+
+function _confirmJournalProfileRebuild(profileId) {
+  _journalProfileRowRebuildArmedId = '';
+  _journalProfileRowMenuOpenId = '';
+  try { _syncJournalProfileUI(); } catch (e) {}
+  _runScreenshotRebuild(profileId);
 }
 
 async function _runScreenshotRebuild(profileId) {
@@ -7514,7 +7486,15 @@ function _renderJournalProfileSwitchList() {
                      To use a different DB, the user creates a new profile.
                      See ROADMAP "Template chooser" architectural decision. */ ''}
                 ${profile.connectionType === 'notion' ? `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-full-resync" data-profile-id="${pid}" title="Reload every trade from Notion. Detects deletions and removes ghost rows."${canSync ? '' : ' disabled'}>Full resync</button>` : ''}
-                ${profile.connectionType === 'notion' ? `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-rebuild-screenshots" data-profile-id="${pid}" title="Re-fetch every screenshot from Notion and overwrite the stored copies. Fixes trades showing the same image in different slots."${canSync ? '' : ' disabled'}>Rebuild screenshots</button>` : ''}
+                ${profile.connectionType === 'notion'
+                  ? (_journalProfileRowRebuildArmedId === profile.id
+                      ? `<div class="journal-profile-row-menu-item jp-del-armed jp-rebuild-armed">
+                          <span class="jp-del-armed-text jp-rebuild-armed-text">Rebuild?</span>
+                          <button class="jp-del-armed-btn jp-rebuild-armed-yes" type="button" data-action="notion-profile-rebuild-confirm" data-profile-id="${pid}">Yes</button>
+                          <button class="jp-del-armed-btn jp-del-armed-no" type="button" data-action="notion-profile-rebuild-cancel" data-profile-id="${pid}">No</button>
+                        </div>`
+                      : `<button class="journal-profile-row-menu-item" type="button" data-action="notion-profile-rebuild-arm" data-profile-id="${pid}" title="Re-fetch every screenshot from Notion and overwrite the stored copies. Fixes trades showing the same image in different slots."${canSync ? '' : ' disabled'}>Rebuild screenshots</button>`)
+                  : ''}
                 <button class="journal-profile-row-menu-item" type="button" data-action="journal-profile-row-rename" data-profile-id="${_escapeHtml(profile.id)}">Rename</button>
                 ${_journalProfileRowDeleteArmedId === profile.id
                   ? `<div class="journal-profile-row-menu-item journal-profile-row-menu-item--danger jp-del-armed">
@@ -9910,7 +9890,7 @@ function _preservePermanentImageUrls(freshParsed, source = null, priorTrades = n
   // flow through to the media queue (which re-uploads with force:true,
   // overwriting the stale duplicates). Without this, preserve would swap them
   // back to the already-cached stale Supabase URLs and the rebuild would be a
-  // no-op. See _handleNotionProfileRebuildScreenshots / _screenshotRebuildForce.
+  // no-op. See _runScreenshotRebuild / _screenshotRebuildForce.
   if (_screenshotRebuildForce) return freshParsed;
   const IMG_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig'];
   const lookup = new Map();
@@ -11530,7 +11510,7 @@ function _isNotionFileUrl(url) {
 // _mediaQueue.bump(notionId) to move a specific trade to the front — useful
 // when the user opens a trade drawer for an older month.
 // ── Screenshot rebuild state ──────────────────────────────────────────────────
-// Set by _handleNotionProfileRebuildScreenshots for the duration of a manual
+// Set by _runScreenshotRebuild for the duration of a manual
 // "Rebuild screenshots" resync. While true: _preservePermanentImageUrls is
 // skipped (fresh Notion URLs reach the queue), the media queue ignores its
 // per-session _done set and tags every item force:true, and _processBatch sends
@@ -41346,6 +41326,14 @@ document.addEventListener('mousedown', e => {
   if (e.target.closest && e.target.closest('.jp-del-armed')) return;
   if (e.target.closest && e.target.closest('[data-action="journal-profile-row-delete"]')) return;
   _disarmJournalProfileDelete();
+});
+
+// Mirror disarm for the Rebuild screenshots inline confirm.
+document.addEventListener('mousedown', e => {
+  if (!_journalProfileRowRebuildArmedId) return;
+  if (e.target.closest && e.target.closest('.jp-rebuild-armed')) return;
+  if (e.target.closest && e.target.closest('[data-action="notion-profile-rebuild-arm"]')) return;
+  _disarmJournalProfileRebuild();
 });
 
 function _positionWidgetConfirmPopup(anchorEl, pop, gap = 6) {
