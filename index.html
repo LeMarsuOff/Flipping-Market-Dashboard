@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=315">
+<link rel="stylesheet" href="dashboard.css?v=329">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1388,16 +1388,8 @@
       <span class="dhp-tab-label">Mapping</span>
       <span class="dhp-tab-badge" id="dhp-tab-mapping-badge"></span>
     </button>
-    <button class="dhp-tab"
-            data-action="switch-dh-tab"
-            data-tab="custom"
-            role="tab"
-            aria-selected="false"
-            id="dhp-tab-custom">
-      <span class="dhp-tab-icon" aria-hidden="true">⊕</span>
-      <span class="dhp-tab-label">Filters</span>
-      <span class="dhp-tab-badge" id="dhp-tab-custom-badge"></span>
-    </button>
+    <!-- "Filters" tab removed (2026-06-12) — custom-property creation moved to
+         the Filters hub → "Custom properties" drawer. -->
     <button class="dhp-tab"
             data-action="switch-dh-tab"
             data-tab="create-widget"
@@ -1439,28 +1431,8 @@
     </div>
   </div>
 
-  <!-- TAB 3: CUSTOM FIELDS -->
-  <div class="dhp-tab-panel"
-       id="dhp-panel-custom"
-       role="tabpanel"
-       aria-labelledby="dhp-tab-custom">
-    <div class="dhp-custom-body">
-      <div class="dhp-section-intro">
-        <span class="dhp-intro-label">What's this?</span>
-        <span class="dhp-intro-text">Declare your own Notion properties (select, multi-select, checkbox) to unlock custom sidebar filters.</span>
-      </div>
-      <div class="np-detected-header">
-        <span class="np-detected-title">Added filters</span>
-      </div>
-      <div id="np-list" class="np-list"></div>
-      <div id="np-detected" class="np-detected-section np-detected-section--below-added"></div>
-      <div id="np-form-host"></div>
-      <div class="np-footer-actions">
-        <button class="np-add-btn" id="np-add-btn" data-action="notion-prop-show-add-form">+ Add property</button>
-      </div>
-      <div id="np-counter" class="np-counter"></div>
-    </div>
-  </div>
+  <!-- TAB 3 (Custom fields) removed 2026-06-12 — custom-property management
+       relocated to the Filters hub → "Custom properties" drawer. -->
 
   <!-- TAB 4: CREATE WIDGET -->
   <div class="dhp-tab-panel"
@@ -1486,6 +1458,51 @@
         <div class="cw-list-host" id="cw-list-host"></div>
       </section>
     </div>
+  </div>
+</div>
+
+<!-- ══ GROUPED FILTERS DRAWER ══ -->
+<!-- Builder side-drawer for multi-dim AND'ed filter groups. Mirrors the
+     .theme-panel pattern (right side, slide-in). Body content injected by
+     renderGroupedFiltersDrawer(). -->
+<div class="gf-drawer" id="gf-drawer">
+  <div class="gf-drawer-header">
+    <span class="gf-drawer-title">Group filters</span>
+    <button class="gf-drawer-close" data-action="gf-close-drawer" title="Close">✕</button>
+  </div>
+  <div class="gf-drawer-toolbar">
+    <button class="gf-add-group-btn" data-action="gf-add-group" data-mode="exclude">+ Exclude group</button>
+    <button class="gf-add-group-btn gf-add-group-include" data-action="gf-add-group" data-mode="include">+ Include group</button>
+  </div>
+  <div class="gf-drawer-body" id="gf-drawer-body"></div>
+</div>
+
+<!-- ══ CUSTOM PROPERTIES DRAWER ══ -->
+<!-- Create / manage custom Notion properties (select, multi-select, checkbox)
+     that become custom sidebar filters. Opened from the Filters hub's Custom
+     zone ("+ New property"). Moved here from the old Data Setup "Filters" tab so
+     all filter concerns live behind the Filters hub. Mirrors the .gf-drawer
+     pattern (right slide-in). -->
+<div class="gf-drawer cp-drawer" id="custom-props-drawer">
+  <div class="gf-drawer-header">
+    <span class="gf-drawer-title">Custom properties</span>
+    <button class="gf-drawer-close" data-action="close-custom-props-drawer" title="Close">✕</button>
+  </div>
+  <div class="gf-drawer-body">
+    <div class="dhp-section-intro">
+      <span class="dhp-intro-label">What's this?</span>
+      <span class="dhp-intro-text">Declare your own Notion properties (select, multi-select, checkbox) to unlock custom sidebar filters.</span>
+    </div>
+    <div class="np-detected-header">
+      <span class="np-detected-title">Added filters</span>
+    </div>
+    <div id="np-list" class="np-list"></div>
+    <div id="np-detected" class="np-detected-section np-detected-section--below-added"></div>
+    <div id="np-form-host"></div>
+    <div class="np-footer-actions">
+      <button class="np-add-btn" id="np-add-btn" data-action="notion-prop-show-add-form">+ Add property</button>
+    </div>
+    <div id="np-counter" class="np-counter"></div>
   </div>
 </div>
 
@@ -1883,6 +1900,28 @@
 
         <div class="filters-panel-dims" id="filters-panel-dims">
 
+    <!-- ══ GROUPED FILTERS zone (collapsible card) ══ -->
+    <div class="filters-zone" data-zone="grouped">
+      <div class="filters-zone-headbar">
+        <button class="filters-zone-header" data-action="toggle-filters-zone" data-zone="grouped" aria-expanded="false">
+          <span class="fz-chevron">▸</span><span class="fz-title">Grouped filters</span><span class="fz-count" id="fz-count-grouped"></span>
+        </button>
+      </div>
+      <div class="filters-zone-body is-collapsed" id="filters-zone-body-grouped">
+        <!-- Active group pills + "+ Group filter". Injected by renderGroupedFiltersSidebar(). -->
+        <div id="gf-sidebar-section" class="gf-sidebar-section"></div>
+      </div>
+    </div>
+
+    <!-- ══ STANDARD FILTERS zone (collapsible card) — native dimension chips ══ -->
+    <div class="filters-zone" data-zone="standard">
+      <div class="filters-zone-headbar">
+        <button class="filters-zone-header" data-action="toggle-filters-zone" data-zone="standard" aria-expanded="false">
+          <span class="fz-chevron">▸</span><span class="fz-title">Standard filters</span><span class="fz-count" id="fz-count-standard"></span>
+        </button>
+      </div>
+      <div class="filters-zone-body is-collapsed" id="filters-zone-body-standard">
+
     <div class="filter-group" data-dim-key="outcome">
       <div class="fg-head">
         <span class="fg-label"><span class="fg-dot outcome"></span>TP Result</span>
@@ -2026,8 +2065,22 @@
       <div class="chips" id="chips-badfeeling"></div>
     </div>
 
-    <!-- Custom Notion properties declared by the user — content injected by renderCustomFilterChips() -->
-    <div id="filters-custom-section" class="filters-custom-section"></div>
+      </div><!-- /filters-zone-body-standard -->
+    </div><!-- /standard zone -->
+
+    <!-- ══ CUSTOM FILTERS zone (collapsible card) — chips + creation entry point ══ -->
+    <div class="filters-zone" data-zone="custom">
+      <div class="filters-zone-headbar">
+        <button class="filters-zone-header" data-action="toggle-filters-zone" data-zone="custom" aria-expanded="false">
+          <span class="fz-chevron">▸</span><span class="fz-title">Custom filters</span><span class="fz-count" id="fz-count-custom"></span>
+        </button>
+        <button class="filters-zone-add-btn" data-action="open-custom-props-drawer" title="Create or manage your custom Notion properties">+ New property</button>
+      </div>
+      <div class="filters-zone-body is-collapsed" id="filters-zone-body-custom">
+        <!-- Custom Notion properties declared by the user — content injected by renderCustomFilterChips() -->
+        <div id="filters-custom-section" class="filters-custom-section"></div>
+      </div>
+    </div>
 
         </div><!-- /filters-panel-dims -->
       </div><!-- /filters-panel-body -->
@@ -2891,6 +2944,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1008"></script>
+<script src="dashboard.js?v=1088"></script>
 </body>
 </html>

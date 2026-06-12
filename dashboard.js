@@ -134,6 +134,16 @@ const appState = {
       sessionDay:  { included: new Set(), excluded: new Set() },
       pairSession: { included: new Set(), excluded: new Set() },
     },
+    // Multi-dim AND'ed filter groups (style Notion). Each group = a set of
+    // conditions all AND'ed together; multiple groups of the same mode (include
+    // /exclude) OR-ed between them. Lives in the live slot per-preset, snapshot
+    // on Update. See docs/grouped-filters.md.
+    //   [{ id, mode:'include'|'exclude', label, conditions:[
+    //       { dim, op:'eq'|'all', values:[] }              // categorical
+    //       { dim, op:'gte'|'lte', value:n }               // numeric
+    //       { dim, op:'between', min:n, max:n }            // numeric
+    //   ]}]
+    groupedFilters: [],
     exclusions: {
       m15Exclude: [],
       h4Exclude: [],
@@ -3203,6 +3213,15 @@ function _getPresetDivergenceCount(id) {
     if (!entry) continue;
     n += (entry.included?.size || 0) + (entry.excluded?.size || 0);
   }
+  // Grouped filters — count any diff between live and snapshot as 1 each.
+  // Coarse but correct: serialise sanitized snapshots and compare strings.
+  // Same-JSON → no contribution; different → flips the divergence counter so
+  // the Update / Reset paths actually fire for groups-only changes.
+  try {
+    const liveGroups = _sanitizeGroupedFilters(appState.filters.groupedFilters || []);
+    const snapGroups = _sanitizeGroupedFilters(snap.groupedFilters || []);
+    if (JSON.stringify(liveGroups) !== JSON.stringify(snapGroups)) n++;
+  } catch {}
   return n;
 }
 
@@ -3409,6 +3428,15 @@ function _syncLiveSlotFromActiveChips() {
       excluded: [...cf.excluded],
     };
   }
+
+  // Grouped filters — NOT synced here. This function is called by applyPreset
+  // BEFORE chips are re-hydrated, and groups have a simpler lifecycle (no
+  // fromPreset flag, no separate live/preset state in appState). Writing groups
+  // here at boot would clobber the just-loaded slot.groupedFilters with the
+  // empty initial appState. Groups are written to the slot directly by
+  // _gfPersistAndRender on every drawer mutation, and by _commitLiveFiltersConfirmed
+  // /resetLiveFilters/resetAll for the preset lifecycle hooks. See
+  // docs/grouped-filters.md §6.
 
   savePresetLiveFilters();
 }
@@ -4123,6 +4151,20 @@ function handleActionClick(event) {
     }
     case 'refresh-api-fields':     event.stopPropagation(); _refreshAPIFieldsFromPicker(actionEl); break;
     case 'toggle-theme-panel': toggleThemePanel(); document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
+    // Grouped filters drawer — see docs/grouped-filters.md
+    case 'gf-close-drawer': closeGroupedFiltersDrawer(); break;
+    // Custom properties drawer (Filters hub → Custom zone)
+    case 'open-custom-props-drawer': event.stopPropagation(); openCustomPropsDrawer(); break;
+    case 'close-custom-props-drawer': closeCustomPropsDrawer(); break;
+    // Filter hub collapsible zones (Grouped / Standard / Custom)
+    case 'toggle-filters-zone': event.stopPropagation(); _toggleFiltersZone(actionEl.dataset.zone); break;
+    case 'gf-add-group': {
+      const mode = actionEl.getAttribute('data-mode') || 'exclude';
+      _gfAddGroup(mode);
+      const drawer = document.getElementById('gf-drawer');
+      if (drawer && !drawer.classList.contains('open')) drawer.classList.add('open');
+      break;
+    }
     case 'toggle-tpm-panel':   toggleTpmPanel();   document.getElementById('topbar-more-menu')?.classList.remove('open'); break;
     case 'toggle-tpm-dropdown': event.stopPropagation(); toggleTpmDropdown(); break;
     case 'select-tpm-mode':     event.stopPropagation(); _selectTpmModeFromDropdown(actionEl.dataset.mode); break;
@@ -13663,9 +13705,22 @@ function applyPreset(id) {
   _removeAllPresetChips();
   _removeAllLiveChips();
   _clearComboFilters();
+  _clearGroupedFilters();
   setActivePreset(id);
   _hydrateChipsFromSnapshot(presetSnapshots[id]);
   _hydrateChipsFromLiveSlot(getPresetLiveSlot(id));
+  // Grouped filters hydrate: live override (non-null) wins, else fall back to
+  // the snapshot baseline. The dual-source mirrors the chip lifecycle, but
+  // groups don't carry a fromPreset flag — they are atomic entities owned by
+  // either the snapshot OR the live slot, not split between the two.
+  {
+    const liveSlot2 = getPresetLiveSlot(id);
+    const snap = presetSnapshots[id];
+    const src = (liveSlot2 && Array.isArray(liveSlot2.groupedFilters))
+      ? liveSlot2.groupedFilters
+      : (snap && Array.isArray(snap.groupedFilters) ? snap.groupedFilters : []);
+    appState.filters.groupedFilters = _sanitizeGroupedFilters(src);
+  }
   // Hydrate the ORR bubble from the preset's live slot. Each preset tracks
   // its own rrMinFilter — switching presets swaps the bubble along with the
   // filter context.
@@ -13703,6 +13758,10 @@ function applyPreset(id) {
   Object.keys(appState.filters.chips).forEach(key => _syncChipModeButtons(key));
   render();
   if (typeof _rrSyncActiveFilterBadge === 'function') _rrSyncActiveFilterBadge();
+  // Grouped filters — refresh sidebar pills + drawer (if open) after the
+  // preset swap. Both renderers are idempotent.
+  try { renderGroupedFiltersSidebar(); } catch {}
+  try { renderGroupedFiltersDrawer(); } catch {}
 }
 
 /** Wipe appState.filters.comboFilters en place. Appelée par applyPreset avant
@@ -13717,6 +13776,1153 @@ function _clearComboFilters() {
     entry.included.clear();
     entry.excluded.clear();
   }
+}
+
+/** Wipe appState.filters.groupedFilters in place. Mirror of _clearComboFilters
+ *  for the grouped-filter system (see docs/grouped-filters.md). Called by
+ *  applyPreset before re-hydrating, and by resetAll. */
+function _clearGroupedFilters() {
+  if (Array.isArray(appState.filters.groupedFilters)) {
+    appState.filters.groupedFilters.length = 0;
+  } else {
+    appState.filters.groupedFilters = [];
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// GROUPED FILTERS — sanitizer + evaluator
+// See docs/grouped-filters.md for the model.
+// ══════════════════════════════════════════════════════
+
+/** Native dim keys allowed in grouped filters and their op category. Custom
+ *  prop keys fall through to a per-prop lookup in _readDimValueForGroup. */
+const _GF_DIM_META = {
+  outcome:      { kind: 'scalar' },
+  setup:        { kind: 'scalar' },
+  setupDetail:  { kind: 'scalar' },
+  session:      { kind: 'scalar' },
+  day:          { kind: 'scalar' },
+  pair:         { kind: 'scalar' },
+  direction:    { kind: 'scalar' },
+  obstacles:    { kind: 'array' },
+  h4:           { kind: 'array' },
+  beManagement: { kind: 'array' },
+  positionType: { kind: 'array' },
+  badFeeling:   { kind: 'checkbox' },
+  hour:         { kind: 'number' },
+  r:            { kind: 'number' },
+  rrMax:        { kind: 'number' },
+  date:         { kind: 'date' },
+};
+
+/** Deep-clone + structural sanitize. Drops malformed groups/conditions silently
+ *  so a corrupted LS blob (or remote sync drift) doesn't crash the evaluator.
+ *  Stable field order so the JSON serialization in _filterStateKey is stable.*/
+function _sanitizeGroupedFilters(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const g of raw) {
+    if (!g || typeof g !== 'object') continue;
+    const mode = (g.mode === 'include' || g.mode === 'exclude') ? g.mode : null;
+    if (!mode) continue;
+    const id = (typeof g.id === 'string' || typeof g.id === 'number') ? String(g.id) : null;
+    if (!id) continue;
+    const label = (typeof g.label === 'string' && g.label.trim()) ? g.label.trim() : null;
+    // enabled: default true. Only false when explicitly disabled (toggle off).
+    const enabled = g.enabled === false ? false : true;
+    const conds = [];
+    if (Array.isArray(g.conditions)) {
+      for (const c of g.conditions) {
+        const sc = _sanitizeGroupedCondition(c);
+        if (sc) conds.push(sc);
+      }
+    }
+    out.push({ id, mode, label, enabled, conditions: conds });
+  }
+  return out;
+}
+
+function _sanitizeGroupedCondition(c) {
+  if (!c || typeof c !== 'object') return null;
+  const dim = typeof c.dim === 'string' ? c.dim : null;
+  if (!dim) return null;
+  const op = c.op;
+  // Value-list ops: eq (is / has any), neq (is not), all (has all), none (has none)
+  if (op === 'eq' || op === 'neq' || op === 'all' || op === 'none') {
+    const values = Array.isArray(c.values)
+      ? c.values.filter(v => typeof v === 'string' || typeof v === 'number').map(String)
+      : [];
+    return { dim, op, values };
+  }
+  if (op === 'gte' || op === 'lte') {
+    // The stored value type discriminates numeric vs date: a non-numeric
+    // string (e.g. '2026-03-01') is a date bound, kept as-is for ISO string
+    // comparison. A finite number is a numeric bound.
+    if (typeof c.value === 'string' && c.value.trim() && !Number.isFinite(Number(c.value))) {
+      return { dim, op, value: c.value.trim() };
+    }
+    const v = Number(c.value);
+    if (!Number.isFinite(v)) return null;
+    return { dim, op, value: v };
+  }
+  if (op === 'between') {
+    // Date range when either bound is a non-numeric string. Keep both as
+    // strings (ISO dates sort lexicographically). Drop the condition only if
+    // both bounds are empty.
+    const minStr = (typeof c.min === 'string') ? c.min.trim() : '';
+    const maxStr = (typeof c.max === 'string') ? c.max.trim() : '';
+    const minIsDate = minStr && !Number.isFinite(Number(minStr));
+    const maxIsDate = maxStr && !Number.isFinite(Number(maxStr));
+    if (minIsDate || maxIsDate) {
+      if (!minStr && !maxStr) return null;
+      // Order bounds so min <= max for ISO strings.
+      const lo = minStr || maxStr;
+      const hi = maxStr || minStr;
+      return { dim, op, min: lo <= hi ? lo : hi, max: lo <= hi ? hi : lo };
+    }
+    const lo = Number(c.min); const hi = Number(c.max);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+    return { dim, op, min: Math.min(lo, hi), max: Math.max(lo, hi) };
+  }
+  return null;
+}
+
+/** Resolve a dim key to a value extracted from the trade. Returns a primitive
+ *  for scalar/number/date/checkbox dims, an array for multi-value dims, or
+ *  null when the trade has no usable value (the condition then misses). Custom
+ *  prop fallback reads from t.extras[dimKey]. */
+function _readDimValueForGroup(t, dimKey) {
+  switch (dimKey) {
+    case 'outcome':       return t.outcome ?? null;
+    case 'setup':         return t.setup ?? null;
+    case 'setupDetail':   return t.setupDetail ?? null;
+    case 'session':       return t.session ?? null;
+    case 'day':           return t.day ?? null;
+    case 'pair':          return t.pair ?? null;
+    case 'direction':     return t.direction ?? null;
+    case 'obstacles':     return Array.isArray(t.obstacles) ? t.obstacles : [];
+    case 'h4':            return Array.isArray(t.h4) ? t.h4 : [];
+    case 'beManagement':  return Array.isArray(t.beManagement) ? t.beManagement : [];
+    case 'positionType':  return Array.isArray(t.tradeType) ? t.tradeType : [];
+    case 'badFeeling':    return t.badFeeling ? 'Yes' : 'No';
+    case 'hour':          return (t.hour != null) ? Number(t.hour) : null;
+    case 'r':             return (t.r != null) ? Number(t.r) : null;
+    case 'rrMax':         return (t.rrMax != null) ? Number(t.rrMax) : null;
+    case 'date':          return t.date || null; // ISO 'YYYY-MM-DD' string
+    default: {
+      // Custom property — Notion / CSV custom dims surface under t.extras.
+      // Falls back to the bare key on t for legacy paths.
+      if (t.extras && Object.prototype.hasOwnProperty.call(t.extras, dimKey)) {
+        return t.extras[dimKey] ?? null;
+      }
+      return (typeof t[dimKey] !== 'undefined') ? (t[dimKey] ?? null) : null;
+    }
+  }
+}
+
+/** Evaluate one condition against a trade. */
+function _evalGroupedCondition(t, c) {
+  const v = _readDimValueForGroup(t, c.dim);
+  switch (c.op) {
+    case 'eq': {
+      if (!c.values || !c.values.length) return true; // empty allow-list = pass
+      if (Array.isArray(v)) {
+        // multiselect any-of: at least one value matches
+        const set = new Set(c.values);
+        return v.some(x => set.has(String(x)));
+      }
+      if (v == null) return false;
+      return c.values.includes(String(v));
+    }
+    case 'neq': {
+      // "is not" — inverse of eq. Empty list = pass (no constraint).
+      if (!c.values || !c.values.length) return true;
+      if (Array.isArray(v)) {
+        // For an array dim, neq = has none of the listed values.
+        const set = new Set(c.values);
+        return !v.some(x => set.has(String(x)));
+      }
+      // A null/missing scalar is "not" any value → passes.
+      if (v == null) return true;
+      return !c.values.includes(String(v));
+    }
+    case 'none': {
+      // "has none" — array dim contains none of the listed values.
+      if (!c.values || !c.values.length) return true;
+      if (!Array.isArray(v)) return true; // no array values → trivially has none
+      const set = new Set(c.values);
+      return !v.some(x => set.has(String(x)));
+    }
+    case 'all': {
+      if (!c.values || !c.values.length) return true;
+      if (!Array.isArray(v)) return false;
+      const haystack = new Set(v.map(x => String(x)));
+      return c.values.every(x => haystack.has(String(x)));
+    }
+    case 'gte': {
+      if (v == null) return false;
+      // String bound = date comparison (ISO strings sort correctly).
+      if (typeof c.value === 'string') return String(v) >= c.value;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= c.value;
+    }
+    case 'lte': {
+      if (v == null) return false;
+      if (typeof c.value === 'string') return String(v) <= c.value;
+      const n = Number(v);
+      return Number.isFinite(n) && n <= c.value;
+    }
+    case 'between': {
+      if (v == null) return false;
+      if (typeof c.min === 'string' || typeof c.max === 'string') {
+        const s = String(v);
+        return s >= String(c.min) && s <= String(c.max);
+      }
+      const n = Number(v);
+      return Number.isFinite(n) && n >= c.min && n <= c.max;
+    }
+  }
+  return false;
+}
+
+/** Evaluate a single group against a trade — AND across all conditions. An
+ *  empty conditions array makes the group inactive (draft state → never
+ *  filters anything in/out; UI shows it as draft). */
+function _evalGroupedGroup(t, g) {
+  if (!g.conditions || !g.conditions.length) return null; // draft → skip
+  for (const c of g.conditions) {
+    if (!_evalGroupedCondition(t, c)) return false;
+  }
+  return true;
+}
+
+/** Apply the full grouped-filter pipeline to a trade. Returns false if the
+ *  trade should be filtered out. Exclude wins: a single exclude-group match
+ *  drops the trade. Includes are OR'ed: if any include-group exists, the trade
+ *  must match at least one. Draft groups (0 conditions) are skipped on both
+ *  sides. */
+function _applyGroupedFiltersToTrade(t, groups) {
+  if (!groups || !groups.length) return true;
+  let hasActiveInclude = false;
+  let matchedInclude   = false;
+  for (const g of groups) {
+    if (g.enabled === false) continue; // muted group — skip entirely
+    const res = _evalGroupedGroup(t, g);
+    if (res === null) continue; // draft
+    if (g.mode === 'exclude') {
+      if (res === true) return false;
+    } else if (g.mode === 'include') {
+      hasActiveInclude = true;
+      if (res === true) matchedInclude = true;
+    }
+  }
+  if (hasActiveInclude && !matchedInclude) return false;
+  return true;
+}
+
+/** Base dataset a group's impact is measured against: the current view filtered
+ *  by preset + chips + custom chips + temporal, but WITHOUT grouped filters
+ *  (so each group's count is independent of the others). Reuses filterChips's
+ *  skipValue path to bypass the grouped-filter step. */
+function _gfBaseTradesForCount() {
+  try {
+    let filtered = filterDataset(appState.trades.items);
+    if (!appState.ui.showRawAll) {
+      filtered = filterPreset(filtered);
+      filtered = filterChips(filtered, { dim: 'groupedFilters' });
+      filtered = filterCustomChips(filtered, null);
+    }
+    filtered = filterTemporal(filtered);
+    return filtered;
+  } catch {
+    return appState.trades.items || [];
+  }
+}
+
+/** How many trades in `baseTrades` this group matches (all conditions true).
+ *  For an exclude group that's the count it removes; for include, the count it
+ *  keeps. Returns null for a draft (0 conditions) or disabled group. */
+function _gfGroupImpactCount(g, baseTrades) {
+  if (g.enabled === false) return null;
+  if (!g.conditions || !g.conditions.length) return null;
+  let n = 0;
+  for (const t of baseTrades) {
+    if (_evalGroupedGroup(t, g) === true) n++;
+  }
+  return n;
+}
+
+/** Edge-impact stats for a group: count + Total R + win rate of the trades it
+ *  matches, computed via calcStats (canonical R-effective under the active TP
+ *  config) so the numbers match what the widgets show. Returns null for a
+ *  draft/disabled group; { count:0, totalR:0, wr:null } when nothing matches. */
+function _gfGroupImpactStats(g, baseTrades) {
+  if (g.enabled === false) return null;
+  if (!g.conditions || !g.conditions.length) return null;
+  const matched = baseTrades.filter(t => _evalGroupedGroup(t, g) === true);
+  if (!matched.length) return { count: 0, totalR: 0, wr: null, ev: null };
+  let st = null;
+  try { st = calcStats(matched); } catch {}
+  return {
+    count: matched.length,
+    totalR: st ? st.totalR : 0,
+    wr: st ? st.wr : null,
+    ev: st ? st.ev : null,   // average R per trade (totalR / n)
+  };
+}
+
+/** Format an R value with sign for the impact badge, e.g. +12.3R / −15.0R.
+ *  decimals defaults to 1 (Total R); pass 2 for per-trade Avg R. */
+function _gfFmtR(r, decimals = 1) {
+  const v = Number(r) || 0;
+  const sign = v > 0 ? '+' : (v < 0 ? '−' : '');
+  return sign + Math.abs(v).toFixed(decimals) + 'R';
+}
+
+// ══════════════════════════════════════════════════════
+// GROUPED FILTERS — UI (drawer + sidebar pills)
+// ══════════════════════════════════════════════════════
+
+let _gfNextId = 1;
+function _gfMakeId() {
+  // Monotonic-but-not-time-based id. Stable across renders, unique per session.
+  // Bumped past any existing ids when hydrating from disk so we never collide.
+  return 'g_' + (_gfNextId++);
+}
+function _gfBumpIdCounterFromGroups(groups) {
+  if (!Array.isArray(groups)) return;
+  for (const g of groups) {
+    if (!g || typeof g.id !== 'string') continue;
+    const m = /^g_(\d+)$/.exec(g.id);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= _gfNextId) _gfNextId = n + 1;
+    }
+  }
+}
+
+/** Native + custom dim catalog for the picker. label is what the user sees,
+ *  kind decides which operators + value picker apply. */
+function _gfBuildDimCatalog() {
+  const cats = {
+    categorical: [],
+    numeric:     [],
+    date:        [],
+  };
+  // Native scalar / array / checkbox dims
+  const nativeDims = [
+    { key: 'outcome',      label: 'Position Result' },
+    { key: 'pair',         label: 'Pair' },
+    { key: 'setup',        label: 'Setup' },
+    { key: 'setupDetail',  label: 'Setup detail' },
+    { key: 'session',      label: 'Session' },
+    { key: 'day',          label: 'Day of Week' },
+    { key: 'direction',    label: 'Order (direction)' },
+    { key: 'obstacles',    label: 'M15 Obstacles' },
+    { key: 'h4',           label: 'H4 Obstacles' },
+    { key: 'beManagement', label: 'BE Management' },
+    { key: 'positionType', label: 'Position Type' },
+    { key: 'badFeeling',   label: 'Bad feeling' },
+  ];
+  for (const d of nativeDims) cats.categorical.push({ ...d, custom: false });
+
+  const nativeNums = [
+    { key: 'hour',  label: 'Hour' },
+    { key: 'r',     label: 'RR TP 1' },
+    { key: 'rrMax', label: 'RR Max' },
+  ];
+  for (const d of nativeNums) cats.numeric.push({ ...d, custom: false });
+
+  // Native date dim
+  cats.date.push({ key: 'date', label: 'Date', custom: false });
+
+  // Custom user-declared props
+  if (typeof loadCustomProps === 'function') {
+    try {
+      const props = loadCustomProps() || [];
+      for (const p of props) {
+        if (!p || !p.key) continue;
+        const label = p.name || p.key;
+        if (p.type === 'number') {
+          cats.numeric.push({ key: p.key, label, custom: true, propType: 'number' });
+        } else if (p.type === 'date') {
+          cats.date.push({ key: p.key, label, custom: true, propType: 'date' });
+        } else if (p.type === 'select' || p.type === 'multiselect' || p.type === 'checkbox') {
+          cats.categorical.push({ key: p.key, label, custom: true, propType: p.type });
+        }
+      }
+    } catch {}
+  }
+  return cats;
+}
+
+function _gfFindDim(cats, dimKey) {
+  for (const c of cats.categorical) if (c.key === dimKey) return c;
+  for (const c of cats.numeric)     if (c.key === dimKey) return c;
+  for (const c of (cats.date || [])) if (c.key === dimKey) return c;
+  return null;
+}
+
+/** Available values for a categorical dim, gathered from current trades. The
+ *  list is whatever the trades expose under that dim — keeps the picker honest
+ *  even when CSVs have non-canonical values. */
+function _gfValuesForDim(dimKey) {
+  const trades = appState.trades?.items || [];
+  const set = new Set();
+  for (const t of trades) {
+    const v = _readDimValueForGroup(t, dimKey);
+    if (v == null || v === '') continue;
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        if (x != null && x !== '') set.add(String(x));
+      }
+    } else {
+      set.add(String(v));
+    }
+  }
+  return [...set].sort();
+}
+
+const _GF_DIM_KIND_FROM_KEY = (dimKey, catalog) => {
+  const d = _gfFindDim(catalog, dimKey);
+  if (!d) return null;
+  // Treat custom select/multiselect/checkbox as categorical; number as numeric;
+  // date as its own kind (ISO string comparators).
+  if (d.propType === 'number') return 'numeric';
+  if (d.propType === 'date') return 'date';
+  if (d.propType === 'select' || d.propType === 'multiselect' || d.propType === 'checkbox') {
+    return 'categorical';
+  }
+  // Native fallback via the meta table.
+  const meta = _GF_DIM_META[dimKey];
+  if (!meta) return 'categorical';
+  if (meta.kind === 'number') return 'numeric';
+  if (meta.kind === 'date') return 'date';
+  return 'categorical';
+};
+
+function _gfDimLabel(dimKey, catalog) {
+  const d = _gfFindDim(catalog, dimKey);
+  return d ? d.label : dimKey;
+}
+
+/** Auto-derive a human label for a group from its conditions when the user
+ *  hasn't set a custom name. Used both in the sidebar pill and as drawer
+ *  placeholder. */
+function _gfAutoLabel(group, catalog) {
+  if (!group.conditions || !group.conditions.length) return 'Empty group';
+  const cat = catalog || _gfBuildDimCatalog();
+  const parts = group.conditions.slice(0, 2).map(c => {
+    const label = _gfDimLabel(c.dim, cat);
+    if (c.op === 'eq' || c.op === 'all' || c.op === 'neq' || c.op === 'none') {
+      const v = (c.values || []).slice(0, 2).join(',');
+      const extra = (c.values || []).length > 2 ? `+${c.values.length - 2}` : '';
+      const sep = (c.op === 'neq' || c.op === 'none') ? '≠' : '=';
+      return v ? `${label}${sep}${v}${extra}` : `${label}${sep}?`;
+    }
+    if (c.op === 'gte') return `${label}≥${c.value}`;
+    if (c.op === 'lte') return `${label}≤${c.value}`;
+    if (c.op === 'between') return `${label} ${c.min}-${c.max}`;
+    return label;
+  });
+  const more = group.conditions.length - 2;
+  return parts.join(' × ') + (more > 0 ? ` × +${more}` : '');
+}
+
+/** Default condition for a freshly-picked dim. */
+function _gfDefaultCondition(dimKey, catalog) {
+  const kind = _GF_DIM_KIND_FROM_KEY(dimKey, catalog);
+  if (kind === 'numeric') return { dim: dimKey, op: 'eq', values: [] }; // numeric eq exact via values[0]
+  return { dim: dimKey, op: 'eq', values: [] };
+}
+
+/** ── State helpers ── */
+function _gfGetGroups() {
+  if (!Array.isArray(appState.filters.groupedFilters)) {
+    appState.filters.groupedFilters = [];
+  }
+  return appState.filters.groupedFilters;
+}
+function _gfFindGroup(id) {
+  return _gfGetGroups().find(g => g.id === id) || null;
+}
+
+/** Persist + re-render. Called after every drawer mutation.
+ *  Writes groupedFilters directly into the active preset's live slot using the
+ *  same null/[]/[…] override semantics as before, then persists. Cannot use
+ *  _syncLiveSlotFromActiveChips because that runs in applyPreset BEFORE the
+ *  appState is hydrated — see docs/grouped-filters.md §6. */
+function _gfPersistAndRender() {
+  try {
+    const id = appState.presets.activeId;
+    // Pseudo-preset null is valid — getPresetLiveSlot handles both.
+    const slot = getPresetLiveSlot(id);
+    const liveGroups = _sanitizeGroupedFilters(appState.filters.groupedFilters || []);
+    const snap = (typeof id === 'number') ? presetSnapshots[id] : null;
+    const snapHasGroups = !!(snap && Array.isArray(snap.groupedFilters) && snap.groupedFilters.length);
+    if (liveGroups.length > 0) {
+      slot.groupedFilters = liveGroups;
+    } else if (snapHasGroups) {
+      slot.groupedFilters = []; // explicit clear of saved groups
+    } else {
+      slot.groupedFilters = null;
+    }
+    savePresetLiveFilters();
+  } catch (e) {
+    console.warn('[grouped-filters] persist failed:', e?.message || e);
+  }
+  invalidateFilterCache();
+  try { renderGroupedFiltersSidebar(); } catch {}
+  try { renderGroupedFiltersDrawer(); } catch {}
+  try { if (typeof render === 'function') render(); } catch {}
+  // A grouped-filter change is a filter change — refresh the derived preset UI
+  // (Update/Save affordance + the per-preset Tune divergence pastille) so an
+  // unsaved group surfaces the same "unsaved changes" signal as a live chip.
+  try { if (typeof _refreshChipDerivedUI === 'function') _refreshChipDerivedUI(); } catch {}
+}
+
+/** Open / close the drawer. `focusGroupId` highlights a group on open. */
+let _gfFocusGroupId = null;
+function openGroupedFiltersDrawer(focusGroupId) {
+  _gfFocusGroupId = focusGroupId || null;
+  const el = document.getElementById('gf-drawer');
+  if (!el) return;
+  el.classList.add('open');
+  renderGroupedFiltersDrawer();
+}
+function closeGroupedFiltersDrawer() {
+  const el = document.getElementById('gf-drawer');
+  if (!el) return;
+  el.classList.remove('open');
+  _gfFocusGroupId = null;
+}
+
+/** Custom-properties drawer — create/manage custom Notion properties that
+ *  become custom sidebar filters. Opened from the Filters hub's Custom zone.
+ *  Houses the np-* management UI relocated from the old Data Setup tab. */
+function openCustomPropsDrawer() {
+  const el = document.getElementById('custom-props-drawer');
+  if (!el) return;
+  el.classList.add('open');
+  // Populate list + detected columns + keep sidebar chips in sync.
+  try { if (typeof _renderNotionPropsPanel === 'function') _renderNotionPropsPanel(); } catch (e) {
+    console.warn('[custom-props] render on open failed:', e?.message || e);
+  }
+}
+function closeCustomPropsDrawer() {
+  const el = document.getElementById('custom-props-drawer');
+  if (!el) return;
+  el.classList.remove('open');
+  // Close any open add/edit form so reopening starts clean.
+  try { if (typeof _closePropertyForm === 'function') _closePropertyForm(); } catch {}
+}
+
+/** Add a fresh group with the given mode and open the drawer to edit it. */
+function _gfAddGroup(mode) {
+  const groups = _gfGetGroups();
+  const id = _gfMakeId();
+  groups.push({
+    id,
+    mode: (mode === 'include' ? 'include' : 'exclude'),
+    label: null,
+    enabled: true,
+    conditions: [],
+  });
+  _gfFocusGroupId = id;
+  _gfPersistAndRender();
+}
+
+function _gfDeleteGroup(id) {
+  const groups = _gfGetGroups();
+  const i = groups.findIndex(g => g.id === id);
+  if (i >= 0) groups.splice(i, 1);
+  _gfPersistAndRender();
+}
+
+function _gfToggleGroupMode(id) {
+  const g = _gfFindGroup(id);
+  if (!g) return;
+  g.mode = (g.mode === 'exclude') ? 'include' : 'exclude';
+  _gfPersistAndRender();
+}
+
+/** Mute / un-mute a group without deleting it. */
+function _gfToggleGroupEnabled(id) {
+  const g = _gfFindGroup(id);
+  if (!g) return;
+  g.enabled = (g.enabled === false); // false→true, true/undefined→false
+  _gfPersistAndRender();
+}
+
+/** Clone a group (deep copy of conditions) with a new id, inserted right after
+ *  the original. The clone is enabled and gets a "(copy)" label suffix when the
+ *  original had a custom label. */
+function _gfDuplicateGroup(id) {
+  const groups = _gfGetGroups();
+  const i = groups.findIndex(g => g.id === id);
+  if (i < 0) return;
+  const src = groups[i];
+  const clone = {
+    id: _gfMakeId(),
+    mode: src.mode,
+    label: src.label ? `${src.label} (copy)` : null,
+    enabled: src.enabled === false ? false : true,
+    conditions: JSON.parse(JSON.stringify(src.conditions || [])),
+  };
+  groups.splice(i + 1, 0, clone);
+  _gfFocusGroupId = clone.id;
+  _gfPersistAndRender();
+}
+
+function _gfSetGroupLabel(id, label) {
+  const g = _gfFindGroup(id);
+  if (!g) return;
+  const trimmed = (label || '').trim();
+  g.label = trimmed || null;
+  // Lighter persist: no full render needed for a label change, just the
+  // sidebar pill and the LS write. The drawer body already shows the input
+  // value via the user's typing.
+  try { _syncLiveSlotFromActiveChips(); } catch {}
+  try { renderGroupedFiltersSidebar(); } catch {}
+}
+
+function _gfAddCondition(groupId, dimKey) {
+  const g = _gfFindGroup(groupId);
+  if (!g) return;
+  const catalog = _gfBuildDimCatalog();
+  g.conditions.push(_gfDefaultCondition(dimKey, catalog));
+  _gfPersistAndRender();
+}
+
+function _gfRemoveCondition(groupId, condIdx) {
+  const g = _gfFindGroup(groupId);
+  if (!g || condIdx < 0 || condIdx >= g.conditions.length) return;
+  g.conditions.splice(condIdx, 1);
+  _gfPersistAndRender();
+}
+
+function _gfSetConditionDim(groupId, condIdx, dimKey) {
+  const g = _gfFindGroup(groupId);
+  if (!g || !g.conditions[condIdx]) return;
+  const catalog = _gfBuildDimCatalog();
+  g.conditions[condIdx] = _gfDefaultCondition(dimKey, catalog);
+  _gfPersistAndRender();
+}
+
+function _gfSetConditionOp(groupId, condIdx, op) {
+  const g = _gfFindGroup(groupId);
+  if (!g || !g.conditions[condIdx]) return;
+  const c = g.conditions[condIdx];
+  const dim = c.dim;
+  const valueListOps = ['eq', 'neq', 'all', 'none'];
+  // Date dims init comparator bounds as empty strings (string = date path in
+  // the sanitizer/evaluator); numeric dims init as 0.
+  const isDate = _GF_DIM_KIND_FROM_KEY(dim, _gfBuildDimCatalog()) === 'date';
+  const emptyBound = isDate ? '' : 0;
+  // Build a fresh condition for the new op shape, preserving the dim. When
+  // switching between value-list ops (eq↔neq↔all↔none) keep the picked values
+  // so flipping "is" → "is not" doesn't wipe the user's selection.
+  let next;
+  if (valueListOps.includes(op)) {
+    const keep = (valueListOps.includes(c.op) && Array.isArray(c.values)) ? c.values.slice() : [];
+    next = { dim, op, values: keep };
+  } else if (op === 'gte' || op === 'lte') next = { dim, op, value: emptyBound };
+  else if (op === 'between') next = { dim, op, min: emptyBound, max: emptyBound };
+  else next = { dim, op: 'eq', values: [] };
+  g.conditions[condIdx] = next;
+  _gfPersistAndRender();
+}
+
+function _gfSetConditionValues(groupId, condIdx, values) {
+  const g = _gfFindGroup(groupId);
+  if (!g || !g.conditions[condIdx]) return;
+  g.conditions[condIdx].values = Array.isArray(values) ? values.slice() : [];
+  _gfPersistAndRender();
+}
+
+function _gfAddConditionValue(groupId, condIdx, value) {
+  const v = String(value || '').trim();
+  if (!v) return;
+  const g = _gfFindGroup(groupId);
+  if (!g || !g.conditions[condIdx]) return;
+  const c = g.conditions[condIdx];
+  if (!Array.isArray(c.values)) c.values = [];
+  if (!c.values.includes(v)) c.values.push(v);
+  _gfPersistAndRender();
+}
+
+function _gfRemoveConditionValue(groupId, condIdx, value) {
+  const g = _gfFindGroup(groupId);
+  if (!g || !g.conditions[condIdx]) return;
+  const c = g.conditions[condIdx];
+  if (!Array.isArray(c.values)) return;
+  c.values = c.values.filter(x => x !== value);
+  _gfPersistAndRender();
+}
+
+function _gfSetConditionNumericField(groupId, condIdx, field, value) {
+  const g = _gfFindGroup(groupId);
+  if (!g || !g.conditions[condIdx]) return;
+  const c = g.conditions[condIdx];
+  const n = Number(value);
+  if (!Number.isFinite(n)) return;
+  if (field === 'value' && (c.op === 'gte' || c.op === 'lte')) c.value = n;
+  else if (field === 'min' && c.op === 'between') c.min = n;
+  else if (field === 'max' && c.op === 'between') c.max = n;
+  else return;
+  _gfPersistAndRender();
+}
+
+/** Date comparator field setter — stores ISO strings (kept as strings so the
+ *  sanitizer/evaluator route to date comparison). Empty string clears the
+ *  bound (the sanitizer drops a fully-empty date condition). */
+function _gfSetConditionDateField(groupId, condIdx, field, value) {
+  const g = _gfFindGroup(groupId);
+  if (!g || !g.conditions[condIdx]) return;
+  const c = g.conditions[condIdx];
+  const s = String(value || '');
+  if (field === 'value' && (c.op === 'gte' || c.op === 'lte')) c.value = s;
+  else if (field === 'min' && c.op === 'between') c.min = s;
+  else if (field === 'max' && c.op === 'between') c.max = s;
+  else return;
+  _gfPersistAndRender();
+}
+
+/** HTML escape — drawer renders user-provided custom prop names + value lists,
+ *  both untrusted inputs. */
+function _gfEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function _gfRenderCondition(g, c, idx, catalog) {
+  const kind = _GF_DIM_KIND_FROM_KEY(c.dim, catalog);
+  // Dim selector — grouped by kind.
+  let dimOpts = '';
+  if (catalog.categorical.length) {
+    dimOpts += '<optgroup label="Categorical">';
+    for (const d of catalog.categorical) {
+      dimOpts += `<option value="${_gfEsc(d.key)}"${d.key === c.dim ? ' selected' : ''}>${_gfEsc(d.label)}</option>`;
+    }
+    dimOpts += '</optgroup>';
+  }
+  if (catalog.numeric.length) {
+    dimOpts += '<optgroup label="Numeric">';
+    for (const d of catalog.numeric) {
+      dimOpts += `<option value="${_gfEsc(d.key)}"${d.key === c.dim ? ' selected' : ''}>${_gfEsc(d.label)}</option>`;
+    }
+    dimOpts += '</optgroup>';
+  }
+  if (catalog.date && catalog.date.length) {
+    dimOpts += '<optgroup label="Date">';
+    for (const d of catalog.date) {
+      dimOpts += `<option value="${_gfEsc(d.key)}"${d.key === c.dim ? ' selected' : ''}>${_gfEsc(d.label)}</option>`;
+    }
+    dimOpts += '</optgroup>';
+  }
+
+  // Operator selector — restricted to ops valid for the dim kind.
+  let opOpts;
+  if (kind === 'numeric' || kind === 'date') {
+    opOpts = `
+      <option value="eq"${c.op === 'eq' ? ' selected' : ''}>is</option>
+      <option value="neq"${c.op === 'neq' ? ' selected' : ''}>is not</option>
+      <option value="gte"${c.op === 'gte' ? ' selected' : ''}>${kind === 'date' ? 'on or after' : '≥'}</option>
+      <option value="lte"${c.op === 'lte' ? ' selected' : ''}>${kind === 'date' ? 'on or before' : '≤'}</option>
+      <option value="between"${c.op === 'between' ? ' selected' : ''}>between</option>
+    `;
+  } else {
+    const dim = _gfFindDim(catalog, c.dim);
+    const isArray = dim && (dim.propType === 'multiselect' || _GF_DIM_META[c.dim]?.kind === 'array');
+    opOpts = isArray
+      ? `
+      <option value="eq"${c.op === 'eq' ? ' selected' : ''}>has any</option>
+      <option value="none"${c.op === 'none' ? ' selected' : ''}>has none</option>
+      <option value="all"${c.op === 'all' ? ' selected' : ''}>has all</option>
+    `
+      : `
+      <option value="eq"${c.op === 'eq' ? ' selected' : ''}>is</option>
+      <option value="neq"${c.op === 'neq' ? ' selected' : ''}>is not</option>
+    `;
+  }
+
+  // Value picker
+  let valueHtml = '';
+  if (c.op === 'eq' || c.op === 'neq' || c.op === 'all' || c.op === 'none') {
+    if (kind === 'numeric') {
+      // Number eq — single numeric input that writes into values[0].
+      const cur = (Array.isArray(c.values) && c.values[0] != null) ? c.values[0] : '';
+      valueHtml = `<div class="gf-condition-value-wrap">
+        <input type="number" step="any" value="${_gfEsc(cur)}"
+               data-gf-action="set-cond-num-as-value"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}"
+               placeholder="value">
+      </div>`;
+    } else if (kind === 'date') {
+      // Date eq/neq — single date input that writes the ISO string into values[0].
+      const cur = (Array.isArray(c.values) && c.values[0] != null) ? c.values[0] : '';
+      valueHtml = `<div class="gf-condition-value-wrap">
+        <input type="date" value="${_gfEsc(cur)}"
+               data-gf-action="set-cond-date-as-value"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}">
+      </div>`;
+    } else {
+      // Multi-value categorical chip picker.
+      const values = Array.isArray(c.values) ? c.values : [];
+      const options = _gfValuesForDim(c.dim);
+      const dataListId = `gf-vl-${_gfEsc(g.id)}-${idx}`;
+      const datalist = `<datalist id="${dataListId}">${
+        options.map(o => `<option value="${_gfEsc(o)}"></option>`).join('')
+      }</datalist>`;
+      const chips = values.map(v => `<span class="gf-value-chip">
+        ${_gfEsc(v)}
+        <button class="gf-value-chip-x" data-gf-action="remove-cond-value"
+                data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}"
+                data-gf-value="${_gfEsc(v)}" title="Remove">×</button>
+      </span>`).join('');
+      valueHtml = `<div class="gf-value-multi">
+        ${chips}
+        <input class="gf-value-multi-add" list="${dataListId}"
+               placeholder="${values.length ? '+ add' : 'pick value…'}"
+               data-gf-action="add-cond-value"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}">
+        ${datalist}
+      </div>`;
+    }
+  } else if (c.op === 'gte' || c.op === 'lte') {
+    if (kind === 'date') {
+      const cur = (typeof c.value === 'string') ? c.value : '';
+      valueHtml = `<div class="gf-condition-value-wrap">
+        <input type="date" value="${_gfEsc(cur)}"
+               data-gf-action="set-cond-date"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}" data-gf-field="value">
+      </div>`;
+    } else {
+      valueHtml = `<div class="gf-condition-value-wrap">
+        <input type="number" step="any" value="${_gfEsc(c.value)}"
+               data-gf-action="set-cond-num"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}" data-gf-field="value">
+      </div>`;
+    }
+  } else if (c.op === 'between') {
+    if (kind === 'date') {
+      const lo = (typeof c.min === 'string') ? c.min : '';
+      const hi = (typeof c.max === 'string') ? c.max : '';
+      valueHtml = `<div class="gf-condition-value-wrap">
+        <input type="date" value="${_gfEsc(lo)}"
+               data-gf-action="set-cond-date"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}" data-gf-field="min">
+        <span class="gf-between-sep">–</span>
+        <input type="date" value="${_gfEsc(hi)}"
+               data-gf-action="set-cond-date"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}" data-gf-field="max">
+      </div>`;
+    } else {
+      valueHtml = `<div class="gf-condition-value-wrap">
+        <input type="number" step="any" value="${_gfEsc(c.min)}"
+               data-gf-action="set-cond-num"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}" data-gf-field="min">
+        <span class="gf-between-sep">–</span>
+        <input type="number" step="any" value="${_gfEsc(c.max)}"
+               data-gf-action="set-cond-num"
+               data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}" data-gf-field="max">
+      </div>`;
+    }
+  }
+
+  return `<div class="gf-condition" data-gf-cond-row="${idx}">
+    <select data-gf-action="set-cond-dim"
+            data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}">${dimOpts}</select>
+    <select data-gf-action="set-cond-op"
+            data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}">${opOpts}</select>
+    ${valueHtml}
+    <button class="gf-condition-remove" data-gf-action="remove-cond"
+            data-gf-group="${_gfEsc(g.id)}" data-gf-cond="${idx}" title="Remove condition">×</button>
+  </div>`;
+}
+
+function _gfRenderGroup(g, catalog, baseTrades) {
+  const isExc = g.mode === 'exclude';
+  const disabled = g.enabled === false;
+  const focus = (_gfFocusGroupId === g.id) ? ' is-focused' : '';
+  const labelPh = _gfAutoLabel(g, catalog);
+  const condsHtml = g.conditions.length
+    ? g.conditions.map((c, i) => {
+        const row = _gfRenderCondition(g, c, i, catalog);
+        const sep = i > 0 ? '<div class="gf-condition-and">AND</div>' : '';
+        return sep + row;
+      }).join('')
+    : '<div class="gf-group-conditions-empty">No conditions yet — pick a dim below.</div>';
+
+  // Edge-impact stats — count · Total R · Win Rate · Avg R of the matched trades.
+  // Colours follow the KPI thresholds: Total R = sign-only (var--g/--r), Win
+  // Rate + Avg R via _kpiTooltipColor (6-tier scale, same as the KPI tiles).
+  const stats = (baseTrades && !disabled) ? _gfGroupImpactStats(g, baseTrades) : null;
+  let countBadge = '';
+  if (stats != null) {
+    const verb = isExc ? 'excl' : 'matched';
+    const rColor = stats.totalR > 0 ? 'var(--g)' : (stats.totalR < 0 ? 'var(--r)' : 'var(--text-secondary, var(--dim))');
+    const rPart = stats.count
+      ? `<span class="gf-stat-r" style="color:${rColor}">${_gfFmtR(stats.totalR)}</span>`
+      : '';
+    const wrPart = (stats.wr != null && stats.count)
+      ? `<span class="gf-stat-wr" style="color:${_kpiTooltipColor(stats.wr, 'wr')}">${Math.round(stats.wr)}% WR</span>`
+      : '';
+    const avgPart = (stats.ev != null && stats.count)
+      ? `<span class="gf-stat-avg" style="color:${_kpiTooltipColor(stats.ev, 'avgr')}">${_gfFmtR(stats.ev, 2)} avg</span>`
+      : '';
+    countBadge = `<span class="gf-group-count" title="Edge impact in the current view — trades matched · total R · win rate · avg R per trade">`
+      + `<span class="gf-stat-n">${stats.count} ${verb}</span>${rPart}${wrPart}${avgPart}</span>`;
+  }
+
+  // "Add condition" — quick-pick of the first categorical dim by default.
+  const firstDim = catalog.categorical[0]?.key || catalog.numeric[0]?.key || 'pair';
+  return `<div class="gf-group ${isExc ? 'is-exclude' : 'is-include'}${focus}${disabled ? ' is-disabled' : ''}" data-gf-group="${_gfEsc(g.id)}">
+    <div class="gf-group-head">
+      <div class="gf-group-head-title">
+        <input class="gf-group-label-input" type="text"
+               value="${_gfEsc(g.label || '')}"
+               placeholder="${_gfEsc(labelPh)}"
+               data-gf-action="set-label" data-gf-group="${_gfEsc(g.id)}">
+      </div>
+      <div class="gf-group-head-meta">
+        <button class="gf-mode-toggle" data-gf-action="toggle-mode" data-gf-group="${_gfEsc(g.id)}"
+                title="Toggle include / exclude">${isExc ? '⊗ Exclude' : '✓ Include'}</button>
+        <span class="gf-group-head-actions">
+          <button class="gf-group-icon-btn" data-gf-action="toggle-enabled" data-gf-group="${_gfEsc(g.id)}"
+                  title="${disabled ? 'Enable group' : 'Disable group (mute without deleting)'}">${disabled ? '🚫' : '👁'}</button>
+          <button class="gf-group-icon-btn" data-gf-action="duplicate-group" data-gf-group="${_gfEsc(g.id)}"
+                  title="Duplicate group">⧉</button>
+          <button class="gf-group-icon-btn gf-group-delete" data-gf-action="delete-group" data-gf-group="${_gfEsc(g.id)}"
+                  title="Delete group">🗑</button>
+        </span>
+      </div>
+      ${countBadge ? `<div class="gf-group-head-stats">${countBadge}</div>` : ''}
+    </div>
+    <div class="gf-group-conditions">
+      ${condsHtml}
+      <button class="gf-add-condition-btn" data-gf-action="add-cond"
+              data-gf-group="${_gfEsc(g.id)}" data-gf-dim="${_gfEsc(firstDim)}">+ Add condition</button>
+    </div>
+  </div>`;
+}
+
+function renderGroupedFiltersDrawer() {
+  const body = document.getElementById('gf-drawer-body');
+  if (!body) return;
+  const groups = _gfGetGroups();
+  if (!groups.length) {
+    body.innerHTML = `<div class="gf-drawer-empty">
+      No groups yet.<br>
+      Click <strong>+ Exclude group</strong> or <strong>+ Include group</strong> above to start.<br><br>
+      <em>A group combines several conditions with AND. Multiple groups OR between them.</em>
+    </div>`;
+    return;
+  }
+  const catalog = _gfBuildDimCatalog();
+  const baseTrades = _gfBaseTradesForCount();
+  body.innerHTML = groups.map(g => _gfRenderGroup(g, catalog, baseTrades)).join('');
+}
+
+function renderGroupedFiltersSidebar() {
+  const host = document.getElementById('gf-sidebar-section');
+  if (!host) return;
+  const groups = _gfGetGroups();
+  const catalog = _gfBuildDimCatalog();
+  // Base set for impact counts — computed once for all pills.
+  const baseTrades = groups.length ? _gfBaseTradesForCount() : [];
+  const pills = groups.map(g => {
+    const isDraft = !g.conditions || !g.conditions.length;
+    const disabled = g.enabled === false;
+    const label = g.label || _gfAutoLabel(g, catalog);
+    const cls = (g.mode === 'exclude') ? 'is-exclude' : 'is-include';
+    const draftCls = isDraft ? ' is-draft' : '';
+    const offCls = disabled ? ' is-off' : '';
+    const icon = disabled ? '🚫' : (g.mode === 'exclude') ? '⊗' : '✓';
+    const stats = (!isDraft && !disabled) ? _gfGroupImpactStats(g, baseTrades) : null;
+    const count = stats ? stats.count : null;
+    const countBadge = (count != null) ? `<span class="gf-pill-count">${count}</span>` : '';
+    // Tooltip carries the full edge impact (count · R · WR) — the pill stays
+    // compact with just the count badge.
+    let titleSuffix = '';
+    if (disabled) titleSuffix = ' (disabled)';
+    else if (isDraft) titleSuffix = ' (draft — no conditions)';
+    else if (stats) {
+      titleSuffix = ` · ${stats.count} trades · ${_gfFmtR(stats.totalR)}`
+        + (stats.wr != null && stats.count ? ` · ${Math.round(stats.wr)}% WR` : '')
+        + (stats.ev != null && stats.count ? ` · ${_gfFmtR(stats.ev, 2)} avg` : '');
+    }
+    return `<button class="gf-pill ${cls}${draftCls}${offCls}" data-gf-action="open-drawer-group" data-gf-group="${_gfEsc(g.id)}"
+                    title="${_gfEsc(label)}${titleSuffix}">
+      <span class="gf-pill-icon">${icon}</span>
+      <span class="gf-pill-label">${_gfEsc(label)}</span>
+      ${countBadge}
+      <span class="gf-pill-remove" data-gf-action="delete-group" data-gf-group="${_gfEsc(g.id)}" title="Remove">×</span>
+    </button>`;
+  }).join('');
+  const headRow = groups.length
+    ? `<div class="gf-sidebar-head">
+        <span>Grouped filters <span class="gf-sidebar-count">${groups.length}</span></span>
+      </div>`
+    : '';
+  const addBtn = `<button class="gf-add-pill-btn" data-gf-action="open-drawer" title="Build a grouped filter">+ Group filter</button>`;
+  host.innerHTML = `${headRow}<div class="gf-pills">${pills}${addBtn}</div>`;
+  // Keep the Grouped zone header badge in sync (groups change here).
+  try { _updateFilterZoneBadges(); } catch {}
+}
+
+/** Drawer + sidebar global click handler. Bound once at DOMContentLoaded. */
+function _gfBindEventDelegation() {
+  document.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-gf-action]');
+    if (!t) return;
+    const action = t.getAttribute('data-gf-action');
+    const groupId = t.getAttribute('data-gf-group');
+    const condIdx = parseInt(t.getAttribute('data-gf-cond') || '-1', 10);
+    switch (action) {
+      case 'open-drawer':
+        ev.preventDefault();
+        openGroupedFiltersDrawer();
+        break;
+      case 'open-drawer-group':
+        // Inner remove button has its own action — bail if it triggered.
+        if (ev.target.closest('[data-gf-action="delete-group"]')) return;
+        ev.preventDefault();
+        openGroupedFiltersDrawer(groupId);
+        break;
+      case 'delete-group':
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (groupId) _gfDeleteGroup(groupId);
+        break;
+      case 'toggle-mode':
+        ev.preventDefault();
+        if (groupId) _gfToggleGroupMode(groupId);
+        break;
+      case 'toggle-enabled':
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (groupId) _gfToggleGroupEnabled(groupId);
+        break;
+      case 'duplicate-group':
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (groupId) _gfDuplicateGroup(groupId);
+        break;
+      case 'add-cond': {
+        ev.preventDefault();
+        const dimKey = t.getAttribute('data-gf-dim');
+        if (groupId && dimKey) _gfAddCondition(groupId, dimKey);
+        break;
+      }
+      case 'remove-cond':
+        ev.preventDefault();
+        if (groupId) _gfRemoveCondition(groupId, condIdx);
+        break;
+      case 'remove-cond-value': {
+        ev.preventDefault();
+        const v = t.getAttribute('data-gf-value');
+        if (groupId && v != null) _gfRemoveConditionValue(groupId, condIdx, v);
+        break;
+      }
+    }
+  });
+
+  // Handle change events for selects + numeric inputs (no click).
+  document.addEventListener('change', (ev) => {
+    const t = ev.target.closest('[data-gf-action]');
+    if (!t) return;
+    const action = t.getAttribute('data-gf-action');
+    const groupId = t.getAttribute('data-gf-group');
+    const condIdx = parseInt(t.getAttribute('data-gf-cond') || '-1', 10);
+    switch (action) {
+      case 'set-cond-dim':
+        if (groupId) _gfSetConditionDim(groupId, condIdx, t.value);
+        break;
+      case 'set-cond-op':
+        if (groupId) _gfSetConditionOp(groupId, condIdx, t.value);
+        break;
+      case 'set-cond-num': {
+        const field = t.getAttribute('data-gf-field');
+        if (groupId && field) _gfSetConditionNumericField(groupId, condIdx, field, t.value);
+        break;
+      }
+      case 'set-cond-num-as-value': {
+        // Numeric `eq` writes the single value as a string into values[0] so
+        // the categorical-path matcher works unchanged ('5' === String(5)).
+        if (groupId && t.value !== '' && Number.isFinite(Number(t.value))) {
+          _gfSetConditionValues(groupId, condIdx, [String(Number(t.value))]);
+        } else if (groupId) {
+          _gfSetConditionValues(groupId, condIdx, []);
+        }
+        break;
+      }
+      case 'set-cond-date': {
+        const field = t.getAttribute('data-gf-field');
+        if (groupId && field) _gfSetConditionDateField(groupId, condIdx, field, t.value);
+        break;
+      }
+      case 'set-cond-date-as-value': {
+        // Date `eq`/`neq` writes the ISO string into values[0] (categorical
+        // matcher compares String(t.date) === stored value).
+        if (groupId && t.value) {
+          _gfSetConditionValues(groupId, condIdx, [String(t.value)]);
+        } else if (groupId) {
+          _gfSetConditionValues(groupId, condIdx, []);
+        }
+        break;
+      }
+    }
+  });
+
+  // Label input — change instead of click; commit on blur, also on Enter.
+  document.addEventListener('change', (ev) => {
+    const t = ev.target.closest('[data-gf-action="set-label"]');
+    if (!t) return;
+    const groupId = t.getAttribute('data-gf-group');
+    if (groupId) _gfSetGroupLabel(groupId, t.value);
+  }, true);
+
+  // Multi-value chip picker — add value on Enter or on datalist pick.
+  document.addEventListener('keydown', (ev) => {
+    const t = ev.target.closest('[data-gf-action="add-cond-value"]');
+    if (!t) return;
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      const groupId = t.getAttribute('data-gf-group');
+      const condIdx = parseInt(t.getAttribute('data-gf-cond') || '-1', 10);
+      const v = t.value.trim();
+      if (groupId && v) {
+        _gfAddConditionValue(groupId, condIdx, v);
+        t.value = '';
+      }
+    }
+  });
+  // Also commit when the user picks from the datalist dropdown (input event
+  // fires when datalist autocomplete inserts a value — detect by checking the
+  // value matches a known option for that dim).
+  document.addEventListener('input', (ev) => {
+    const t = ev.target.closest('[data-gf-action="add-cond-value"]');
+    if (!t) return;
+    const v = t.value;
+    if (!v) return;
+    const groupId = t.getAttribute('data-gf-group');
+    const condIdx = parseInt(t.getAttribute('data-gf-cond') || '-1', 10);
+    const g = _gfFindGroup(groupId);
+    if (!g || !g.conditions[condIdx]) return;
+    const options = _gfValuesForDim(g.conditions[condIdx].dim);
+    // Only auto-commit when the typed value exactly matches a known option
+    // (datalist autocomplete behavior). Free-typing waits for Enter so the
+    // user can finish typing without premature commits.
+    if (options.includes(v)) {
+      _gfAddConditionValue(groupId, condIdx, v);
+      t.value = '';
+    }
+  });
 }
 
 /** Hydrate appState.filters.chips + customChips from a preset snapshot,
@@ -13986,6 +15192,11 @@ function _filterStateKey() {
     appState.ui.rrMinFilter ?? '',
     appState.ui.beRule,
     (appState.ui.beManagementExclude || []).slice().sort().join(','),
+    // Grouped filters — JSON of the array. Stable because _sanitizeGroupedFilters
+    // canonicalises the field order, and we never re-sort groups (their order
+    // doesn't affect evaluation; only the JSON serialisation needs to be stable
+    // across renders, which it is as long as the array isn't mutated in place).
+    'gf:' + JSON.stringify(appState.filters.groupedFilters || []),
   ].join('|');
 }
 
@@ -14104,6 +15315,11 @@ function _filterTradesBySnapshot(trades, snap) {
       if (ps.included?.length && !ps.included.includes(psKey)) return false;
       if (ps.excluded?.includes(psKey)) return false;
     }
+    // Grouped filters — mirror of filterChips. snap.groupedFilters lives in the
+    // snapshot (saved baseline) when called from preset-compare flows.
+    if (Array.isArray(snap.groupedFilters) && snap.groupedFilters.length) {
+      if (!_applyGroupedFiltersToTrade(t, snap.groupedFilters)) return false;
+    }
     return true;
   });
 }
@@ -14164,6 +15380,12 @@ function filterChips(trades, skipValue = null) {
   const CF = appState.filters.comboFilters;
   const sd = CF?.sessionDay;
   const ps = CF?.pairSession;
+  // Grouped filters — read once outside the per-trade loop. Skipped when the
+  // skipValue mechanism flags this dim, so chip count-badges that recompute per
+  // chip aren't double-affected by a group that touches the same dim.
+  const GF = (skipValue?.dim === 'groupedFilters')
+    ? null
+    : (appState.filters.groupedFilters || null);
 
   return trades.filter(t => {
     if (!scalarOk(t.outcome,   _eff('outcome')))   return false;
@@ -14194,6 +15416,8 @@ function filterChips(trades, skipValue = null) {
       if (ps.included.size && !ps.included.has(psKey)) return false;
       if (ps.excluded.has(psKey)) return false;
     }
+    // Grouped filters — applied last, AND'ed with everything above.
+    if (GF && !_applyGroupedFiltersToTrade(t, GF)) return false;
     return true;
   });
 }
@@ -14741,6 +15965,7 @@ function resetAll() {
 
   clearChipFilters();
   _clearComboFilters();
+  _clearGroupedFilters();
   resetExclusionState();
   setActivePreset(null);
   // Reset temporal filter to Global
@@ -20636,6 +21861,28 @@ function _filtersClearAll() {
   // additional/custom filters). Without this, the golden +N pills linger
   // until the next chip click even though the underlying live chips are gone.
   _syncLiveSlotFromActiveChips();
+  // Grouped filters on Clear: don't discard them. Saved groups (present in the
+  // active preset snapshot) restore their saved enabled state; unsaved groups
+  // are KEPT but hidden (enabled=false) so Clear stops them filtering without
+  // losing the user's work. Mirrors how Clear reverts chips to the snapshot
+  // while leaving preset-owned filters intact.
+  {
+    const groups = appState.filters.groupedFilters || [];
+    if (groups.length) {
+      const snapById = new Map();
+      if (typeof appState.presets.activeId === 'number') {
+        const snap = presetSnapshots[appState.presets.activeId];
+        if (snap && Array.isArray(snap.groupedFilters)) {
+          for (const sg of snap.groupedFilters) snapById.set(sg.id, sg);
+        }
+      }
+      for (const g of groups) {
+        const saved = snapById.get(g.id);
+        g.enabled = saved ? (saved.enabled !== false) : false;
+      }
+      _gfPersistAndRender();
+    }
+  }
   if (typeof openTunePanel === 'number') buildTunePanel(openTunePanel);
   if (typeof refreshLiveFilterIndicator === 'function') refreshLiveFilterIndicator();
   render();
@@ -20656,6 +21903,83 @@ function _syncFiltersClearBtn() {
   btn.classList.toggle('is-active', n > 0);
   const cnt = document.getElementById('filters-clear-count');
   if (cnt) cnt.textContent = n;
+  // Keep the per-zone active-count badges in sync on every filter change.
+  try { _updateFilterZoneBadges(); } catch {}
+}
+
+// ══════════════════════════════════════════════════════
+// FILTER HUB ZONES — collapsible Grouped / Standard / Custom sub-panels
+// ══════════════════════════════════════════════════════
+const FILTERS_ZONE_COLLAPSE_KEY = 'filtersZoneCollapsed_v1';
+const _FILTER_ZONES = ['grouped', 'standard', 'custom'];
+
+/** Per-zone collapsed state. Default: all collapsed (the user opens the Filters
+ *  panel and chooses which sub-panel to expand). Persisted so a chosen layout
+ *  survives reloads. */
+function _getFiltersZoneCollapsed() {
+  const out = { grouped: true, standard: true, custom: true };
+  try {
+    const raw = JSON.parse(localStorage.getItem(FILTERS_ZONE_COLLAPSE_KEY) || '{}');
+    for (const z of _FILTER_ZONES) {
+      if (typeof raw[z] === 'boolean') out[z] = raw[z];
+    }
+  } catch {}
+  return out;
+}
+function _saveFiltersZoneCollapsed(state) {
+  try { localStorage.setItem(FILTERS_ZONE_COLLAPSE_KEY, JSON.stringify(state)); } catch {}
+}
+
+/** Apply collapsed state to the DOM (body visibility + header aria + chevron). */
+function _applyFiltersZoneCollapseState() {
+  const state = _getFiltersZoneCollapsed();
+  for (const z of _FILTER_ZONES) {
+    const body = document.getElementById('filters-zone-body-' + z);
+    const header = document.querySelector(`.filters-zone-header[data-zone="${z}"]`);
+    const collapsed = state[z] !== false;
+    if (body) body.classList.toggle('is-collapsed', collapsed);
+    if (header) header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  }
+}
+
+function _toggleFiltersZone(zone) {
+  if (!_FILTER_ZONES.includes(zone)) return;
+  const state = _getFiltersZoneCollapsed();
+  state[zone] = !state[zone];
+  _saveFiltersZoneCollapsed(state);
+  const body = document.getElementById('filters-zone-body-' + zone);
+  const header = document.querySelector(`.filters-zone-header[data-zone="${zone}"]`);
+  if (body) body.classList.toggle('is-collapsed', state[zone]);
+  if (header) header.setAttribute('aria-expanded', state[zone] ? 'false' : 'true');
+}
+
+/** Active-filter count per zone, shown on the (possibly collapsed) headers so
+ *  the user knows where active filters live without expanding. */
+function _updateFilterZoneBadges() {
+  // Grouped: active (enabled, non-draft) groups.
+  let gN = 0;
+  for (const g of (appState.filters.groupedFilters || [])) {
+    if (g && g.enabled !== false && Array.isArray(g.conditions) && g.conditions.length) gN++;
+  }
+  // Standard: native dims with any active include/exclude.
+  let sN = 0;
+  for (const e of Object.values(appState.filters.chips || {})) {
+    if (e && (e.included?.size || e.excluded?.size)) sN++;
+  }
+  // Custom: custom-prop chips with any active include/exclude.
+  let cN = 0;
+  for (const e of Object.values(appState.filters.customChips || {})) {
+    if (e && (e.included?.size || e.excluded?.size)) cN++;
+  }
+  const set = (id, n) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = n > 0 ? String(n) : '';
+    el.classList.toggle('is-active', n > 0);
+  };
+  set('fz-count-grouped', gN);
+  set('fz-count-standard', sN);
+  set('fz-count-custom', cN);
 }
 
 // ══ v2 contextual Save button ══
@@ -20829,9 +22153,17 @@ function _isBaselinePresetId(id) {
 }
 
 function _commitLiveFiltersConfirmed(id) {
+  // Grouped filters: capture the live state into the snapshot BEFORE the
+  // chip-based snapshot rebuild below (the rebuild only walks chip state, not
+  // groups). After capture, flip the live override back to null so subsequent
+  // session loads cleanly fall through to the snapshot.
+  const liveGroups = Array.isArray(appState.filters.groupedFilters)
+    ? _sanitizeGroupedFilters(appState.filters.groupedFilters)
+    : [];
   _promoteLiveToPreset();
   // Rebuild the snapshot from the now-fully-preset state and persist.
   presetSnapshots[id] = _buildSnapshotFromActiveChips();
+  presetSnapshots[id].groupedFilters = liveGroups;
   savePresetSnapshots();
   // Phase 3: les chips live viennent d'être promus → le slot live du preset
   // actif est désormais vide. On vide aussi les comboFilters car ils restent
@@ -20841,6 +22173,10 @@ function _commitLiveFiltersConfirmed(id) {
   // et ne font pas partie de la définition canonique d'un preset.
   presetLiveFilters[_liveKey(id)] = _blankLiveSlotKeepPO(id);
   _clearComboFilters();
+  // After Update, the live override is the snapshot itself — appState already
+  // mirrors the saved groups via _commitLiveFiltersConfirmed's capture above,
+  // so leaving live's groupedFilters at null (default from _blankLiveSlot) is
+  // correct: next applyPreset falls back to the snapshot we just wrote.
   savePresetLiveFilters();
   _closeSaveDropdown();
   invalidateFilterCache();
@@ -20876,6 +22212,16 @@ function resetLiveFilters() {
   _removeAllLiveChips();
   _hydrateChipsFromSnapshot(presetSnapshots[id]);
   _clearComboFilters();
+  // Grouped filters: snap back to the preset baseline (snapshot's groups),
+  // wiping any live overrides. Live slot is rebuilt blank below — its
+  // groupedFilters stays null → next applyPreset falls back to snapshot.
+  _clearGroupedFilters();
+  {
+    const snap = presetSnapshots[id];
+    if (snap && Array.isArray(snap.groupedFilters)) {
+      appState.filters.groupedFilters = _sanitizeGroupedFilters(snap.groupedFilters);
+    }
+  }
   presetLiveFilters[_liveKey(id)] = _blankLiveSlotKeepPO(id);
   savePresetLiveFilters();
   invalidateFilterCache();
@@ -34168,7 +35514,10 @@ function switchDataHubTab(tabName) {
   // alias so any persisted state or external caller passing 'health' lands
   // on the right tab instead of being silently ignored.
   if (tabName === 'health') tabName = 'mapping';
-  if (!['mapping', 'custom', 'create-widget'].includes(tabName)) return;
+  // 'custom' tab retired 2026-06-12 (custom-prop management moved to the
+  // Filters hub drawer) — alias any stale caller to 'mapping'.
+  if (tabName === 'custom') tabName = 'mapping';
+  if (!['mapping', 'create-widget'].includes(tabName)) return;
   dataHubActiveTab = tabName;
   document.querySelectorAll('.dhp-tab').forEach(t => {
     const isActive = t.dataset.tab === tabName;
@@ -34179,10 +35528,6 @@ function switchDataHubTab(tabName) {
     p.classList.toggle('is-active', p.id === `dhp-panel-${tabName}`);
   });
   _closeAllRemapPickers();
-  if (tabName !== 'custom') {
-    _closePropertyForm();
-    if (_npPendingDeleteId !== null) { _npPendingDeleteId = null; _renderCustomPropsList(); }
-  }
   // Render the list of created widgets each time the Create Widget tab gets
   // shown, so additions/deletions made elsewhere stay in sync.
   if (tabName === 'create-widget' && typeof _renderCreateWidgetList === 'function') {
@@ -34245,16 +35590,7 @@ function updateDataHubBadge() {
     }
   }
 
-  const tabCustomBadge = document.getElementById('dhp-tab-custom-badge');
-  if (tabCustomBadge) {
-    const count = (typeof loadCustomProps === 'function') ? loadCustomProps().length : 0;
-    if (count > 0) {
-      tabCustomBadge.textContent = String(count);
-      tabCustomBadge.classList.add('is-visible');
-    } else {
-      tabCustomBadge.classList.remove('is-visible');
-    }
-  }
+  // (Custom-props tab badge retired 2026-06-12 — tab moved to Filters hub.)
 
   _syncDataHubBtnTitle();
 }
@@ -37013,14 +38349,14 @@ function _initTpmPanelListeners() {
 let _npFormState = null; // { mode: 'add'|'edit', editingId, keyTouched }
 let _npFormEscHandler = null;
 
-// Backward-compat stub: legacy callers now route to the unified Data Hub.
+// Backward-compat stub: legacy callers now route to the Filters hub's
+// "Custom properties" drawer (custom-prop management moved there 2026-06-12).
 function toggleNotionPropsPanel(forceClose = false) {
   if (forceClose) {
-    if (dataHubOpen) toggleDataHub();
+    if (typeof closeCustomPropsDrawer === 'function') closeCustomPropsDrawer();
     return;
   }
-  if (!dataHubOpen) toggleDataHub('custom');
-  else switchDataHubTab('custom');
+  if (typeof openCustomPropsDrawer === 'function') openCustomPropsDrawer();
 }
 
 /** Re-render the full list + counter + add-button disabled state. */
@@ -37864,33 +39200,32 @@ function getSidebarDisplayOrderCustoms(declaredKeys) {
   return out;
 }
 
-/** Re-append the 9 static native .filter-group nodes inside
- *  #filters-panel-dims in the user-chosen order. Moves existing nodes
- *  (no clone) so event listeners + in-flight state are preserved. */
+/** Re-append the 9 static native .filter-group nodes inside the Standard zone
+ *  body (#filters-zone-body-standard) in the user-chosen order. Moves existing
+ *  nodes (no clone) so event listeners + in-flight state are preserved. The
+ *  zones are now separate collapsible cards, so only the native chips need
+ *  reordering — grouped + custom live in their own zone bodies. */
 function _applyNativeFilterOrder() {
-  const host = document.getElementById('filters-panel-dims');
+  const host = document.getElementById('filters-zone-body-standard')
+            || document.getElementById('filters-panel-dims'); // legacy fallback
   if (!host) return;
   const order = getSidebarDisplayOrderNatives();
   const byKey = new Map();
   host.querySelectorAll(':scope > .filter-group[data-dim-key]').forEach(el => {
     byKey.set(el.dataset.dimKey, el);
   });
-  // Append in order. Nodes already present get moved to the new position.
   order.forEach(k => {
     const el = byKey.get(k);
     if (el) host.appendChild(el);
   });
-  // The #filters-custom-section wrapper lives inside #filters-panel-dims
-  // too — keep it pinned to the end so customs always render after natives.
-  const customWrap = document.getElementById('filters-custom-section');
-  if (customWrap && customWrap.parentElement === host) host.appendChild(customWrap);
 }
 
 let _filtersNativeSortable = null;
 let _filtersCustomSortable = null;
 
 function _persistFilterOrderFromDOM() {
-  const natHost = document.getElementById('filters-panel-dims');
+  const natHost = document.getElementById('filters-zone-body-standard')
+               || document.getElementById('filters-panel-dims');
   const custHost = document.getElementById('filters-custom-section');
   const natives = natHost
     ? Array.from(natHost.querySelectorAll(':scope > .filter-group[data-dim-key]'))
@@ -37914,7 +39249,8 @@ function _persistFilterOrderFromDOM() {
 function _initFilterSortables() {
   if (typeof Sortable === 'undefined') return;   // CDN blocked → graceful no-op
   if (window.innerWidth < 768) return;           // mobile sidebar is collapsed
-  const natEl = document.getElementById('filters-panel-dims');
+  const natEl = document.getElementById('filters-zone-body-standard')
+             || document.getElementById('filters-panel-dims');
   const custEl = document.getElementById('filters-custom-section');
   if (natEl && !_filtersNativeSortable) {
     _filtersNativeSortable = Sortable.create(natEl, {
@@ -38015,10 +39351,9 @@ function renderCustomFilterChips() {
 
   // 2. DOM INJECTION
   host.classList.add('has-content');
-  host.innerHTML = `
-    <div class="filters-custom-header">Custom fields</div>
-    ${props.map(_npSidebarGroupHTML).join('')}
-  `;
+  // No inner "Custom fields" header — the Custom zone card header already
+  // labels this section in the filter hub.
+  host.innerHTML = props.map(_npSidebarGroupHTML).join('');
 
   // 3. CHIPS POPULATION via buildChips (reuses native DOM & classes).
   for (const p of props) {
@@ -38784,6 +40119,9 @@ function _blankSnapshot() {
     chips: _blankSnapshotChips(),
     customChips: {},
     tpConfig: _defaultTpConfig(),
+    // Multi-dim AND'ed filter groups baked into the preset definition. See
+    // docs/grouped-filters.md. Live overrides live in the live slot.
+    groupedFilters: [],
   };
 }
 
@@ -38834,6 +40172,10 @@ function loadPresetSnapshots() {
       if (snap && _isValidTpConfigShape(snap.tpConfig)) {
         dst.tpConfig = JSON.parse(JSON.stringify(snap.tpConfig));
       }
+      // Grouped filters — sanitize/clone if present, ignore otherwise.
+      if (snap && Array.isArray(snap.groupedFilters)) {
+        dst.groupedFilters = _sanitizeGroupedFilters(snap.groupedFilters);
+      }
       presetSnapshots[id] = dst;
     }
   } catch (e) { console.warn('[snapshots] load failed:', e.message); }
@@ -38877,9 +40219,16 @@ function savePresetSnapshots() {
           hasAny = true;
         }
       }
+      // Grouped filters — emit only if non-empty (same compact pattern).
+      let gfOut = null;
+      if (Array.isArray(snap.groupedFilters) && snap.groupedFilters.length) {
+        gfOut = _sanitizeGroupedFilters(snap.groupedFilters);
+        if (gfOut.length) hasAny = true; else gfOut = null;
+      }
       if (hasAny) {
         out[id] = { chips: chipsOut, customChips: customOut };
         if (tpcOut) out[id].tpConfig = tpcOut;
+        if (gfOut) out[id].groupedFilters = gfOut;
       }
     }
     localStorage.setItem(_htfKey(PRESET_SNAPSHOTS_LS_KEY), JSON.stringify(out));
@@ -38920,6 +40269,11 @@ function _blankLiveSlot() {
   // model params (tpFinal + legs); stats are recomputed on the current filtered
   // dataset on every render. null = empty slot.
   slot.poPresetSlots = { P1: null, P2: null, P3: null };
+  // Grouped filters live override. `null` = no override → use snapshot's groups.
+  // `[]` = user deliberately removed every group. Distinction matters at hydrate.
+  // _blankSnapshot() seeded groupedFilters:[] on slot; flip it to null here so
+  // the override semantics work (snapshot's [] !== live's null).
+  slot.groupedFilters = null;
   return slot;
 }
 
@@ -38967,6 +40321,14 @@ function getPresetLiveSlot(id) {
         presetLiveFilters[k].poPresetSlots[key] = null;
       }
     }
+  }
+  // Grouped filters migration: legacy slots have neither null nor [] — they
+  // simply lack the key. Treat absent as `null` (= use snapshot baseline).
+  if (!('groupedFilters' in presetLiveFilters[k])) {
+    presetLiveFilters[k].groupedFilters = null;
+  } else if (presetLiveFilters[k].groupedFilters !== null
+             && !Array.isArray(presetLiveFilters[k].groupedFilters)) {
+    presetLiveFilters[k].groupedFilters = null;
   }
   return presetLiveFilters[k];
 }
@@ -39022,6 +40384,13 @@ function loadPresetLiveFilters() {
       // fixed default already in dst from _blankLiveSlot/_blankSnapshot.
       if (slot && _isValidTpConfigShape(slot.tpConfig)) {
         dst.tpConfig = JSON.parse(JSON.stringify(slot.tpConfig));
+      }
+      // Grouped filters override — `null` (or absent) = use snapshot baseline,
+      // `[]` = user wiped all groups, `[…]` = live override list.
+      if (slot && Array.isArray(slot.groupedFilters)) {
+        dst.groupedFilters = _sanitizeGroupedFilters(slot.groupedFilters);
+      } else {
+        dst.groupedFilters = null;
       }
       // PR-C: hydrate poPresetSlots (P1/P2/P3) from storage. Validate shape per slot.
       if (slot && slot.poPresetSlots && typeof slot.poPresetSlots === 'object') {
@@ -39110,10 +40479,20 @@ function savePresetLiveFilters() {
           hasAny = true;
         }
       }
+      // Grouped filters live override. `null` = no override (omit from blob);
+      // `[]` = user wiped groups, must persist so reload doesn't re-hydrate
+      // from snapshot. `[…]` = live group set. Both `[]` and non-empty flip
+      // hasAny so the slot survives the compact filter.
+      let gfOut = null;
+      if (Array.isArray(slot.groupedFilters)) {
+        gfOut = _sanitizeGroupedFilters(slot.groupedFilters);
+        hasAny = true;
+      }
       if (hasAny) {
         out[k] = { chips: chipsOut, customChips: customOut, comboFilters: cfOut, rrMinFilter: rrMin };
         if (tpcOut) out[k].tpConfig = tpcOut;
         if (poSlotsOut) out[k].poPresetSlots = poSlotsOut;
+        if (gfOut !== null) out[k].groupedFilters = gfOut;
       }
     }
     localStorage.setItem(_htfKey(PRESET_LIVE_FILTERS_LS_KEY), JSON.stringify(out));
@@ -40327,6 +41706,24 @@ function _getLiveFilterCountForPreset(id) {
   }
   for (const v of Object.values(slot.comboFilters || {})) {
     n += (v.included?.length || 0) + (v.excluded?.length || 0);
+  }
+  // Grouped filters: count groups in the live override that diverge from the
+  // saved snapshot (newly added, modified, or removed but not yet saved). This
+  // drives the +N pastille on the preset's Tune button. slot.groupedFilters is
+  // null when there's no override (== snapshot), so it contributes nothing then.
+  if (Array.isArray(slot.groupedFilters)) {
+    const snap = (typeof id === 'number') ? presetSnapshots[id] : null;
+    const snapGroups = (snap && Array.isArray(snap.groupedFilters)) ? snap.groupedFilters : [];
+    const snapById = new Map(snapGroups.map(g => [g.id, JSON.stringify(g)]));
+    const slotIds = new Set();
+    for (const g of slot.groupedFilters) {
+      slotIds.add(g.id);
+      const saved = snapById.get(g.id);
+      if (!saved || saved !== JSON.stringify(g)) n++; // added or modified
+    }
+    for (const sg of snapGroups) {
+      if (!slotIds.has(sg.id)) n++; // saved group removed live
+    }
   }
   return n;
 }
@@ -44734,6 +46131,23 @@ document.addEventListener('DOMContentLoaded', () => {
     _injectEditButton();
     initGridstack();
   }, 120);
+  // Grouped filters — event delegation + initial sidebar render. See
+  // docs/grouped-filters.md. Bound once, idempotent across re-renders.
+  try {
+    _gfBindEventDelegation();
+    _gfBumpIdCounterFromGroups(_gfGetGroups());
+    renderGroupedFiltersSidebar();
+  } catch (e) {
+    console.warn('[grouped-filters] init failed:', e?.message || e);
+  }
+  // Filter hub zones — apply persisted collapse state (default: all collapsed)
+  // + seed the active-count badges.
+  try {
+    _applyFiltersZoneCollapseState();
+    _updateFilterZoneBadges();
+  } catch (e) {
+    console.warn('[filter-zones] init failed:', e?.message || e);
+  }
 });
 // ════════════════════════════════════════════════════════
 //  SHARE VIEW
