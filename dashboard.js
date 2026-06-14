@@ -32937,13 +32937,52 @@ const _BAR_CONTAINER_TO_CHIP = {
   'bars-hour': 'hour',
 };
 
+// Setup Performance "detail" mode groups bars by t.setupDetail instead of t.setup.
+// Those detail values live in t.extras[<detail Notion column>]; when the user has
+// declared that column as a custom property, route the right-click Include/Exclude
+// to that custom chip (`custom:<key>`) so the Custom Filters panel reflects the
+// action — instead of the native `setup` chip, which would silently diverge from
+// the panel (the native chip still dual-filters setup+setupDetail, so the OLD
+// behaviour merely failed to mirror the state into the user's custom filter).
+// Returns the native 'setup' key in non-detail mode, or when no declared prop
+// provably backs the detail values (preserving the legacy dual-filter path).
+function _setupDetailChipKey() {
+  if (!setupDetailMode) return 'setup';
+  try {
+    const props = (typeof loadCustomProps === 'function') ? loadCustomProps() : [];
+    if (!props.length) return 'setup';
+    const items = (appState.trades && appState.trades.items) || [];
+    for (const p of props) {
+      const src = p && (p.notionSourceName || p.key);
+      if (!src) continue;
+      // Only route to this prop if it provably backs the setup-detail dimension:
+      // its per-trade value must equal t.setupDetail across a sample of trades.
+      let checked = 0, matched = 0;
+      for (const t of items) {
+        if (!t || !t.setupDetail || !t.extras) continue;
+        const v = t.extras[src];
+        if (v == null || v === '') continue;
+        checked++;
+        if (String(v) === String(t.setupDetail)) matched++;
+        if (checked >= 25) break;
+      }
+      if (checked >= 3 && matched === checked && typeof _cwResolveChipKey === 'function') {
+        return _cwResolveChipKey({ field: src }) || 'setup';
+      }
+    }
+  } catch (e) { /* fall through to native setup */ }
+  return 'setup';
+}
+
 document.addEventListener('contextmenu', e => {
   const row = e.target.closest('.bar-row');
   if (!row) return;
   const list = row.parentElement;
   if (!list || !list.id) return;
-  const chipKey = _BAR_CONTAINER_TO_CHIP[list.id];
+  let chipKey = _BAR_CONTAINER_TO_CHIP[list.id];
   if (!chipKey) return;
+  // Setup widget in detail mode → resolve to the backing custom prop chip if any.
+  if (list.id === 'bars-setup') chipKey = _setupDetailChipKey();
   const rawKey = row.dataset.barRawkey || row.dataset.barLabel;
   if (!rawKey) return;
   e.preventDefault();
@@ -32952,7 +32991,23 @@ document.addEventListener('contextmenu', e => {
 
 function _showBarContextMenu(chipKey, rawKey, displayLabel, event) {
   _closeBarContextMenu();
-  const entry = appState.filters.chips[chipKey];
+  // _resolveChipEntry routes 'custom:<key>' to appState.filters.customChips while
+  // leaving native keys on appState.filters.chips — so the Setup detail-mode menu
+  // can mutate a declared custom prop's chip transparently.
+  let entry = _resolveChipEntry(chipKey);
+  // A freshly-declared custom prop whose chip slot hasn't been materialized yet
+  // (Custom Filters panel not rendered this session): allocate the standard entry
+  // shape so the menu can mutate it — renderCustomFilterChips reuses it.
+  if (!entry && typeof chipKey === 'string' && chipKey.startsWith('custom:')) {
+    const k = chipKey.slice(7);
+    const declared = (typeof loadCustomProps === 'function' ? loadCustomProps() : []).some(p => p && p.key === k);
+    if (declared) {
+      entry = appState.filters.customChips[k] = {
+        mode: 'neutral', included: new Set(), excluded: new Set(),
+        includedFromPreset: new Set(), excludedFromPreset: new Set(), matchMode: 'any',
+      };
+    }
+  }
   if (!entry) return;
 
   const isIncluded = entry.included.has(rawKey);
@@ -33010,6 +33065,10 @@ function _showBarContextMenu(chipKey, rawKey, displayLabel, event) {
       }
     }
     _syncChipModeButtons(chipKey);
+    // Mirror the mutation onto the sidebar/custom chip pills immediately so a
+    // detail-mode exclude shows up as excluded in the Custom Filters panel (and
+    // native chips reflect normal-mode excludes too). Handles 'custom:<key>'.
+    if (typeof _refreshAllChipDisplays === 'function') _refreshAllChipDisplays();
     // Phase 3 : bar context menu mute un chip live → sync slot preset actif.
     _syncLiveSlotFromActiveChips();
     if (typeof refreshLiveFilterIndicator === 'function') refreshLiveFilterIndicator();
