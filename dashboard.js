@@ -35783,6 +35783,54 @@ function _renderOutcomeValueReportHTML(rawCache, source = null) {
           </div>`;
 }
 
+// Notion source-column resolution for the Data Setup mapping panel.
+// For each mapping-panel dim: an explicit override IS the column the member
+// linked (exact). When there's no override, the dim auto-resolved against one
+// of these candidate raw keys inside _normalizeAPITrade / _applyMappedFieldAliases
+// — we replay the same first-present-key lookup (via _resolveNotionAlias) so the
+// panel can surface which Notion property actually feeds each dimension. Readable
+// (spaced) names are listed first so the displayed name is the human one. Kept in
+// sync with the fallback chains in _normalizeAPITrade and the bridge alias lists
+// in _applyCommonNotionAliases / _applyH4NotionAliases.
+const _DIM_SOURCE_CANDIDATES = {
+  outcome:     ['Position Result', 'Résultat TP 1', 'positionResult', 'resultatTp1', 'resultatTP1'],
+  r:           ['RR TP 1', 'rrTp1'],
+  date:        ['Date', 'Date Start', 'date', 'dateStart'],
+  pair:        ['Pair ', 'Pair', 'Paire', 'pair', 'paire'],
+  setup:       ['M15 Confirmation / Continuation', 'M15 Confirmation / Continu', 'H4 Confirmation / Continuation', 'Confirmation / Continunation', 'M15 Type', 'confirmation', 'm15Type'],
+  setupDetail: ['M15 Type Detailed', 'H4 Type Detailed', 'M15 Type Détail', 'H4 Type Détail', 'm15TypeDetail', 'h4TypeDetail', 'm15TypeDetails', 'h4TypeDetails'],
+  session:     ['Session', 'Session Formula', 'session', 'sessionFormule'],
+  day:         ['Day', 'Day Formula', 'Jour', 'day', 'jour', 'dayFormula'],
+  obstacles:   ['M15 Obstacles', 'obstaclesM15'],
+  h4:          ['H4 Obstacles', 'H4 Structure', 'obstaclesH4', 'h4Structure', 'structure'],
+  beManagement:['BE Management', 'beManagement'],
+  positionType:['Position Type', 'Position type', 'positionType', 'tradeType'],
+  direction:   ['Order', 'order'],
+  rrMax:       ['RR Max', 'RR Max ', 'RR max atteint', 'rrMax', 'rrMaxAtteint'],
+  badFeeling:  ['Bad feeling', 'badFeeling'],
+  notionUrl:   ['Notion URL', 'Notion Url', 'notion url', 'notionUrl'],
+  hour:        ['Time', 'Hour', 'Time (UTC+1)', 'Hour +1', 'timeUtc1', 'timeUtcPlus1'],
+  tp1_rr:      ['RR TP 1', 'rrTp1'],
+  tp2_rr:      ['RR TP -27', 'rrTpMinus27', 'rrTp2'],
+  tp3_rr:      ['RR Trailing', 'rrTrailing', 'rrTpH4_0', 'rrTp3'],
+};
+
+// Returns the Notion property name feeding `dimKey`, or null. Override wins
+// (that is exactly the property the member linked); otherwise the first
+// candidate raw key actually present + populated in the raw API cache.
+function _resolveDimSourceColumn(dimKey, source, rawCache) {
+  const ov = (typeof _getEffectiveApiOverride === 'function') ? _getEffectiveApiOverride(dimKey, source) : '';
+  if (_isNoMappingValue(ov)) return null;
+  if (ov) return ov;
+  const cands = _DIM_SOURCE_CANDIDATES[dimKey];
+  if (!cands || !Array.isArray(rawCache) || !rawCache.length) return null;
+  for (let i = 0; i < rawCache.length && i < 40; i++) {
+    const key = _resolveNotionAlias(rawCache[i], cands);
+    if (key) return key;
+  }
+  return null;
+}
+
 // Renders one Mapping row (a `<tr>` in the table) for a given dim. `st` is
 // the status descriptor built by the caller (CSV branch / API+Demo branch).
 // When `st.reportHtml` is set, an extra full-width `<tr>` follows the main one
@@ -36204,8 +36252,14 @@ function updateJournalPanel() {
       shown = sample || '—';
       coverage = items.length ? (ok ? `${populated}/${items.length} trades` : 'no values detected') : 'no trades yet';
     }
-    const overrideNote = (override && !_isNoMappingValue(override))
-      ? ` <span class="ljp-mapping-default">(field: <span class="ljp-field-name">${_escapeHtml(override)}</span>)</span>`
+    // Surface which Notion property feeds this dim. An explicit override is the
+    // column the member linked (exact); otherwise resolve the auto-detected
+    // source column from the raw cache so every mapped row shows its origin.
+    const sourceCol = _isNoMappingValue(override)
+      ? null
+      : (override || (isAPI ? _resolveDimSourceColumn(dim.key, null, rawCache) : ''));
+    const overrideNote = sourceCol
+      ? ` <span class="ljp-mapping-default">(field: <span class="ljp-field-name">${_escapeHtml(sourceCol)}</span>)</span>`
       : '';
     // Coverage ("100/100 trades") lives in its own grid column so the
     // counts align vertically across rows — easier to scan completeness.
