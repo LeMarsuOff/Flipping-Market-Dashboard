@@ -242,6 +242,25 @@ html, body {
   text-transform: uppercase;
   color: var(--dim);
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+/* Big camera that signals what to click. Centered above the cta text,
+   matching the rest of the watermark stack. Subtle pulse echoes the
+   arrow so it reads as an affordance rather than decoration. */
+.wm-cta-camera {
+  font-size: 64px;
+  line-height: 1;
+  opacity: .9;
+  animation: pulse-camera 2.4s ease-in-out infinite;
+}
+@keyframes pulse-camera {
+  0%, 100% { transform: scale(1);    opacity: .85; }
+  50%      { transform: scale(1.06); opacity: 1; }
+}
+.wm-cta-text {
+  display: inline-flex;
   align-items: center;
   gap: 12px;
 }
@@ -344,48 +363,63 @@ html, body {
   letter-spacing: .04em;
 }
 
-/* Floating directional nav buttons. ↑/↓ swap trades, ←/→ swap screenshot
-   slots (h4 / m15 / m15a). Positioned at the overlay edges so they don't
-   sit on the chart in landscape; semi-transparent so they survive the
-   wide aspect ratios common to TradingView captures. Hidden when only
+/* Discreet directional cues sitting at the apex of each half-ellipse
+   click zone (see share.js _showLightbox). Pure visual hints — no
+   background, just the glyph with a dark text-shadow so it stays
+   legible on both bright and dark chart areas. The real hit area is
+   the half-ellipse on the image; these arrows pulse to full opacity
+   on hover so the desktop cursor feels intentional. Hidden when only
    one trade / one step is available. */
 .img-lightbox-arrow {
   position: absolute;
   z-index: 3;
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,.55);
-  border: 1px solid rgba(255,255,255,.22);
-  border-radius: 50%;
-  color: #fff;
-  font-size: 22px;
-  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   padding: 0;
+  color: rgba(255,255,255,.55);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
-  transition: background .15s, transform .15s;
+  text-shadow: 0 1px 4px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.65);
+  transition: color .15s, transform .15s;
   -webkit-tap-highlight-color: transparent;
 }
-.img-lightbox-arrow:hover  { background: rgba(0,0,0,.85); }
-.img-lightbox-arrow:active { transform: scale(.92) translateX(var(--tx, 0)) translateY(var(--ty, 0)); }
+.img-lightbox-arrow:hover  { color: #fff; }
+.img-lightbox-arrow:active { color: #fff; transform: scale(.92) translate(var(--tx, 0), var(--ty, 0)); }
 .img-lightbox-arrow[hidden] { display: none; }
 
-.img-lightbox-arrow-up    { top:    60px;                                  left:  50%; --tx: -50%; transform: translateX(-50%); }
-.img-lightbox-arrow-down  { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; --tx: -50%; transform: translateX(-50%); }
-.img-lightbox-arrow-left  { left:   12px;                                  top:   50%; --ty: -50%; transform: translateY(-50%); }
-.img-lightbox-arrow-right { right:  12px;                                  top:   50%; --ty: -50%; transform: translateY(-50%); }
-.img-lightbox-img {
+.img-lightbox-arrow-up    { top:    6px; left:  50%; --tx: -50%; transform: translateX(-50%); }
+.img-lightbox-arrow-down  { bottom: 6px; left:  50%; --tx: -50%; transform: translateX(-50%); }
+.img-lightbox-arrow-left  { left:   6px; top:   50%; --ty: -50%; transform: translateY(-50%); }
+.img-lightbox-arrow-right { right:  6px; top:   50%; --ty: -50%; transform: translateY(-50%); }
+/* Stage wraps the image so the 4 nav arrows can sit on the screenshot
+   at its actual edges (positioned absolute relative to the stage, which
+   sizes itself to the image via inline-block). The margin-top clears
+   the absolutely-positioned selector bar at the top of the overlay. */
+.img-lightbox-stage {
+  position: relative;
+  display: inline-block;
+  margin-top: 44px;
+  line-height: 0;
   max-width: 96%;
+}
+
+.img-lightbox-img {
+  max-width: 96vw;
   max-height: calc(92vh - 44px);
   border-radius: 4px;
   box-shadow: 0 8px 40px rgba(0,0,0,.7);
-  /* Whole image is a 4-zone nav (triangles via diagonals). Pointer cursor
-     signals it's clickable. Behaviour is wired in share.js _showLightbox. */
+  /* The image is a 4-edge hit zone (outer 25% per side, centre is a
+     dead zone). Behaviour wired in share.js _showLightbox. */
   cursor: pointer;
-  margin-top: 44px;
   display: block;
 }
 
@@ -488,7 +522,17 @@ html, body {
   padding: 0 14px 20px;
   scrollbar-width: thin;
   scrollbar-color: var(--line2) transparent;
+  /* On mobile the body scrolls inside the window, not inside the drawer
+     (see the .wd-drawer-body max-height override). The smooth-scroll
+     applies to whichever ancestor actually scrolls. */
+  scroll-behavior: smooth;
 }
+/* While the lightbox is open, add a viewport-worth of empty space below
+   the last card so any trade can be snapped to the top of its scroll
+   container — including the very last one. The class is toggled by
+   share.js _showLightbox / _removeLightbox. */
+body.share-lightbox-open .wd-drawer-body { padding-bottom: 100vh; }
+body.share-lightbox-open { scroll-behavior: smooth; }
 .wd-drawer-body::-webkit-scrollbar { width: 6px; }
 .wd-drawer-body::-webkit-scrollbar-thumb {
   background: var(--line2);
@@ -644,7 +688,14 @@ html, body {
 
 /* ── Mobile fallback ──────────────────────────────────────────── */
 @media (max-width: 880px) {
-  html, body { overflow: auto; }
+  /* Make the document genuinely scrollable. The base rules pin
+     html/body to `height: 100%` + `overflow: hidden` so the desktop
+     drawer scrolls internally; on mobile we drop that pin so the
+     whole page becomes the scroll container — otherwise
+     scrollIntoView can't move the active trade card under the
+     fixed lightbox. */
+  html { overflow: auto; height: auto; }
+  body { overflow: visible; height: auto; min-height: 100%; }
   #share-root[data-state="loaded"] {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;

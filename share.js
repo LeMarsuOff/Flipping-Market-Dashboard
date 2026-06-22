@@ -305,8 +305,9 @@ function renderShare(d) {
           </div>
         </div>
         <div class="wm-cta">
+          <span class="wm-cta-camera" aria-hidden="true">📷</span>
           <span class="wm-cta-arrow"></span>
-          Click a camera icon to view its screenshot
+          <span class="wm-cta-text">Click a camera icon to view its screenshot</span>
         </div>
       </div>
       <div class="wm-footer">
@@ -367,13 +368,14 @@ function _navOpen(tradeIdx, slot) {
     target.classList.add('is-active');
     const activeBtn = target.querySelector(`.wd-media-btn[data-screen-slot="${slot}"]`);
     if (activeBtn) activeBtn.classList.add('is-active');
-    const body = target.closest('.wd-drawer-body');
-    if (body) {
-      const cRect = body.getBoundingClientRect();
-      const eRect = target.getBoundingClientRect();
-      if (eRect.bottom <= cRect.top)       body.scrollTop += (eRect.top - cRect.top);
-      else if (eRect.top >= cRect.bottom)  body.scrollTop += (eRect.bottom - cRect.bottom);
-    }
+    // Always snap the active card to the TOP of its scroll container
+    // (drawer-body on desktop, the document on mobile). The drawer-body
+    // gets `padding-bottom: 100vh` while the lightbox is open (see
+    // share.css .share-lightbox-open …) so even the last card can sit
+    // at the top. `behavior: 'auto'` (instant) — smooth scroll was
+    // unreliable mid-rapid navigation and the user barely sees the
+    // scroll behind the dim overlay anyway.
+    target.scrollIntoView({ block: 'start', behavior: 'auto' });
   }
 }
 
@@ -432,6 +434,9 @@ function handleClick(e) {
    Created on first open, removed on close. Click backdrop to close.
    Selector bar at top with ‹ pair · date · STEP · n/total ›. */
 function _showLightbox(t, slot, slotData) {
+  // Toggled so .wd-drawer-body gets a 100vh padding-bottom — without
+  // it the last few cards can't be scroll-snapped to the top.
+  document.body.classList.add('share-lightbox-open');
   let overlay = document.getElementById('img-lightbox-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -445,29 +450,53 @@ function _showLightbox(t, slot, slotData) {
     sel.addEventListener('click', e => e.stopPropagation());
     overlay.appendChild(sel);
 
+    // Stage wraps the image so the nav arrows can be positioned at the
+    // image's actual edges (not the overlay's). The whole image is a
+    // 4-edge hit target: a click in the outer 25% of any side fires the
+    // corresponding nav, the centre 50%×50% is a dead zone so an
+    // accidental mid-chart tap doesn't switch anything.
+    const stage = document.createElement('div');
+    stage.id = 'img-lightbox-stage';
+    stage.className = 'img-lightbox-stage';
+    stage.addEventListener('click', e => e.stopPropagation());
+    overlay.appendChild(stage);
+
     const img = document.createElement('img');
     img.id = 'img-lightbox-img';
     img.className = 'img-lightbox-img';
-    // The whole screenshot is a 4-zone nav: triangles cut by the two
-    // diagonals → top = prev trade, bottom = next trade, left/right =
-    // prev/next screenshot. The visible arrow buttons stay as cues but
-    // the hit area is the entire image, so taps don't need to be precise.
     img.addEventListener('click', (e) => {
       e.stopPropagation();
       const rect = img.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
-      const nx = (e.clientX - rect.left) / rect.width  - 0.5;
-      const ny = (e.clientY - rect.top)  / rect.height - 0.5;
-      if (Math.abs(nx) > Math.abs(ny)) _navStepDelta(nx > 0 ? 1 : -1);
-      else                              _navTradeDelta(ny > 0 ? 1 : -1);
+      const nx = (e.clientX - rect.left) / rect.width;
+      const ny = (e.clientY - rect.top)  / rect.height;
+      // Each direction is a half-ellipse anchored to its edge: the apex
+      // (centre of the edge) reaches 25% into the image, the curve
+      // tapers down to 0 at the two corners that meet the adjacent
+      // edges. Centre of the image + the four corner pockets are dead
+      // zones, so an accidental mid-chart tap doesn't switch anything.
+      const RADIUS = 0.25;
+      const candidates = [];
+      const inLeft   = (nx / RADIUS) ** 2          + ((ny - 0.5) / 0.5) ** 2 <= 1;
+      const inRight  = ((nx - 1) / RADIUS) ** 2    + ((ny - 0.5) / 0.5) ** 2 <= 1;
+      const inTop    = ((nx - 0.5) / 0.5) ** 2     + (ny / RADIUS) ** 2      <= 1;
+      const inBottom = ((nx - 0.5) / 0.5) ** 2     + ((ny - 1) / RADIUS) ** 2 <= 1;
+      if (inLeft)   candidates.push({ d: nx,     kind: 'step',  delta: -1 });
+      if (inRight)  candidates.push({ d: 1 - nx, kind: 'step',  delta:  1 });
+      if (inTop)    candidates.push({ d: ny,     kind: 'trade', delta: -1 });
+      if (inBottom) candidates.push({ d: 1 - ny, kind: 'trade', delta:  1 });
+      if (!candidates.length) return;
+      candidates.sort((a, b) => a.d - b.d);
+      const win = candidates[0];
+      if (win.kind === 'trade') _navTradeDelta(win.delta);
+      else                       _navStepDelta(win.delta);
     });
-    overlay.appendChild(img);
+    stage.appendChild(img);
 
-    // Four directional nav buttons. Up/Down mirror ArrowUp/ArrowDown
+    // Four directional nav buttons — appended INSIDE the stage so they
+    // sit on the image at each edge. Up/Down mirror ArrowUp/ArrowDown
     // (previous/next trade); Left/Right mirror ArrowLeft/ArrowRight
-    // (previous/next screenshot step). Visibility is updated per open
-    // based on whether the current trade has multiple steps and
-    // whether the snapshot has multiple trades.
+    // (previous/next screenshot step). Visibility is updated per open.
     const dirs = [
       { dir: 'up',    kind: 'trade', delta: -1, glyph: '↑', label: 'Previous trade' },
       { dir: 'down',  kind: 'trade', delta:  1, glyph: '↓', label: 'Next trade' },
@@ -490,7 +519,7 @@ function _showLightbox(t, slot, slotData) {
         if (k === 'trade') _navTradeDelta(dl);
         else                _navStepDelta(dl);
       });
-      overlay.appendChild(btn);
+      stage.appendChild(btn);
     }
 
     document.body.appendChild(overlay);
@@ -551,6 +580,7 @@ function _showLightbox(t, slot, slotData) {
 function _removeLightbox() {
   const ov = document.getElementById('img-lightbox-overlay');
   if (ov) ov.remove();
+  document.body.classList.remove('share-lightbox-open');
 }
 
 function _renderLightboxFallback(origUrl) {
