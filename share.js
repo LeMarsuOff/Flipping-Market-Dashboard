@@ -448,8 +448,50 @@ function _showLightbox(t, slot, slotData) {
     const img = document.createElement('img');
     img.id = 'img-lightbox-img';
     img.className = 'img-lightbox-img';
-    img.addEventListener('click', e => e.stopPropagation());
+    // The whole screenshot is a 4-zone nav: triangles cut by the two
+    // diagonals → top = prev trade, bottom = next trade, left/right =
+    // prev/next screenshot. The visible arrow buttons stay as cues but
+    // the hit area is the entire image, so taps don't need to be precise.
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rect = img.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const nx = (e.clientX - rect.left) / rect.width  - 0.5;
+      const ny = (e.clientY - rect.top)  / rect.height - 0.5;
+      if (Math.abs(nx) > Math.abs(ny)) _navStepDelta(nx > 0 ? 1 : -1);
+      else                              _navTradeDelta(ny > 0 ? 1 : -1);
+    });
     overlay.appendChild(img);
+
+    // Four directional nav buttons. Up/Down mirror ArrowUp/ArrowDown
+    // (previous/next trade); Left/Right mirror ArrowLeft/ArrowRight
+    // (previous/next screenshot step). Visibility is updated per open
+    // based on whether the current trade has multiple steps and
+    // whether the snapshot has multiple trades.
+    const dirs = [
+      { dir: 'up',    kind: 'trade', delta: -1, glyph: '↑', label: 'Previous trade' },
+      { dir: 'down',  kind: 'trade', delta:  1, glyph: '↓', label: 'Next trade' },
+      { dir: 'left',  kind: 'step',  delta: -1, glyph: '←', label: 'Previous screenshot' },
+      { dir: 'right', kind: 'step',  delta:  1, glyph: '→', label: 'Next screenshot' },
+    ];
+    for (const d of dirs) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `img-lightbox-arrow img-lightbox-arrow-${d.dir}`;
+      btn.dataset.navKind  = d.kind;
+      btn.dataset.navDelta = String(d.delta);
+      btn.setAttribute('aria-label', d.label);
+      btn.title = d.label;
+      btn.textContent = d.glyph;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const k = btn.dataset.navKind;
+        const dl = parseInt(btn.dataset.navDelta, 10) || 0;
+        if (k === 'trade') _navTradeDelta(dl);
+        else                _navStepDelta(dl);
+      });
+      overlay.appendChild(btn);
+    }
 
     document.body.appendChild(overlay);
   }
@@ -464,28 +506,32 @@ function _showLightbox(t, slot, slotData) {
     img.removeAttribute('src');
   }
 
-  // Selector bar — same structure as dashboard's _lbShow.
+  // Selector bar — info only (pair · date · STEP · n/total). Trade nav
+  // lives in the floating ↑/↓ buttons; step nav in the floating ←/→ buttons.
   const sel = document.getElementById('img-lightbox-sel');
   const stepLabel = ({ h4: 'H4 Before', m15: 'M15 Before', m15a: 'M15 After' })[slot] || slot;
   const label = [t.pair, t.date].filter(Boolean).join('  ·  ');
   const total = _navState.trades.length;
   const tradeNum = _navState.tradeIdx + 1;
-  const hasMulti = total > 1;
+  const hasMultiTrade = total > 1;
+  const availableSteps = _SLOT_ORDER.filter(s => _slotHasContent(t, s));
+  const hasMultiStep = availableSteps.length > 1;
   if (sel) {
     sel.innerHTML = `
-      ${hasMulti ? `<button class="img-lightbox-nav-btn" data-lb-nav="-1" type="button">‹</button>` : ''}
       <span class="img-lightbox-label">${escapeHtml(label)}</span>
       <span class="img-lightbox-step">${escapeHtml(stepLabel)}</span>
-      ${hasMulti ? `<span class="img-lightbox-count">${tradeNum} / ${total}</span>` : ''}
-      ${hasMulti ? `<button class="img-lightbox-nav-btn" data-lb-nav="1" type="button">›</button>` : ''}`;
-    // Wire ‹ / › buttons to navigate trades, same as ArrowUp/Down.
-    sel.querySelectorAll('[data-lb-nav]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _navTradeDelta(parseInt(btn.dataset.lbNav, 10) || 0);
-      });
-    });
+      ${hasMultiTrade ? `<span class="img-lightbox-count">${tradeNum} / ${total}</span>` : ''}`;
   }
+
+  // Toggle nav-button visibility per current trade.
+  const upBtn    = overlay.querySelector('.img-lightbox-arrow-up');
+  const downBtn  = overlay.querySelector('.img-lightbox-arrow-down');
+  const leftBtn  = overlay.querySelector('.img-lightbox-arrow-left');
+  const rightBtn = overlay.querySelector('.img-lightbox-arrow-right');
+  if (upBtn)    upBtn.hidden    = !hasMultiTrade;
+  if (downBtn)  downBtn.hidden  = !hasMultiTrade;
+  if (leftBtn)  leftBtn.hidden  = !hasMultiStep;
+  if (rightBtn) rightBtn.hidden = !hasMultiStep;
 
   // Image: bind onerror BEFORE src so a 404 swaps to the placeholder
   // immediately (and the placeholder is removed on next navigation).

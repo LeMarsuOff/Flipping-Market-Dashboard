@@ -336,16 +336,55 @@ html, body {
   text-transform: uppercase;
 }
 .img-lightbox-count {
-  opacity: .45;
-  margin-left: 8px;
+  opacity: .85;
+  margin-left: 12px;
   font-family: 'DM Mono', monospace;
+  font-size: var(--typo-table-body-size);
+  color: #fff;
+  letter-spacing: .04em;
 }
+
+/* Floating directional nav buttons. ↑/↓ swap trades, ←/→ swap screenshot
+   slots (h4 / m15 / m15a). Positioned at the overlay edges so they don't
+   sit on the chart in landscape; semi-transparent so they survive the
+   wide aspect ratios common to TradingView captures. Hidden when only
+   one trade / one step is available. */
+.img-lightbox-arrow {
+  position: absolute;
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: background .15s, transform .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.img-lightbox-arrow:hover  { background: rgba(0,0,0,.85); }
+.img-lightbox-arrow:active { transform: scale(.92) translateX(var(--tx, 0)) translateY(var(--ty, 0)); }
+.img-lightbox-arrow[hidden] { display: none; }
+
+.img-lightbox-arrow-up    { top:    60px;                                  left:  50%; --tx: -50%; transform: translateX(-50%); }
+.img-lightbox-arrow-down  { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; --tx: -50%; transform: translateX(-50%); }
+.img-lightbox-arrow-left  { left:   12px;                                  top:   50%; --ty: -50%; transform: translateY(-50%); }
+.img-lightbox-arrow-right { right:  12px;                                  top:   50%; --ty: -50%; transform: translateY(-50%); }
 .img-lightbox-img {
   max-width: 96%;
   max-height: calc(92vh - 44px);
   border-radius: 4px;
   box-shadow: 0 8px 40px rgba(0,0,0,.7);
-  cursor: default;
+  /* Whole image is a 4-zone nav (triangles via diagonals). Pointer cursor
+     signals it's clickable. Behaviour is wired in share.js _showLightbox. */
+  cursor: pointer;
   margin-top: 44px;
   display: block;
 }
