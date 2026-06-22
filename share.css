@@ -628,4 +628,23 @@ html, body {
     flex-direction: column;
     gap: 6px;
   }
+
+  /* Drawer is now stacked below the watermark — lightbox must take the
+     full viewport instead of reserving the desktop drawer's 340px on the
+     right (otherwise the image renders inside a thin strip and is unusable). */
+  .img-lightbox-overlay { inset: 0; }
+  .img-lightbox-img { max-width: 96vw; max-height: calc(100vh - 44px); }
+}
+
+/* ── Lightbox-only mid-size fallback ───────────────────────────────
+   Above 880px the grid keeps the desktop layout (watermark + drawer
+   side-by-side), but on tablets and narrow laptops the lightbox would
+   still reserve 340px for the drawer, leaving the screenshot capped at
+   ~500-700px wide. Take the full viewport for the lightbox itself in
+   this range so the chart is actually readable; the drawer reappears
+   on truly wide screens (> 1200px) where the trade list is useful as
+   side-context. */
+@media (min-width: 881px) and (max-width: 1200px) {
+  .img-lightbox-overlay { inset: 0; }
+  .img-lightbox-img { max-width: 96vw; max-height: calc(100vh - 44px); }
 }
