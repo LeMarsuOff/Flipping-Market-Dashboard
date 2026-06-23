@@ -417,7 +417,12 @@ html, body {
 }
 
 .img-lightbox-img {
-  max-width: 96vw;
+  /* Width is governed by the stage's max-width (96% of the overlay).
+     Using 100% here keeps the image inside the stage on desktop — a
+     previous `max-width: 96vw` was viewport-relative and overflowed
+     the stage by ~300px on PCs with the drawer visible, bleeding the
+     screenshot onto the trade-card list. */
+  max-width: 100%;
   max-height: calc(92vh - 44px);
   border-radius: 4px;
   box-shadow: 0 8px 40px rgba(0,0,0,.7);
@@ -727,18 +732,14 @@ body.share-lightbox-open { scroll-behavior: smooth; }
      full viewport instead of reserving the desktop drawer's 340px on the
      right (otherwise the image renders inside a thin strip and is unusable). */
   .img-lightbox-overlay { inset: 0; }
-  .img-lightbox-img { max-width: 96vw; max-height: calc(100vh - 44px); }
+  .img-lightbox-img { max-height: calc(100vh - 44px); }
 }
 
-/* ── Lightbox-only mid-size fallback ───────────────────────────────
-   Above 880px the grid keeps the desktop layout (watermark + drawer
-   side-by-side), but on tablets and narrow laptops the lightbox would
-   still reserve 340px for the drawer, leaving the screenshot capped at
-   ~500-700px wide. Take the full viewport for the lightbox itself in
-   this range so the chart is actually readable; the drawer reappears
-   on truly wide screens (> 1200px) where the trade list is useful as
-   side-context. */
-@media (min-width: 881px) and (max-width: 1200px) {
-  .img-lightbox-overlay { inset: 0; }
-  .img-lightbox-img { max-width: 96vw; max-height: calc(100vh - 44px); }
-}
+/* Lightbox follows the grid layout: ≤ 880px is mobile (single column,
+   drawer stacked below) → fullscreen lightbox (see the mobile block
+   above). > 880px is desktop (watermark + 340px drawer side-by-side)
+   → lightbox respects the drawer space via the base `inset: 0 340px 0 0`,
+   so the screenshot never bleeds into the trade-card list. A previous
+   881-1200 override let the lightbox go fullscreen on tablets, but
+   members on PC with narrow Chrome windows fell into that range and
+   the screenshot started covering their trade cards — reverted. */
