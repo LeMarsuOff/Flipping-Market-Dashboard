@@ -328,6 +328,10 @@ const _SYNC_KEY_PREFIXES = [
   'flipping_preset_overrides_',
   'gs_active_preset_',
   'flipping_active_filter_preset_id_',
+  // Partial Optimizer "Saved Partials" slots — moved out of presetLiveFilters_v1
+  // on 2026-06-23 (was per-preset, now per-profile + per-HTF, decoupled from the
+  // filter-preset blob). See _poSavedPartials in the PO section.
+  'po_saved_partials_v1_',
 ];
 // Bumped v2 → v3 when the preset prefixes were added — the reconcile pass
 // in migrateProfileScopedKeys re-runs on every device and pushes pre-existing
@@ -354,7 +358,8 @@ function _isProfileScopedSyncKey(key) {
 // Keys HTF-dupliquées (existent en base + base_h4)
 const _HTF_KEYS = new Set([
   'flipping_presets','flipping_preset_snapshots_v2','presetLiveFilters_v1',
-  'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets'
+  'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets',
+  'po_saved_partials_v1'
 ]);
 
 const JOURNAL_PROFILE_PENDING_DELETE_LS_KEY = 'journalProfilePendingDeletes_v1';
@@ -1706,6 +1711,8 @@ const _swRealtime = (() => {
         k === 'flipping_preset_overrides'         || k.startsWith('flipping_preset_overrides_') ||
         k === 'gs_active_preset'                  || k.startsWith('gs_active_preset_') ||
         k === 'flipping_active_filter_preset_id'  || k.startsWith('flipping_active_filter_preset_id_');
+      const isPoSavedPartialsKey =
+        k === 'po_saved_partials_v1'              || k.startsWith('po_saved_partials_v1_');
       const isThemeKey =
         k === 'flipping_dashboard_theme'   || k === 'flipping_active_theme_meta' ||
         k === 'flipping_user_themes'       || k === 'flipping_builtin_overrides' ||
@@ -1735,6 +1742,12 @@ const _swRealtime = (() => {
       } else if (isThemeKey) {
         try { if (typeof loadSavedTheme === 'function') loadSavedTheme(); } catch (e) {}
         document.dispatchEvent(new CustomEvent('themeTypoChanged'));
+      } else if (isPoSavedPartialsKey) {
+        // Saved Partials updated on another device — re-hydrate the global state
+        // and re-render the PO panel if it's open. No need to call applyPreset:
+        // the partial slots are independent of the filter pipeline now.
+        try { if (typeof loadPoSavedPartials === 'function') loadPoSavedPartials(); } catch (e) {}
+        try { if (typeof _poRenderPresetsBlock === 'function') _poRenderPresetsBlock(); } catch (e) {}
       }
     } catch (e) {
       console.warn('[Realtime] user_data re-render hotfix threw:', e?.message || e);
@@ -10632,6 +10645,10 @@ function _reloadProfileScopedState() {
   Object.keys(presetLiveFilters).forEach(k => delete presetLiveFilters[k]);
   loadPresetLiveFilters();
   _ensureLiveSlotsInitialized();
+  // Saved Partials (P1/P2/P3) — global per profile×HTF, decoupled from the
+  // filter blob since 2026-06-23. Load + run one-shot migration if needed.
+  try { loadPoSavedPartials(); } catch (e) {}
+  try { _migratePoSlotsFromPresetLiveFilters(); } catch (e) {}
 
   // ── 2. Load this slot's layout ──
   const savedLayout = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'active'));
@@ -15958,9 +15975,11 @@ function resetAll() {
   // Phase 3 : resetAll vide les slots live du preset actif ET du pseudo-preset
   // null (où l'on va atterrir). Les slots des autres presets restent intacts —
   // resetAll est un reset du contexte courant, pas du monde entier.
+  // Note 2026-06-23: Saved Partials are no longer stored inside the live slot
+  // (moved to po_saved_partials_v1), so a plain _blankLiveSlot is now safe.
   const prevActiveId = appState.presets.activeId;
-  presetLiveFilters[_liveKey(prevActiveId)] = _blankLiveSlotKeepPO(prevActiveId);
-  if (prevActiveId !== null) presetLiveFilters['null'] = _blankLiveSlotKeepPO(null);
+  presetLiveFilters[_liveKey(prevActiveId)] = _blankLiveSlot();
+  if (prevActiveId !== null) presetLiveFilters['null'] = _blankLiveSlot();
   savePresetLiveFilters();
 
   clearChipFilters();
@@ -22171,7 +22190,9 @@ function _commitLiveFiltersConfirmed(id) {
   // bas). Ce choix fait que cliquer Update ne "fige" pas un filtre heatmap
   // dans le preset, ce qui est intentionnel : ces filtres sont exploratoires
   // et ne font pas partie de la définition canonique d'un preset.
-  presetLiveFilters[_liveKey(id)] = _blankLiveSlotKeepPO(id);
+  // Note 2026-06-23: Saved Partials moved out of the live slot — _blankLiveSlot
+  // no longer wipes them.
+  presetLiveFilters[_liveKey(id)] = _blankLiveSlot();
   _clearComboFilters();
   // After Update, the live override is the snapshot itself — appState already
   // mirrors the saved groups via _commitLiveFiltersConfirmed's capture above,
@@ -22222,7 +22243,7 @@ function resetLiveFilters() {
       appState.filters.groupedFilters = _sanitizeGroupedFilters(snap.groupedFilters);
     }
   }
-  presetLiveFilters[_liveKey(id)] = _blankLiveSlotKeepPO(id);
+  presetLiveFilters[_liveKey(id)] = _blankLiveSlot();
   savePresetLiveFilters();
   invalidateFilterCache();
   Object.keys(appState.filters.chips).forEach(key => _syncChipModeButtons(key));
@@ -28855,42 +28876,88 @@ function _poTpfColor(tpf) {
   return palette[idx] || (tc('--dim') || '#6B8AB0');
 }
 
-// ── PR-C: Partial Optimizer preset slots (P1/P2/P3) ───────────────────
-// Slots are scoped per dashboard preset (live in presetLiveFilters[id].poPresetSlots)
-// and store only the model parameters. Stats are recomputed on every render against
-// the currently filtered dataset — slots reflect the SAME params under DIFFERENT
-// data conditions, by design.
+// ── Saved Partials (P1/P2/P3) — global per-profile, per-HTF ─────────────
+// 2026-06-23 refacto: was per-dashboard-preset (lived inside presetLiveFilters
+// blob's poPresetSlots field). Two consequences of that design surfaced as bugs:
+//   1. Scope mismatch — slots saved under preset A were invisible under preset B,
+//      reading as "they disappeared" when the user switched contexts.
+//   2. Sync race — the slots rode the presetLiveFilters_v1 row, which the cloud
+//      lazy-syncs through the localStorage monkey-patch. If a save was followed
+//      by a quick reload, the cloud could still have the pre-save blob; the next
+//      syncFromRemote pulled it back, then hydrateJournalProfilesFromRemote
+//      triggered a window.location.reload() and the slots were gone.
+// New design: a dedicated, top-level LS key (`po_saved_partials_v1`), scoped per
+// profile + per HTF via _htfKey (matches mapping / preset-list scoping). Decoupled
+// from filter changes, so a quick reload doesn't drop them. Migration runs once
+// per profile×HTF on first boot post-refacto — see _migratePoSlotsFromPresetLiveFilters.
 
 const _PO_PRESET_SLOT_KEYS = ['P1', 'P2', 'P3'];
+const PO_SAVED_PARTIALS_LS_KEY = 'po_saved_partials_v1';
+let _poSavedPartials = { P1: null, P2: null, P3: null };
 
-/** Returns the {P1, P2, P3} object for the active preset, initializing if absent. */
-function _poGetPresetSlots() {
-  const id = appState.presets?.activeId ?? null;
-  const slot = getPresetLiveSlot(id);
-  if (!slot.poPresetSlots) {
-    slot.poPresetSlots = { P1: null, P2: null, P3: null };
-  }
-  return slot.poPresetSlots;
+function _poIsValidStoredSlot(s) {
+  if (!s || typeof s !== 'object') return false;
+  if (!Number.isFinite(s.tpFinal)) return false;
+  if (!Array.isArray(s.legs) || s.legs.length < 1 || s.legs.length > 3) return false;
+  if (typeof s.type !== 'string' || typeof s.name !== 'string') return false;
+  return s.legs.every(l => l && typeof l === 'object'
+    && Number.isFinite(l.lv) && Number.isFinite(l.pct));
 }
 
-/** Force-push the per-preset live-filters blob (which carries the PO slots) to
- *  Supabase, bypassing the apply-remote window drop. savePresetLiveFilters writes
- *  through the localStorage monkey-patch, which DROPS any non-mapping write that
- *  lands while a remote Realtime event is being applied (~1.5s window, re-armed on
- *  every inbound preset/theme/blob event) to avoid an echo loop. But a PO-slot
- *  save/delete is a deliberate user action — never part of that re-render cascade
- *  — so when the drop hit, the slot stayed local-only, never reached the cloud,
- *  and was then wiped by the next remote-wins pull (lost across sessions AND
- *  devices). Mirrors the 2026-05-31 mapping force-flush. _SW.set self-marks the
- *  write so it does not echo back. No-op when signed out (plain LS already
- *  persists). */
-function _poSyncPresetSlotsToCloud() {
+function loadPoSavedPartials() {
+  const fresh = { P1: null, P2: null, P3: null };
+  try {
+    const raw = localStorage.getItem(_htfKey(PO_SAVED_PARTIALS_LS_KEY));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        for (const key of _PO_PRESET_SLOT_KEYS) {
+          const s = parsed[key];
+          if (_poIsValidStoredSlot(s)) {
+            fresh[key] = {
+              tpFinal: s.tpFinal,
+              legs: s.legs.map(l => ({ lv: l.lv, pct: l.pct })),
+              type: s.type,
+              name: s.name,
+            };
+          }
+        }
+      }
+    }
+  } catch (e) { console.warn('[poSavedPartials] load failed:', e.message); }
+  _poSavedPartials = fresh;
+}
+
+function savePoSavedPartials() {
+  try {
+    localStorage.setItem(_htfKey(PO_SAVED_PARTIALS_LS_KEY), JSON.stringify(_poSavedPartials));
+  } catch (e) { console.warn('[poSavedPartials] save failed:', e.message); }
+}
+
+/** Force-push the saved-partials blob to Supabase, bypassing the apply-remote
+ *  window drop. Mirrors the 2026-05-31 mapping force-flush pattern: the
+ *  monkey-patched localStorage.setItem drops _SW.set calls that land during an
+ *  inbound Realtime apply window (~1.5s, re-armed on each preset/theme event),
+ *  but a slot save is a deliberate user action and must reach the cloud. _SW.set
+ *  self-marks the write so it does not echo back. No-op when signed out. */
+function _poSyncSavedPartialsToCloud() {
   try {
     if (!(window._SW && window._SW.getUser && window._SW.getUser())) return;
-    const key = _htfKey(PRESET_LIVE_FILTERS_LS_KEY);
+    const key = _htfKey(PO_SAVED_PARTIALS_LS_KEY);
     const value = localStorage.getItem(key);
     if (value != null) window._SW.set(key, value);
-  } catch (e) { console.warn('[poPresetSlot] cloud force-sync failed:', e.message); }
+  } catch (e) { console.warn('[poSavedPartials] cloud force-sync failed:', e.message); }
+}
+
+/** Returns the {P1, P2, P3} object (global per profile×HTF, no preset scoping). */
+function _poGetPresetSlots() {
+  if (!_poSavedPartials || typeof _poSavedPartials !== 'object') {
+    _poSavedPartials = { P1: null, P2: null, P3: null };
+  }
+  for (const k of _PO_PRESET_SLOT_KEYS) {
+    if (!(k in _poSavedPartials)) _poSavedPartials[k] = null;
+  }
+  return _poSavedPartials;
 }
 
 /** Saves a model to the given slot key (P1/P2/P3). Stores only params (tpFinal, legs,
@@ -28906,11 +28973,11 @@ function _poSavePresetSlot(slotKey, model) {
     type: model.type || 'full',
     name: model.name || `Slot ${slotKey}`,
   };
-  try { savePresetLiveFilters(); } catch (e) {
-    console.warn('[poPresetSlot] save failed:', e.message);
+  try { savePoSavedPartials(); } catch (e) {
+    console.warn('[poSavedPartials] save failed:', e.message);
     return false;
   }
-  _poSyncPresetSlotsToCloud();
+  _poSyncSavedPartialsToCloud();
   return true;
 }
 
@@ -28919,17 +28986,96 @@ function _poDeletePresetSlot(slotKey) {
   if (!_PO_PRESET_SLOT_KEYS.includes(slotKey)) return false;
   const slots = _poGetPresetSlots();
   slots[slotKey] = null;
-  try { savePresetLiveFilters(); } catch (e) {
-    console.warn('[poPresetSlot] delete failed:', e.message);
+  try { savePoSavedPartials(); } catch (e) {
+    console.warn('[poSavedPartials] delete failed:', e.message);
     return false;
   }
-  _poSyncPresetSlotsToCloud();
+  _poSyncSavedPartialsToCloud();
   // PR-D: cleanup hidden-curve state — if the slot is re-saved later, the
   // curve should reappear by default, not stay hidden from a previous toggle.
   if (window._poState?.hiddenPresetCurves) {
     window._poState.hiddenPresetCurves.delete(slotKey);
   }
   return true;
+}
+
+/** One-shot migration from the legacy per-preset poPresetSlots field (inside
+ *  presetLiveFilters_v1) to the new global po_saved_partials_v1 key. Reads the
+ *  raw LS blob directly so it doesn't depend on loadPresetLiveFilters still
+ *  hydrating the legacy field (the hydrate/serialize paths are removed in this
+ *  refacto). Priority order when merging across presets: active preset → null
+ *  pseudo-preset → others. First non-null wins per slot key. Empty slots in the
+ *  new state are filled; pre-existing new-state slots (from cloud sync) are
+ *  preserved. Flag-gated per profile×HTF via _htfKey. Idempotent — safe to call
+ *  on every boot. */
+function _migratePoSlotsFromPresetLiveFilters() {
+  try {
+    const flagKey = _htfKey(PO_SAVED_PARTIALS_LS_KEY + '_migrated');
+    if (localStorage.getItem(flagKey) === '1') return;
+
+    let legacyByPreset = null;
+    try {
+      const raw = localStorage.getItem(_htfKey(PRESET_LIVE_FILTERS_LS_KEY));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') legacyByPreset = parsed;
+      }
+    } catch (e) {}
+
+    const fresh = {
+      P1: _poSavedPartials?.P1 || null,
+      P2: _poSavedPartials?.P2 || null,
+      P3: _poSavedPartials?.P3 || null,
+    };
+
+    let foundAny = false;
+    if (legacyByPreset) {
+      const activeId = appState?.presets?.activeId ?? null;
+      const activeK = String(activeId === null ? 'null' : activeId);
+      const order = [];
+      if (legacyByPreset[activeK]) order.push(activeK);
+      if (activeK !== 'null' && legacyByPreset['null']) order.push('null');
+      for (const k of Object.keys(legacyByPreset)) {
+        if (!order.includes(k)) order.push(k);
+      }
+      for (const k of order) {
+        const slots = legacyByPreset[k]?.poPresetSlots;
+        if (!slots || typeof slots !== 'object') continue;
+        for (const key of _PO_PRESET_SLOT_KEYS) {
+          if (!fresh[key] && _poIsValidStoredSlot(slots[key])) {
+            fresh[key] = {
+              tpFinal: slots[key].tpFinal,
+              legs: slots[key].legs.map(l => ({ lv: l.lv, pct: l.pct })),
+              type: slots[key].type,
+              name: slots[key].name,
+            };
+            foundAny = true;
+          }
+        }
+      }
+    }
+
+    if (foundAny) {
+      _poSavedPartials = fresh;
+      savePoSavedPartials();
+      _poSyncSavedPartialsToCloud();
+    }
+
+    // Force a re-serialize of presetLiveFilters_v1 so the legacy poPresetSlots
+    // block disappears from LS (and the cloud row, via the monkey-patch). After
+    // this refacto, savePresetLiveFilters no longer emits the field.
+    try { if (typeof savePresetLiveFilters === 'function') savePresetLiveFilters(); } catch (e) {}
+
+    // Mark migration done. Untracked — the flag is local-only, each device
+    // migrates from its own snapshot of the data.
+    try {
+      if (typeof window._lsSetUntracked === 'function') {
+        window._lsSetUntracked(flagKey, '1');
+      } else {
+        localStorage.setItem(flagKey, '1');
+      }
+    } catch (e) {}
+  } catch (e) { console.warn('[poSavedPartials] migration failed:', e.message); }
 }
 
 /** Recomputes the simulation result for a saved slot against the current filtered
@@ -29786,7 +29932,7 @@ function _poBuildScaffold() {
 
     <div class="po-block po-block-presets" data-po-section="presets">
       ${_hh('presets', 'Presets')}
-      <div class="po-block-title">Saved presets</div>
+      <div class="po-block-title">Saved Partials</div>
       <div class="po-presets-grid" id="po-presets-grid">
         <!-- Tiles injected by _poRenderPresetsBlock -->
       </div>
@@ -40058,6 +40204,10 @@ window.addEventListener('load', () => {
   // slots (including the 'null' pseudo-preset for no-preset-active context).
   loadPresetLiveFilters();
   _ensureLiveSlotsInitialized();
+  // Saved Partials (P1/P2/P3) — global per profile×HTF, decoupled from the
+  // filter blob since 2026-06-23. Load + run one-shot migration if needed.
+  try { loadPoSavedPartials(); } catch (e) {}
+  try { _migratePoSlotsFromPresetLiveFilters(); } catch (e) {}
   // Hydrate appState.ui.tpConfig from the active preset's live slot now that
   // both snapshots and live filters are loaded. Per-preset TPM architecture:
   // before this point, appState.ui.tpConfig holds the fixed default seeded at
@@ -40378,33 +40528,12 @@ function _blankLiveSlot() {
   // restore the right bubble.
   slot.rrMinFilter = null;
   // tpConfig is inherited from _blankSnapshot (per-preset architecture).
-  // PR-C: Partial Optimizer preset slots (P1/P2/P3). Each slot stores only the
-  // model params (tpFinal + legs); stats are recomputed on the current filtered
-  // dataset on every render. null = empty slot.
-  slot.poPresetSlots = { P1: null, P2: null, P3: null };
   // Grouped filters live override. `null` = no override → use snapshot's groups.
   // `[]` = user deliberately removed every group. Distinction matters at hydrate.
   // _blankSnapshot() seeded groupedFilters:[] on slot; flip it to null here so
   // the override semantics work (snapshot's [] !== live's null).
   slot.groupedFilters = null;
   return slot;
-}
-
-/** Build a blank live slot for `id` but CARRY OVER its saved Partial Optimizer
- *  slots (poPresetSlots). The PO slots are user-saved presets, not live chip
- *  filters — they only happen to be stored inside the live slot. Filter-reset
- *  operations (Update preset, Reset to preset values, Clear all) blank the live
- *  slot via `presetLiveFilters[id] = _blankLiveSlot()`, which silently wiped the
- *  saved PO slots. Use this instead so an Update/Reset of the chips leaves the
- *  saved PO presets intact. (Deleting a preset still drops everything — that
- *  goes through `delete presetLiveFilters[...]`, not this helper.) */
-function _blankLiveSlotKeepPO(id) {
-  const existing = presetLiveFilters[_liveKey(id)];
-  const fresh = _blankLiveSlot();
-  if (existing && existing.poPresetSlots && typeof existing.poPresetSlots === 'object') {
-    fresh.poPresetSlots = existing.poPresetSlots;
-  }
-  return fresh;
 }
 
 function getPresetLiveSlot(id) {
@@ -40422,18 +40551,6 @@ function getPresetLiveSlot(id) {
   // Migration: legacy slots may not have tpConfig. Default to fixed mode.
   if (!_isValidTpConfigShape(presetLiveFilters[k].tpConfig)) {
     presetLiveFilters[k].tpConfig = _defaultTpConfig();
-  }
-  // PR-C migration: legacy slots have no poPresetSlots. Default to all empty.
-  if (!presetLiveFilters[k].poPresetSlots
-      || typeof presetLiveFilters[k].poPresetSlots !== 'object') {
-    presetLiveFilters[k].poPresetSlots = { P1: null, P2: null, P3: null };
-  } else {
-    // Ensure all 3 keys exist (forward-compat in case future code adds slots).
-    for (const key of ['P1', 'P2', 'P3']) {
-      if (!(key in presetLiveFilters[k].poPresetSlots)) {
-        presetLiveFilters[k].poPresetSlots[key] = null;
-      }
-    }
   }
   // Grouped filters migration: legacy slots have neither null nor [] — they
   // simply lack the key. Treat absent as `null` (= use snapshot baseline).
@@ -40505,31 +40622,11 @@ function loadPresetLiveFilters() {
       } else {
         dst.groupedFilters = null;
       }
-      // PR-C: hydrate poPresetSlots (P1/P2/P3) from storage. Validate shape per slot.
-      if (slot && slot.poPresetSlots && typeof slot.poPresetSlots === 'object') {
-        for (const key of ['P1', 'P2', 'P3']) {
-          const s = slot.poPresetSlots[key];
-          if (s && typeof s === 'object'
-              && Number.isFinite(s.tpFinal)
-              && Array.isArray(s.legs) && s.legs.length >= 1 && s.legs.length <= 3
-              && typeof s.type === 'string'
-              && typeof s.name === 'string') {
-            // Deep-validate each leg
-            const legsValid = s.legs.every(l =>
-              l && typeof l === 'object'
-              && Number.isFinite(l.lv) && Number.isFinite(l.pct)
-            );
-            if (legsValid) {
-              dst.poPresetSlots[key] = {
-                tpFinal: s.tpFinal,
-                legs: s.legs.map(l => ({ lv: l.lv, pct: l.pct })),
-                type: s.type,
-                name: s.name,
-              };
-            }
-          }
-        }
-      }
+      // 2026-06-23: Saved Partials (poPresetSlots) moved out of this blob to the
+      // top-level `po_saved_partials_v1` LS key — legacy field on `slot` is
+      // ignored here. _migratePoSlotsFromPresetLiveFilters extracts any pre-
+      // refacto data from the raw LS and seeds the new global state once per
+      // profile×HTF on boot.
       presetLiveFilters[k] = dst;
     }
   } catch (e) { console.warn('[presetLiveFilters] load failed:', e.message); }
@@ -40579,19 +40676,10 @@ function savePresetLiveFilters() {
           hasAny = true;
         }
       }
-      // PR-C: serialize poPresetSlots only if at least one slot is non-null.
-      let poSlotsOut = null;
-      if (slot.poPresetSlots && typeof slot.poPresetSlots === 'object') {
-        const anySlot = ['P1', 'P2', 'P3'].some(k2 => slot.poPresetSlots[k2] !== null);
-        if (anySlot) {
-          poSlotsOut = {
-            P1: slot.poPresetSlots.P1 ? JSON.parse(JSON.stringify(slot.poPresetSlots.P1)) : null,
-            P2: slot.poPresetSlots.P2 ? JSON.parse(JSON.stringify(slot.poPresetSlots.P2)) : null,
-            P3: slot.poPresetSlots.P3 ? JSON.parse(JSON.stringify(slot.poPresetSlots.P3)) : null,
-          };
-          hasAny = true;
-        }
-      }
+      // 2026-06-23: Saved Partials (poPresetSlots) moved out of this blob to
+      // the top-level `po_saved_partials_v1` LS key — never serialized here
+      // anymore. Migration purges any pre-refacto field from the in-memory slot
+      // before this point.
       // Grouped filters live override. `null` = no override (omit from blob);
       // `[]` = user wiped groups, must persist so reload doesn't re-hydrate
       // from snapshot. `[…]` = live group set. Both `[]` and non-empty flip
@@ -40604,7 +40692,6 @@ function savePresetLiveFilters() {
       if (hasAny) {
         out[k] = { chips: chipsOut, customChips: customOut, comboFilters: cfOut, rrMinFilter: rrMin };
         if (tpcOut) out[k].tpConfig = tpcOut;
-        if (poSlotsOut) out[k].poPresetSlots = poSlotsOut;
         if (gfOut !== null) out[k].groupedFilters = gfOut;
       }
     }
