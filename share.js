@@ -526,14 +526,22 @@ function _showLightbox(t, slot, slotData) {
   }
 
   // Remove any leftover placeholder + reset the <img> from the previous
-  // navigation (arrow keys reuse the same overlay).
+  // navigation (arrow keys reuse the same overlay). DO NOT removeAttribute('src')
+  // — that collapses the <img> + .img-lightbox-stage to 0×0 between
+  // navigations, and the four nav arrows positioned at the stage edges
+  // pile up at a single point in the centre of the screen. Keep the
+  // old image visible until the new src finishes loading.
   overlay.querySelectorAll('.tv-img-placeholder').forEach(n => n.remove());
   const img = document.getElementById('img-lightbox-img');
+  const stage = document.getElementById('img-lightbox-stage');
   if (img) {
     img.style.display = '';
     img.onerror = null;
-    img.removeAttribute('src');
   }
+  // Belt-and-braces: hide the arrows while the new image is in flight
+  // (covers the fallback → image transition where the <img> was
+  // display:none and would render at 0×0 for a frame).
+  if (stage) stage.classList.add('is-loading');
 
   // Selector bar — info only (pair · date · STEP · n/total). Trade nav
   // lives in the floating ↑/↓ buttons; step nav in the floating ←/→ buttons.
@@ -562,17 +570,24 @@ function _showLightbox(t, slot, slotData) {
   if (leftBtn)  leftBtn.hidden  = !hasMultiStep;
   if (rightBtn) rightBtn.hidden = !hasMultiStep;
 
-  // Image: bind onerror BEFORE src so a 404 swaps to the placeholder
-  // immediately (and the placeholder is removed on next navigation).
+  // Image: bind onload + onerror BEFORE src so a 404 swaps to the
+  // placeholder immediately. onload clears the .is-loading flag the
+  // moment the new screenshot has its dimensions back, so the four
+  // nav arrows reappear in sync with the chart.
   if (img) {
     img.alt = `${t.pair || ''} ${t.date || ''} ${stepLabel}`.trim();
     img.dataset.orig = slotData.orig || '';
-    img.onerror = () => _renderLightboxFallback(slotData.orig || '');
+    img.onload  = () => { if (stage) stage.classList.remove('is-loading'); };
+    img.onerror = () => {
+      _renderLightboxFallback(slotData.orig || '');
+      if (stage) stage.classList.remove('is-loading');
+    };
     if (slotData.url) {
       img.src = slotData.url;
     } else {
       // No image URL (TV /x/ link only) — show fallback immediately.
       _renderLightboxFallback(slotData.orig || '');
+      if (stage) stage.classList.remove('is-loading');
     }
   }
 }

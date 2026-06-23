@@ -395,6 +395,10 @@ html, body {
 .img-lightbox-arrow:hover  { color: #fff; }
 .img-lightbox-arrow:active { color: #fff; transform: scale(.92) translate(var(--tx, 0), var(--ty, 0)); }
 .img-lightbox-arrow[hidden] { display: none; }
+/* While the stage is loading a new screenshot the <img> can briefly
+   collapse to 0×0 — without this rule the four arrows would pile up
+   into one cluster at the centre of the viewport for a frame. */
+.img-lightbox-stage.is-loading .img-lightbox-arrow { display: none; }
 
 .img-lightbox-arrow-up    { top:    6px; left:  50%; --tx: -50%; transform: translateX(-50%); }
 .img-lightbox-arrow-down  { bottom: 6px; left:  50%; --tx: -50%; transform: translateX(-50%); }
