@@ -4603,6 +4603,12 @@ function handleActionClick(event) {
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-day': _expoOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-trade': _expoOpenTrade(actionEl.dataset.tradeId || ''); break;
+    case 'expo-open-pair': _expoOpenPair(actionEl.dataset.pair || ''); break;
+    case 'expo-set-mode': _expoSetTimelineMode(actionEl.dataset.mode || 'compact'); break;
+    case 'expo-set-period': _expoSetPeriod(actionEl.dataset.period || 'month'); break;
+    case 'expo-step': _expoStepMonth(parseInt(actionEl.dataset.dir, 10) || 1); break;
+    case 'expo-set-overmode': _expoSetOverMode(actionEl.dataset.omode || 'line'); break;
+    case 'expo-toggle-empty': _expoToggleEmptyPairs(); break;
     case 'apply-theme-preset': applyPresetTheme(parseInt(actionEl.dataset.themePreset, 10)); break;
     case 'export-theme': exportTheme(); break;
     case 'save-theme': saveTheme(); break;
@@ -4755,9 +4761,11 @@ function handleActionChange(event) {
     renderCalendar(getFiltered());
     return;
   }
-  if (event.target.id === 'expo-year-sel' || event.target.id === 'expo-month-sel') {
+  if (/^expo-(year|month)-sel-[kduto]$/.test(event.target.id)) {
     _expoUserPicked = true;
-    renderExposure(getFiltered());
+    if (event.target.id.startsWith('expo-year-sel-'))  _expoSelYear  = event.target.value;
+    if (event.target.id.startsWith('expo-month-sel-')) _expoSelMonth = event.target.value;
+    _expoRerenderAll();
     return;
   }
   if (event.target.id === 'mc-year-sel') {
@@ -8777,9 +8785,10 @@ function _applyTemplateLayoutsForProfile(profile) {
   const layout = (typeof TEMPLATE_LAYOUTS !== 'undefined') ? TEMPLATE_LAYOUTS[profile.templateChoice] : null;
   if (!layout) return;
   const slotPayload = {
-    global:        { ...(layout.global || {}) },
-    'optimal-rr':  { ...(layout['optimal-rr'] || {}) },
-    partials:      { ...(layout.partials || {}) },
+    global:                 { ...(layout.global || {}) },
+    'concurrent-positions': { ...(layout['concurrent-positions'] || {}) },
+    'optimal-rr':           { ...(layout['optimal-rr'] || {}) },
+    partials:               { ...(layout.partials || {}) },
     hiddenWidgets: { ...(layout.hiddenWidgets || {}) },
     dynamicWidgets: [],
   };
@@ -10705,9 +10714,10 @@ function _reloadProfileScopedState() {
   } else {
     _activePresetName = 'default';
     _liveSectionLayouts = {
-      global:       { ...GLOBAL_OVERVIEW_LAYOUT },
-      'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-      partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+      global:                 { ...GLOBAL_OVERVIEW_LAYOUT },
+      'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT },
+      'optimal-rr':           { ...OPTIMAL_RR_LAYOUT },
+      partials:               { ...PARTIAL_PLANNERS_LAYOUT },
     };
   }
 
@@ -26610,7 +26620,7 @@ function _renderCalendarMonthly(trades, yearSel) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  Concurrent Positions widget (w-exposure)
+//  Concurrent Positions section (w-expo-kpis / w-expo-dist / w-expo-timeline)
 //  Visualises simultaneous open positions over a month. Each trade spans
 //  [entry date → exit date]; trades are lane-packed into a Gantt so the
 //  number of occupied lanes at any day = positions open that day. Below the
@@ -26622,6 +26632,26 @@ function _renderCalendarMonthly(trades, yearSel) {
 const _EXPO_MONTHS = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 let _expoUserPicked = false;  // true once the user changes year/month selects
+// Shared month/year selection across the 3 Concurrent Positions widgets. Each
+// widget carries its own pair of selects; they all read/write these so a change
+// in one re-syncs the others (see _expoSyncSelects / _expoRerenderAll).
+let _expoSelYear = null;
+let _expoSelMonth = null;
+// Positions Timeline layout mode: 'compact' (greedy lane-pack) | 'pair' (one
+// row per pair, alphabetical). Session-only, not persisted.
+let _expoTimelineMode = 'compact';
+// Period: 'month' (single month, default) | 'overall' (whole history, the Gantt
+// scrolls horizontally). Shared across all 5 widgets.
+let _expoPeriodMode = 'month';
+// Over Time widget render mode: 'line' (area, default) | 'bars' (per-day bars).
+let _expoOverMode = 'line';
+// By-pair timeline: when false, only pairs traded in the period get a row; when
+// true, every pair in the dataset gets a row (empty ones shown blank).
+let _expoShowEmptyPairs = false;
+// Chart.js instances for the 3 canvas widgets (destroyed before each re-render).
+let _expoDistChart = null;
+let _expoDurChart = null;
+let _expoOverChart = null;
 
 // Trades usable for concurrency: valid entry + valid exit, exit on/after entry.
 function _expoValidTrades(trades) {
@@ -26689,191 +26719,570 @@ function _expoPeakLabel(days, maxCC) {
   return runs.slice(0, 3).join(' · ') || '—';
 }
 
-function renderExposure(trades) {
-  const body = document.getElementById('exposure-body');
-  if (!body) return;
-  const yearSel = document.getElementById('expo-year-sel');
-  const monthSel = document.getElementById('expo-month-sel');
-  const tpConfig = appState.ui.tpConfig;
+// Empty-state markup shared by the 3 Concurrent Positions widgets.
+function _expoEmptyHtml(anyTrades) {
+  return `<div class="expo-empty">${anyTrades
+    ? 'Map your <b>Exit date</b> column in Data Setup to unlock concurrent-position analysis.'
+    : 'No data'}</div>`;
+}
 
+// Distinct months ('MM') with entry data in a given year, ascending.
+function _expoMonthsForYear(valid, year) {
+  return Array.from(new Set(valid
+    .filter(t => t.date.slice(0, 4) === String(year))
+    .map(t => t.date.slice(5, 7)))).sort();
+}
+
+// Per-day open counts + the trades open each day, for an arbitrary [start,end]
+// date range (inclusive). Works across month boundaries (used by Overall mode).
+function _expoComputeRange(valid, startDS, endDS) {
+  const inRange = valid.filter(t => t.date <= endDS && t.exitDate >= startDS);
+  const days = [];
+  const [sy, sm, sd] = startDS.split('-').map(Number);
+  const [ey, em, ed] = endDS.split('-').map(Number);
+  const t1 = Date.UTC(ey, em - 1, ed);
+  let guard = 0;
+  for (let t = Date.UTC(sy, sm - 1, sd); t <= t1 && guard < 4000; t += 86400000, guard++) {
+    const ds = new Date(t).toISOString().slice(0, 10);
+    const open = inRange.filter(x => x.date <= ds && x.exitDate >= ds);
+    days.push({ ds, count: open.length, trades: open });
+  }
+  return { days, inRange };
+}
+
+const _expoFmtMD = ds => `${_EXPO_MONTHS[parseInt(ds.slice(5, 7), 10) - 1].slice(0, 3)} ${parseInt(ds.slice(8, 10), 10)}`;
+
+// Contiguous day-runs at the peak concurrency. Month mode → day numbers
+// ("10–13 · 19"); overall mode → short dates ("Jun 24 – Jun 29").
+function _expoPeakLabelDays(days, maxCC, overall) {
+  if (!maxCC) return '—';
+  const runs = []; let start = null;
+  for (let i = 0; i < days.length; i++) {
+    const hit = days[i].count === maxCC;
+    if (hit && start === null) start = days[i];
+    if (start !== null && (!hit || i === days.length - 1)) {
+      const end = hit ? days[i] : days[i - 1];
+      runs.push([start.ds, end.ds]); start = null;
+    }
+  }
+  const fmt = ds => overall ? _expoFmtMD(ds) : String(parseInt(ds.slice(8, 10), 10));
+  return runs.slice(0, 3).map(([a, b]) => a === b ? fmt(a) : `${fmt(a)}–${fmt(b)}`).join(' · ') || '—';
+}
+
+// Shared compute for all 5 Concurrent Positions widgets. Resolves the period
+// (month-with-data default, or whole history when Overall is on) from the synced
+// module state, persists the resolution, and returns everything the widgets need.
+// Returns { empty:true, anyTrades } when no trade has a valid entry+exit span.
+function _expoBuildModel(trades) {
   const valid = _expoValidTrades(trades);
-  if (!valid.length) {
-    const anyTrades = !!(trades && trades.length);
-    body.innerHTML = `<div class="expo-empty">${anyTrades
-      ? 'Map your <b>Exit date</b> column in Data Setup to unlock concurrent-position analysis.'
-      : 'No data'}</div>`;
-    return;
-  }
+  if (!valid.length) return { empty: true, anyTrades: !!(trades && trades.length) };
 
-  // Populate year select from years that have spanned trades.
   const years = Array.from(new Set(valid.map(t => t.date.slice(0, 4)))).sort().reverse();
-  if (yearSel) {
-    const prev = yearSel.value;
-    yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
-    yearSel.value = (prev && years.includes(prev)) ? prev : years[0];
+  const overall = _expoPeriodMode === 'overall';
+
+  let year = null, selMonth = null, monthIdx = 0, daysInMonth = 0, start, end, label;
+  if (overall) {
+    start = valid.reduce((mn, t) => t.date < mn ? t.date : mn, valid[0].date);
+    end   = valid.reduce((mx, t) => t.exitDate > mx ? t.exitDate : mx, valid[0].exitDate);
+    label = 'All history';
+  } else {
+    year = (_expoUserPicked && _expoSelYear && years.includes(String(_expoSelYear)))
+      ? String(_expoSelYear) : years[0];
+    const monthsInYear = _expoMonthsForYear(valid, year);
+    selMonth = (_expoUserPicked && _expoSelMonth && monthsInYear.includes(_expoSelMonth))
+      ? _expoSelMonth
+      : (monthsInYear[monthsInYear.length - 1] || _expoPad2(new Date().getMonth() + 1));
+    // Persist resolved selection so all widgets + their selects stay in sync.
+    _expoSelYear = year;
+    _expoSelMonth = selMonth;
+    monthIdx = parseInt(selMonth, 10) - 1;
+    daysInMonth = new Date(parseInt(year, 10), monthIdx + 1, 0).getDate();
+    start = `${year}-${selMonth}-01`;
+    end = `${year}-${selMonth}-${_expoPad2(daysInMonth)}`;
+    label = `${_EXPO_MONTHS[monthIdx]} ${year}`;
   }
-  const year = parseInt((yearSel && yearSel.value) || years[0], 10);
 
-  // Default month = latest month with data in the selected year, until the user
-  // picks one explicitly (mirrors the Monthly P&L monthlySelectedMonth pattern).
-  let selMonth = (monthSel && _expoUserPicked) ? monthSel.value : null;
-  if (!selMonth) {
-    const monthsInYear = valid
-      .filter(t => t.date.slice(0, 4) === String(year))
-      .map(t => t.date.slice(5, 7))
-      .sort();
-    selMonth = monthsInYear.length
-      ? monthsInYear[monthsInYear.length - 1]
-      : _expoPad2(new Date().getMonth() + 1);
-    if (monthSel) monthSel.value = selMonth;
-  }
-  const monthIdx = parseInt(selMonth, 10) - 1;
-
-  const { daysInMonth, inMonth, monthStart, monthEnd, days } = _expoComputeMonth(valid, year, monthIdx);
-
+  const { days, inRange } = _expoComputeRange(valid, start, end);
   const counts = days.map(d => d.count);
   const maxCC = counts.length ? Math.max(...counts) : 0;
   const active = days.filter(d => d.count > 0);
   const avgIM = active.length ? (active.reduce((s, d) => s + d.count, 0) / active.length) : 0;
   const pctGe2 = active.length ? (active.filter(d => d.count >= 2).length / active.length * 100) : 0;
-  const peakLabel = _expoPeakLabel(days, maxCC);
+  const peakLabel = _expoPeakLabelDays(days, maxCC, overall);
 
-  // Lane-pack the Gantt (greedy): each trade clamped to month bounds; a lane is
-  // free for a trade when its previous occupant closed strictly before this
-  // trade's open day (same day = still simultaneous → new lane).
-  const items = inMonth.map(t => {
-    const cs = t.date < monthStart ? monthStart : t.date;
-    const ce = t.exitDate > monthEnd ? monthEnd : t.exitDate;
-    return {
-      t,
-      sDay: parseInt(cs.slice(8, 10), 10),
-      eDay: parseInt(ce.slice(8, 10), 10),
-      contLeft: t.date < monthStart,
-      contRight: t.exitDate > monthEnd,
-    };
-  }).sort((a, b) => (a.sDay - b.sDay) || (a.eDay - b.eDay));
+  return {
+    empty: false, overall, valid, years, year, selMonth, monthIdx, daysInMonth,
+    start, end, label, days, maxCC, active, avgIM, pctGe2, peakLabel,
+    // back-compat aliases used by the renderers
+    inMonth: inRange, monthStart: start, monthEnd: end,
+  };
+}
 
-  const laneEnds = [];
-  items.forEach(it => {
-    let placed = false;
-    for (let li = 0; li < laneEnds.length; li++) {
-      if (laneEnds[li] < it.sDay) { it.lane = li; laneEnds[li] = it.eDay; placed = true; break; }
-    }
-    if (!placed) { it.lane = laneEnds.length; laneEnds.push(it.eDay); }
+// Bucket helpers + the shared 4-stop risk ramp used by the donut / bars so the
+// Concurrent Positions widgets read as one colour language (low→teal … high→red).
+const _EXPO_RAMP = ['--t', '--a', '--r', '--r'];     // 4th is darkened in JS
+// Darken a #rrggbb by pct (0..1) toward black — Chart.js canvas can't use color-mix.
+function _expoDarken(hex, pct) {
+  const h = (hex || '').replace('#', '');
+  if (h.length < 6) return hex;
+  const r = Math.round(parseInt(h.slice(0, 2), 16) * (1 - pct));
+  const g = Math.round(parseInt(h.slice(2, 4), 16) * (1 - pct));
+  const b = Math.round(parseInt(h.slice(4, 6), 16) * (1 - pct));
+  return '#' + [r, g, b].map(x => Math.max(0, x).toString(16).padStart(2, '0')).join('');
+}
+function _expoRampColors() {
+  return [tc('--t'), tc('--a'), tc('--r'), _expoDarken(tc('--r'), 0.4)];
+}
+
+// Distribution of in-market days by concurrency bucket: 1 / 2-3 / 4-5 / 6+.
+function _expoConcurrencyBuckets(active) {
+  const labels = ['1 position', '2–3 positions', '4–5 positions', '6+ positions'];
+  const counts = [0, 0, 0, 0];
+  active.forEach(d => {
+    const k = d.count;
+    if (k === 1) counts[0]++;
+    else if (k <= 3) counts[1]++;
+    else if (k <= 5) counts[2]++;
+    else counts[3]++;
   });
-  const laneCount = Math.max(laneEnds.length, 1);
+  return { labels, counts };
+}
 
-  let html = `<div class="expo-shell">`;
+// Distribution of positions by hold-duration bucket: 1d / 2-3d / 4-7d / 8d+.
+function _expoDurationBuckets(inMonth) {
+  const labels = ['1 day', '2–3 days', '4–7 days', '8+ days'];
+  const counts = [0, 0, 0, 0];
+  let totalDur = 0;
+  inMonth.forEach(t => {
+    const dur = _expoDurationDays(t.date, t.exitDate);
+    totalDur += dur;
+    if (dur <= 1) counts[0]++;
+    else if (dur <= 3) counts[1]++;
+    else if (dur <= 7) counts[2]++;
+    else counts[3]++;
+  });
+  const avg = inMonth.length ? totalDur / inMonth.length : 0;
+  return { labels, counts, avg };
+}
 
-  // Summary line
-  html += `<div class="expo-summary">
-    <span class="expo-summary-meta">${_EXPO_MONTHS[monthIdx]} ${year} &nbsp;${inMonth.length} position${inMonth.length > 1 ? 's' : ''} in month</span>
+// Populate & sync one widget's period controls to the shared selection:
+// the [Month|Overall] toggle, the year select, and the (dynamic, data-only)
+// month select. suffix ∈ {'k','d','u','t','o'}. The month controls are hidden
+// in Overall mode.
+function _expoSyncControls(suffix, m) {
+  document.querySelectorAll('#expo-period-' + suffix + ' [data-period]').forEach(b =>
+    b.classList.toggle('active', b.dataset.period === _expoPeriodMode));
+  const monthCtl = document.getElementById('expo-monthctl-' + suffix);
+  if (monthCtl) monthCtl.style.display = m.overall ? 'none' : '';
+  if (m.overall) return;
+
+  const yearSel = document.getElementById('expo-year-sel-' + suffix);
+  const monthSel = document.getElementById('expo-month-sel-' + suffix);
+  if (yearSel) {
+    yearSel.innerHTML = m.years.map(y => `<option value="${y}">${y}</option>`).join('');
+    yearSel.value = m.year;
+  }
+  if (monthSel) {
+    const months = _expoMonthsForYear(m.valid, m.year);
+    monthSel.innerHTML = months.map(mm => `<option value="${mm}">${_EXPO_MONTHS[parseInt(mm, 10) - 1]}</option>`).join('');
+    monthSel.value = m.selMonth;
+  }
+}
+
+// Widget 1 — summary line + 4 KPI cards.
+function renderExpoKpis(trades) {
+  const body = document.getElementById('expo-kpis-body');
+  if (!body) return;
+  const m = _expoBuildModel(trades);
+  if (m.empty) { body.innerHTML = _expoEmptyHtml(m.anyTrades); return; }
+  _expoSyncControls('k', m);
+
+  body.innerHTML = `<div class="expo-shell">
+    <div class="expo-summary">
+      <span class="expo-summary-meta">${m.label} &nbsp;${m.inMonth.length} position${m.inMonth.length > 1 ? 's' : ''}</span>
+    </div>
+    <div class="expo-kpis">
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Max simultaneous</span><span class="expo-kpi-val is-peak">${m.maxCC}</span></div>
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Avg in market</span><span class="expo-kpi-val">${m.avgIM.toFixed(1)}</span></div>
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Time ≥ 2 positions</span><span class="expo-kpi-val">${Math.round(m.pctGe2)}%</span></div>
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Peak window</span><span class="expo-kpi-val expo-kpi-sm">${m.peakLabel}</span></div>
+    </div>
   </div>`;
+}
 
-  // KPI cards
-  html += `<div class="expo-kpis">
-    <div class="expo-kpi"><span class="expo-kpi-lbl">Max simultaneous</span><span class="expo-kpi-val is-peak">${maxCC}</span></div>
-    <div class="expo-kpi"><span class="expo-kpi-lbl">Avg in market</span><span class="expo-kpi-val">${avgIM.toFixed(1)}</span></div>
-    <div class="expo-kpi"><span class="expo-kpi-lbl">Time ≥ 2 positions</span><span class="expo-kpi-val">${Math.round(pctGe2)}%</span></div>
-    <div class="expo-kpi"><span class="expo-kpi-lbl">Peak window</span><span class="expo-kpi-val expo-kpi-sm">${peakLabel}</span></div>
-  </div>`;
+// Widget 2 — doughnut: share of in-market days by concurrency bucket (1 / 2-3 /
+// 4-5 / 6+). Canvas + custom side legend + centre total.
+function renderExpoDist(trades) {
+  const m = _expoBuildModel(trades);
+  const WRAP = '.chart-card[data-gs-id="w-expo-dist"] .canvas-stage';
+  const legend = document.getElementById('expo-dist-legend');
+  const center = document.getElementById('expo-dist-center');
+  if (_expoDistChart) { _expoDistChart.destroy(); _expoDistChart = null; }
+  if (legend) legend.innerHTML = '';
+  if (center) center.innerHTML = '';
+  if (m.empty) {
+    renderCanvasEmptyState(WRAP, ['expoDistCanvas'], m.anyTrades
+      ? 'Map your Exit date column in Data Setup to unlock this.' : EMPTY_STATE_MSG);
+    return;
+  }
+  _expoSyncControls('d', m);
+  if (!(m.maxCC > 0 && m.active.length)) {
+    renderCanvasEmptyState(WRAP, ['expoDistCanvas'], 'No in-market days this month');
+    return;
+  }
+  clearCanvasEmptyState(WRAP);
+  if (!hasChartJs()) return;
 
-  // Distribution bar — share of in-market days by open-position count.
-  if (maxCC > 0 && active.length) {
-    let segs = '';
-    for (let k = 1; k <= maxCC; k++) {
-      const pct = active.filter(d => d.count === k).length / active.length * 100;
-      if (pct <= 0) continue;
-      const col = _expoRiskColor(k, maxCC);
-      const lbl = pct >= 9 ? `${k}·${Math.round(pct)}%` : '';
-      segs += `<div class="expo-dist-seg" style="width:${pct.toFixed(2)}%;background:${col}" title="${k} position${k > 1 ? 's' : ''}: ${Math.round(pct)}% of in-market days">${lbl}</div>`;
-    }
-    html += `<div class="expo-dist-wrap">
-      <div class="expo-dist-lbl">Share of in-market days by open positions</div>
-      <div class="expo-dist">${segs}</div>
-    </div>`;
+  const { labels, counts } = _expoConcurrencyBuckets(m.active);
+  const colors = _expoRampColors();
+  const total = m.active.length;
+  const idx = [0, 1, 2, 3].filter(i => counts[i] > 0);
+
+  const canvas = getByIdSafe('expoDistCanvas');
+  if (!canvas) return;
+  canvas.removeAttribute('width'); canvas.removeAttribute('height');
+  _expoDistChart = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: idx.map(i => labels[i]),
+      datasets: [{ data: idx.map(i => counts[i]), backgroundColor: idx.map(i => colors[i]), borderWidth: 0 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, cutout: '64%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { bodyFont: { size: _chartTipFs() }, callbacks: {
+          label: ctx => ` ${ctx.label}: ${ctx.raw} day${ctx.raw > 1 ? 's' : ''} (${Math.round(ctx.raw / total * 100)}%)`,
+        } },
+      },
+    },
+  });
+  if (center) center.innerHTML = `<span class="expo-donut-big">${total}</span><span class="expo-donut-sub">in-market days</span>`;
+  if (legend) legend.innerHTML = idx.map(i =>
+    `<div class="expo-leg-row"><span class="expo-leg-dot" style="background:${colors[i]}"></span><span class="expo-leg-lbl">${labels[i]}</span><span class="expo-leg-val">${Math.round(counts[i] / total * 100)}%</span><span class="expo-leg-n">${counts[i]}d</span></div>`
+  ).join('');
+}
+
+// Widget 3 — horizontal bars: positions by hold-duration bucket (1 / 2-3 / 4-7 /
+// 8+ days). Average duration shown in the widget header.
+function renderExpoDuration(trades) {
+  const m = _expoBuildModel(trades);
+  const WRAP = '.chart-card[data-gs-id="w-expo-duration"] .canvas-stage';
+  const avgEl = document.getElementById('expo-dur-avg');
+  if (_expoDurChart) { _expoDurChart.destroy(); _expoDurChart = null; }
+  if (avgEl) avgEl.textContent = '';
+  if (m.empty) {
+    renderCanvasEmptyState(WRAP, ['expoDurationCanvas'], m.anyTrades
+      ? 'Map your Exit date column in Data Setup to unlock this.' : EMPTY_STATE_MSG);
+    return;
+  }
+  _expoSyncControls('u', m);
+  if (!m.inMonth.length) {
+    renderCanvasEmptyState(WRAP, ['expoDurationCanvas'], 'No positions this month');
+    return;
+  }
+  const { labels, counts, avg } = _expoDurationBuckets(m.inMonth);
+  if (avgEl) avgEl.textContent = `avg ${avg.toFixed(1)}d`;
+  clearCanvasEmptyState(WRAP);
+  if (!hasChartJs()) return;
+
+  const colors = _expoRampColors();
+  const canvas = getByIdSafe('expoDurationCanvas');
+  if (!canvas) return;
+  canvas.removeAttribute('width'); canvas.removeAttribute('height');
+  _expoDurChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: counts, backgroundColor: colors, borderRadius: 3, barPercentage: 0.74, categoryPercentage: 0.78 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { bodyFont: { size: _chartTipFs() }, callbacks: {
+          label: ctx => ` ${ctx.raw} position${ctx.raw > 1 ? 's' : ''}`,
+        } },
+      },
+      scales: {
+        x: { grid: { color: tc('--line') }, ticks: { color: tc('--dim'), font: { size: 9, family: '"DM Mono",monospace' }, precision: 0 }, beginAtZero: true },
+        y: { grid: { display: false }, ticks: { color: tc('--dim'), font: { size: 9, family: '"DM Mono",monospace' } } },
+      },
+    },
+  });
+}
+
+// Pixels-per-day in Overall mode (the Gantt becomes a wide horizontal scroll).
+const _EXPO_OVERALL_DAY_PX = 22;
+
+// Widget 4 — the chronological Gantt of overlapping trades. Layout modes:
+// 'compact' (greedy lane-pack) and 'pair' (one row per pair, alphabetical, with
+// labels in a sticky left gutter). In Overall period the plot is px-wide and
+// scrolls horizontally (axis sticky-top, labels sticky-left).
+function renderExpoTimeline(trades) {
+  const body = document.getElementById('expo-timeline-body');
+  if (!body) return;
+  const m = _expoBuildModel(trades);
+  if (m.empty) { body.innerHTML = _expoEmptyHtml(m.anyTrades); return; }
+  _expoSyncControls('t', m);
+  document.querySelectorAll('#expo-mode-toggle [data-mode]').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === _expoTimelineMode));
+  const byPair = _expoTimelineMode === 'pair';
+  // The "show empty pairs" toggle is only meaningful in by-pair mode.
+  const emptyToggle = document.getElementById('expo-empty-toggle');
+  if (emptyToggle) {
+    emptyToggle.style.display = byPair ? '' : 'none';
+    emptyToggle.classList.toggle('active', _expoShowEmptyPairs);
   }
 
-  // Gantt — one bar per spanned trade, lane-packed over a per-day grid so each
-  // day, plus weekends, is visible (start/end/duration readable at a glance).
-  const dayW = 100 / daysInMonth;
-  html += `<div class="expo-gantt-wrap">`;
-  // Day-number axis — every day, centred in its column, weekends dimmed.
-  let axis = '';
-  days.forEach((d, idx) => {
-    const dnum = parseInt(d.ds.slice(8, 10), 10);
-    const we = _expoIsWeekend(d.ds);
-    const left = ((idx + 0.5) * dayW).toFixed(3);
-    axis += `<span class="expo-axis-tick${we ? ' is-we' : ''}" style="left:${left}%">${dnum}</span>`;
+  const tpConfig = appState.ui.tpConfig;
+  const { days, start, end, inMonth, overall } = m;
+  // Day-string → column index, so spans position correctly across months.
+  const dayIdx = {}; days.forEach((d, i) => { dayIdx[d.ds] = i; });
+
+  // Clamp each trade's span to the visible range; record column indices.
+  const items = inMonth.map(t => {
+    const cs = t.date < start ? start : t.date;
+    const ce = t.exitDate > end ? end : t.exitDate;
+    return {
+      t,
+      sIdx: dayIdx[cs] ?? 0,
+      eIdx: dayIdx[ce] ?? (days.length - 1),
+      contLeft: t.date < start,
+      contRight: t.exitDate > end,
+    };
   });
-  html += `<div class="expo-axis">${axis}</div>`;
-  html += `<div class="expo-lanes" style="--expo-lanes:${laneCount}">`;
-  // Background day grid (vertical gridlines + weekend shading), behind the bars.
+
+  let laneCount, pairLabels = null;
+  if (byPair) {
+    // One lane per pair, alphabetical. With "show empty pairs" on, every pair in
+    // the dataset gets a row (even with no trade this period); otherwise only
+    // pairs traded in the period.
+    const universe = _expoShowEmptyPairs
+      ? Array.from(new Set(m.valid.map(t => t.pair || '—')))
+      : Array.from(new Set(items.map(it => it.t.pair || '—')));
+    const pairs = universe.sort((a, b) => a.localeCompare(b));
+    const laneOf = {}; pairs.forEach((p, i) => { laneOf[p] = i; });
+    items.forEach(it => { it.lane = laneOf[it.t.pair || '—'] ?? 0; });
+    laneCount = Math.max(pairs.length, 1);
+    pairLabels = pairs;
+  } else {
+    // Greedy lane-pack: a lane is free when its previous occupant closed strictly
+    // before this trade opens (same day = still simultaneous → new lane).
+    items.sort((a, b) => (a.sIdx - b.sIdx) || (a.eIdx - b.eIdx));
+    const laneEnds = [];
+    items.forEach(it => {
+      let placed = false;
+      for (let li = 0; li < laneEnds.length; li++) {
+        if (laneEnds[li] < it.sIdx) { it.lane = li; laneEnds[li] = it.eIdx; placed = true; break; }
+      }
+      if (!placed) { it.lane = laneEnds.length; laneEnds.push(it.eIdx); }
+    });
+    laneCount = Math.max(laneEnds.length, 1);
+  }
+
+  const dayW = 100 / days.length;
+  const gutter = byPair ? 84 : 0;
+  const innerW = overall ? `width:${gutter + days.length * _EXPO_OVERALL_DAY_PX}px;` : '';
+  let html = `<div class="expo-shell"><div class="expo-gantt-wrap${overall ? ' is-overall' : ''}" style="--expo-gutter:${gutter}px;--expo-lanes:${laneCount}">`;
+  html += `<div class="expo-gantt-scroll"><div class="expo-gantt-inner" style="${innerW}">`;
+
+  // Head: sticky day/month axis aligned to the plot.
+  let axis = '';
+  if (overall) {
+    days.forEach((d, idx) => {
+      if (d.ds.slice(8, 10) !== '01' && idx !== 0) return;
+      const left = (idx * dayW).toFixed(3);
+      const mo = _EXPO_MONTHS[parseInt(d.ds.slice(5, 7), 10) - 1].slice(0, 3);
+      axis += `<span class="expo-axis-mtick" style="left:${left}%">${mo} '${d.ds.slice(2, 4)}</span>`;
+    });
+  } else {
+    days.forEach((d, idx) => {
+      const we = _expoIsWeekend(d.ds);
+      const left = ((idx + 0.5) * dayW).toFixed(3);
+      axis += `<span class="expo-axis-tick${we ? ' is-we' : ''}" style="left:${left}%">${parseInt(d.ds.slice(8, 10), 10)}</span>`;
+    });
+  }
+  html += `<div class="expo-gantt-head"><div class="expo-gantt-gutter"></div><div class="expo-axis">${axis}</div></div>`;
+
+  // Body: sticky pair-label column (by-pair) + lane plot.
+  html += `<div class="expo-gantt-body">`;
+  html += `<div class="expo-gantt-laxis">${
+    byPair ? pairLabels.map(p => `<div class="expo-laxis-row" data-action="expo-open-pair" data-pair="${_escapeAttr(p)}" title="${_escapeHtml(p)}">${_escapeHtml(p)}</div>`).join('') : ''
+  }</div>`;
+  html += `<div class="expo-lanes">`;
   let gridCols = '';
-  days.forEach(d => { gridCols += `<div class="expo-gcol${_expoIsWeekend(d.ds) ? ' is-we' : ''}"></div>`; });
+  days.forEach(d => {
+    const monthStartCol = d.ds.slice(8, 10) === '01';
+    gridCols += `<div class="expo-gcol${_expoIsWeekend(d.ds) ? ' is-we' : ''}${overall && monthStartCol ? ' is-month' : ''}"></div>`;
+  });
   html += `<div class="expo-grid">${gridCols}</div>`;
   items.forEach(it => {
-    const left = (it.sDay - 1) * dayW;
-    const width = (it.eDay - it.sDay + 1) * dayW;
+    const left = it.sIdx * dayW;
+    const width = (it.eIdx - it.sIdx + 1) * dayW;
     const col = _expoBarColor(it.t, tpConfig);
     const rEff = Number(computeEffectiveRR(it.t, tpConfig)) || 0;
     const dur = _expoDurationDays(it.t.date, it.t.exitDate);
     const tip = `${it.t.pair || '—'} · ${it.t.date} → ${it.t.exitDate} · ${dur}d · ${rEff >= 0 ? '+' : ''}${rEff.toFixed(1)}R`;
     const contClass = (it.contLeft ? ' cont-l' : '') + (it.contRight ? ' cont-r' : '');
-    // Show the duration in-bar only when the span is wide enough to fit it.
-    const spanDays = it.eDay - it.sDay + 1;
-    const durTag = spanDays >= 4 ? `<span class="expo-bar-dur">${dur}d</span>` : '';
+    const spanCols = it.eIdx - it.sIdx + 1;
+    const durTag = spanCols >= 4 ? `<span class="expo-bar-dur">${dur}d</span>` : '';
     html += `<div class="expo-bar${contClass}" data-action="expo-open-trade" data-trade-id="${_escapeAttr(String(it.t.tradeId || ''))}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;--expo-row:${it.lane};background:${col}" title="${_escapeHtml(tip)}"><span class="expo-bar-lbl">${_escapeHtml(it.t.pair || '')}</span>${durTag}</div>`;
   });
-  html += `</div></div>`; // .expo-lanes / .expo-gantt-wrap
-
-  // Exposure band — a labelled mini bar-chart with a left y-axis (each tick = a
-  // count of simultaneously-open positions) + horizontal gridlines, risk-coloured
-  // magnitude bars, and a day-number axis below. Click a day to open its list.
-  html += `<div class="expo-band-lbl">Open positions / day</div>`;
-  // y-axis ticks: every level, or stepped when the peak is large.
-  const yStep = maxCC <= 8 ? 1 : Math.ceil(maxCC / 6);
-  const yTicks = [];
-  for (let L = 0; L <= maxCC; L += yStep) yTicks.push(L);
-  if (maxCC > 0 && yTicks[yTicks.length - 1] !== maxCC) yTicks.push(maxCC);
-  let yax = '', bgrid = '';
-  yTicks.forEach(L => {
-    const bottom = (maxCC ? L / maxCC * 100 : 0).toFixed(2);
-    yax   += `<span class="expo-yt" style="bottom:${bottom}%">${L}</span>`;
-    bgrid += `<div class="expo-bgridline" style="bottom:${bottom}%"></div>`;
-  });
-  html += `<div class="expo-band-wrap">`;
-  html += `<div class="expo-band-yaxis">${yax}</div>`;
-  html += `<div class="expo-band-plot"><div class="expo-band-grid">${bgrid}</div><div class="expo-band">`;
-  days.forEach(d => {
-    const h = maxCC ? (d.count / maxCC * 100) : 0;
-    const col = d.count > 0 ? _expoRiskColor(d.count, maxCC) : 'transparent';
-    const clickable = d.count > 0;
-    const we = _expoIsWeekend(d.ds);
-    html += `<div class="expo-band-col${clickable ? ' is-click' : ''}${we ? ' is-weekend' : ''}"${clickable ? ` data-date="${d.ds}" data-action="expo-open-day"` : ''} title="${d.ds}: ${d.count} open">
-      <div class="expo-band-fill" style="height:${h.toFixed(1)}%;background:${col}"></div>
-    </div>`;
-  });
-  html += `</div></div>`; // .expo-band / .expo-band-plot
-  html += `</div>`;       // .expo-band-wrap
-  let drow = '';
-  days.forEach(d => { drow += `<div class="expo-band-dcell${_expoIsWeekend(d.ds) ? ' is-we' : ''}">${parseInt(d.ds.slice(8, 10), 10)}</div>`; });
-  html += `<div class="expo-band-days"><div class="expo-band-days-gutter"></div><div class="expo-band-days-cells">${drow}</div></div>`;
-
-  html += `</div>`; // .expo-shell
+  html += `</div></div></div></div></div></div>`; // lanes / body / inner / scroll / wrap / shell
   body.innerHTML = html;
 
-  // Distribute the Gantt height across lanes so the widget fills its tile and
-  // scales when resized (manual mode flex-fill; auto mode adds zoom on top).
-  // Measured post-insert like the calendar's --calm-row-min-h: read the flex-
-  // resolved height of the lanes area, divide by lane count (clamped so few-lane
-  // months stay readable and many-lane months scroll instead of squashing).
-  const lanesEl = body.querySelector('.expo-lanes');
-  if (lanesEl) {
-    const avail = lanesEl.clientHeight;
+  // Lane height: fill the viewport when few lanes, scroll when many. Measured
+  // from the scroll viewport (stable) minus the head, then set on the wrap so the
+  // lanes grid + the pair-label column share the same --expo-lane-h.
+  const scrollEl = body.querySelector('.expo-gantt-scroll');
+  const headEl = body.querySelector('.expo-gantt-head');
+  const wrapEl = body.querySelector('.expo-gantt-wrap');
+  if (scrollEl && wrapEl) {
+    const avail = scrollEl.clientHeight - (headEl ? headEl.offsetHeight : 14);
     const lh = Math.max(16, Math.min(laneCount > 0 ? avail / laneCount : 18, 100));
-    lanesEl.style.setProperty('--expo-lane-h', lh.toFixed(1) + 'px');
+    wrapEl.style.setProperty('--expo-lane-h', lh.toFixed(1) + 'px');
   }
+}
+
+// Widget 5 — line/area: concurrent open positions per day over the month, with a
+// dashed peak line.
+function renderExpoOvertime(trades) {
+  const m = _expoBuildModel(trades);
+  const WRAP = '.chart-card[data-gs-id="w-expo-overtime"] .canvas-stage';
+  if (_expoOverChart) { _expoOverChart.destroy(); _expoOverChart = null; }
+  if (m.empty) {
+    renderCanvasEmptyState(WRAP, ['expoOvertimeCanvas'], m.anyTrades
+      ? 'Map your Exit date column in Data Setup to unlock this.' : EMPTY_STATE_MSG);
+    return;
+  }
+  _expoSyncControls('o', m);
+  document.querySelectorAll('#expo-overmode-toggle [data-omode]').forEach(b =>
+    b.classList.toggle('active', b.dataset.omode === _expoOverMode));
+  if (!m.maxCC) {
+    renderCanvasEmptyState(WRAP, ['expoOvertimeCanvas'], 'No positions this month');
+    return;
+  }
+  clearCanvasEmptyState(WRAP);
+  if (!hasChartJs()) return;
+
+  const canvas = getByIdSafe('expoOvertimeCanvas');
+  if (!canvas) return;
+  canvas.removeAttribute('width'); canvas.removeAttribute('height');
+  const labels = m.days.map(d => m.overall ? _expoFmtMD(d.ds) : parseInt(d.ds.slice(8, 10), 10));
+  const data = m.days.map(d => d.count);
+  const peak = m.maxCC;
+  const bars = _expoOverMode === 'bars';
+  // In bars mode each day is risk-coloured and clickable → that day's drawer.
+  const barColors = bars ? m.days.map(d => d.count > 0 ? _expoRiskColor(d.count, peak) : tc('--line')) : undefined;
+  _expoOverChart = new Chart(canvas, {
+    type: bars ? 'bar' : 'line',
+    data: { labels, datasets: [{
+      label: 'Open positions', data,
+      borderColor: tc('--t'),
+      backgroundColor: bars ? barColors : tc('--t') + '22',
+      borderWidth: bars ? 0 : 1.6, borderRadius: bars ? 2 : 0,
+      pointRadius: 0, fill: !bars, tension: 0.3,
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      onClick: bars ? (evt, els) => {
+        if (els && els.length) { const d = m.days[els[0].index]; if (d && d.count > 0) _expoOpenDay(d.ds); }
+      } : undefined,
+      plugins: {
+        legend: { display: false },
+        tooltip: { bodyFont: { size: _chartTipFs() }, callbacks: {
+          title: ctx => m.overall ? String(ctx[0].label) : `Day ${ctx[0].label}`,
+          label: ctx => ` ${ctx.raw} open`,
+        } },
+      },
+      scales: {
+        x: { grid: { color: tc('--line') }, ticks: { color: tc('--dim'), font: { size: 8, family: '"DM Mono",monospace' }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+        y: { grid: { color: tc('--line') }, ticks: { color: tc('--dim'), font: { size: 9, family: '"DM Mono",monospace' }, stepSize: 1, precision: 0 }, beginAtZero: true, suggestedMax: peak },
+      },
+    },
+    plugins: [{
+      id: 'expoPeakLine',
+      afterDraw(chart) {
+        const { ctx, chartArea: { left, right }, scales: { y } } = chart;
+        const py = y.getPixelForValue(peak);
+        ctx.save();
+        ctx.strokeStyle = tc('--r'); ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(left, py); ctx.lineTo(right, py); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = tc('--r'); ctx.font = '8px "DM Mono", monospace'; ctx.textAlign = 'right';
+        ctx.fillText('peak ' + peak, right - 2, py - 3);
+        ctx.restore();
+      },
+    }],
+  });
+}
+
+// Re-render the 5 Concurrent Positions widgets together (after a synced
+// month/year or mode change in any one of them).
+function _expoRerenderAll() {
+  const f = getFiltered();
+  _withWidgetScale('w-expo-kpis', () => renderExpoKpis(f));
+  _withWidgetScale('w-expo-dist', () => renderExpoDist(f));
+  _withWidgetScale('w-expo-duration', () => renderExpoDuration(f));
+  _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(f));
+  _withWidgetScale('w-expo-overtime', () => renderExpoOvertime(f));
+}
+
+// Toggle the Positions Timeline layout mode (compact ↔ by-pair).
+function _expoSetTimelineMode(mode) {
+  if (mode !== 'compact' && mode !== 'pair') return;
+  if (_expoTimelineMode === mode) return;
+  _expoTimelineMode = mode;
+  _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(getFiltered()));
+}
+
+// Toggle the shared period (month ↔ overall) — re-renders all 5 widgets.
+function _expoSetPeriod(p) {
+  if (p !== 'month' && p !== 'overall') return;
+  if (_expoPeriodMode === p) return;
+  _expoPeriodMode = p;
+  _expoRerenderAll();
+}
+
+// Step to the previous/next month that actually has data (crosses years).
+function _expoStepMonth(dir) {
+  const valid = _expoValidTrades(getFiltered());
+  if (!valid.length) return;
+  const ym = Array.from(new Set(valid.map(t => t.date.slice(0, 7)))).sort(); // 'YYYY-MM' asc
+  if (!ym.length) return;
+  let idx = ym.indexOf(`${_expoSelYear}-${_expoSelMonth}`);
+  if (idx === -1) idx = ym.length - 1;
+  idx = Math.min(ym.length - 1, Math.max(0, idx + (dir < 0 ? -1 : 1)));
+  _expoSelYear = ym[idx].slice(0, 4);
+  _expoSelMonth = ym[idx].slice(5, 7);
+  _expoUserPicked = true;
+  _expoRerenderAll();
+}
+
+// Toggle the Over Time render mode (line ↔ bars).
+function _expoSetOverMode(mode) {
+  if (mode !== 'line' && mode !== 'bars') return;
+  if (_expoOverMode === mode) return;
+  _expoOverMode = mode;
+  _withWidgetScale('w-expo-overtime', () => renderExpoOvertime(getFiltered()));
+}
+
+// Toggle showing pairs with no trade this period (by-pair timeline only).
+function _expoToggleEmptyPairs() {
+  _expoShowEmptyPairs = !_expoShowEmptyPairs;
+  _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(getFiltered()));
+}
+
+// Click a pair row (by-pair timeline) → drawer listing that pair's positions in
+// the current period (each trade card expandable).
+function _expoOpenPair(pair) {
+  if (!pair) return;
+  const m = _expoBuildModel(getFiltered());
+  if (m.empty) return;
+  const list = m.inMonth.filter(t => (t.pair || '—') === pair);
+  if (!list.length) { _showToast(`No ${pair} positions in ${m.label}`, 'info'); return; }
+  document.querySelectorAll('#expo-timeline-body .expo-laxis-row.wd-cell-active').forEach(el => el.classList.remove('wd-cell-active'));
+  const el = document.querySelector(`#expo-timeline-body .expo-laxis-row[data-pair="${(window.CSS && CSS.escape) ? CSS.escape(pair) : pair}"]`);
+  if (el) el.classList.add('wd-cell-active');
+  openWidgetDrawer(pair, `${list.length} position${list.length > 1 ? 's' : ''} · ${m.label}`, list, null, { dim: 'Date' });
 }
 
 // Click a Gantt bar → drawer for that single trade (highlighted).
@@ -26881,8 +27290,8 @@ function _expoOpenTrade(id) {
   if (!id) return;
   const t = _expoValidTrades(getFiltered()).find(x => String(x.tradeId) === String(id));
   if (!t) return;
-  document.querySelectorAll('#exposure-body .expo-bar.wd-bar-active').forEach(el => el.classList.remove('wd-bar-active'));
-  const el = document.querySelector(`#exposure-body .expo-bar[data-trade-id="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`);
+  document.querySelectorAll('#expo-timeline-body .expo-bar.wd-bar-active').forEach(el => el.classList.remove('wd-bar-active'));
+  const el = document.querySelector(`#expo-timeline-body .expo-bar[data-trade-id="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`);
   if (el) el.classList.add('wd-bar-active');
   const rEff = Number(computeEffectiveRR(t, appState.ui.tpConfig)) || 0;
   const sub = `${t.date} → ${t.exitDate} · ${_expoDurationDays(t.date, t.exitDate)}d · ${rEff >= 0 ? '+' : ''}${rEff.toFixed(1)}R`;
@@ -26895,8 +27304,8 @@ function _expoOpenDay(ds) {
   const valid = _expoValidTrades(getFiltered());
   const open = valid.filter(t => t.date <= ds && t.exitDate >= ds);
   if (!open.length) return;
-  document.querySelectorAll('#exposure-body [data-date]').forEach(el => el.classList.remove('wd-cell-active'));
-  const el = document.querySelector(`#exposure-body [data-date="${ds}"]`);
+  document.querySelectorAll('#expo-timeline-body [data-date]').forEach(el => el.classList.remove('wd-cell-active'));
+  const el = document.querySelector(`#expo-timeline-body [data-date="${ds}"]`);
   if (el) el.classList.add('wd-cell-active');
   openWidgetDrawer(ds, `${open.length} position${open.length > 1 ? 's' : ''} open`, open, null, { dim: 'Date' });
 }
@@ -32192,7 +32601,11 @@ function renderPanels(filtered) {
   if (typeof _poRender === 'function') _withWidgetScale('w-partial-optimizer', () => _poRender());
   renderPairSession(filtered);
   renderCalendar(filtered);
-  _withWidgetScale('w-exposure', () => renderExposure(filtered));
+  _withWidgetScale('w-expo-kpis', () => renderExpoKpis(filtered));
+  _withWidgetScale('w-expo-dist', () => renderExpoDist(filtered));
+  _withWidgetScale('w-expo-duration', () => renderExpoDuration(filtered));
+  _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(filtered));
+  _withWidgetScale('w-expo-overtime', () => renderExpoOvertime(filtered));
   _withWidgetScale('w-montecarlo', () => runMonteCarlo(filtered));
 
   if (typeof updateContextStrip === 'function') updateContextStrip();
@@ -40680,7 +41093,7 @@ window.addEventListener('load', () => {
   // Restore saved dashboard section tab (Global Overview / Optimal RR Analysis / Partial Planers)
   {
     const saved = localStorage.getItem('dashboard_section');
-    if (saved && ['global','optimal-rr','partials'].includes(saved)) {
+    if (saved && ['global','concurrent-positions','optimal-rr','partials'].includes(saved)) {
       setSection(saved);
     }
   }
@@ -42776,7 +43189,15 @@ const GLOBAL_OVERVIEW_LAYOUT = {
   'w-recovery':         {x:0, y:479, w:6,  h:51, minW:2, minH:14},
   'w-streak-analytics': {x:6, y:479, w:6,  h:51, minW:2, minH:14},
   'w-tradelog':         {x:0, y:530, w:12, h:51, minW:4, minH:16},
-  'w-exposure':         {x:0, y:581, w:12, h:50, minW:6, minH:32},
+};
+// Concurrent Positions — its own section, split into 3 widgets so each part
+// (KPIs / distribution / Gantt+band timeline) can be moved & resized alone.
+const CONCURRENT_POSITIONS_LAYOUT = {
+  'w-expo-kpis':     {x:0, y:0,   w:12, h:16, minW:4, minH:12},
+  'w-expo-dist':     {x:0, y:16,  w:6,  h:36, minW:3, minH:24},
+  'w-expo-duration': {x:6, y:16,  w:6,  h:36, minW:3, minH:24},
+  'w-expo-timeline': {x:0, y:52,  w:12, h:58, minW:6, minH:40},
+  'w-expo-overtime': {x:0, y:110, w:12, h:34, minW:4, minH:22},
 };
 const OPTIMAL_RR_LAYOUT = {
   'w-optimal-rr': {x:0, y:0, w:12, h:77, minW:4, minH:30},
@@ -42792,22 +43213,25 @@ const PARTIAL_PLANNERS_LAYOUT = {
 const DEFAULT_LAYOUT = Object.assign(
   {},
   GLOBAL_OVERVIEW_LAYOUT,
+  CONCURRENT_POSITIONS_LAYOUT,
   OPTIMAL_RR_LAYOUT,
   PARTIAL_PLANNERS_LAYOUT
 );
 
 // Map section id -> its fixed layout
 const SECTION_LAYOUTS = {
-  'global':     GLOBAL_OVERVIEW_LAYOUT,
-  'optimal-rr': OPTIMAL_RR_LAYOUT,
-  'partials':   PARTIAL_PLANNERS_LAYOUT,
+  'global':                GLOBAL_OVERVIEW_LAYOUT,
+  'concurrent-positions':  CONCURRENT_POSITIONS_LAYOUT,
+  'optimal-rr':            OPTIMAL_RR_LAYOUT,
+  'partials':              PARTIAL_PLANNERS_LAYOUT,
 };
 
 // Seed the live section layouts now that the consts are available.
 _liveSectionLayouts = {
-  global:       { ...GLOBAL_OVERVIEW_LAYOUT },
-  'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-  partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+  global:                 { ...GLOBAL_OVERVIEW_LAYOUT },
+  'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT },
+  'optimal-rr':           { ...OPTIMAL_RR_LAYOUT },
+  partials:               { ...PARTIAL_PLANNERS_LAYOUT },
 };
 
 const BEGINNER_LAYOUT = {"w-equity":{"x":0,"y":17,"w":9,"h":40},"w-outcome":{"x":9,"y":17,"w":3,"h":27},"w-selection":{"x":0,"y":57,"w":6,"h":43},"w-stats":{"x":0,"y":0,"w":12,"h":17},"w-monthly":{"x":6,"y":57,"w":6,"h":43},"w-setup":{"x":0,"y":100,"w":5,"h":31},"w-session":{"x":5,"y":259,"w":4,"h":30},"w-day":{"x":5,"y":100,"w":3,"h":31},"w-pair":{"x":8,"y":100,"w":4,"h":31},"w-heatmap":{"x":0,"y":342,"w":12,"h":25},"w-m15":{"x":0,"y":131,"w":12,"h":63},"w-h4":{"x":0,"y":289,"w":12,"h":53},"w-tradelog":{"x":0,"y":194,"w":12,"h":65}};
@@ -43249,15 +43673,16 @@ function _collectAllManagedWidgets() {
 }
 
 const _SECTION_LABEL_MAP = {
-  'global':     'Global',
-  'optimal-rr': 'Optimal RR',
-  'partials':   'Partials',
+  'global':                'Global',
+  'concurrent-positions':  'Concurrent',
+  'optimal-rr':           'Optimal RR',
+  'partials':             'Partials',
 };
 
 // Section ordering matches the on-screen tab order: Global → Optimal RR →
 // Partials. Used to group the popover so widgets show up in the same vertical
 // order as the dashboard reads them.
-const _SECTION_ORDER = { 'global': 0, 'optimal-rr': 1, 'partials': 2 };
+const _SECTION_ORDER = { 'global': 0, 'concurrent-positions': 1, 'optimal-rr': 2, 'partials': 3 };
 
 // Comparator: dashboard reading order — section first, then top-to-bottom,
 // then left-to-right within the same row.
@@ -43624,7 +44049,8 @@ function _msGetWidgetIcon(id) {
     'w-outcome':'donut',
     'w-stats':'cells', 'w-tradelog':'cells',
     'w-selection':'mixed', 'w-monthly':'mixed', 'w-partial-optimizer':'mixed',
-    'w-exposure':'mixed',
+    'w-expo-kpis':'cells', 'w-expo-dist':'donut', 'w-expo-duration':'bars',
+    'w-expo-timeline':'mixed', 'w-expo-overtime':'line',
   };
   let kind = KIND_BY_ID[id] || 'mixed';
   if (!KIND_BY_ID[id] && id && id.startsWith('w-cust-')) {
@@ -44169,15 +44595,16 @@ function _removeCustomSlot(name) {
 // object has widget ids at the top level instead of section keys.
 function _isLegacySlot(obj) {
   if (!obj || typeof obj !== 'object') return false;
-  const sectionKeys = ['global', 'optimal-rr', 'partials'];
+  const sectionKeys = ['global', 'concurrent-positions', 'optimal-rr', 'partials'];
   return !sectionKeys.some(k => k in obj);
 }
 
 // Convert a legacy flat layout into the new section-keyed shape.
 function _migrateLegacySlot(flat) {
-  const out = { global: {}, 'optimal-rr': {}, partials: {} };
+  const out = { global: {}, 'concurrent-positions': {}, 'optimal-rr': {}, partials: {} };
   for (const id in flat) {
     if (id in GLOBAL_OVERVIEW_LAYOUT)      out.global[id]       = flat[id];
+    else if (id in CONCURRENT_POSITIONS_LAYOUT) out['concurrent-positions'][id] = flat[id];
     else if (id in OPTIMAL_RR_LAYOUT)      out['optimal-rr'][id] = flat[id];
     else if (id in PARTIAL_PLANNERS_LAYOUT) out.partials[id]     = flat[id];
   }
@@ -44335,9 +44762,10 @@ function _restoreDynamicWidgetDefFromPayload(entry) {
 // Serialize the three live section layouts into a single slot payload.
 function _serializeSectionLayouts() {
   return {
-    global:       { ..._liveSectionLayouts.global },
-    'optimal-rr': { ..._liveSectionLayouts['optimal-rr'] },
-    partials:     { ..._liveSectionLayouts.partials },
+    global:                 { ..._liveSectionLayouts.global },
+    'concurrent-positions': { ..._liveSectionLayouts['concurrent-positions'] },
+    'optimal-rr':           { ..._liveSectionLayouts['optimal-rr'] },
+    partials:               { ..._liveSectionLayouts.partials },
     hiddenWidgets: { ...(_hiddenWidgets || {}) },
     dynamicWidgets: _serializeDynamicWidgets(),
   };
@@ -44352,6 +44780,7 @@ function _saveSectionSlot(key, { skipSync = false } = {}) {
   const payload = _serializeSectionLayouts();
   const savedItems = {
     global: payload.global,
+    'concurrent-positions': payload['concurrent-positions'],
     'optimal-rr': payload['optimal-rr'],
     partials: payload.partials,
     hiddenWidgets: payload.hiddenWidgets,
@@ -44426,9 +44855,10 @@ function _loadSectionSlot(raw) {
   delete partialsData['w-partials-planner'];
 
   _liveSectionLayouts = {
-    global:       globalData,
-    'optimal-rr': { ...OPTIMAL_RR_LAYOUT,           ...(data['optimal-rr'] || {}) },
-    partials:     { ...PARTIAL_PLANNERS_LAYOUT,     ...partialsData },
+    global:                 globalData,
+    'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT, ...(data['concurrent-positions'] || {}) },
+    'optimal-rr':           { ...OPTIMAL_RR_LAYOUT,           ...(data['optimal-rr'] || {}) },
+    partials:               { ...PARTIAL_PLANNERS_LAYOUT,     ...partialsData },
   };
   return true;
 }
@@ -44901,9 +45331,10 @@ function initGridstack() {
     }
   } else if (!_liveSectionLayouts) {
     _liveSectionLayouts = {
-      global:       { ...GLOBAL_OVERVIEW_LAYOUT },
-      'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-      partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+      global:                 { ...GLOBAL_OVERVIEW_LAYOUT },
+      'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT },
+      'optimal-rr':           { ...OPTIMAL_RR_LAYOUT },
+      partials:               { ...PARTIAL_PLANNERS_LAYOUT },
     };
   }
   // Defensive cache invalidation before reading custom widget defs (Task #3.8):
@@ -45463,9 +45894,10 @@ function layoutLoadPreset(name) {
       } else {
         const customLayouts = _defaultCustomWidgetLayouts();
         _liveSectionLayouts = {
-          global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
-          'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-          partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+          global:                 { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
+          'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT },
+          'optimal-rr':           { ...OPTIMAL_RR_LAYOUT },
+          partials:               { ...PARTIAL_PLANNERS_LAYOUT },
         };
       }
       _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
@@ -45515,9 +45947,10 @@ function layoutNew() {
   try {
     const customLayouts = _defaultCustomWidgetLayouts();
     _liveSectionLayouts = {
-      global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
-      'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-      partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+      global:                 { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
+      'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT },
+      'optimal-rr':           { ...OPTIMAL_RR_LAYOUT },
+      partials:               { ...PARTIAL_PLANNERS_LAYOUT },
     };
     _applySectionFilter(appState.ui.activeSection || 'global', { skipSync: true });
     _saveSectionSlot(name, { skipSync: true });
@@ -45647,6 +46080,7 @@ function layoutReset() {
         const data = _isLegacySlot(parsed) ? _migrateLegacySlot(parsed) : parsed;
         _liveSectionLayouts = {
           global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...(data.global       || {}) },
+          'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT, ...(data['concurrent-positions'] || {}) },
           'optimal-rr': { ...OPTIMAL_RR_LAYOUT,      ...(data['optimal-rr'] || {}) },
           partials:     { ...PARTIAL_PLANNERS_LAYOUT, ...(data.partials     || {}) },
         };
@@ -45656,9 +46090,10 @@ function layoutReset() {
     if (!restored) {
       const customLayouts = isDefault ? _defaultCustomWidgetLayouts() : _defaultCustomWidgetLayouts();
       _liveSectionLayouts = {
-        global:       { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
-        'optimal-rr': { ...OPTIMAL_RR_LAYOUT },
-        partials:     { ...PARTIAL_PLANNERS_LAYOUT },
+        global:                 { ...GLOBAL_OVERVIEW_LAYOUT, ...customLayouts },
+        'concurrent-positions': { ...CONCURRENT_POSITIONS_LAYOUT },
+        'optimal-rr':           { ...OPTIMAL_RR_LAYOUT },
+        partials:               { ...PARTIAL_PLANNERS_LAYOUT },
       };
     }
     _saveSectionSlot('active', { skipSync: true });

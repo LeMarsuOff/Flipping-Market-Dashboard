@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=342">
+<link rel="stylesheet" href="dashboard.css?v=346">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1738,6 +1738,9 @@
   <div class="view-tab active" id="tab-section-global" data-action="set-section" data-section="global">
     <span>⬡</span> Global Overview
   </div>
+  <div class="view-tab" data-action="set-section" data-section="concurrent-positions">
+    Concurrent Positions
+  </div>
   <div class="view-tab" data-action="set-section" data-section="optimal-rr">
     Optimal RR Analysis
   </div>
@@ -2512,27 +2515,127 @@
     </div>
 
     <!-- ══ WIDGET: Concurrent Positions ══ -->
-    <div class="chart-card gs-widget" data-gs-id="w-exposure" data-section="global">
+    <!-- ══ WIDGET: Concurrent Positions — KPIs ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-expo-kpis" data-section="concurrent-positions">
       <div class="cc-head cc-head-fixed cc-head-wrap">
         <span class="cc-title">Concurrent Positions</span>
         <div class="cc-head-controls cc-head-controls-wrap">
-          <!-- Year selector -->
-          <select id="expo-year-sel" class="widget-select"></select>
-          <!-- Month selector -->
-          <select id="expo-month-sel" class="widget-select">
-            <option value="01">January</option><option value="02">February</option><option value="03">March</option>
-            <option value="04">April</option><option value="05">May</option><option value="06">June</option>
-            <option value="07">July</option><option value="08">August</option><option value="09">September</option>
-            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
-          </select>
-          <!-- Legend -->
+          <div class="control-group control-group-calendar" id="expo-period-k">
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+          </div>
+          <div class="expo-monthctl" id="expo-monthctl-k">
+            <select id="expo-year-sel-k" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="-1" title="Previous month">‹</button>
+            <select id="expo-month-sel-k" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="1" title="Next month">›</button>
+          </div>
+        </div>
+      </div>
+      <div id="expo-kpis-body" class="scroll-panel-fill"></div>
+    </div>
+
+    <!-- ══ WIDGET: Concurrent Positions — Distribution (donut) ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-expo-dist" data-section="concurrent-positions">
+      <div class="cc-head cc-head-fixed cc-head-wrap">
+        <span class="cc-title">Share of Open Positions</span>
+        <div class="cc-head-controls cc-head-controls-wrap">
+          <div class="control-group control-group-calendar" id="expo-period-d">
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+          </div>
+          <div class="expo-monthctl" id="expo-monthctl-d">
+            <select id="expo-year-sel-d" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="-1" title="Previous month">‹</button>
+            <select id="expo-month-sel-d" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="1" title="Next month">›</button>
+          </div>
+        </div>
+      </div>
+      <div id="expo-dist-body" class="expo-donut-body">
+        <div class="canvas-stage expo-donut-stage">
+          <canvas id="expoDistCanvas" class="canvas-absolute-fill"></canvas>
+          <div class="expo-donut-center" id="expo-dist-center"></div>
+        </div>
+        <div class="expo-donut-legend" id="expo-dist-legend"></div>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Concurrent Positions — Duration (horizontal bars) ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-expo-duration" data-section="concurrent-positions">
+      <div class="cc-head cc-head-fixed cc-head-wrap">
+        <span class="cc-title">Position Duration <span class="cc-sub" id="expo-dur-avg"></span></span>
+        <div class="cc-head-controls cc-head-controls-wrap">
+          <div class="control-group control-group-calendar" id="expo-period-u">
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+          </div>
+          <div class="expo-monthctl" id="expo-monthctl-u">
+            <select id="expo-year-sel-u" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="-1" title="Previous month">‹</button>
+            <select id="expo-month-sel-u" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="1" title="Next month">›</button>
+          </div>
+        </div>
+      </div>
+      <div id="expo-duration-body" class="canvas-stage">
+        <canvas id="expoDurationCanvas" class="canvas-absolute-fill"></canvas>
+      </div>
+    </div>
+
+    <!-- ══ WIDGET: Concurrent Positions — Timeline (Gantt, compact/by-pair) ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-expo-timeline" data-section="concurrent-positions">
+      <div class="cc-head cc-head-fixed cc-head-wrap">
+        <span class="cc-title">Positions Timeline</span>
+        <div class="cc-head-controls cc-head-controls-wrap">
+          <div class="control-group control-group-calendar" id="expo-mode-toggle">
+            <button data-action="expo-set-mode" data-mode="compact" class="bar-sort-btn bar-sort-btn-segment active" title="Compact — lane-packed, dense">Compact</button>
+            <button data-action="expo-set-mode" data-mode="pair" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="By pair — one row per pair, alphabetical">By pair</button>
+          </div>
+          <button class="bar-sort-btn expo-icon-btn" id="expo-empty-toggle" data-action="expo-toggle-empty" title="Show pairs with no trade this period">∅ pairs</button>
+          <div class="control-group control-group-calendar" id="expo-period-t">
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history (scroll)">Overall</button>
+          </div>
+          <div class="expo-monthctl" id="expo-monthctl-t">
+            <select id="expo-year-sel-t" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="-1" title="Previous month">‹</button>
+            <select id="expo-month-sel-t" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="1" title="Next month">›</button>
+          </div>
           <div class="legend-inline">
             <span class="legend-item"><span class="legend-dot-sm tone-success"></span>Win</span>
             <span class="legend-item"><span class="legend-dot-sm tone-danger"></span>Loss</span>
           </div>
         </div>
       </div>
-      <div id="exposure-body" class="scroll-panel-fill"></div>
+      <div id="expo-timeline-body" class="scroll-panel-fill"></div>
+    </div>
+
+    <!-- ══ WIDGET: Concurrent Positions — Over Time (line / bars) ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-expo-overtime" data-section="concurrent-positions">
+      <div class="cc-head cc-head-fixed cc-head-wrap">
+        <span class="cc-title">Concurrent Positions Over Time</span>
+        <div class="cc-head-controls cc-head-controls-wrap">
+          <div class="control-group control-group-calendar" id="expo-overmode-toggle">
+            <button data-action="expo-set-overmode" data-omode="line" class="bar-sort-btn bar-sort-btn-segment active" title="Line / area">Line</button>
+            <button data-action="expo-set-overmode" data-omode="bars" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Per-day bars (click a day)">Bars</button>
+          </div>
+          <div class="control-group control-group-calendar" id="expo-period-o">
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+          </div>
+          <div class="expo-monthctl" id="expo-monthctl-o">
+            <select id="expo-year-sel-o" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="-1" title="Previous month">‹</button>
+            <select id="expo-month-sel-o" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="1" title="Next month">›</button>
+          </div>
+        </div>
+      </div>
+      <div id="expo-overtime-body" class="canvas-stage">
+        <canvas id="expoOvertimeCanvas" class="canvas-absolute-fill"></canvas>
+      </div>
     </div>
 
     <!-- ══ WIDGET: Monte Carlo ══ -->
@@ -2980,6 +3083,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1145"></script>
+<script src="dashboard.js?v=1190"></script>
 </body>
 </html>

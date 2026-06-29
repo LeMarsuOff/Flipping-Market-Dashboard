@@ -11181,7 +11181,7 @@ body.ms-sidebar-open .view-tabs {
   z-index: 1; user-select: none;
 }
 
-/* ── Concurrent Positions widget (w-exposure) — Gantt of overlapping trades +
+/* ── Concurrent Positions section (w-expo-kpis / w-expo-dist / w-expo-timeline) — Gantt of overlapping trades +
    per-day exposure band + KPIs. Reuses the calendar's --fs-cal-* typography
    tokens so it stays in the existing theme-editor group. ── */
 .expo-shell { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; padding: 2px; }
@@ -11242,6 +11242,51 @@ body.ms-sidebar-open .view-tabs {
 .expo-band-fill { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; transition: filter .12s; }
 .expo-band-col.is-click:hover .expo-band-fill { filter: brightness(1.2); }
 .expo-band-col.wd-cell-active { background: var(--bg3); box-shadow: inset 0 0 0 2px var(--gold); }
+/* Concurrent Positions section — each widget fills its own tile. */
+.chart-card[data-gs-id="w-expo-kpis"] .expo-kpis { flex: 1 1 auto; }
+.chart-card[data-gs-id="w-expo-kpis"] .expo-kpi { justify-content: center; }
+#expo-duration-body, #expo-overtime-body { flex: 1 1 0; min-height: 0; }
+
+/* Distribution donut: canvas + centre overlay + side legend. */
+.expo-donut-body { display: flex; flex-direction: row; align-items: center; gap: 10px; flex: 1 1 0; min-height: 0; padding: 6px 8px; }
+.expo-donut-stage { position: relative; flex: 0 0 46%; height: 100%; min-height: 0; }
+.expo-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+.expo-donut-big { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-cal-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
+.expo-donut-sub { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin-top: 3px; }
+.expo-donut-legend { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.expo-leg-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); }
+.expo-leg-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.expo-leg-lbl { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expo-leg-val { color: var(--body); font-weight: 700; font-variant-numeric: tabular-nums; }
+.expo-leg-n { color: var(--dim); font-variant-numeric: tabular-nums; }
+.cc-sub { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 600; color: var(--dim); letter-spacing: .03em; margin-left: 6px; }
+
+/* Timeline Gantt: head (label gutter + day axis) over body (pair-label column +
+   lane plot). --expo-gutter is 0 in compact mode, ~84px in by-pair mode. */
+/* Period controls (shared by all 5 widgets): month/year selects + step arrows. */
+.expo-monthctl { display: inline-flex; align-items: center; gap: 4px; }
+.expo-arrow { width: 20px; height: 22px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--bg2); color: var(--body); cursor: pointer; font-size: 13px; line-height: 1; }
+.expo-arrow:hover { background: var(--bg3); }
+.expo-icon-btn { padding: 3px 8px; }
+.expo-icon-btn.active { background: var(--bg3); color: var(--gold); }
+
+/* Timeline Gantt: a single scroll viewport holds a sticky day/month axis (top)
+   and a sticky pair-label column (left). --expo-gutter is 0 in compact mode,
+   ~84px in by-pair mode. In Overall the inner gets an explicit px width so the
+   viewport scrolls horizontally. */
+.expo-gantt-scroll { flex: 1 1 0; min-height: 0; overflow: auto; }
+.expo-gantt-inner { display: flex; flex-direction: column; gap: 4px; min-height: 100%; }
+.expo-gantt-head { display: flex; align-items: flex-end; position: sticky; top: 0; z-index: 3; background: var(--bg); }
+.expo-gantt-gutter { flex: 0 0 var(--expo-gutter, 0); position: sticky; left: 0; z-index: 1; background: var(--bg); }
+.expo-gantt-head .expo-axis { flex: 1 1 0; }
+.expo-axis-mtick { position: absolute; bottom: 0; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); white-space: nowrap; padding-left: 3px; border-left: 1px solid var(--line2); }
+.expo-gantt-body { display: flex; flex: 1 1 0; min-height: 0; }
+.expo-gantt-laxis { flex: 0 0 var(--expo-gutter, 0); position: sticky; left: 0; z-index: 2; background: var(--bg); display: flex; flex-direction: column; }
+.expo-laxis-row { height: var(--expo-lane-h, 18px); display: flex; align-items: center; padding-right: 8px; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.expo-laxis-row:hover { color: var(--gold); }
+.expo-laxis-row.wd-cell-active { color: var(--gold); }
+.expo-gantt-body .expo-lanes { width: auto; flex: 1 1 0; min-width: 0; overflow: visible; min-height: calc(var(--expo-lanes, 1) * var(--expo-lane-h, 18px)); }
+.expo-gcol.is-month { border-left: 1px solid var(--line2); }
 .bar-list .bar-row.sm        { grid-template-columns: subgrid; }
 .bar-list .bar-row.setup     { grid-template-columns: subgrid; }
 .bar-list .bar-row.obs       { grid-template-columns: 150px 1fr 62px; }
