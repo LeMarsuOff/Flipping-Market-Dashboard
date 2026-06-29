@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=333">
+<link rel="stylesheet" href="dashboard.css?v=342">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -2511,6 +2511,30 @@
       <div id="calendar-grid" class="scroll-panel-fill"></div>
     </div>
 
+    <!-- ══ WIDGET: Concurrent Positions ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-exposure" data-section="global">
+      <div class="cc-head cc-head-fixed cc-head-wrap">
+        <span class="cc-title">Concurrent Positions</span>
+        <div class="cc-head-controls cc-head-controls-wrap">
+          <!-- Year selector -->
+          <select id="expo-year-sel" class="widget-select"></select>
+          <!-- Month selector -->
+          <select id="expo-month-sel" class="widget-select">
+            <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+            <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+            <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+          </select>
+          <!-- Legend -->
+          <div class="legend-inline">
+            <span class="legend-item"><span class="legend-dot-sm tone-success"></span>Win</span>
+            <span class="legend-item"><span class="legend-dot-sm tone-danger"></span>Loss</span>
+          </div>
+        </div>
+      </div>
+      <div id="exposure-body" class="scroll-panel-fill"></div>
+    </div>
+
     <!-- ══ WIDGET: Monte Carlo ══ -->
     <div class="chart-card gs-widget mc2-widget" data-gs-id="w-montecarlo" data-section="optimal-rr">
       <div class="cc-head cc-head-fixed">
@@ -2956,6 +2980,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1125"></script>
+<script src="dashboard.js?v=1145"></script>
 </body>
 </html>

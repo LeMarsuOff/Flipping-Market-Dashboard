@@ -11180,6 +11180,68 @@ body.ms-sidebar-open .view-tabs {
   font-weight: 800; color: var(--body); opacity: .08; text-transform: uppercase; letter-spacing: 6px;
   z-index: 1; user-select: none;
 }
+
+/* ── Concurrent Positions widget (w-exposure) — Gantt of overlapping trades +
+   per-day exposure band + KPIs. Reuses the calendar's --fs-cal-* typography
+   tokens so it stays in the existing theme-editor group. ── */
+.expo-shell { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; padding: 2px; }
+.expo-summary, .expo-kpis, .expo-dist-wrap, .expo-band-lbl { flex-shrink: 0; }
+.expo-empty {
+  display: flex; align-items: center; justify-content: center; height: 100%; min-height: 120px;
+  padding: 20px; text-align: center; color: var(--dim);
+  font-family: 'DM Mono', monospace; font-size: var(--fs-cal-header, 11px); line-height: 1.6;
+}
+.expo-empty b { color: var(--body); font-weight: 700; }
+.expo-summary { display: flex; align-items: center; background: var(--bg2); border-radius: 5px; padding: 5px 11px; flex-shrink: 0; }
+.expo-summary-meta { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-header, 9px); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
+.expo-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.expo-kpi { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.expo-kpi-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expo-kpi-val { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-cal-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
+.expo-kpi-val.is-peak { color: var(--r); }
+.expo-kpi-val.expo-kpi-sm { font-size: var(--fs-cal-value, 13px); }
+.expo-dist-wrap { display: flex; flex-direction: column; gap: 4px; }
+.expo-dist-lbl, .expo-band-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.expo-dist { display: flex; height: 20px; border-radius: 5px; overflow: hidden; }
+.expo-dist-seg { display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); font-weight: 700; color: var(--bg); min-width: 0; overflow: hidden; white-space: nowrap; }
+.expo-gantt-wrap { position: relative; display: flex; flex-direction: column; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; flex: 1 1 0; min-height: 90px; }
+.expo-axis { position: relative; height: 12px; flex-shrink: 0; }
+.expo-axis-tick { position: absolute; top: 0; transform: translateX(-50%); font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); }
+.expo-axis-tick.is-we { color: var(--dim); font-weight: 400; }
+.expo-lanes { position: relative; width: 100%; flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+/* Per-day background grid: equal flex columns = day cells; right borders are the
+   gridlines, weekend cells get a faint wash. Height tracks the lane stack. */
+.expo-grid { position: absolute; top: 0; left: 0; width: 100%; height: calc(var(--expo-lanes, 1) * var(--expo-lane-h, 18px)); min-height: 100%; display: flex; pointer-events: none; z-index: 0; }
+.expo-gcol { flex: 1 1 0; border-right: 1px solid color-mix(in srgb, var(--line) 70%, transparent); box-sizing: border-box; }
+.expo-gcol:first-child { border-left: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+.expo-gcol.is-we { background: color-mix(in srgb, var(--bg2) 60%, transparent); }
+.expo-bar { position: absolute; z-index: 1; top: calc(var(--expo-row, 0) * var(--expo-lane-h, 18px)); height: calc(var(--expo-lane-h, 18px) - 4px); border-radius: 4px; display: flex; align-items: center; gap: 4px; padding: 0 5px; overflow: hidden; box-sizing: border-box; cursor: pointer; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bg) 22%, transparent); transition: filter .12s; }
+.expo-bar:hover { filter: brightness(1.1); }
+.expo-bar.wd-bar-active { box-shadow: inset 0 0 0 2px var(--gold); }
+.expo-bar.cont-l { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.expo-bar.cont-r { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.expo-bar-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--bg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expo-bar-dur { margin-left: auto; flex-shrink: 0; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: color-mix(in srgb, var(--bg) 55%, transparent); }
+.expo-band-lbl { margin-top: 2px; }
+.expo-band-wrap { display: flex; flex-direction: row; gap: 6px; flex: 0.55 1 0; min-height: 64px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.expo-band-yaxis { position: relative; width: 18px; flex-shrink: 0; }
+.expo-yt { position: absolute; right: 0; transform: translateY(50%); font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--dim); line-height: 1; }
+.expo-band-plot { position: relative; flex: 1 1 0; min-width: 0; }
+.expo-band-grid { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.expo-bgridline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.expo-band { position: absolute; inset: 0; display: flex; gap: 1px; align-items: flex-end; z-index: 1; }
+.expo-band-days { display: flex; gap: 6px; border: 1px solid transparent; padding: 0 8px; margin-top: 2px; flex-shrink: 0; }
+.expo-band-days-gutter { width: 18px; flex-shrink: 0; }
+.expo-band-days-cells { flex: 1 1 0; min-width: 0; display: flex; gap: 1px; }
+.expo-band-dcell { flex: 1 1 0; min-width: 0; text-align: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); line-height: 1.1; overflow: hidden; }
+.expo-band-dcell.is-we { color: var(--dim); font-weight: 400; }
+.expo-band-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; border-radius: 2px; min-width: 0; }
+.expo-band-col.is-weekend { background: color-mix(in srgb, var(--bg2) 60%, transparent); }
+.expo-band-col.is-click { cursor: pointer; }
+.expo-band-col.is-click:hover { background: var(--bg3); }
+.expo-band-fill { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; transition: filter .12s; }
+.expo-band-col.is-click:hover .expo-band-fill { filter: brightness(1.2); }
+.expo-band-col.wd-cell-active { background: var(--bg3); box-shadow: inset 0 0 0 2px var(--gold); }
 .bar-list .bar-row.sm        { grid-template-columns: subgrid; }
 .bar-list .bar-row.setup     { grid-template-columns: subgrid; }
 .bar-list .bar-row.obs       { grid-template-columns: 150px 1fr 62px; }

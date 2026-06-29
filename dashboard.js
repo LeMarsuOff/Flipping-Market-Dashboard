@@ -4601,6 +4601,8 @@ function handleActionClick(event) {
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
+    case 'expo-open-day': _expoOpenDay(actionEl.dataset.date || ''); break;
+    case 'expo-open-trade': _expoOpenTrade(actionEl.dataset.tradeId || ''); break;
     case 'apply-theme-preset': applyPresetTheme(parseInt(actionEl.dataset.themePreset, 10)); break;
     case 'export-theme': exportTheme(); break;
     case 'save-theme': saveTheme(); break;
@@ -4751,6 +4753,11 @@ function handleActionChange(event) {
   }
   if (event.target.id === 'cal-year-sel' || event.target.id === 'cal-month-sel') {
     renderCalendar(getFiltered());
+    return;
+  }
+  if (event.target.id === 'expo-year-sel' || event.target.id === 'expo-month-sel') {
+    _expoUserPicked = true;
+    renderExposure(getFiltered());
     return;
   }
   if (event.target.id === 'mc-year-sel') {
@@ -8543,6 +8550,7 @@ function _applyMappedFieldAliases(trades, source) {
       ...(_copyMappedAliasPatch(t, ov, 'obstacles', activeSource === 'h4' ? 'obstaclesH4' : 'obstaclesM15') || {}),
       ...(_copyMappedAliasPatch(t, ov, 'beManagement', 'beManagement') || {}),
       ...(_copyMappedAliasPatch(t, ov, 'tp1_rr', 'rrTp1') || {}),
+      ...(_copyMappedAliasPatch(t, ov, 'exitDate', 'exitDate') || {}),
     };
     return Object.keys(patch).length ? { ...t, ...patch } : t;
   });
@@ -9610,6 +9618,20 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     tradeId:     _resolvedTradeId,
     date:        dateRaw,
     month:       dateRaw.slice(0, 7),
+    // Exit date (concurrent-positions widget). Entry date lives in `date`; the
+    // user maps their own "exit/close date" Notion column via Data Setup, which
+    // _applyMappedFieldAliases copies into `t.exitDate`. Auto-detect a few common
+    // column names too. Day-level (sliced to YYYY-MM-DD); null when absent or
+    // before the entry date (treated as a single-day position downstream).
+    exitDate:    (() => {
+      const _ed = t.exitDate ?? t['Exit Date'] ?? t.dateExit ?? t['Date Exit']
+                ?? t.closeDate ?? t['Close Date'] ?? t.dateSortie ?? t['Date de sortie'];
+      let s = '';
+      if (typeof _ed === 'string') s = _ed;
+      else if (_ed && typeof _ed === 'object') s = (typeof _ed.start === 'string' ? _ed.start : _firstText(_ed));
+      s = (s || '').slice(0, 10);
+      return (s && s.length >= 7 && s >= dateRaw) ? s : null;
+    })(),
     pair:        _firstText(_pick('pair', t.pair || t['Pair'] || t.paire || t['Paire'])),
     setup:       _firstText(_pick('setup', t['M15 Confirmation / Continuation'] || t['M15 Confirmation / Continu'] || t.confirmation || t['Confirmation / Continunation'] || t.m15Type || t['M15 Type'])),
     setupDetail: _firstText(_pick('setupDetail',
@@ -26587,6 +26609,298 @@ function _renderCalendarMonthly(trades, yearSel) {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  Concurrent Positions widget (w-exposure)
+//  Visualises simultaneous open positions over a month. Each trade spans
+//  [entry date → exit date]; trades are lane-packed into a Gantt so the
+//  number of occupied lanes at any day = positions open that day. Below the
+//  Gantt, a per-day exposure band + KPIs (max / avg in-market / % time ≥2)
+//  and a distribution bar answer "how many positions did I run at once?".
+//  Day-level granularity (the model stores YYYY-MM-DD). Requires an Exit
+//  date column mapped in Data Setup (entry `t.date` + `t.exitDate`).
+// ════════════════════════════════════════════════════════════════════
+const _EXPO_MONTHS = ['January','February','March','April','May','June',
+  'July','August','September','October','November','December'];
+let _expoUserPicked = false;  // true once the user changes year/month selects
+
+// Trades usable for concurrency: valid entry + valid exit, exit on/after entry.
+function _expoValidTrades(trades) {
+  if (!trades || !trades.length) return [];
+  return trades.filter(t => t && t.date && t.date.length >= 10
+    && t.exitDate && t.exitDate.length >= 10 && t.exitDate >= t.date);
+}
+
+// Bar / dot fill following the same outcome semantics as the calendar.
+function _expoBarColor(t, tpConfig) {
+  if (t.outcome === 'BE-TP') return 'var(--oc-betp)';
+  if (t.outcome === 'BE-SL') return 'var(--oc-besl)';
+  if (isWinner(t, tpConfig)) return 'var(--g)';
+  if (isLoser(t, tpConfig))  return 'var(--r)';
+  return 'var(--dim)';
+}
+
+// Exposure risk ramp, scaled to the month's own peak: low→teal, mid→amber,
+// high→red. Ratio-based so it adapts whether the month peaks at 3 or 12.
+function _expoRiskColor(k, maxCC) {
+  const r = maxCC > 0 ? k / maxCC : 0;
+  if (r <= 0.34) return 'var(--t)';
+  if (r <= 0.67) return 'var(--a)';
+  return 'var(--r)';
+}
+
+const _expoPad2 = n => String(n).padStart(2, '0');
+const _expoIsWeekend = ds => { const d = new Date(ds + 'T00:00:00').getDay(); return d === 0 || d === 6; };
+const _expoDurationDays = (entry, exit) =>
+  Math.round((new Date(exit + 'T00:00:00') - new Date(entry + 'T00:00:00')) / 86400000) + 1;
+
+// Per-day open counts + the trades open each day, for the selected month.
+function _expoComputeMonth(valid, year, monthIdx) {
+  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+  const prefix = `${year}-${_expoPad2(monthIdx + 1)}`;
+  const monthStart = `${prefix}-01`;
+  const monthEnd = `${prefix}-${_expoPad2(daysInMonth)}`;
+  // Trades whose [entry, exit] span intersects the month (incl. carried-over).
+  const inMonth = valid.filter(t => t.date <= monthEnd && t.exitDate >= monthStart);
+  const days = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${prefix}-${_expoPad2(d)}`;
+    const open = inMonth.filter(t => t.date <= ds && t.exitDate >= ds);
+    days.push({ ds, count: open.length, trades: open });
+  }
+  return { daysInMonth, prefix, monthStart, monthEnd, inMonth, days };
+}
+
+// Contiguous day-runs at the month's peak concurrency, e.g. "10–13 · 19".
+function _expoPeakLabel(days, maxCC) {
+  if (!maxCC) return '—';
+  const runs = [];
+  let start = null;
+  for (let i = 0; i < days.length; i++) {
+    const hit = days[i].count === maxCC;
+    if (hit && start === null) start = days[i];
+    if (start !== null && (!hit || i === days.length - 1)) {
+      const end = hit ? days[i] : days[i - 1];
+      const a = parseInt(start.ds.slice(8, 10), 10);
+      const b = parseInt(end.ds.slice(8, 10), 10);
+      runs.push(a === b ? `${a}` : `${a}–${b}`);
+      start = null;
+    }
+  }
+  return runs.slice(0, 3).join(' · ') || '—';
+}
+
+function renderExposure(trades) {
+  const body = document.getElementById('exposure-body');
+  if (!body) return;
+  const yearSel = document.getElementById('expo-year-sel');
+  const monthSel = document.getElementById('expo-month-sel');
+  const tpConfig = appState.ui.tpConfig;
+
+  const valid = _expoValidTrades(trades);
+  if (!valid.length) {
+    const anyTrades = !!(trades && trades.length);
+    body.innerHTML = `<div class="expo-empty">${anyTrades
+      ? 'Map your <b>Exit date</b> column in Data Setup to unlock concurrent-position analysis.'
+      : 'No data'}</div>`;
+    return;
+  }
+
+  // Populate year select from years that have spanned trades.
+  const years = Array.from(new Set(valid.map(t => t.date.slice(0, 4)))).sort().reverse();
+  if (yearSel) {
+    const prev = yearSel.value;
+    yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+    yearSel.value = (prev && years.includes(prev)) ? prev : years[0];
+  }
+  const year = parseInt((yearSel && yearSel.value) || years[0], 10);
+
+  // Default month = latest month with data in the selected year, until the user
+  // picks one explicitly (mirrors the Monthly P&L monthlySelectedMonth pattern).
+  let selMonth = (monthSel && _expoUserPicked) ? monthSel.value : null;
+  if (!selMonth) {
+    const monthsInYear = valid
+      .filter(t => t.date.slice(0, 4) === String(year))
+      .map(t => t.date.slice(5, 7))
+      .sort();
+    selMonth = monthsInYear.length
+      ? monthsInYear[monthsInYear.length - 1]
+      : _expoPad2(new Date().getMonth() + 1);
+    if (monthSel) monthSel.value = selMonth;
+  }
+  const monthIdx = parseInt(selMonth, 10) - 1;
+
+  const { daysInMonth, inMonth, monthStart, monthEnd, days } = _expoComputeMonth(valid, year, monthIdx);
+
+  const counts = days.map(d => d.count);
+  const maxCC = counts.length ? Math.max(...counts) : 0;
+  const active = days.filter(d => d.count > 0);
+  const avgIM = active.length ? (active.reduce((s, d) => s + d.count, 0) / active.length) : 0;
+  const pctGe2 = active.length ? (active.filter(d => d.count >= 2).length / active.length * 100) : 0;
+  const peakLabel = _expoPeakLabel(days, maxCC);
+
+  // Lane-pack the Gantt (greedy): each trade clamped to month bounds; a lane is
+  // free for a trade when its previous occupant closed strictly before this
+  // trade's open day (same day = still simultaneous → new lane).
+  const items = inMonth.map(t => {
+    const cs = t.date < monthStart ? monthStart : t.date;
+    const ce = t.exitDate > monthEnd ? monthEnd : t.exitDate;
+    return {
+      t,
+      sDay: parseInt(cs.slice(8, 10), 10),
+      eDay: parseInt(ce.slice(8, 10), 10),
+      contLeft: t.date < monthStart,
+      contRight: t.exitDate > monthEnd,
+    };
+  }).sort((a, b) => (a.sDay - b.sDay) || (a.eDay - b.eDay));
+
+  const laneEnds = [];
+  items.forEach(it => {
+    let placed = false;
+    for (let li = 0; li < laneEnds.length; li++) {
+      if (laneEnds[li] < it.sDay) { it.lane = li; laneEnds[li] = it.eDay; placed = true; break; }
+    }
+    if (!placed) { it.lane = laneEnds.length; laneEnds.push(it.eDay); }
+  });
+  const laneCount = Math.max(laneEnds.length, 1);
+
+  let html = `<div class="expo-shell">`;
+
+  // Summary line
+  html += `<div class="expo-summary">
+    <span class="expo-summary-meta">${_EXPO_MONTHS[monthIdx]} ${year} &nbsp;${inMonth.length} position${inMonth.length > 1 ? 's' : ''} in month</span>
+  </div>`;
+
+  // KPI cards
+  html += `<div class="expo-kpis">
+    <div class="expo-kpi"><span class="expo-kpi-lbl">Max simultaneous</span><span class="expo-kpi-val is-peak">${maxCC}</span></div>
+    <div class="expo-kpi"><span class="expo-kpi-lbl">Avg in market</span><span class="expo-kpi-val">${avgIM.toFixed(1)}</span></div>
+    <div class="expo-kpi"><span class="expo-kpi-lbl">Time ≥ 2 positions</span><span class="expo-kpi-val">${Math.round(pctGe2)}%</span></div>
+    <div class="expo-kpi"><span class="expo-kpi-lbl">Peak window</span><span class="expo-kpi-val expo-kpi-sm">${peakLabel}</span></div>
+  </div>`;
+
+  // Distribution bar — share of in-market days by open-position count.
+  if (maxCC > 0 && active.length) {
+    let segs = '';
+    for (let k = 1; k <= maxCC; k++) {
+      const pct = active.filter(d => d.count === k).length / active.length * 100;
+      if (pct <= 0) continue;
+      const col = _expoRiskColor(k, maxCC);
+      const lbl = pct >= 9 ? `${k}·${Math.round(pct)}%` : '';
+      segs += `<div class="expo-dist-seg" style="width:${pct.toFixed(2)}%;background:${col}" title="${k} position${k > 1 ? 's' : ''}: ${Math.round(pct)}% of in-market days">${lbl}</div>`;
+    }
+    html += `<div class="expo-dist-wrap">
+      <div class="expo-dist-lbl">Share of in-market days by open positions</div>
+      <div class="expo-dist">${segs}</div>
+    </div>`;
+  }
+
+  // Gantt — one bar per spanned trade, lane-packed over a per-day grid so each
+  // day, plus weekends, is visible (start/end/duration readable at a glance).
+  const dayW = 100 / daysInMonth;
+  html += `<div class="expo-gantt-wrap">`;
+  // Day-number axis — every day, centred in its column, weekends dimmed.
+  let axis = '';
+  days.forEach((d, idx) => {
+    const dnum = parseInt(d.ds.slice(8, 10), 10);
+    const we = _expoIsWeekend(d.ds);
+    const left = ((idx + 0.5) * dayW).toFixed(3);
+    axis += `<span class="expo-axis-tick${we ? ' is-we' : ''}" style="left:${left}%">${dnum}</span>`;
+  });
+  html += `<div class="expo-axis">${axis}</div>`;
+  html += `<div class="expo-lanes" style="--expo-lanes:${laneCount}">`;
+  // Background day grid (vertical gridlines + weekend shading), behind the bars.
+  let gridCols = '';
+  days.forEach(d => { gridCols += `<div class="expo-gcol${_expoIsWeekend(d.ds) ? ' is-we' : ''}"></div>`; });
+  html += `<div class="expo-grid">${gridCols}</div>`;
+  items.forEach(it => {
+    const left = (it.sDay - 1) * dayW;
+    const width = (it.eDay - it.sDay + 1) * dayW;
+    const col = _expoBarColor(it.t, tpConfig);
+    const rEff = Number(computeEffectiveRR(it.t, tpConfig)) || 0;
+    const dur = _expoDurationDays(it.t.date, it.t.exitDate);
+    const tip = `${it.t.pair || '—'} · ${it.t.date} → ${it.t.exitDate} · ${dur}d · ${rEff >= 0 ? '+' : ''}${rEff.toFixed(1)}R`;
+    const contClass = (it.contLeft ? ' cont-l' : '') + (it.contRight ? ' cont-r' : '');
+    // Show the duration in-bar only when the span is wide enough to fit it.
+    const spanDays = it.eDay - it.sDay + 1;
+    const durTag = spanDays >= 4 ? `<span class="expo-bar-dur">${dur}d</span>` : '';
+    html += `<div class="expo-bar${contClass}" data-action="expo-open-trade" data-trade-id="${_escapeAttr(String(it.t.tradeId || ''))}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;--expo-row:${it.lane};background:${col}" title="${_escapeHtml(tip)}"><span class="expo-bar-lbl">${_escapeHtml(it.t.pair || '')}</span>${durTag}</div>`;
+  });
+  html += `</div></div>`; // .expo-lanes / .expo-gantt-wrap
+
+  // Exposure band — a labelled mini bar-chart with a left y-axis (each tick = a
+  // count of simultaneously-open positions) + horizontal gridlines, risk-coloured
+  // magnitude bars, and a day-number axis below. Click a day to open its list.
+  html += `<div class="expo-band-lbl">Open positions / day</div>`;
+  // y-axis ticks: every level, or stepped when the peak is large.
+  const yStep = maxCC <= 8 ? 1 : Math.ceil(maxCC / 6);
+  const yTicks = [];
+  for (let L = 0; L <= maxCC; L += yStep) yTicks.push(L);
+  if (maxCC > 0 && yTicks[yTicks.length - 1] !== maxCC) yTicks.push(maxCC);
+  let yax = '', bgrid = '';
+  yTicks.forEach(L => {
+    const bottom = (maxCC ? L / maxCC * 100 : 0).toFixed(2);
+    yax   += `<span class="expo-yt" style="bottom:${bottom}%">${L}</span>`;
+    bgrid += `<div class="expo-bgridline" style="bottom:${bottom}%"></div>`;
+  });
+  html += `<div class="expo-band-wrap">`;
+  html += `<div class="expo-band-yaxis">${yax}</div>`;
+  html += `<div class="expo-band-plot"><div class="expo-band-grid">${bgrid}</div><div class="expo-band">`;
+  days.forEach(d => {
+    const h = maxCC ? (d.count / maxCC * 100) : 0;
+    const col = d.count > 0 ? _expoRiskColor(d.count, maxCC) : 'transparent';
+    const clickable = d.count > 0;
+    const we = _expoIsWeekend(d.ds);
+    html += `<div class="expo-band-col${clickable ? ' is-click' : ''}${we ? ' is-weekend' : ''}"${clickable ? ` data-date="${d.ds}" data-action="expo-open-day"` : ''} title="${d.ds}: ${d.count} open">
+      <div class="expo-band-fill" style="height:${h.toFixed(1)}%;background:${col}"></div>
+    </div>`;
+  });
+  html += `</div></div>`; // .expo-band / .expo-band-plot
+  html += `</div>`;       // .expo-band-wrap
+  let drow = '';
+  days.forEach(d => { drow += `<div class="expo-band-dcell${_expoIsWeekend(d.ds) ? ' is-we' : ''}">${parseInt(d.ds.slice(8, 10), 10)}</div>`; });
+  html += `<div class="expo-band-days"><div class="expo-band-days-gutter"></div><div class="expo-band-days-cells">${drow}</div></div>`;
+
+  html += `</div>`; // .expo-shell
+  body.innerHTML = html;
+
+  // Distribute the Gantt height across lanes so the widget fills its tile and
+  // scales when resized (manual mode flex-fill; auto mode adds zoom on top).
+  // Measured post-insert like the calendar's --calm-row-min-h: read the flex-
+  // resolved height of the lanes area, divide by lane count (clamped so few-lane
+  // months stay readable and many-lane months scroll instead of squashing).
+  const lanesEl = body.querySelector('.expo-lanes');
+  if (lanesEl) {
+    const avail = lanesEl.clientHeight;
+    const lh = Math.max(16, Math.min(laneCount > 0 ? avail / laneCount : 18, 100));
+    lanesEl.style.setProperty('--expo-lane-h', lh.toFixed(1) + 'px');
+  }
+}
+
+// Click a Gantt bar → drawer for that single trade (highlighted).
+function _expoOpenTrade(id) {
+  if (!id) return;
+  const t = _expoValidTrades(getFiltered()).find(x => String(x.tradeId) === String(id));
+  if (!t) return;
+  document.querySelectorAll('#exposure-body .expo-bar.wd-bar-active').forEach(el => el.classList.remove('wd-bar-active'));
+  const el = document.querySelector(`#exposure-body .expo-bar[data-trade-id="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`);
+  if (el) el.classList.add('wd-bar-active');
+  const rEff = Number(computeEffectiveRR(t, appState.ui.tpConfig)) || 0;
+  const sub = `${t.date} → ${t.exitDate} · ${_expoDurationDays(t.date, t.exitDate)}d · ${rEff >= 0 ? '+' : ''}${rEff.toFixed(1)}R`;
+  openWidgetDrawer(t.pair || 'Trade', sub, [t], t, { dim: 'Date' });
+}
+
+// Click a day column in the exposure band → drawer listing that day's open positions.
+function _expoOpenDay(ds) {
+  if (!ds) return;
+  const valid = _expoValidTrades(getFiltered());
+  const open = valid.filter(t => t.date <= ds && t.exitDate >= ds);
+  if (!open.length) return;
+  document.querySelectorAll('#exposure-body [data-date]').forEach(el => el.classList.remove('wd-cell-active'));
+  const el = document.querySelector(`#exposure-body [data-date="${ds}"]`);
+  if (el) el.classList.add('wd-cell-active');
+  openWidgetDrawer(ds, `${open.length} position${open.length > 1 ? 's' : ''} open`, open, null, { dim: 'Date' });
+}
+
 function _calRenderMonthlyDayCell(dateStr, day, data, maxAbs, cG, cR) {
   if (!data) {
     return `<div class="calm-day calm-day-empty"><span class="calm-daynum calm-daynum-empty">${day}</span></div>`;
@@ -31878,6 +32192,7 @@ function renderPanels(filtered) {
   if (typeof _poRender === 'function') _withWidgetScale('w-partial-optimizer', () => _poRender());
   renderPairSession(filtered);
   renderCalendar(filtered);
+  _withWidgetScale('w-exposure', () => renderExposure(filtered));
   _withWidgetScale('w-montecarlo', () => runMonteCarlo(filtered));
 
   if (typeof updateContextStrip === 'function') updateContextStrip();
@@ -35071,6 +35386,13 @@ const JOURNAL_DIMS = [
   }, widgets: [] },
   { key: 'date', label: 'Date', required: true, tier: 'required', propType: 'date', defaults: {
     flipping: 'Date', pro: 'Date', beginner: 'Date',
+  }, widgets: [] },
+  // Exit/close date — unlocks the Concurrent Positions widget (entry `date` +
+  // this `exitDate` give each trade a [open, close] span). widgets:[] on purpose
+  // so an unmapped exit date never locks/hides the widget — the renderer shows
+  // its own "map your exit-date column" empty state instead.
+  { key: 'exitDate', label: 'Exit date', tier: 'optional', propType: 'date', defaults: {
+    flipping: 'Date de sortie', pro: 'Exit Date', beginner: 'Exit Date',
   }, widgets: [] },
   { key: 'pair',     label: 'Pair', tier: 'optional', propType: 'select', defaults: {
     flipping: 'Paire', pro: 'Pair', beginner: 'Pair',
@@ -42454,6 +42776,7 @@ const GLOBAL_OVERVIEW_LAYOUT = {
   'w-recovery':         {x:0, y:479, w:6,  h:51, minW:2, minH:14},
   'w-streak-analytics': {x:6, y:479, w:6,  h:51, minW:2, minH:14},
   'w-tradelog':         {x:0, y:530, w:12, h:51, minW:4, minH:16},
+  'w-exposure':         {x:0, y:581, w:12, h:50, minW:6, minH:32},
 };
 const OPTIMAL_RR_LAYOUT = {
   'w-optimal-rr': {x:0, y:0, w:12, h:77, minW:4, minH:30},
@@ -43301,6 +43624,7 @@ function _msGetWidgetIcon(id) {
     'w-outcome':'donut',
     'w-stats':'cells', 'w-tradelog':'cells',
     'w-selection':'mixed', 'w-monthly':'mixed', 'w-partial-optimizer':'mixed',
+    'w-exposure':'mixed',
   };
   let kind = KIND_BY_ID[id] || 'mixed';
   if (!KIND_BY_ID[id] && id && id.startsWith('w-cust-')) {
