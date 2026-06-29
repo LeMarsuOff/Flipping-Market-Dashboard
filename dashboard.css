@@ -5068,6 +5068,27 @@ body.cw-col-resizing * {
   border-color: color-mix(in srgb, var(--gold) 40%, transparent);
   color: var(--gold);
 }
+/* Monthly P&L head — three functional control groups.
+   The two exclusive groups (period, value mode) are segmented (joined buttons in
+   one bordered container) so each reads as a single unit; the overlay toggles
+   (3M Avg / Cumul) stay as separate chips since they toggle independently. */
+.mc-controls { gap: 14px; row-gap: 6px; }
+.mc-grp { display: inline-flex; align-items: center; gap: 6px; }
+.mc-seg {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.mc-seg .mc-toggle {
+  border: none;
+  border-left: 1px solid var(--line2);
+  border-radius: 0;
+}
+.mc-seg .mc-toggle:first-child { border-left: none; }
+/* Monthly P&L year picker (dropdown), shown only in 'year' period mode */
+.mc-year-sel { padding: 3px 6px; }
 .monthly-legend {
   display: flex;
   align-items: center;
@@ -11104,6 +11125,61 @@ body.ms-sidebar-open .view-tabs {
 .bar-row.lb-active,
 .pp-gchip.lb-active          { box-shadow: inset 0 0 0 2px var(--gold); border-radius: 6px; }
 .wd-cell-active              { box-shadow: inset 0 0 0 2px var(--gold) !important; border-radius: 6px; }
+
+/* ── P&L Calendar — Monthly view (pair-list cells; ports the Share-view design
+   onto the clickable dashboard widget). Uses the theme editor's --fs-cal-*
+   tokens, NOT the share-scoped --sv-fs-* ones. ── */
+.calm-shell { position: relative; display: flex; flex-direction: column; min-height: 100%; padding: 4px 2px; }
+.calm-summary {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--bg2); border-radius: 5px; padding: 6px 12px; margin-bottom: 6px; flex-shrink: 0;
+}
+.calm-summary-meta { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-header, 9px); font-weight: 700; color: var(--dim); }
+.calm-summary-meta .win  { color: var(--g); }
+.calm-summary-meta .loss { color: var(--r); }
+.calm-summary-total { font-family: 'Anybody', sans-serif; font-size: var(--fs-cal-summary, 18px); font-weight: 800; line-height: 1; color: var(--calm-total, var(--body)); }
+.calm-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr) minmax(52px, auto);
+  grid-template-rows: auto repeat(var(--calm-weeks, 5), minmax(var(--calm-row-min-h, 0px), 1fr));
+  gap: 3px; flex: 1 1 auto; min-height: 0;
+}
+.calm-dow { text-align: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 7.5px); color: var(--dim); padding-bottom: 3px; }
+.calm-day { position: relative; border-radius: 3px; padding: 4px 6px; display: flex; flex-direction: column; gap: 3px; overflow: hidden; background: var(--bg3); }
+.calm-day-empty { background: var(--bg3); }
+.calm-day-value { background: var(--calm-bg, var(--bg3)); cursor: pointer; transition: filter .12s; }
+.calm-day-value:hover { filter: brightness(1.12); }
+.calm-day-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.calm-daynum { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 7.5px); font-weight: 700; color: var(--body); }
+.calm-daynum-empty { color: var(--dim); opacity: .55; }
+.calm-total { font-family: 'Anybody', sans-serif; font-size: var(--fs-cal-value, 11px); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.calm-total.is-pos { color: var(--g); }
+.calm-total.is-neg { color: var(--r); }
+.calm-trade-list { display: flex; flex-direction: column; gap: 2px; margin-top: 1px; }
+.calm-trade-row {
+  display: grid; grid-template-columns: 6px minmax(0, 1fr); align-items: center; gap: 6px;
+  font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 7.5px); font-weight: 600; line-height: 1.2;
+}
+.calm-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.calm-dot.is-win   { background: var(--g); }
+.calm-dot.is-loss  { background: var(--r); }
+.calm-dot.is-be    { background: var(--dim); }
+.calm-dot.is-be-tp { background: var(--oc-betp); }
+.calm-dot.is-be-sl { background: var(--oc-besl); }
+.calm-pair { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .02em; }
+.calm-weekcell {
+  background: var(--bg2); border-radius: 3px; padding: 4px 3px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px;
+}
+.calm-weekcell-empty { opacity: .3; }
+.calm-weekvalue { font-family: 'Anybody', sans-serif; font-size: var(--fs-cal-value, 11px); font-weight: 800; line-height: 1; color: var(--calm-week-fg, var(--body)); }
+.calm-weektrades { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 7px); font-weight: 700; color: var(--dim); }
+.calm-watermark {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; font-family: 'Anybody', sans-serif; font-size: clamp(28px, 6vw, 72px);
+  font-weight: 800; color: var(--body); opacity: .08; text-transform: uppercase; letter-spacing: 6px;
+  z-index: 1; user-select: none;
+}
 .bar-list .bar-row.sm        { grid-template-columns: subgrid; }
 .bar-list .bar-row.setup     { grid-template-columns: subgrid; }
 .bar-list .bar-row.obs       { grid-template-columns: 150px 1fr 62px; }

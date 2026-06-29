@@ -167,6 +167,12 @@ const appState = {
     showRawAll: false,
     monthlyMode: 'net',
     monthlySelectedMonth: null,
+    // Monthly P&L time window. 'l12m' = last 12 months ending at the latest data
+    // month (default, rolling). 'year' = all 12 calendar months of monthlyYear
+    // (future/empty months included). Both cap the bar count at 12 so per-bar
+    // value labels are never suppressed. Not persisted — resets each session.
+    monthlyPeriodMode: 'l12m',
+    monthlyYear: null,
     rrMinFilter: null,
     beRule: 2.4,
     // Global BE Management mode — drives BE-TP / BE-SL semantics across the
@@ -3740,6 +3746,18 @@ function setMonthlyMode(m) {
   renderCharts(filtered, calcStats(filtered));
 }
 
+// Monthly P&L time-window switch: 'l12m' (last 12 months) | 'year' (calendar year).
+function setMonthlyPeriod(period) {
+  const p = period === 'year' ? 'year' : 'l12m';
+  appState.ui.monthlyPeriodMode = p;
+  // Pin a concrete year on first switch into year mode so the arrows have a basis.
+  if (p === 'year' && appState.ui.monthlyYear == null) appState.ui.monthlyYear = _monthlyResolvedYear();
+  appState.ui.monthlySelectedMonth = null; // selection is meaningless across a window change
+  syncMonthlyModeUi();
+  drawMonthly(getFiltered());
+}
+
+
 let _dimVersion     = 0;     // bumped each time rebuildDimensions() runs
 
 // ══ SHARED CSV HELPERS ══
@@ -4370,6 +4388,7 @@ function handleActionClick(event) {
     case 'toggle-win-rate': toggleWinRate(); break;
     case 'clear-equity-selection': clearEquitySelection(); break;
     case 'set-monthly-mode': setMonthlyMode(actionEl.dataset.mode); break;
+    case 'set-monthly-period': setMonthlyPeriod(actionEl.dataset.period); break;
     case 'toggle-monthly-curve': toggleMonthlyCurve(actionEl.dataset.mode); break;
     case 'toggle-setup-detail': toggleSetupDetail(); break;
     case 'set-bar-sort': setBarSort(actionEl.dataset.chart, actionEl.dataset.sort); break;
@@ -4732,6 +4751,12 @@ function handleActionChange(event) {
   }
   if (event.target.id === 'cal-year-sel' || event.target.id === 'cal-month-sel') {
     renderCalendar(getFiltered());
+    return;
+  }
+  if (event.target.id === 'mc-year-sel') {
+    appState.ui.monthlyYear = parseInt(event.target.value, 10);
+    appState.ui.monthlySelectedMonth = null;
+    drawMonthly(getFiltered());
     return;
   }
   if (event.target.id === 'sv-preset-sel') {
@@ -17009,7 +17034,14 @@ function _isLowVolume(n) {
 // Read a field value from a trade: top-level first, then .extras
 function _cwGetFieldValue(t, fieldKey, def = null, sourceOverride = '') {
   const vk = (typeof _CW_DIM_ALIAS !== 'undefined' && _CW_DIM_ALIAS[fieldKey]?.value) || fieldKey;
-  if (t[vk] !== undefined && t[vk] !== null) return t[vk];
+  // Accept the top-level normalized value only when it carries content. An empty
+  // string must NOT short-circuit here: a dim left __NO_MAPPING__ (e.g. `session`
+  // on an H4 profile) normalizes t.session to '' while the real value still lives
+  // in t.extras['session'] (baked from the raw Notion column). Returning '' here
+  // would make _cwExpandFieldValues skip every trade → empty widget. Falling
+  // through lets the extras / raw-cache lookups below recover it. (2026-06-29)
+  const top = t[vk];
+  if (top !== undefined && top !== null && !(typeof top === 'string' && top.trim() === '')) return top;
   if (t.extras && t.extras[vk] !== undefined) return t.extras[vk];
   const mode = localStorage.getItem(DS_KEY) || 'demo';
   const source = sourceOverride || def?.propertySource || '';
@@ -19740,6 +19772,58 @@ document.addEventListener('click', e => {
 // ══════════════════════════════════════════════════════
 // MONTHLY CANVAS
 // ══════════════════════════════════════════════════════
+// ── Monthly P&L axis helpers (time-window + year navigation) ──
+// Shift a 'YYYY-MM' key by `delta` months (delta may be negative).
+function _monthlyAddMonths(key, delta) {
+  let y = +key.slice(0, 4), m = +key.slice(5, 7) + delta;
+  while (m > 12) { m -= 12; y++; }
+  while (m < 1)  { m += 12; y--; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+// Distinct years present in the loaded (unfiltered) dataset, ascending. Used to
+// bound the year-nav arrows and resolve the default selected year.
+function _monthlyAvailableYears() {
+  const items = appState?.trades?.items || [];
+  const ys = new Set();
+  for (const t of items) {
+    const mo = t && t.month ? String(t.month) : '';
+    if (mo.length >= 4) { const y = +mo.slice(0, 4); if (Number.isFinite(y)) ys.add(y); }
+  }
+  return [...ys].sort((a, b) => a - b);
+}
+// Selected year for 'year' mode — the pinned monthlyYear if it still has data,
+// else the latest year available. null when there is no data.
+function _monthlyResolvedYear() {
+  const years = _monthlyAvailableYears();
+  if (!years.length) return null;
+  const yr = appState.ui.monthlyYear;
+  return (yr != null && years.includes(yr)) ? yr : years[years.length - 1];
+}
+// Build the ≤12-month axis (array of 'YYYY-MM' keys) for the current period mode.
+// `dataMonths` is the sorted list of months that actually have trades. Missing
+// months are still returned — the caller zero-fills them.
+function _monthlyDisplayMonths(dataMonths) {
+  if (!dataMonths.length) return [];
+  const mode = appState.ui.monthlyPeriodMode === 'year' ? 'year' : 'l12m';
+  if (mode === 'year') {
+    const yr = _monthlyResolvedYear();
+    if (yr == null) return [];
+    const keys = [];
+    for (let mo = 1; mo <= 12; mo++) keys.push(`${yr}-${String(mo).padStart(2, '0')}`);
+    return keys;
+  }
+  // l12m — the 12 months ending at the latest data month, clamped to the first
+  // data month so we never pad empty pre-history bars.
+  const last = dataMonths[dataMonths.length - 1];
+  const first = dataMonths[0];
+  let start = _monthlyAddMonths(last, -11);
+  if (start < first) start = first;
+  const keys = [];
+  let cur = start;
+  while (cur <= last) { keys.push(cur); cur = _monthlyAddMonths(cur, 1); }
+  return keys.slice(-12);
+}
+
 function drawMonthly(trades) {
   const canvas = getByIdSafe('monthlyCanvas');
   const wrap = canvas?.parentElement;
@@ -19809,20 +19893,34 @@ function drawMonthly(trades) {
     if(t.outcome==='SL')    { d.sl   += r; d.losses++; }
     if(t.outcome==='BE-SL') { d.besl += r; d.losses++; }
   });
-  const months = Object.keys(monthly).sort();
+  const _dataMonths = Object.keys(monthly).sort();
+  if(!_dataMonths.length) return;
+  // Window the axis to ≤12 bars (period mode), then zero-fill any missing month
+  // so every slot renders. Capping the count is what restores the per-bar value
+  // labels — the renderer drops them once N > 24.
+  const months = _monthlyDisplayMonths(_dataMonths);
   const N = months.length;
   if(!N) return;
+  months.forEach(m => { if(!monthly[m]) monthly[m] = { r:0, n:0, tp:0, betp:0, sl:0, besl:0, wins:0, losses:0 }; });
+  // Last slot that actually has trades — overlays (3M avg / cumul) stop here so
+  // they don't trail downward through empty future months in 'year' mode.
+  let _lastActiveIdx = -1;
+  for (let i = 0; i < N; i++) if (monthly[months[i]].n > 0) _lastActiveIdx = i;
 
-  const maxN = Math.max(...months.map(m=>monthly[m].n));
+  const maxN = Math.max(1, ...months.map(m=>monthly[m].n));
 
   // Compute the avg label early and measure it so pad.l can fit it whatever the
   // current font size (themable) and value length. The label is split on two
   // lines ("avg" / value) to keep pad.l compact; we measure the wider of the
   // two parts. Right-anchored at pad.l - 4 → pad.l >= max(parts) + 4 + margin.
   const isVolume = appState.ui.monthlyMode === 'volume';
+  // Average over months with activity only — empty (future/skipped) months must
+  // not dilute the avg reference line.
+  const _activeMonths = months.filter(m => monthly[m].n > 0);
+  const _avgDenom = _activeMonths.length || 1;
   const _avgVal = isVolume
-    ? months.reduce((s,m)=>s+monthly[m].n,0) / N
-    : months.reduce((s,m)=>s+monthly[m].r,0) / N;
+    ? _activeMonths.reduce((s,m)=>s+monthly[m].n,0) / _avgDenom
+    : _activeMonths.reduce((s,m)=>s+monthly[m].r,0) / _avgDenom;
   const _avgValStr = isVolume
     ? (_avgVal.toFixed(1)+' trades')
     : ((_avgVal>=0?'+':'')+_avgVal.toFixed(1)+'R');
@@ -20036,7 +20134,7 @@ function drawMonthly(trades) {
   }
 
   // ── 3-month rolling average line (only when mode includes rolling) ──
-  if(N >= 3 && (_monthlyCurve === 'rolling' || _monthlyCurve === 'both')) {
+  if(_lastActiveIdx >= 2 && (_monthlyCurve === 'rolling' || _monthlyCurve === 'both')) {
     const rollField = isVolume ? 'n' : 'r';
     ctx.beginPath();
     ctx.strokeStyle = cAccent;
@@ -20044,7 +20142,7 @@ function drawMonthly(trades) {
     ctx.setLineDash([]);
     let started = false;
     const rollPoints = [];
-    for(let i = 2; i < N; i++) {
+    for(let i = 2; i <= _lastActiveIdx; i++) {
       const rollV = (monthly[months[i]][rollField] + monthly[months[i-1]][rollField] + monthly[months[i-2]][rollField]) / 3;
       const x = toX(i); const y = toYz(rollV);
       rollPoints.push({ x, y, v: rollV });
@@ -20084,7 +20182,10 @@ function drawMonthly(trades) {
     const cumulField = isVolume ? 'n' : 'r';
     const cumulSeries = [];
     let cumEq = 0;
-    months.forEach(m => { cumEq += monthly[m][cumulField]; cumulSeries.push(cumEq); });
+    // Stop the cumulative curve at the last active month so it stays flat-ended
+    // rather than running into empty future months (year mode).
+    const _cumLast = _lastActiveIdx >= 0 ? _lastActiveIdx : N - 1;
+    for (let i = 0; i <= _cumLast; i++) { cumEq += monthly[months[i]][cumulField]; cumulSeries.push(cumEq); }
 
     // Map onto canvas height independently (full height, own min/max)
     const cMin = Math.min(0, ...cumulSeries);
@@ -20109,7 +20210,7 @@ function drawMonthly(trades) {
     ctx.beginPath();
     ctx.moveTo(toX(0), toYc(cumulSeries[0]));
     cumulSeries.forEach((v, i) => ctx.lineTo(toX(i), toYc(v)));
-    ctx.lineTo(toX(N - 1), H - pad.b);
+    ctx.lineTo(toX(_cumLast), H - pad.b);
     ctx.lineTo(toX(0), H - pad.b);
     ctx.closePath();
     ctx.fillStyle = tc('--t') + '22';
@@ -26410,27 +26511,24 @@ function _renderCalendarMonthly(trades, yearSel) {
   const cG = tc('--g');
   const cR = tc('--r');
 
-  // Typography is owned by the theme editor (`--fs-cal-day/header/stats/value/summary`
-  // set on `:root`); the calendar reads them directly via `var(--fs-cal-*)` and
-  // never overrides. Cell layout uses `1fr` so it adapts to widget width without
-  // a JS-computed cell size.
+  // Monthly view mirrors the Share-view calendar design: each day cell lists the
+  // pairs traded that day (one row per trade, win/loss dot + pair name) over a
+  // color-mixed background scaled by the day's |R|. Dashboard-scoped `.calm-*`
+  // classes (in dashboard.css) own the layout and read the theme editor's
+  // `--fs-cal-*` tokens — we deliberately do NOT reuse the `.sv-cal-*` classes
+  // because their `--sv-fs-*` sizes only resolve inside `#share-view`.
   const numWeeks = Math.ceil((firstDow + daysInMonth) / 7);
-  grid.style.overflow = 'hidden';
+  const totColor = totAll >= 0 ? 'var(--g)' : 'var(--r)';
 
-  const summaryHtml = `<div style="background:var(--bg2);border-radius:5px;padding:8px 12px;margin-bottom:6px;flex-shrink:0;display:flex;justify-content:space-between;align-items:center">
-    <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-header,9px);color:var(--dim)">${_CAL_MONTHS[mo]} ${year}</div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px">
-      <div style="font-family:'Anybody',sans-serif;font-size:var(--fs-cal-summary,18px);font-weight:800;color:${totAll >= 0 ? 'var(--g)' : 'var(--r)'};line-height:1">${totAll >= 0 ? '+' : ''}${totAll.toFixed(1)}R</div>
-      <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-stats,7px);color:var(--dim)">${mTrades.length}T &nbsp;<span style="color:var(--g)">${winsAll}W</span> <span style="color:var(--r)">${lossAll}L</span></div>
-    </div>
+  let html = `<div class="calm-shell">`;
+  html += `<div class="calm-summary">
+    <span class="calm-summary-meta">${_CAL_MONTHS[mo]} ${year} &nbsp;${mTrades.length}T &nbsp;<span class="win">${winsAll}W</span> <span class="loss">${lossAll}L</span></span>
+    <span class="calm-summary-total" style="--calm-total:${totColor}">${totAll >= 0 ? '+' : ''}${totAll.toFixed(1)}R</span>
   </div>`;
+  html += `<div class="calm-grid" style="--calm-weeks:${numWeeks}">`;
 
-  let html = `<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr) minmax(52px,auto);grid-template-rows:auto repeat(${numWeeks},1fr);gap:3px">`;
-
-  _CAL_DAY_LABELS.forEach(dl => {
-    html += `<div style="text-align:center;font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7.5px);color:var(--dim);padding-bottom:3px">${dl}</div>`;
-  });
-  html += `<div style="text-align:center;font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7.5px);color:var(--dim);padding-bottom:3px">Week</div>`;
+  _CAL_DAY_LABELS.forEach(dl => { html += `<div class="calm-dow">${dl}</div>`; });
+  html += `<div class="calm-dow">Week</div>`;
 
   for (let i = 0; i < firstDow; i++) html += `<div></div>`;
 
@@ -26455,74 +26553,83 @@ function _renderCalendarMonthly(trades, yearSel) {
       }
 
       const wR = weekTrades.reduce((s, t) => s + (Number(computeEffectiveRR(t, tpConfig)) || 0), 0);
-      const wW = weekTrades.filter(isWinner).length;
-      const wL = weekTrades.filter(isLoser).length;
       const wN = weekTrades.length;
       const wC = wR >= 0 ? 'var(--g)' : 'var(--r)';
 
       html += wN > 0
-        ? `<div style="background:var(--bg2);border-radius:3px;padding:4px 3px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px">
-            <div style="font-family:'Anybody',sans-serif;font-size:var(--fs-cal-value,11px);font-weight:800;color:${wC};line-height:1">${wR >= 0 ? '+' : ''}${wR.toFixed(1)}R</div>
-            <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-stats,7px);color:var(--dim)">${wN}T</div>
-            <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-stats,7px);display:flex;gap:3px">
-              <span style="color:var(--g)">${wW}W</span><span style="color:var(--r)">${wL}L</span>
-            </div>
-          </div>`
-        : `<div style="background:var(--bg2);border-radius:3px;opacity:0.3"></div>`;
+        ? `<div class="calm-weekcell" style="--calm-week-fg:${wC}"><span class="calm-weekvalue">${wR >= 0 ? '+' : ''}${wR.toFixed(1)}R</span><span class="calm-weektrades">${wN}T</span></div>`
+        : `<div class="calm-weekcell calm-weekcell-empty"></div>`;
 
       weekTrades = [];
       col = 0;
     }
   }
 
-  html += `</div>`;
+  html += `</div>`; // .calm-grid
 
   // Empty month: keep the grid visible (faded day cells), overlay a "No trades"
   // watermark so the period context stays readable.
-  const watermark = !mTrades.length
-    ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-family:'Anybody',sans-serif;font-size:clamp(28px,6vw,72px);font-weight:800;color:var(--body);opacity:0.08;text-transform:uppercase;letter-spacing:6px;z-index:1;user-select:none">No trades</div>`
-    : '';
+  const watermark = !mTrades.length ? `<div class="calm-watermark">No trades</div>` : '';
 
-  grid.innerHTML = `<div style="position:relative;padding:4px 2px;display:flex;flex-direction:column;height:100%;overflow:hidden">${summaryHtml}${html}${watermark}</div>`;
+  grid.innerHTML = html + watermark + `</div>`; // close .calm-shell
+
+  // Uniform row heights: size every week-row to the busiest day's intrinsic
+  // content height so all cells render equal-height (mirrors the Share view).
+  // Measured post-insert via scrollHeight (cells are overflow:hidden); the CSS
+  // row track is minmax(var(--calm-row-min-h), 1fr) so short months still fill
+  // the tile and busy months grow + scroll the container.
+  const monthGrid = grid.querySelector('.calm-grid');
+  if (monthGrid) {
+    let maxContentH = 0;
+    monthGrid.querySelectorAll('.calm-day-value').forEach(c => { if (c.scrollHeight > maxContentH) maxContentH = c.scrollHeight; });
+    if (maxContentH > 0) monthGrid.style.setProperty('--calm-row-min-h', maxContentH + 'px');
+    else monthGrid.style.removeProperty('--calm-row-min-h');
+  }
 }
 
 function _calRenderMonthlyDayCell(dateStr, day, data, maxAbs, cG, cR) {
   if (!data) {
-    return `<div style="background:var(--bg3);border-radius:3px;padding:3px;display:flex;flex-direction:column">
-      <div style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7px);color:color-mix(in srgb, var(--dim) 50%, transparent)">${day}</div>
-    </div>`;
+    return `<div class="calm-day calm-day-empty"><span class="calm-daynum calm-daynum-empty">${day}</span></div>`;
   }
 
-  const isWin = data.r >= 0;
-  const rCol = isWin ? 'var(--g)' : 'var(--r)';
-  const hdrBg = `rgba(${_calHexToRgb(isWin ? cG : cR)},0.20)`;
+  // Background tint scales with the day's |R| relative to the month's biggest
+  // move (10% baseline → 45% on the strongest day), same palette as the topbar
+  // KPI tiles.
+  const intensity = Math.min(Math.abs(data.r) / (maxAbs || 1), 1);
+  const pct = (10 + 35 * intensity).toFixed(1);
+  const bg = data.r > 0
+    ? `color-mix(in srgb, var(--g) ${pct}%, var(--bg2))`
+    : data.r < 0
+    ? `color-mix(in srgb, var(--r) ${pct}%, var(--bg2))`
+    : 'var(--bg2)';
+  const sign = data.r >= 0 ? '+' : '';
+  const totalClass = data.r >= 0 ? 'is-pos' : 'is-neg';
 
-  let innerHtml = '';
+  // One row per trade, ordered by entry hour: win/loss dot + pair name. BE-TP /
+  // BE-SL keep their Notion-pure semantic dot colour regardless of the active
+  // TP mode's effective classification (mirrors the journal label).
+  const tpConfig = appState.ui.tpConfig;
+  const trades = (data.trades || []).slice().sort((a, b) => {
+    const ha = (a.hour != null && !isNaN(a.hour)) ? Number(a.hour) : 999;
+    const hb = (b.hour != null && !isNaN(b.hour)) ? Number(b.hour) : 999;
+    return ha - hb;
+  });
+  const rows = trades.map(t => {
+    let dotClass;
+    if (t.outcome === 'BE-TP')      dotClass = 'is-be-tp';
+    else if (t.outcome === 'BE-SL') dotClass = 'is-be-sl';
+    else if (isWinner(t, tpConfig)) dotClass = 'is-win';
+    else if (isLoser(t, tpConfig))  dotClass = 'is-loss';
+    else                            dotClass = 'is-be';
+    return `<div class="calm-trade-row"><span class="calm-dot ${dotClass}"></span><span class="calm-pair">${_escapeHtml(t.pair || '')}</span></div>`;
+  }).join('');
 
-  innerHtml = `<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:1fr;gap:1px">`;
-  for (let h = 0; h < 24; h++) {
-    const v = data.hours[h];
-    if (v) {
-      const rgb = _calOcRgb(v.ocs, cG, cR);
-      const a = (0.45 + Math.min(Math.abs(v.r) / (maxAbs || 1), 1) * 0.50).toFixed(2);
-      innerHtml += `<div title="${String(h).padStart(2, '0')}h: ${v.r >= 0 ? '+' : ''}${v.r.toFixed(1)}R" style="background:rgba(${rgb},${a});border-radius:1px"></div>`;
-    } else {
-      innerHtml += `<div title="${String(h).padStart(2, '0')}h" style="background:color-mix(in srgb, var(--dim) 25%, transparent);border-radius:1px"></div>`;
-    }
-  }
-  innerHtml += `</div>`;
-
-  return `<div
-    class="cal-day-cell"
-    data-date="${dateStr}"
-    data-action="cal-open-day"
-    style="background:var(--bg3);border-radius:3px;padding:3px;cursor:pointer;transition:filter .12s;display:flex;flex-direction:column"
-  >
-    <div style="flex-shrink:0;display:flex;justify-content:space-between;align-items:center;background:${hdrBg};border-radius:2px;padding:1px 3px;margin-bottom:2px">
-      <span style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7px);color:var(--dim)">${day} <span style="opacity:0.6">${data.n}t</span></span>
-      <span style="font-family:'DM Mono',monospace;font-size:var(--fs-cal-day,7px);font-weight:700;color:${rCol}">${isWin ? '+' : ''}${data.r.toFixed(1)}</span>
+  return `<div class="cal-day-cell calm-day calm-day-value" data-date="${dateStr}" data-action="cal-open-day" style="--calm-bg:${bg}">
+    <div class="calm-day-head">
+      <span class="calm-daynum">${day}</span>
+      <span class="calm-total ${totalClass}">${sign}${data.r.toFixed(1)}R</span>
     </div>
-    ${innerHtml}
+    <div class="calm-trade-list">${rows}</div>
   </div>`;
 }
 
@@ -28376,6 +28483,21 @@ function syncMonthlyModeUi() {
   document.getElementById('mt-stacked')?.classList.toggle('active', appState.ui.monthlyMode === 'stacked');
   document.getElementById('mt-net')?.classList.toggle('active', appState.ui.monthlyMode === 'net');
   document.getElementById('mt-volume')?.classList.toggle('active', appState.ui.monthlyMode === 'volume');
+
+  // Period window (12M | Year) + year navigation
+  const period = appState.ui.monthlyPeriodMode === 'year' ? 'year' : 'l12m';
+  document.getElementById('mp-12m')?.classList.toggle('active', period === 'l12m');
+  document.getElementById('mp-year')?.classList.toggle('active', period === 'year');
+  const ySel = document.getElementById('mc-year-sel');
+  if (ySel) {
+    ySel.classList.toggle('is-hidden', period !== 'year');
+    if (period === 'year') {
+      const years = _monthlyAvailableYears().slice().reverse(); // most recent first
+      const yr = _monthlyResolvedYear();
+      ySel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+      if (yr != null) ySel.value = String(yr);
+    }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════

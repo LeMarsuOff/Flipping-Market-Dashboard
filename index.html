@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=329">
+<link rel="stylesheet" href="dashboard.css?v=333">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -2235,16 +2235,28 @@
 
     <!-- ══ WIDGET: Monthly P&L ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-monthly" data-section="global">
-      <div class="cc-head">
+      <div class="cc-head cc-head-wrap">
         <span class="cc-title">Monthly P&amp;L</span>
-        <div class="cc-head-controls cc-head-controls-xs">
-          <button class="mc-toggle" id="mt-stacked" data-action="set-monthly-mode" data-mode="stacked">Stacked</button>
-          <button class="mc-toggle active" id="mt-net" data-action="set-monthly-mode" data-mode="net">Net</button>
-          <button class="mc-toggle" id="mt-volume" data-action="set-monthly-mode" data-mode="volume">Volume</button>
-        </div>
-          <div class="cc-tabs cc-tabs-offset">
-          <button class="cc-tab" id="mc-btn-3m" data-action="toggle-monthly-curve" data-mode="rolling">3M Avg</button>
-          <button class="cc-tab" id="mc-btn-cumul" data-action="toggle-monthly-curve" data-mode="cumul">Cumul</button>
+        <div class="cc-head-controls mc-controls cc-head-controls-wrap">
+          <!-- Group 1 — time window (exclusive) + direct year picker -->
+          <div class="mc-grp">
+            <div class="mc-seg">
+              <button class="mc-toggle active" id="mp-12m" data-action="set-monthly-period" data-period="l12m">12M</button>
+              <button class="mc-toggle" id="mp-year" data-action="set-monthly-period" data-period="year">Year</button>
+            </div>
+            <select class="widget-select mc-year-sel is-hidden" id="mc-year-sel" aria-label="Select year"></select>
+          </div>
+          <!-- Group 2 — value mode (exclusive) -->
+          <div class="mc-seg">
+            <button class="mc-toggle" id="mt-stacked" data-action="set-monthly-mode" data-mode="stacked">Stacked</button>
+            <button class="mc-toggle active" id="mt-net" data-action="set-monthly-mode" data-mode="net">Net</button>
+            <button class="mc-toggle" id="mt-volume" data-action="set-monthly-mode" data-mode="volume">Volume</button>
+          </div>
+          <!-- Group 3 — overlays (independent toggles) -->
+          <div class="cc-tabs">
+            <button class="cc-tab" id="mc-btn-3m" data-action="toggle-monthly-curve" data-mode="rolling">3M Avg</button>
+            <button class="cc-tab" id="mc-btn-cumul" data-action="toggle-monthly-curve" data-mode="cumul">Cumul</button>
+          </div>
         </div>
       </div>
       <div class="monthly-wrap monthly-wrap-clipped">
@@ -2944,6 +2956,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1109"></script>
+<script src="dashboard.js?v=1125"></script>
 </body>
 </html>
