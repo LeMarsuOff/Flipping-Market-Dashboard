@@ -567,8 +567,15 @@ body {
   letter-spacing: .04em;
 }
 .img-lightbox-count {
-  opacity: .45;
   margin-left: 8px;
+  font-size: var(--typo-panel-size);
+  font-weight: 700;
+  /* Literal white, not var(--white): this overlay bar is theme-independent
+     (dark rgba background) like the share-view — a theme token resolves to
+     dark text in the light theme and vanishes. Matches the local rgba(255…)
+     convention used by .img-lightbox-step / -nav-btn just above. */
+  color: rgba(255,255,255,.95);
+  letter-spacing: .04em;
 }
 .img-lightbox-img {
   max-width: 96%;

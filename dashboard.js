@@ -5865,6 +5865,16 @@ function _getJournalProfileCacheContext() {
   return { active, profileId, profiles: getJournalProfiles() };
 }
 let _journalProfileCacheContextOverride = '';
+// Monotonic supersession tokens for concurrent profile switches / reloads
+// (fix 2026-07-03 — "M15 profile shows H4 data"). Each new switch or reload
+// bumps its counter; an older in-flight async flow captures its token, then
+// re-checks it after every await and aborts before mutating shared state
+// (cache-context override, cache slots, injected trades) once a newer flow
+// has taken over. Two counters because _applyActiveJournalProfile awaits
+// _reloadJournalProfileSelection — a single shared counter would make the
+// parent think its own child superseded it.
+let _profileApplySeq = 0;   // guards _applyActiveJournalProfile's override lifecycle
+let _profileSelectSeq = 0;  // guards _reloadJournalProfileSelection's inject / cache writes
 function _withJournalProfileCacheContext(profileId, fn) {
   const previous = _journalProfileCacheContextOverride;
   _journalProfileCacheContextOverride = String(profileId || '').trim();
@@ -7734,6 +7744,12 @@ function _clearProfileRuntimeStateForSwitch() {
 }
 async function _reloadJournalProfileSelection(options = {}) {
   const { forceFetch = false } = options;
+  // Supersession guard: capture this reload's token. A concurrent profile
+  // switch, a rapid second reload, or a Realtime blob-echo (line ~1842) that
+  // starts after us bumps _profileSelectSeq. We re-check it after every await
+  // and abort before injecting stale trades or writing to a cache slot the
+  // newer flow now owns — this was the "M15 profile shows H4 data" bug vector.
+  const _mySelSeq = ++_profileSelectSeq;
   const mode = localStorage.getItem(DS_KEY) || 'demo';
   const activeProfile = getActiveJournalProfile();
   const isNotionWithDb = activeProfile?.connectionType === 'notion' && getIntegration(activeProfile).isReady(activeProfile);
@@ -7825,9 +7841,14 @@ async function _reloadJournalProfileSelection(options = {}) {
     if (!forceFetch) {
       try {
         const parsedResult = await _SW.downloadTradesBlob(activeProfile.id, source);
+        // A newer switch/reload took over during the network round-trip — bail
+        // before touching the cache slot or the on-screen dataset (which the
+        // newer flow now owns), otherwise we'd inject THIS profile's trades over
+        // the newer profile's view and corrupt its scoped cache.
+        if (_mySelSeq !== _profileSelectSeq) return;
         if (parsedResult?.trades && parsedResult.trades.length) {
           setCachedAPIData(parsedResult.trades, source, { fromBlobDownload: true });
-          _injectTrades(parsedResult.trades, 'Notion Live', null);
+          _injectTrades(parsedResult.trades, 'Notion Live', null, activeProfile.id);
           _syncJournalProfileUI();
           debugLog('[BlobBoot] hydrated from blob', {
             profile: activeProfile.id, source, count: parsedResult.trades.length,
@@ -7840,13 +7861,18 @@ async function _reloadJournalProfileSelection(options = {}) {
     }
   }
 
+  // A newer switch/reload may have superseded us during the awaited blob
+  // download above (this point is reached on blob 404 / empty / throw). Bail
+  // before the LS fallback inject or the full Notion fetch below.
+  if (_mySelSeq !== _profileSelectSeq) return;
+
   // Offline fallback: LS cache (or non-Notion modes that never had a blob).
   // Reached only when (a) blob download failed / 404, (b) we're in
   // non-Notion mode and have a CSV/Demo cache to inject, or (c) forceFetch.
   if (!forceFetch) {
     const cached = getCachedAPIData();
     if (cached && cached.length) {
-      _injectTrades(cached, 'Notion Live', null);
+      _injectTrades(cached, 'Notion Live', null, (getActiveJournalProfile()?.id || ''));
       _syncJournalProfileUI();
       return;
     }
@@ -7860,13 +7886,19 @@ async function _reloadJournalProfileSelection(options = {}) {
 }
 async function _applyActiveJournalProfile(profile, options = {}) {
   if (!profile) return;
+  // Supersession token (fix 2026-07-03). A rapid second switch — or a Realtime
+  // echo that also lands here — bumps _profileApplySeq. If we get superseded
+  // mid-await, the newer switch now owns the cache-context override; our finally
+  // must NOT overwrite it (restoring a value captured at a transient overlap
+  // instant was the "M15 profile shows H4 data" bug: the override stayed pinned
+  // to the wrong profile and every later profile-scoped read hit the wrong slot).
+  const _mySeq = ++_profileApplySeq;
   // Pin the cache-context override to THIS profile for the entire switch flow.
   // Without this, _reloadProfileScopedState reads from the wrong slot because
   // DS_KEY hasn't yet been flipped from 'demo' to 'api' (that flip happens
   // inside _reloadJournalProfileSelection, downstream of our state reload).
   // The override forces _getJournalProfileCacheContext to use profile.id
   // regardless of DS_KEY's current value, keeping every read/write coherent.
-  const previousOverride = _journalProfileCacheContextOverride;
   _journalProfileCacheContextOverride = String(profile.id || '').trim();
   try {
     const preferredSource = _getJournalProfilePreferredSource(profile);
@@ -7884,15 +7916,26 @@ async function _applyActiveJournalProfile(profile, options = {}) {
     // the post-fetch restore.
     _restoreActivePresetForCurrentSlot();
     await _reloadJournalProfileSelection(options);
+    // A newer switch took over during the fetch — it owns the UI/override now,
+    // so stop here rather than restoring OUR preset/state over the newer one.
+    if (_mySeq !== _profileApplySeq) return;
     // Restore AGAIN after the await — _injectTrades / loadBuiltinCSV reset
     // appState.presets.activeId synchronously on the first-load branch (line
     // 6884 / 24800), which would otherwise leave the user staring at a
     // deselected preset right after the fetch resolves.
     _restoreActivePresetForCurrentSlot();
   } finally {
-    _journalProfileCacheContextOverride = previousOverride;
+    // Only release the pin when we're still the latest switch. Clear to '' (not
+    // a captured previous value): the settled state carries no pin, so reads
+    // resolve via the active profile id. All callers invoke us from a top-level
+    // unpinned context, so '' equals the previous value in the non-raced case,
+    // while avoiding the transient-overlap corruption in the raced case. When
+    // superseded, leave the override untouched — the newer flow owns it.
+    if (_mySeq === _profileApplySeq) {
+      _journalProfileCacheContextOverride = '';
+    }
   }
-  _diagAssertProfileTradeAlignment('post-_applyActiveJournalProfile');
+  if (_mySeq === _profileApplySeq) _diagAssertProfileTradeAlignment('post-_applyActiveJournalProfile');
 }
 async function _handleJournalProfileSelectChange(id) {
   const active = setActiveJournalProfile(id);
@@ -10856,7 +10899,13 @@ function updateSourceUI(mode) {
 }
 
 // ── Inject parsed trades into the dashboard (shared by CSV and API paths) ──
-function _injectTrades(parsed, totalLabel, savedState) {
+// `sourceProfileId` (optional): the profile whose data this actually is,
+// captured by the caller BEFORE its network await. When omitted, falls back to
+// the currently-active profile (legacy behaviour for CSV/demo/boot paths). The
+// explicit id lets _diagAssertProfileTradeAlignment catch a stale async inject
+// that lands after a profile switch — the old tag used current-active, which
+// always matched and hid the "wrong profile's data on screen" bug.
+function _injectTrades(parsed, totalLabel, savedState, sourceProfileId = null) {
   hideEmptyState();
   invalidateFilterCache();
   const valid = parsed
@@ -10876,7 +10925,7 @@ function _injectTrades(parsed, totalLabel, savedState) {
   try {
     let _diagDsMode = '';
     try { _diagDsMode = localStorage.getItem(DS_KEY) || ''; } catch (e) {}
-    appState.trades.__diagSourceProfileId = String(getActiveJournalProfile()?.id || '');
+    appState.trades.__diagSourceProfileId = String(sourceProfileId || getActiveJournalProfile()?.id || '');
     appState.trades.__diagOverrideAtInject = String(_journalProfileCacheContextOverride || '');
     appState.trades.__diagDsModeAtInject = _diagDsMode;
     appState.trades.__diagLabel = String(totalLabel || '');
@@ -24779,8 +24828,8 @@ function _wdTradeCard(t) {
            data-trade-h4before-orig="${safeH4bOrig}"
            data-trade-m15before-orig="${safeM15bOrig}"
            data-trade-m15after-orig="${safeM15aOrig}"
-           title="${label}">${emoji}</button>
-         <span class="wd-media-label">${label.replace(' Before','').replace(' After','A')}</span>
+           title="${_escapeHtml(label)}">${emoji}</button>
+         <span class="wd-media-label">${_escapeHtml(label)}</span>
        </div>`
     : '';
 
