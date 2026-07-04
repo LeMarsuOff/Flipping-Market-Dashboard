@@ -17131,6 +17131,7 @@ function _lbAnnRender() {
     if (s) out += _lbAnnHandlesSvg(s, W, H);
   }
   svg.innerHTML = out;
+  _lbAnnMeasureCallouts(svg, W, H);
 }
 function _lbAnnShapeSvg(s, W, H) {
   const col = s.c || '#3a86ff';
@@ -17185,24 +17186,56 @@ function _lbAnnShapeSvg(s, W, H) {
   if (s.type === 'callout') {
     const fs = s.size || 14;
     const shown = disp(s.text);
-    const cx = s.x * W, cy = s.y * H;
-    const tipx = s.tx * W, tipy = s.ty * H;
-    const bw = Math.max(28, shown.length * fs * 0.62) + 16;   // approx text width + padding
-    const bh = fs + 12;
-    const bx = cx - bw / 2, by = cy - bh / 2;
-    // Tail: triangle from the bubble border (facing the tip) to the tip.
-    const dx = tipx - cx, dy = tipy - cy;
-    const t = Math.min((bw / 2) / (Math.abs(dx) || 0.0001), (bh / 2) / (Math.abs(dy) || 0.0001));
-    const ax = cx + dx * t, ay = cy + dy * t;
-    const len = Math.hypot(dx, dy) || 1;
-    const pxo = -dy / len * 7, pyo = dx / len * 7;
-    const textCol = _lbAnnContrastText(col);
-    const tail = `<path d="M${(ax + pxo).toFixed(1)},${(ay + pyo).toFixed(1)} L${(ax - pxo).toFixed(1)},${(ay - pyo).toFixed(1)} L${tipx.toFixed(1)},${tipy.toFixed(1)} Z" fill="${col}" stroke="none" pointer-events="none" />`;
-    const bubble = `<rect data-sid="${sid}" x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="6" fill="${col}" stroke="none" pointer-events="all" style="cursor:pointer" />`;
-    const label = `<text x="${cx.toFixed(1)}" y="${(cy + fs * 0.34).toFixed(1)}" fill="${textCol}" font-size="${fs}" font-weight="600" text-anchor="middle" pointer-events="none">${_escapeHtml(shown)}</text>`;
-    return tail + bubble + label;
+    // First-pass bubble width is a char-count estimate; once the <text> is in the
+    // DOM, _lbAnnMeasureCallouts() re-runs _lbAnnCalloutInner with the exact
+    // getBBox() width. Wrapped in a <g> so that pass can replace just this callout.
+    const estTw = shown.length * fs * 0.62;
+    return `<g data-callout-id="${sid}">${_lbAnnCalloutInner(s, W, H, estTw)}</g>`;
   }
   return '';
+}
+// Build a callout's tail + bubble + label given the label text width (px, no
+// padding). Shared by the first-pass estimate render and the getBBox measuring
+// pass so the geometry lives in exactly one place.
+function _lbAnnCalloutInner(s, W, H, textW) {
+  const col = s.c || '#3a86ff';
+  const sid = s.id || '';
+  const fs = s.size || 14;
+  const shown = (_lbAnnEditingId === s.id) ? (s.text || '') + '|' : (s.text || '');
+  const cx = s.x * W, cy = s.y * H;
+  const tipx = s.tx * W, tipy = s.ty * H;
+  const bw = Math.max(28, textW) + 16;   // exact text width + padding
+  const bh = fs + 12;
+  const bx = cx - bw / 2, by = cy - bh / 2;
+  // Tail: triangle from the bubble border (facing the tip) to the tip.
+  const dx = tipx - cx, dy = tipy - cy;
+  const t = Math.min((bw / 2) / (Math.abs(dx) || 0.0001), (bh / 2) / (Math.abs(dy) || 0.0001));
+  const ax = cx + dx * t, ay = cy + dy * t;
+  const len = Math.hypot(dx, dy) || 1;
+  const pxo = -dy / len * 7, pyo = dx / len * 7;
+  const textCol = _lbAnnContrastText(col);
+  const tail = `<path d="M${(ax + pxo).toFixed(1)},${(ay + pyo).toFixed(1)} L${(ax - pxo).toFixed(1)},${(ay - pyo).toFixed(1)} L${tipx.toFixed(1)},${tipy.toFixed(1)} Z" fill="${col}" stroke="none" pointer-events="none" />`;
+  const bubble = `<rect data-sid="${sid}" x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="6" fill="${col}" stroke="none" pointer-events="all" style="cursor:pointer" />`;
+  const label = `<text x="${cx.toFixed(1)}" y="${(cy + fs * 0.34).toFixed(1)}" fill="${textCol}" font-size="${fs}" font-weight="600" text-anchor="middle" pointer-events="none">${_escapeHtml(shown)}</text>`;
+  return tail + bubble + label;
+}
+// Post-render pass: measure each callout's rendered <text> and rebuild its bubble
+// at the exact width. Runs after svg.innerHTML so getBBox() has laid-out glyphs.
+function _lbAnnMeasureCallouts(svg, W, H) {
+  const groups = svg.querySelectorAll('[data-callout-id]');
+  if (!groups.length) return;
+  groups.forEach(g => {
+    const sid = g.getAttribute('data-callout-id');
+    const s = (_lbAnnDraft && _lbAnnDraft.id === sid) ? _lbAnnDraft
+            : _lbAnnShapes.find(x => x.id === sid);
+    if (!s) return;
+    const textEl = g.querySelector('text');
+    if (!textEl) return;
+    let tw;
+    try { tw = textEl.getBBox().width; } catch (e) { return; }   // keep estimate on failure
+    if (!(tw > 0)) return;
+    g.innerHTML = _lbAnnCalloutInner(s, W, H, tw);
+  });
 }
 function _lbAnnHandlesSvg(s, W, H) {
   const dot = (nx, ny, role) => `<circle class="lb-ann-h" data-h="${role}" data-sid="${s.id}" cx="${(nx * W).toFixed(1)}" cy="${(ny * H).toFixed(1)}" r="5" />`;
@@ -20665,7 +20698,12 @@ function _monthlyDisplayMonths(dataMonths) {
   if (start < first) start = first;
   const keys = [];
   let cur = start;
-  while (cur <= last) { keys.push(cur); cur = _monthlyAddMonths(cur, 1); }
+  // Defensive iteration cap: `cur`/`last` are compared as 'YYYY-MM' strings, so a
+  // malformed key (date → NaN → _monthlyAddMonths returns a non-incrementing value)
+  // could keep `cur <= last` true forever → keys grows unbounded → RangeError crashes
+  // the whole render() chain. The axis is ≤12 months by design; 240 is a generous cap.
+  let guard = 0;
+  while (cur <= last && guard++ < 240) { keys.push(cur); cur = _monthlyAddMonths(cur, 1); }
   return keys.slice(-12);
 }
 
