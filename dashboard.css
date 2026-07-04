@@ -585,6 +585,173 @@ body {
   cursor: default;
   margin-top: 44px;
 }
+/* Keep the top selector bar above the crosshair lines. */
+.img-lightbox-sel { z-index: 2; }
+/* Crosshair (mire) toolbar — top-right corner. */
+.img-lightbox-tools {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+}
+.img-lightbox-tool-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: var(--rad-sm);
+  color: rgba(255,255,255,.62);
+  cursor: pointer;
+  transition: color .12s, background .12s, border-color .12s;
+}
+.img-lightbox-tool-btn:hover {
+  color: rgba(255,255,255,.95);
+  background: rgba(255,255,255,.14);
+}
+.img-lightbox-tool-btn.active {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+}
+/* Colour-flip button appears only while the crosshair is on. */
+.img-lightbox-ch-theme-btn { display: none; }
+.img-lightbox-overlay.crosshair-on .img-lightbox-ch-theme-btn { display: flex; }
+/* Crosshair guide lines — hidden until the tool is toggled on. Bounded to the
+   image rect at runtime (left/width/top/height set inline by JS). */
+.img-lightbox-crosshair {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  display: none;
+}
+.img-lightbox-overlay.crosshair-on .img-lightbox-crosshair { display: block; }
+.img-lightbox-overlay.crosshair-on,
+.img-lightbox-overlay.crosshair-on .img-lightbox-img { cursor: crosshair; }
+.img-lightbox-crosshair .lb-ch-h {
+  position: absolute;
+  border-top: 1px dotted rgba(255,255,255,.6);
+  transform: translateY(-0.5px);
+}
+.img-lightbox-crosshair .lb-ch-v {
+  position: absolute;
+  border-left: 1px dotted rgba(255,255,255,.6);
+  transform: translateX(-0.5px);
+}
+/* Mire colour themes — dark = black lines (for light screenshots),
+   light = white lines (for dark screenshots). Each line carries a faint
+   opposite-colour halo so it never fully disappears against noise. */
+.img-lightbox-overlay.ch-theme-light .lb-ch-h { border-top-color: rgba(255,255,255,.75); box-shadow: 0 1px 0 rgba(0,0,0,.35); }
+.img-lightbox-overlay.ch-theme-light .lb-ch-v { border-left-color: rgba(255,255,255,.75); box-shadow: 1px 0 0 rgba(0,0,0,.35); }
+.img-lightbox-overlay.ch-theme-dark  .lb-ch-h { border-top-color: rgba(0,0,0,.72);  box-shadow: 0 1px 0 rgba(255,255,255,.35); }
+.img-lightbox-overlay.ch-theme-dark  .lb-ch-v { border-left-color: rgba(0,0,0,.72);  box-shadow: 1px 0 0 rgba(255,255,255,.35); }
+
+/* ── Screenshot annotations (vector draw layer) ── */
+.img-lightbox-ann {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  overflow: visible;
+}
+.img-lightbox-ann text { user-select: none; }
+.img-lightbox-ann .lb-ann-h {
+  fill: var(--gold);
+  stroke: #000;
+  stroke-width: 1;
+  cursor: pointer;
+  pointer-events: all;
+}
+/* While drawing, hide the mire to avoid visual noise. */
+.img-lightbox-overlay.draw-on .img-lightbox-crosshair { display: none !important; }
+/* Left vertical drawing toolbar. */
+.img-lightbox-draw-tools {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--rad-md);
+  background: rgba(18,18,20,.84);
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 6px 24px rgba(0,0,0,.5);
+}
+.img-lightbox-overlay.draw-on .img-lightbox-draw-tools { display: flex; }
+.lb-ann-tool,
+.lb-ann-act {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--rad-sm);
+  color: rgba(255,255,255,.72);
+  cursor: pointer;
+  transition: color .12s, background .12s, border-color .12s;
+}
+.lb-ann-tool:hover,
+.lb-ann-act:hover { background: rgba(255,255,255,.12); color: #fff; }
+.lb-ann-tool.active {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 16%, transparent);
+}
+.lb-ann-act:disabled { opacity: .32; cursor: default; background: transparent; }
+.lb-ann-sep { width: 24px; height: 1px; background: rgba(255,255,255,.15); margin: 3px 0; }
+.lb-ann-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 32px;
+  justify-content: center;
+}
+.lb-ann-color {
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.55);
+  cursor: pointer;
+}
+.lb-ann-color.active { outline: 2px solid #fff; outline-offset: 1px; }
+.lb-ann-text-input {
+  position: fixed;
+  z-index: 5;
+  min-width: 90px;
+  padding: 2px 5px;
+  background: rgba(0,0,0,.62);
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  font-size: 14px;
+  font-weight: 600;
+}
+/* Live variant: invisible — the text is rendered inside the SVG shape itself,
+   this input only captures keystrokes. */
+.lb-ann-text-input.lb-ann-live {
+  min-width: 0;
+  width: 2px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: transparent;
+  caret-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
 
 .cc-head-fixed { flex-shrink: 0; }
 .cc-head-spaced { margin-bottom: var(--space-3); }

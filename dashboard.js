@@ -16621,6 +16621,11 @@ function _installTvImageFallback(imgEl) {
 // _lbStep : 'h4Before' | 'm15Before' | 'm15After'
 let _lbData = [], _lbTradeIdx = 0, _lbStep = 'm15Before';
 let _lbKeyHandler = null;
+// Crosshair (mire) — TradingView-style guide lines over the screenshot to
+// eyeball unmarked support/resistance. Preferences persisted per-machine.
+// _lbCrosshairTheme : 'dark' (black lines, for light screenshots) | 'light'.
+let _lbCrosshair = (() => { try { return localStorage.getItem('lightboxCrosshair') === '1'; } catch { return false; } })();
+let _lbCrosshairTheme = (() => { try { return localStorage.getItem('lightboxCrosshairTheme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } })();
 
 const _LB_STEPS       = ['h4Before', 'm15Before', 'm15After'];
 const _LB_STEP_LABELS = { h4Before: 'TV Image 1', m15Before: 'TV Image 2', m15After: 'TV Image 3' };
@@ -16826,6 +16831,15 @@ function _lbShow(tradeIdx, step) {
       ${count}
       ${hasMulti ? arrowBtn('›', 1) : ''}`;
   }
+
+  // Load + render the annotation layer for this (trade, step). The layer only
+  // exists once the overlay has been created; guard for the first call.
+  if (document.getElementById('img-lightbox-ann')) {
+    _lbAnnLoad(tr, _lbStep);
+    _lbAnnUpdateToolbar();
+    _lbAnnSyncRect();
+    requestAnimationFrame(_lbAnnSyncRect);
+  }
 }
 
 // Left/Right: navigate between trades one by one, keeping current step if available
@@ -16852,6 +16866,543 @@ function _lbNavigateStep(delta) {
     if (_lbData[_lbTradeIdx] && _lbData[_lbTradeIdx][newStep]) { _lbShow(_lbTradeIdx, newStep); return; }
   }
 }
+
+// Lay the two guide lines across the image rect at (cx, cy). Lines are
+// bounded to the screenshot so the mire never spills into the dark backdrop.
+function _lbPlaceCrosshair(cx, cy) {
+  const ov = document.getElementById('img-lightbox-overlay');
+  const imgEl = document.getElementById('img-lightbox-img');
+  const ch = ov && ov.querySelector('.img-lightbox-crosshair');
+  if (!ov || !imgEl || !ch) return;
+  const h = ch.querySelector('.lb-ch-h');
+  const v = ch.querySelector('.lb-ch-v');
+  const r = imgEl.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const inside = cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+  if (!inside) { ch.style.display = 'none'; return; }
+  ch.style.display = '';
+  if (h) { h.style.left = r.left + 'px'; h.style.width  = r.width  + 'px'; h.style.top  = cy + 'px'; }
+  if (v) { v.style.top  = r.top  + 'px'; v.style.height = r.height + 'px'; v.style.left = cx + 'px'; }
+}
+
+// Toggle the crosshair (mire) overlay on/off + persist the preference.
+function _lbToggleCrosshair() {
+  _lbCrosshair = !_lbCrosshair;
+  try { localStorage.setItem('lightboxCrosshair', _lbCrosshair ? '1' : '0'); } catch {}
+  const ov  = document.getElementById('img-lightbox-overlay');
+  const btn = document.getElementById('img-lightbox-crosshair-btn');
+  if (ov)  ov.classList.toggle('crosshair-on', _lbCrosshair);
+  if (btn) btn.classList.toggle('active', _lbCrosshair);
+  // Seed the lines at the image centre on enable so they're visible before
+  // the user moves the mouse (bounded to the screenshot rect).
+  if (_lbCrosshair) {
+    const imgEl = document.getElementById('img-lightbox-img');
+    if (imgEl) {
+      const r = imgEl.getBoundingClientRect();
+      _lbPlaceCrosshair(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+    }
+  }
+}
+
+// Flip the mire between dark (black lines) and light (white lines) + persist.
+function _lbSetCrosshairTheme(theme) {
+  _lbCrosshairTheme = theme === 'light' ? 'light' : 'dark';
+  try { localStorage.setItem('lightboxCrosshairTheme', _lbCrosshairTheme); } catch {}
+  const ov = document.getElementById('img-lightbox-overlay');
+  if (ov) {
+    ov.classList.remove('ch-theme-dark', 'ch-theme-light');
+    ov.classList.add('ch-theme-' + _lbCrosshairTheme);
+  }
+}
+function _lbToggleCrosshairTheme() {
+  _lbSetCrosshairTheme(_lbCrosshairTheme === 'dark' ? 'light' : 'dark');
+}
+
+// ===================================================================
+// Screenshot annotations — Phase 1 (local, non-destructive vector layer)
+// ===================================================================
+// Tools: horizontal ray (S/R), trendline, rectangle, text, fibonacci.
+// Shapes are stored as objects with NORMALISED coords (0..1 relative to the
+// image) so they survive different display sizes (mobile/desktop/share-view).
+// Colours are a FIXED literal palette — never theme tokens — because saved
+// annotations must not shift hue when Max edits his theme (same rationale as
+// the theme-independent .img-lightbox-count overlay text). Persistence: one
+// localStorage blob keyed by trade identity + screenshot step. Phase 2 will
+// move this to a Supabase table for cross-device sync.
+const _LB_ANN_KEY = 'lightboxAnnotations_v1';
+const _LB_ANN_PALETTE = ['#3a86ff', '#e74c3c', '#26c281', '#f5c518', '#ffffff', '#111111'];
+const _LB_FIB_LEVELS  = [-0.27, 0, 0.5, 0.71, 1];   // Max's SMC set (0 & 1 = anchors)
+// Fixed per-level fib colours (independent of the shape's palette colour).
+const _LB_FIB_COLORS  = { '-0.27': '#14307a', '0': '#111111', '0.5': '#111111', '0.71': '#c25600', '1': '#111111' };
+const _LB_ANN_HIT = 14;   // transparent hit-stroke width so thin lines are easy to re-select
+let _lbDrawMode  = false;
+let _lbAnnTool   = 'select';
+let _lbAnnColor  = '#3a86ff';
+let _lbAnnShapes = [];
+let _lbAnnSel    = null;   // id of selected shape
+let _lbAnnDraft  = null;   // shape being drawn (drag preview)
+let _lbAnnDrag   = null;   // active drag descriptor
+let _lbAnnPending = null;  // two-click shape awaiting its 2nd click (fibonacci)
+let _lbAnnHoverH = null;   // pointermove preview handler during a two-click placement
+let _lbAnnSeq    = 0;
+let _lbAnnMoveH  = null, _lbAnnUpH = null, _lbAnnResizeBound = false;
+let _lbAnnHistory = [], _lbAnnRedo = [];   // undo / redo snapshot stacks
+let _lbAnnEditingId = null;   // shape whose text is being typed live (shows a caret)
+function _lbFibLabel(l) { return (Math.round(l * 1000) / 1000).toString(); }
+// Pick black or white text for a callout bubble depending on its fill luminance.
+function _lbAnnContrastText(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length < 6) return '#fff';
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#111' : '#fff';
+}
+// ── undo / redo ──
+function _lbAnnSnapshot() {
+  _lbAnnHistory.push(JSON.parse(JSON.stringify(_lbAnnShapes)));
+  if (_lbAnnHistory.length > 120) _lbAnnHistory.shift();
+  _lbAnnRedo = [];
+}
+function _lbAnnUndo() {
+  if (!_lbAnnHistory.length) return;
+  _lbAnnRedo.push(JSON.parse(JSON.stringify(_lbAnnShapes)));
+  _lbAnnShapes = _lbAnnHistory.pop();
+  _lbAnnSel = null; _lbAnnPersist(); _lbAnnRender(); _lbAnnUpdateToolbar();
+}
+function _lbAnnRedoAction() {
+  if (!_lbAnnRedo.length) return;
+  _lbAnnHistory.push(JSON.parse(JSON.stringify(_lbAnnShapes)));
+  _lbAnnShapes = _lbAnnRedo.pop();
+  _lbAnnSel = null; _lbAnnPersist(); _lbAnnRender(); _lbAnnUpdateToolbar();
+}
+
+function _lbAnnRefs() {
+  return {
+    ov:  document.getElementById('img-lightbox-overlay'),
+    img: document.getElementById('img-lightbox-img'),
+    svg: document.getElementById('img-lightbox-ann'),
+  };
+}
+function _lbClamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+// ── persistence ──
+function _lbAnnStoreRead() { try { return JSON.parse(localStorage.getItem(_LB_ANN_KEY) || '{}'); } catch { return {}; } }
+function _lbAnnKeyFor(tr, step) {
+  const id = (tr && (tr.tradeId || ((tr.pair || '') + '|' + (tr.date || '')))) || '';
+  return id + '::' + step;
+}
+function _lbAnnLoad(tr, step) {
+  const store = _lbAnnStoreRead();
+  _lbAnnShapes = (store[_lbAnnKeyFor(tr, step)] || []).map(s => ({ ...s }));
+  _lbAnnSel = null; _lbAnnDraft = null; _lbAnnDrag = null;
+  _lbAnnHistory = []; _lbAnnRedo = [];
+  // keep the seq counter ahead of any restored ids
+  _lbAnnShapes.forEach(s => { const n = parseInt(String(s.id || '').replace(/\D/g, ''), 10); if (n > _lbAnnSeq) _lbAnnSeq = n; });
+}
+function _lbAnnPersist() {
+  const tr = _lbData[_lbTradeIdx] || {};
+  const store = _lbAnnStoreRead();
+  const k = _lbAnnKeyFor(tr, _lbStep);
+  if (_lbAnnShapes.length) store[k] = _lbAnnShapes; else delete store[k];
+  try { localStorage.setItem(_LB_ANN_KEY, JSON.stringify(store)); } catch {}
+}
+
+// ── geometry / rendering ──
+function _lbAnnSyncRect() {
+  const { img, svg } = _lbAnnRefs();
+  if (!img || !svg) return;
+  const r = img.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  svg.style.left = r.left + 'px';
+  svg.style.top  = r.top + 'px';
+  svg.style.width  = r.width + 'px';
+  svg.style.height = r.height + 'px';
+  svg.setAttribute('viewBox', `0 0 ${r.width} ${r.height}`);
+  _lbAnnRender();
+}
+function _lbAnnRender() {
+  const { img, svg } = _lbAnnRefs();
+  if (!img || !svg) return;
+  const r = img.getBoundingClientRect();
+  const W = r.width, H = r.height;
+  if (!W || !H) return;
+  // transparent background rect = draw surface / deselect target in draw mode
+  let out = `<rect x="0" y="0" width="${W}" height="${H}" fill="transparent" />`;
+  const all = _lbAnnDraft ? _lbAnnShapes.concat([_lbAnnDraft]) : _lbAnnShapes;
+  all.forEach(s => { out += _lbAnnShapeSvg(s, W, H); });
+  if (_lbDrawMode && _lbAnnSel) {
+    const s = _lbAnnShapes.find(x => x.id === _lbAnnSel);
+    if (s) out += _lbAnnHandlesSvg(s, W, H);
+  }
+  svg.innerHTML = out;
+}
+function _lbAnnShapeSvg(s, W, H) {
+  const col = s.c || '#3a86ff';
+  const isSel = (s.id === _lbAnnSel && _lbDrawMode);
+  const sw = isSel ? 2.6 : 1.7;
+  const sid = s.id || '';
+  const px = nx => (nx * W).toFixed(1);
+  const py = ny => (ny * H).toFixed(1);
+  // Append a caret glyph while this shape's text is being typed live.
+  const disp = t => (_lbAnnEditingId === s.id) ? (t || '') + '|' : (t || '');
+  // Wide transparent hit line sharing the shape id → easy re-selection.
+  const hitLine = (x1, y1, x2, y2) =>
+    `<line data-sid="${sid}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="transparent" stroke-width="${_LB_ANN_HIT}" pointer-events="stroke" />`;
+  if (s.type === 'hray') {
+    const y = py(s.y);
+    return `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="${col}" stroke-width="${sw}" pointer-events="none" />` + hitLine(0, y, W, y);
+  }
+  if (s.type === 'trend') {
+    const x1 = px(s.x1), y1 = py(s.y1), x2 = px(s.x2), y2 = py(s.y2);
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${sw}" pointer-events="none" />` + hitLine(x1, y1, x2, y2);
+  }
+  if (s.type === 'rect') {
+    const x = px(Math.min(s.x1, s.x2)), y = py(Math.min(s.y1, s.y2));
+    const w = (Math.abs(s.x2 - s.x1) * W).toFixed(1), h = (Math.abs(s.y2 - s.y1) * H).toFixed(1);
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${col}" stroke-width="${sw}" pointer-events="none" />`
+      + `<rect data-sid="${sid}" x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="transparent" stroke-width="${_LB_ANN_HIT}" pointer-events="stroke" />`;
+  }
+  if (s.type === 'fib') {
+    // Bounded to the drawn horizontal span (not extended to the image edge).
+    const xL = Math.min(s.x1, s.x2) * W, xR = Math.max(s.x1, s.x2) * W;
+    let g = '', hit = '';
+    _LB_FIB_LEVELS.forEach(l => {
+      // Inverted: 1st click (x1,y1) anchors level 1, 2nd click (x2,y2) level 0.
+      const yp = ((s.y1 + (s.y2 - s.y1) * (1 - l)) * H).toFixed(1);
+      const edge = (l === 0 || l === 1);
+      const lc = _LB_FIB_COLORS[_lbFibLabel(l)] || col;   // fixed per-level colour
+      const halo = lc === '#ffffff' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.5)';
+      g += `<line x1="${xL.toFixed(1)}" y1="${yp}" x2="${xR.toFixed(1)}" y2="${yp}" stroke="${lc}" stroke-width="${edge ? sw : 1}" opacity="${edge ? 1 : 0.85}" pointer-events="none" />`;
+      g += `<text x="${(xL + 3).toFixed(1)}" y="${(parseFloat(yp) - 2).toFixed(1)}" fill="${lc}" font-size="10" paint-order="stroke" stroke="${halo}" stroke-width="2" pointer-events="none">${_lbFibLabel(l)}</text>`;
+      hit += hitLine(xL.toFixed(1), yp, xR.toFixed(1), yp);
+    });
+    return `<g>${g}${hit}</g>`;
+  }
+  if (s.type === 'brush') {
+    const pts = (s.pts || []).map(([x, y]) => `${(x * W).toFixed(1)},${(y * H).toFixed(1)}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round" pointer-events="none" />`
+      + `<polyline data-sid="${sid}" points="${pts}" fill="none" stroke="transparent" stroke-width="${_LB_ANN_HIT}" stroke-linejoin="round" stroke-linecap="round" pointer-events="stroke" />`;
+  }
+  if (s.type === 'text') {
+    return `<text data-sid="${sid}" x="${px(s.x)}" y="${py(s.y)}" fill="${col}" font-size="${s.size || 14}" font-weight="600" paint-order="stroke" stroke="rgba(0,0,0,.72)" stroke-width="2.5" pointer-events="all" style="cursor:pointer">${_escapeHtml(disp(s.text))}</text>`;
+  }
+  if (s.type === 'callout') {
+    const fs = s.size || 14;
+    const shown = disp(s.text);
+    const cx = s.x * W, cy = s.y * H;
+    const tipx = s.tx * W, tipy = s.ty * H;
+    const bw = Math.max(28, shown.length * fs * 0.62) + 16;   // approx text width + padding
+    const bh = fs + 12;
+    const bx = cx - bw / 2, by = cy - bh / 2;
+    // Tail: triangle from the bubble border (facing the tip) to the tip.
+    const dx = tipx - cx, dy = tipy - cy;
+    const t = Math.min((bw / 2) / (Math.abs(dx) || 0.0001), (bh / 2) / (Math.abs(dy) || 0.0001));
+    const ax = cx + dx * t, ay = cy + dy * t;
+    const len = Math.hypot(dx, dy) || 1;
+    const pxo = -dy / len * 7, pyo = dx / len * 7;
+    const textCol = _lbAnnContrastText(col);
+    const tail = `<path d="M${(ax + pxo).toFixed(1)},${(ay + pyo).toFixed(1)} L${(ax - pxo).toFixed(1)},${(ay - pyo).toFixed(1)} L${tipx.toFixed(1)},${tipy.toFixed(1)} Z" fill="${col}" stroke="none" pointer-events="none" />`;
+    const bubble = `<rect data-sid="${sid}" x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="6" fill="${col}" stroke="none" pointer-events="all" style="cursor:pointer" />`;
+    const label = `<text x="${cx.toFixed(1)}" y="${(cy + fs * 0.34).toFixed(1)}" fill="${textCol}" font-size="${fs}" font-weight="600" text-anchor="middle" pointer-events="none">${_escapeHtml(shown)}</text>`;
+    return tail + bubble + label;
+  }
+  return '';
+}
+function _lbAnnHandlesSvg(s, W, H) {
+  const dot = (nx, ny, role) => `<circle class="lb-ann-h" data-h="${role}" data-sid="${s.id}" cx="${(nx * W).toFixed(1)}" cy="${(ny * H).toFixed(1)}" r="5" />`;
+  if (s.type === 'hray')  return dot(0.5, s.y, 'move');
+  if (s.type === 'text')  return dot(s.x, s.y, 'move');
+  if (s.type === 'brush') return (s.pts && s.pts.length) ? dot(s.pts[0][0], s.pts[0][1], 'move') : '';
+  if (s.type === 'callout') return dot(s.x, s.y, 'bubble') + dot(s.tx, s.ty, 'tail');
+  if (s.type === 'trend' || s.type === 'fib' || s.type === 'rect') return dot(s.x1, s.y1, 'p1') + dot(s.x2, s.y2, 'p2');
+  return '';
+}
+
+// ── pointer interaction ──
+function _lbAnnEventXY(e) {
+  const { img } = _lbAnnRefs();
+  const r = img.getBoundingClientRect();
+  return { nx: _lbClamp01((e.clientX - r.left) / r.width), ny: _lbClamp01((e.clientY - r.top) / r.height) };
+}
+function _lbAnnPointerDown(e) {
+  if (!_lbDrawMode) return;
+  e.stopPropagation();
+  // Prevent the native mousedown default (focus steal / image drag / text
+  // selection) — this is what was blurring the text input on creation.
+  if (e.cancelable) e.preventDefault();
+  const { nx, ny } = _lbAnnEventXY(e);
+  const hEl = e.target.closest('[data-h]');
+  const sEl = e.target.closest('[data-sid]');
+  if (_lbAnnTool === 'select') {
+    if (hEl) {
+      _lbAnnSel = hEl.getAttribute('data-sid');
+      _lbAnnDrag = { id: _lbAnnSel, mode: hEl.getAttribute('data-h'), sx: nx, sy: ny, snapped: false };
+    } else if (sEl) {
+      _lbAnnSel = sEl.getAttribute('data-sid');
+      _lbAnnDrag = { id: _lbAnnSel, mode: 'move', sx: nx, sy: ny, snapped: false };
+    } else {
+      _lbAnnSel = null; _lbAnnDrag = null; _lbAnnRender(); _lbAnnUpdateToolbar(); return;
+    }
+    _lbAnnBindDrag(); _lbAnnRender(); _lbAnnUpdateToolbar();
+    return;
+  }
+  if (_lbAnnTool === 'text')    { _lbAnnStartText(nx, ny); return; }
+  if (_lbAnnTool === 'callout') {
+    // Two-click: 1st click = tail tip (pointe), 2nd click = bubble box, then type live.
+    if (_lbAnnPending) {
+      const tipx = _lbAnnPending.tx, tipy = _lbAnnPending.ty;
+      _lbAnnPending = null; _lbAnnDraft = null; _lbAnnUnbindHover();
+      _lbAnnSnapshot();
+      const s = { id: 'a' + (++_lbAnnSeq), type: 'callout', x: nx, y: ny, tx: tipx, ty: tipy, text: '', size: 14, c: _lbAnnColor };
+      _lbAnnShapes.push(s); _lbAnnSel = s.id; _lbAnnRender();
+      // Placement done → back to select immediately; live typing is driven by
+      // _lbAnnEditingId, not the active tool, so the next click won't spawn a new one.
+      _lbAnnSetTool('select');
+      _lbAnnLiveInput(s, { isNew: true });
+    } else {
+      _lbAnnPending = { type: 'callout', tx: nx, ty: ny, x: nx, y: ny, text: '', c: _lbAnnColor };
+      _lbAnnDraft = _lbAnnPending;
+      _lbAnnBindHover(); _lbAnnRender();
+    }
+    return;
+  }
+  if (_lbAnnTool === 'hray') {
+    _lbAnnSnapshot();
+    const s = { id: 'a' + (++_lbAnnSeq), type: 'hray', y: ny, c: _lbAnnColor };
+    _lbAnnShapes.push(s); _lbAnnSel = s.id; _lbAnnPersist(); _lbAnnRender();
+    _lbAnnSetTool('select'); _lbAnnUpdateToolbar();
+    return;
+  }
+  if (_lbAnnTool === 'trend' || _lbAnnTool === 'rect' || _lbAnnTool === 'fib') {
+    // Two-click placement: 1st click = 1st point, 2nd click = 2nd (live preview between).
+    if (_lbAnnPending) {
+      _lbAnnPending.x2 = nx; _lbAnnPending.y2 = ny;
+      const tiny = Math.abs(_lbAnnPending.x2 - _lbAnnPending.x1) < 0.004 && Math.abs(_lbAnnPending.y2 - _lbAnnPending.y1) < 0.004;
+      if (!tiny) { _lbAnnSnapshot(); _lbAnnShapes.push(_lbAnnPending); _lbAnnSel = _lbAnnPending.id; }
+      _lbAnnPending = null; _lbAnnDraft = null; _lbAnnUnbindHover();
+      _lbAnnPersist(); _lbAnnRender();
+      _lbAnnSetTool('select'); _lbAnnUpdateToolbar();
+    } else {
+      _lbAnnPending = { id: 'a' + (++_lbAnnSeq), type: _lbAnnTool, x1: nx, y1: ny, x2: nx, y2: ny, c: _lbAnnColor };
+      _lbAnnDraft = _lbAnnPending;
+      _lbAnnBindHover(); _lbAnnRender();
+    }
+    return;
+  }
+  if (_lbAnnTool === 'brush') {
+    // Freehand: collect points while dragging; tool stays active for multiple strokes.
+    _lbAnnDraft = { id: 'a' + (++_lbAnnSeq), type: 'brush', pts: [[nx, ny]], c: _lbAnnColor };
+    _lbAnnDrag = { mode: 'brush' };
+    _lbAnnBindDrag(); _lbAnnRender();
+    return;
+  }
+}
+function _lbAnnBindHover() {
+  _lbAnnUnbindHover();
+  _lbAnnHoverH = e => {
+    if (!_lbAnnPending) return;
+    const { nx, ny } = _lbAnnEventXY(e);
+    if (_lbAnnPending.type === 'callout') { _lbAnnPending.x = nx; _lbAnnPending.y = ny; }
+    else { _lbAnnPending.x2 = nx; _lbAnnPending.y2 = ny; }
+    _lbAnnRender();
+  };
+  window.addEventListener('pointermove', _lbAnnHoverH);
+}
+function _lbAnnUnbindHover() {
+  if (_lbAnnHoverH) window.removeEventListener('pointermove', _lbAnnHoverH);
+  _lbAnnHoverH = null;
+}
+function _lbAnnCancelPending() {
+  if (!_lbAnnPending) return;
+  _lbAnnPending = null; _lbAnnDraft = null; _lbAnnUnbindHover(); _lbAnnRender();
+}
+function _lbAnnBindDrag() {
+  _lbAnnUnbindDrag();
+  _lbAnnMoveH = e => _lbAnnPointerMove(e);
+  _lbAnnUpH   = e => _lbAnnPointerUp(e);
+  window.addEventListener('pointermove', _lbAnnMoveH);
+  window.addEventListener('pointerup', _lbAnnUpH);
+}
+function _lbAnnUnbindDrag() {
+  if (_lbAnnMoveH) window.removeEventListener('pointermove', _lbAnnMoveH);
+  if (_lbAnnUpH)   window.removeEventListener('pointerup', _lbAnnUpH);
+  _lbAnnMoveH = _lbAnnUpH = null;
+}
+function _lbAnnPointerMove(e) {
+  if (!_lbAnnDrag) return;
+  const { nx, ny } = _lbAnnEventXY(e);
+  if (_lbAnnDrag.mode === 'draft' && _lbAnnDraft) {
+    _lbAnnDraft.x2 = nx; _lbAnnDraft.y2 = ny; _lbAnnRender(); return;
+  }
+  if (_lbAnnDrag.mode === 'brush' && _lbAnnDraft) {
+    _lbAnnDraft.pts.push([nx, ny]); _lbAnnRender(); return;
+  }
+  const s = _lbAnnShapes.find(x => x.id === _lbAnnDrag.id);
+  if (!s) return;
+  // Snapshot once, on the first actual move of this drag (so a plain select click
+  // never pushes a no-op undo entry).
+  if (!_lbAnnDrag.snapped) { _lbAnnSnapshot(); _lbAnnDrag.snapped = true; }
+  if (_lbAnnDrag.mode === 'move') {
+    const dx = nx - _lbAnnDrag.sx, dy = ny - _lbAnnDrag.sy;
+    _lbAnnDrag.sx = nx; _lbAnnDrag.sy = ny;
+    if (s.type === 'hray') { s.y = _lbClamp01(s.y + dy); }
+    else if (s.type === 'text') { s.x = _lbClamp01(s.x + dx); s.y = _lbClamp01(s.y + dy); }
+    else if (s.type === 'brush') { s.pts = s.pts.map(([x, y]) => [_lbClamp01(x + dx), _lbClamp01(y + dy)]); }
+    else if (s.type === 'callout') { s.x = _lbClamp01(s.x + dx); s.y = _lbClamp01(s.y + dy); s.tx = _lbClamp01(s.tx + dx); s.ty = _lbClamp01(s.ty + dy); }
+    else { s.x1 = _lbClamp01(s.x1 + dx); s.y1 = _lbClamp01(s.y1 + dy); s.x2 = _lbClamp01(s.x2 + dx); s.y2 = _lbClamp01(s.y2 + dy); }
+  } else if (_lbAnnDrag.mode === 'p1')     { s.x1 = nx; s.y1 = ny; }
+  else if (_lbAnnDrag.mode === 'p2')       { s.x2 = nx; s.y2 = ny; }
+  else if (_lbAnnDrag.mode === 'bubble')   { s.x = nx; s.y = ny; }   // callout bubble moves alone
+  else if (_lbAnnDrag.mode === 'tail')     { s.tx = nx; s.ty = ny; } // callout tip moves alone
+  _lbAnnRender();
+}
+function _lbAnnPointerUp() {
+  _lbAnnUnbindDrag();
+  if (_lbAnnDrag && _lbAnnDrag.mode === 'brush' && _lbAnnDraft) {
+    if (_lbAnnDraft.pts.length > 1) { _lbAnnShapes.push(_lbAnnDraft); _lbAnnSel = _lbAnnDraft.id; }
+    _lbAnnDraft = null; _lbAnnDrag = null;
+    _lbAnnPersist(); _lbAnnRender(); _lbAnnUpdateToolbar();
+    return;   // keep the brush active for successive strokes
+  }
+  if (_lbAnnDrag && _lbAnnDrag.mode === 'draft' && _lbAnnDraft) {
+    const tiny = Math.abs(_lbAnnDraft.x2 - _lbAnnDraft.x1) < 0.004 && Math.abs(_lbAnnDraft.y2 - _lbAnnDraft.y1) < 0.004;
+    if (!tiny) { _lbAnnShapes.push(_lbAnnDraft); _lbAnnSel = _lbAnnDraft.id; }
+    _lbAnnDraft = null; _lbAnnDrag = null;
+    _lbAnnPersist(); _lbAnnRender();
+    _lbAnnSetTool('select'); _lbAnnUpdateToolbar();
+    return;
+  }
+  _lbAnnDrag = null; _lbAnnPersist(); _lbAnnUpdateToolbar();
+}
+
+// ── live text entry ──
+// A visually-invisible input captures keystrokes; the shape's text updates on
+// every keystroke and the SVG re-renders, so the text forms directly inside the
+// shape (the callout bubble grows live). A caret glyph is drawn while editing.
+function _lbAnnLiveInput(shape, opts) {
+  const { ov, img } = _lbAnnRefs();
+  if (!ov || !img || ov.querySelector('.lb-ann-text-input')) return;
+  opts = opts || {};
+  _lbAnnEditingId = shape.id;
+  _lbAnnRender();
+  const r = img.getBoundingClientRect();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'lb-ann-text-input lb-ann-live';
+  input.value = shape.text || '';
+  input.style.left = (r.left + shape.x * r.width) + 'px';
+  input.style.top  = (r.top + shape.y * r.height) + 'px';
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('pointerdown', e => e.stopPropagation());
+  input.addEventListener('input', () => { shape.text = input.value; _lbAnnRender(); });
+  ov.appendChild(input);
+  setTimeout(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 0);
+  let done = false;
+  const finish = (save) => {
+    if (done) return; done = true;
+    input.remove();
+    _lbAnnEditingId = null;
+    if (save) {
+      shape.text = (input.value || '').trim();
+      if (!shape.text) { _lbAnnShapes = _lbAnnShapes.filter(x => x.id !== shape.id); _lbAnnSel = null; }
+    } else if (opts.isNew) {
+      _lbAnnShapes = _lbAnnShapes.filter(x => x.id !== shape.id); _lbAnnSel = null;
+    } else {
+      shape.text = opts.original || '';
+    }
+    _lbAnnPersist(); _lbAnnRender(); _lbAnnSetTool('select'); _lbAnnUpdateToolbar();
+  };
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+function _lbAnnStartText(nx, ny) {
+  _lbAnnSnapshot();
+  const s = { id: 'a' + (++_lbAnnSeq), type: 'text', x: nx, y: ny, text: '', size: 14, c: _lbAnnColor };
+  _lbAnnShapes.push(s); _lbAnnSel = s.id; _lbAnnRender();
+  // Placement done → back to select immediately (live typing continues via _lbAnnEditingId).
+  _lbAnnSetTool('select');
+  _lbAnnLiveInput(s, { isNew: true });
+}
+function _lbAnnEditText(shape) {
+  _lbAnnSnapshot();
+  _lbAnnLiveInput(shape, { original: shape.text });
+}
+function _lbAnnDblClick(e) {
+  if (!_lbDrawMode) return;
+  const sEl = e.target.closest('[data-sid]');
+  if (!sEl) return;
+  const s = _lbAnnShapes.find(x => x.id === sEl.getAttribute('data-sid'));
+  if (s && (s.type === 'text' || s.type === 'callout')) { e.stopPropagation(); _lbAnnSel = s.id; _lbAnnEditText(s); }
+}
+
+// ── tool / colour / mode state ──
+function _lbAnnSetTool(tool) { _lbAnnCancelPending(); _lbAnnTool = tool; _lbAnnUpdateToolbar(); _lbAnnUpdateCursor(); }
+function _lbAnnSetColor(c) {
+  _lbAnnColor = c;
+  if (_lbAnnSel) {
+    const s = _lbAnnShapes.find(x => x.id === _lbAnnSel);
+    if (s && s.type !== 'fib' && s.c !== c) { _lbAnnSnapshot(); s.c = c; _lbAnnPersist(); _lbAnnRender(); }
+  }
+  _lbAnnUpdateToolbar();
+}
+function _lbAnnDeleteSel() {
+  if (!_lbAnnSel) return;
+  _lbAnnSnapshot();
+  _lbAnnShapes = _lbAnnShapes.filter(x => x.id !== _lbAnnSel);
+  _lbAnnSel = null; _lbAnnPersist(); _lbAnnRender(); _lbAnnUpdateToolbar();
+}
+function _lbAnnClear() {
+  if (!_lbAnnShapes.length) return;
+  _lbAnnSnapshot();
+  _lbAnnShapes = []; _lbAnnSel = null; _lbAnnPersist(); _lbAnnRender(); _lbAnnUpdateToolbar();
+}
+function _lbAnnUpdateCursor() {
+  const { svg } = _lbAnnRefs();
+  if (svg) svg.style.cursor = (_lbDrawMode && _lbAnnTool !== 'select') ? 'crosshair' : 'default';
+}
+function _lbAnnToggleDraw() {
+  _lbDrawMode = !_lbDrawMode;
+  const { ov, svg } = _lbAnnRefs();
+  if (ov)  ov.classList.toggle('draw-on', _lbDrawMode);
+  if (svg) svg.style.pointerEvents = _lbDrawMode ? 'auto' : 'none';
+  const btn = document.getElementById('img-lightbox-draw-btn');
+  if (btn) btn.classList.toggle('active', _lbDrawMode);
+  if (!_lbDrawMode) { _lbAnnCancelPending(); _lbAnnSel = null; }
+  else _lbAnnSetTool('select');
+  _lbAnnUpdateToolbar(); _lbAnnUpdateCursor(); _lbAnnRender();
+}
+function _lbAnnUpdateToolbar() {
+  const tb = document.getElementById('img-lightbox-draw-tools');
+  if (!tb) return;
+  tb.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === _lbAnnTool));
+  tb.querySelectorAll('[data-color]').forEach(b => b.classList.toggle('active', b.dataset.color === _lbAnnColor));
+  const del = tb.querySelector('[data-annact="delete"]');
+  if (del) del.disabled = !_lbAnnSel;
+  const un = tb.querySelector('[data-annact="undo"]');
+  if (un) un.disabled = !_lbAnnHistory.length;
+  const re = tb.querySelector('[data-annact="redo"]');
+  if (re) re.disabled = !_lbAnnRedo.length;
+}
+
+// SVG glyphs for the draw toolbar (16×16, stroke = currentColor unless noted)
+const _LB_ICO = {
+  select: '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M3 2l9 4.2-4 .9 2.4 4.4-1.7.9-2.3-4.4L4.8 12z"/></svg>',
+  hray:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="1" y1="8" x2="15" y2="8" stroke-dasharray="2 1.6"/></svg>',
+  trend:  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="13" x2="14" y2="3"/></svg>',
+  rect:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="8" rx="1"/></svg>',
+  fib:    '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><line x1="2" y1="9.5" x2="14" y2="9.5"/><line x1="2" y1="13" x2="14" y2="13"/></svg>',
+  text:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M8 4v9"/></svg>',
+  brush:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37-1.34-1.34a1 1 0 0 0-1.41 0L9 12l2.34 2.34 8.37-8.37a1 1 0 0 0 0-1.34z"/></svg>',
+  callout:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 2.5h11v7h-6l-3 3v-3h-2z"/></svg>',
+  undo:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5 3 7.5l3 3M3 7.5h7a3.3 3.3 0 0 1 0 6.6H7"/></svg>',
+  redo:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4.5 13 7.5l-3 3M13 7.5H6a3.3 3.3 0 0 0 0 6.6h3"/></svg>',
+  trash:  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 4h10M6 4V2.6h4V4M4.5 4l.6 9h5.8l.6-9"/></svg>',
+  clear:  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  draw:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5L6 12.5 3 13l.5-3z"/></svg>',
+};
 
 function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
   // Collect [data-img-step] buttons from the scope (or drawer fallback)
@@ -16924,7 +17475,7 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
     overlay = document.createElement('div');
     overlay.id = 'img-lightbox-overlay';
     overlay.className = 'img-lightbox-overlay';
-    overlay.addEventListener('click', () => { overlay.remove(); _lbRemoveKeyHandler(); });
+    overlay.addEventListener('click', () => { if (_lbDrawMode) return; overlay.remove(); _lbRemoveKeyHandler(); });
 
     // Selector bar at top
     const sel = document.createElement('div');
@@ -16939,10 +17490,118 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
     img.addEventListener('click', e => e.stopPropagation());
     overlay.appendChild(img);
 
+    // Crosshair (mire) toolbar — top-right corner: on/off toggle + colour flip.
+    const tools = document.createElement('div');
+    tools.className = 'img-lightbox-tools';
+    tools.addEventListener('click', e => e.stopPropagation());
+
+    const toolBtn = document.createElement('button');
+    toolBtn.id = 'img-lightbox-crosshair-btn';
+    toolBtn.className = 'img-lightbox-tool-btn';
+    toolBtn.title = 'Crosshair — visualiser les niveaux (S/R)';
+    toolBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="8" y1="1" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="2.1"/></svg>';
+    toolBtn.classList.toggle('active', _lbCrosshair);
+    toolBtn.addEventListener('click', e => { e.stopPropagation(); _lbToggleCrosshair(); });
+    tools.appendChild(toolBtn);
+
+    const themeBtn = document.createElement('button');
+    themeBtn.id = 'img-lightbox-crosshair-theme-btn';
+    themeBtn.className = 'img-lightbox-tool-btn img-lightbox-ch-theme-btn';
+    themeBtn.title = 'Mire — couleur claire / sombre';
+    themeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.4"/><path d="M8 2.6 A5.4 5.4 0 0 1 8 13.4 Z" fill="currentColor" stroke="none"/></svg>';
+    themeBtn.addEventListener('click', e => { e.stopPropagation(); _lbToggleCrosshairTheme(); });
+    tools.appendChild(themeBtn);
+
+    // Draw-mode toggle — reveals the annotation toolbar + enables editing.
+    const drawBtn = document.createElement('button');
+    drawBtn.id = 'img-lightbox-draw-btn';
+    drawBtn.className = 'img-lightbox-tool-btn';
+    drawBtn.title = 'Dessin — tracer sur le screenshot (S/R, lignes, texte, fib)';
+    drawBtn.innerHTML = _LB_ICO.draw;
+    drawBtn.addEventListener('click', e => { e.stopPropagation(); _lbAnnToggleDraw(); });
+    tools.appendChild(drawBtn);
+    overlay.appendChild(tools);
+
+    // Crosshair guide lines (dotted H + V), positioned by mousemove.
+    const crosshair = document.createElement('div');
+    crosshair.className = 'img-lightbox-crosshair';
+    crosshair.innerHTML = '<div class="lb-ch-h"></div><div class="lb-ch-v"></div>';
+    overlay.appendChild(crosshair);
+    overlay.classList.toggle('crosshair-on', _lbCrosshair);
+    overlay.classList.add('ch-theme-' + _lbCrosshairTheme);
+    overlay.addEventListener('mousemove', e => {
+      if (!_lbCrosshair) return;
+      _lbPlaceCrosshair(e.clientX, e.clientY);
+    });
+
+    // Annotation SVG layer (read-only until draw mode is on).
+    const annSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    annSvg.id = 'img-lightbox-ann';
+    annSvg.setAttribute('class', 'img-lightbox-ann');
+    annSvg.style.pointerEvents = 'none';
+    annSvg.addEventListener('pointerdown', _lbAnnPointerDown);
+    // In draw mode the SVG sits above the image and would let the click bubble
+    // to the overlay's close handler — swallow it so drawing never closes the
+    // lightbox. (When draw mode is off the SVG is pointer-events:none anyway.)
+    annSvg.addEventListener('click', e => e.stopPropagation());
+    annSvg.addEventListener('dblclick', _lbAnnDblClick);
+    overlay.appendChild(annSvg);
+
+    // Left drawing toolbar (hidden unless draw mode is on).
+    const drawTools = document.createElement('div');
+    drawTools.id = 'img-lightbox-draw-tools';
+    drawTools.className = 'img-lightbox-draw-tools';
+    drawTools.innerHTML =
+      `<button class="lb-ann-tool" data-tool="select" title="Sélection / déplacer">${_LB_ICO.select}</button>` +
+      `<button class="lb-ann-tool" data-tool="hray" title="Rayon horizontal (S/R)">${_LB_ICO.hray}</button>` +
+      `<button class="lb-ann-tool" data-tool="trend" title="Trendline">${_LB_ICO.trend}</button>` +
+      `<button class="lb-ann-tool" data-tool="rect" title="Rectangle">${_LB_ICO.rect}</button>` +
+      `<button class="lb-ann-tool" data-tool="fib" title="Fibonacci">${_LB_ICO.fib}</button>` +
+      `<button class="lb-ann-tool" data-tool="text" title="Texte (double-clic pour éditer)">${_LB_ICO.text}</button>` +
+      `<button class="lb-ann-tool" data-tool="callout" title="Étiquette bulle (bulle + pointe déplaçables)">${_LB_ICO.callout}</button>` +
+      `<button class="lb-ann-tool" data-tool="brush" title="Pinceau (dessin libre)">${_LB_ICO.brush}</button>` +
+      `<div class="lb-ann-sep"></div>` +
+      `<div class="lb-ann-colors">${_LB_ANN_PALETTE.map(c => `<button class="lb-ann-color" data-color="${c}" style="background:${c}"></button>`).join('')}</div>` +
+      `<div class="lb-ann-sep"></div>` +
+      `<button class="lb-ann-act" data-annact="undo" title="Annuler (Ctrl+Z)">${_LB_ICO.undo}</button>` +
+      `<button class="lb-ann-act" data-annact="redo" title="Rétablir (Ctrl+Maj+Z)">${_LB_ICO.redo}</button>` +
+      `<button class="lb-ann-act" data-annact="delete" title="Supprimer la sélection (Suppr)">${_LB_ICO.trash}</button>` +
+      `<button class="lb-ann-act" data-annact="clear" title="Tout effacer">${_LB_ICO.clear}</button>`;
+    drawTools.addEventListener('click', e => {
+      e.stopPropagation();
+      const tb = e.target.closest('[data-tool]');
+      const cb = e.target.closest('[data-color]');
+      const ab = e.target.closest('[data-annact]');
+      if (tb) _lbAnnSetTool(tb.dataset.tool);
+      else if (cb) _lbAnnSetColor(cb.dataset.color);
+      else if (ab) {
+        const a = ab.dataset.annact;
+        if (a === 'delete') _lbAnnDeleteSel();
+        else if (a === 'clear') _lbAnnClear();
+        else if (a === 'undo') _lbAnnUndo();
+        else if (a === 'redo') _lbAnnRedoAction();
+      }
+    });
+    overlay.appendChild(drawTools);
+
+    // Keep the annotation layer aligned to the image on load + on resize.
+    img.addEventListener('load', _lbAnnSyncRect);
+    if (!_lbAnnResizeBound) {
+      window.addEventListener('resize', () => { if (document.getElementById('img-lightbox-ann')) _lbAnnSyncRect(); });
+      _lbAnnResizeBound = true;
+    }
+
     _lbRemoveKeyHandler();
     _lbKeyHandler = function(e) {
       const ov = document.getElementById('img-lightbox-overlay');
       if (!ov) { _lbRemoveKeyHandler(); return; }
+      // Never hijack keys while typing an annotation label.
+      const ae = document.activeElement;
+      if (ae && ae.classList && ae.classList.contains('lb-ann-text-input')) return;
+      if (_lbDrawMode && (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) _lbAnnRedoAction(); else _lbAnnUndo(); return; }
+      if (_lbDrawMode && (e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); _lbAnnRedoAction(); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && _lbDrawMode && _lbAnnSel) { e.preventDefault(); _lbAnnDeleteSel(); return; }
+      if (e.key === 'Escape' && _lbAnnPending) { _lbAnnCancelPending(); return; }
       if      (e.key === 'Escape')      { ov.remove(); _lbRemoveKeyHandler(); }
       else if (e.key === 'ArrowDown')   { e.preventDefault(); if (!e.repeat) _lbNavigateTrade(1); }
       else if (e.key === 'ArrowUp')     { e.preventDefault(); if (!e.repeat) _lbNavigateTrade(-1); }
@@ -16952,6 +17611,14 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
     document.addEventListener('keydown', _lbKeyHandler);
     document.body.appendChild(overlay);
   }
+  // Every open starts in view mode (draw mode is not sticky across screenshots).
+  _lbDrawMode = false;
+  _lbAnnPending = null; _lbAnnUnbindHover();
+  overlay.classList.remove('draw-on');
+  const _annS = document.getElementById('img-lightbox-ann');
+  if (_annS) _annS.style.pointerEvents = 'none';
+  const _dBtn = document.getElementById('img-lightbox-draw-btn');
+  if (_dBtn) _dBtn.classList.remove('active');
   _lbShow(_lbTradeIdx, _lbStep);
 }
 
