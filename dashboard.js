@@ -338,6 +338,10 @@ const _SYNC_KEY_PREFIXES = [
   // on 2026-06-23 (was per-preset, now per-profile + per-HTF, decoupled from the
   // filter-preset blob). See _poSavedPartials in the PO section.
   'po_saved_partials_v1_',
+  // Screenshot annotations (crosshair + vector draw layer) — Phase 2 cross-device
+  // sync (2026-07-04). Blob-sync mirror of po_saved_partials_v1: one LS blob per
+  // profile×HTF, keyed internally by `tradeId::step`. See _LB_ANN_KEY.
+  'lightboxAnnotations_v1_',
 ];
 // Bumped v2 → v3 when the preset prefixes were added — the reconcile pass
 // in migrateProfileScopedKeys re-runs on every device and pushes pre-existing
@@ -365,7 +369,7 @@ function _isProfileScopedSyncKey(key) {
 const _HTF_KEYS = new Set([
   'flipping_presets','flipping_preset_snapshots_v2','presetLiveFilters_v1',
   'flipping_preset_overrides','gs_active_preset','gs_hidden_widgets',
-  'po_saved_partials_v1'
+  'po_saved_partials_v1','lightboxAnnotations_v1'
 ]);
 
 const JOURNAL_PROFILE_PENDING_DELETE_LS_KEY = 'journalProfilePendingDeletes_v1';
@@ -1719,6 +1723,8 @@ const _swRealtime = (() => {
         k === 'flipping_active_filter_preset_id'  || k.startsWith('flipping_active_filter_preset_id_');
       const isPoSavedPartialsKey =
         k === 'po_saved_partials_v1'              || k.startsWith('po_saved_partials_v1_');
+      const isAnnotationsKey =
+        k === 'lightboxAnnotations_v1'            || k.startsWith('lightboxAnnotations_v1_');
       const isThemeKey =
         k === 'flipping_dashboard_theme'   || k === 'flipping_active_theme_meta' ||
         k === 'flipping_user_themes'       || k === 'flipping_builtin_overrides' ||
@@ -1754,6 +1760,12 @@ const _swRealtime = (() => {
         // the partial slots are independent of the filter pipeline now.
         try { if (typeof loadPoSavedPartials === 'function') loadPoSavedPartials(); } catch (e) {}
         try { if (typeof _poRenderPresetsBlock === 'function') _poRenderPresetsBlock(); } catch (e) {}
+      } else if (isAnnotationsKey) {
+        // Screenshot annotations changed on another device. LS is already
+        // write-through'd above; if the lightbox is open on the affected
+        // screenshot, reload + re-render the vector layer. A closed lightbox
+        // picks up the change naturally on its next open (_lbAnnLoad reads LS).
+        try { if (typeof _lbAnnOnRemoteSync === 'function') _lbAnnOnRemoteSync(); } catch (e) {}
       }
     } catch (e) {
       console.warn('[Realtime] user_data re-render hotfix threw:', e?.message || e);
@@ -10748,6 +10760,8 @@ function _reloadProfileScopedState() {
   // filter blob since 2026-06-23. Load + run one-shot migration if needed.
   try { loadPoSavedPartials(); } catch (e) {}
   try { _migratePoSlotsFromPresetLiveFilters(); } catch (e) {}
+  // Screenshot annotations — Phase 2 one-shot scope migration (blob-sync).
+  try { _migrateLbAnnotationsToScoped(); } catch (e) {}
 
   // ── 2. Load this slot's layout ──
   const savedLayout = localStorage.getItem(_htfKey(LS_KEY_PREFIX + 'active'));
@@ -16927,8 +16941,10 @@ function _lbToggleCrosshairTheme() {
 // Colours are a FIXED literal palette — never theme tokens — because saved
 // annotations must not shift hue when Max edits his theme (same rationale as
 // the theme-independent .img-lightbox-count overlay text). Persistence: one
-// localStorage blob keyed by trade identity + screenshot step. Phase 2 will
-// move this to a Supabase table for cross-device sync.
+// localStorage blob keyed by trade identity + screenshot step. Phase 2
+// (2026-07-04) scopes that blob per profile×HTF and rides the user_data sync
+// table for cross-device sync — a blob-sync mirror of po_saved_partials_v1.
+// See _lbAnnStoreKey / _lbAnnSyncToCloud / _migrateLbAnnotationsToScoped.
 const _LB_ANN_KEY = 'lightboxAnnotations_v1';
 const _LB_ANN_PALETTE = ['#3a86ff', '#e74c3c', '#26c281', '#f5c518', '#ffffff', '#111111'];
 const _LB_FIB_LEVELS  = [-0.27, 0, 0.5, 0.71, 1];   // Max's SMC set (0 & 1 = anchors)
@@ -16985,7 +17001,12 @@ function _lbAnnRefs() {
 function _lbClamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 // ── persistence ──
-function _lbAnnStoreRead() { try { return JSON.parse(localStorage.getItem(_LB_ANN_KEY) || '{}'); } catch { return {}; } }
+// Phase 2 (2026-07-04): the blob is scoped per profile×HTF via _htfKey and rides
+// the generic user_data sync table — a blob-sync mirror of po_saved_partials_v1.
+// _lbAnnStoreKey resolves the active scope; every write force-pushes to the cloud
+// (bypassing the apply-remote drop) through _lbAnnSyncToCloud.
+function _lbAnnStoreKey() { return _htfKey(_LB_ANN_KEY); }
+function _lbAnnStoreRead() { try { return JSON.parse(localStorage.getItem(_lbAnnStoreKey()) || '{}'); } catch { return {}; } }
 function _lbAnnKeyFor(tr, step) {
   const id = (tr && (tr.tradeId || ((tr.pair || '') + '|' + (tr.date || '')))) || '';
   return id + '::' + step;
@@ -17003,7 +17024,83 @@ function _lbAnnPersist() {
   const store = _lbAnnStoreRead();
   const k = _lbAnnKeyFor(tr, _lbStep);
   if (_lbAnnShapes.length) store[k] = _lbAnnShapes; else delete store[k];
-  try { localStorage.setItem(_LB_ANN_KEY, JSON.stringify(store)); } catch {}
+  try { localStorage.setItem(_lbAnnStoreKey(), JSON.stringify(store)); } catch {}
+  _lbAnnSyncToCloud();
+}
+
+/** Force-push the annotation blob to Supabase, bypassing the apply-remote window
+ *  drop. Mirrors _poSyncSavedPartialsToCloud: the monkey-patched localStorage.setItem
+ *  drops _SW.set calls landing during an inbound Realtime apply window (~1.5s), but
+ *  drawing an annotation is a deliberate user action and must reach the cloud.
+ *  _SW.set self-marks the write so it doesn't echo back. No-op when signed out. */
+function _lbAnnSyncToCloud() {
+  try {
+    if (!(window._SW && window._SW.getUser && window._SW.getUser())) return;
+    const key = _lbAnnStoreKey();
+    const value = localStorage.getItem(key);
+    if (value != null) window._SW.set(key, value);
+  } catch (e) { console.warn('[lbAnn] cloud force-sync failed:', e.message); }
+}
+
+/** Realtime inbound: annotations changed on another device. LS is already
+ *  write-through'd by the user_data handler; if the lightbox is open, reload +
+ *  re-render the vector layer for the current screenshot. Skips while the local
+ *  user is mid-interaction so a remote echo never clobbers in-progress work — that
+ *  draft persists + pushes on completion. A closed lightbox needs nothing (the
+ *  next open reads fresh from LS). */
+function _lbAnnOnRemoteSync() {
+  if (!document.getElementById('img-lightbox-overlay')) return;
+  if (_lbAnnDraft || _lbAnnDrag || _lbAnnPending || _lbAnnEditingId) return;
+  const tr = _lbData[_lbTradeIdx];
+  if (!tr) return;
+  _lbAnnLoad(tr, _lbStep);
+  _lbAnnUpdateToolbar();
+  _lbAnnSyncRect();
+}
+
+/** One-shot migration: Phase 1 stored annotations in a single unscoped flat blob
+ *  (`lightboxAnnotations_v1`, keyed `tradeId::step`). Phase 2 scopes the blob per
+ *  profile×HTF. Copy the legacy flat blob into the active scope so the drawings
+ *  survive the refacto and reach the cloud. Flag-gated per profile×HTF via _htfKey
+ *  (mirrors _migratePoSlotsFromPresetLiveFilters). Non-destructive: the legacy flat
+ *  key is left untouched — its `tradeId::step` keys are unique per Notion DB, so
+ *  copying them into a profile that doesn't own them is inert (lookups never match
+ *  cross-profile). Idempotent — safe to call on every boot. */
+function _migrateLbAnnotationsToScoped() {
+  try {
+    const flagKey = _htfKey(_LB_ANN_KEY + '_migrated');
+    if (localStorage.getItem(flagKey) === '1') return;
+
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem(_LB_ANN_KEY) || 'null'); } catch (e) {}
+
+    if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
+      const scopedKey = _lbAnnStoreKey();
+      // Guard: when no profile context is resolved yet, _lbAnnStoreKey falls back
+      // to the raw legacy key — merging it into itself is a harmless no-op.
+      let existing = {};
+      try { existing = JSON.parse(localStorage.getItem(scopedKey) || '{}'); } catch (e) {}
+      if (!existing || typeof existing !== 'object' || Array.isArray(existing)) existing = {};
+      let changed = false;
+      for (const k of Object.keys(legacy)) {
+        // Never clobber an entry already present in the scoped blob (e.g. from cloud sync).
+        if (!(k in existing) && Array.isArray(legacy[k]) && legacy[k].length) {
+          existing[k] = legacy[k];
+          changed = true;
+        }
+      }
+      if (changed) {
+        try { localStorage.setItem(scopedKey, JSON.stringify(existing)); } catch (e) {}
+        _lbAnnSyncToCloud();
+      }
+    }
+
+    // Mark done — untracked local flag; each device migrates from its own snapshot.
+    try {
+      if (typeof window._lsSetUntracked === 'function') window._lsSetUntracked(flagKey, '1');
+      else localStorage.setItem(flagKey, '1');
+    } catch (e) {}
+  } catch (e) { console.warn('[lbAnn] migration failed:', e.message); }
 }
 
 // ── geometry / rendering ──
@@ -41781,6 +41878,8 @@ window.addEventListener('load', () => {
   // filter blob since 2026-06-23. Load + run one-shot migration if needed.
   try { loadPoSavedPartials(); } catch (e) {}
   try { _migratePoSlotsFromPresetLiveFilters(); } catch (e) {}
+  // Screenshot annotations — Phase 2 one-shot scope migration (blob-sync).
+  try { _migrateLbAnnotationsToScoped(); } catch (e) {}
   // Hydrate appState.ui.tpConfig from the active preset's live slot now that
   // both snapshots and live filters are loaded. Per-preset TPM architecture:
   // before this point, appState.ui.tpConfig holds the fixed default seeded at
