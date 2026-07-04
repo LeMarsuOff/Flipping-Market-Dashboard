@@ -4616,6 +4616,8 @@ function handleActionClick(event) {
     case 'expo-open-day': _expoOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-cohort': _expoOpenTradeCohort(actionEl.dataset.tradeId || ''); break;
     case 'expo-open-pair': _expoOpenPair(actionEl.dataset.pair || ''); break;
+    case 'expo-open-conc': _expoOpenConcurrencyBucket(parseInt(actionEl.dataset.idx, 10)); break;
+    case 'expo-open-wr': _expoOpenWinRateBucket(parseInt(actionEl.dataset.idx, 10)); break;
     case 'expo-set-mode': _expoSetTimelineMode(actionEl.dataset.mode || 'compact'); break;
     case 'expo-set-period': _expoSetPeriod(actionEl.dataset.period || 'month'); break;
     case 'expo-step': _expoStepMonth(parseInt(actionEl.dataset.dir, 10) || 1); break;
@@ -27539,9 +27541,15 @@ let _expoSelMonth = null;
 // Positions Timeline layout mode: 'compact' (greedy lane-pack) | 'pair' (one
 // row per pair, alphabetical). Session-only, not persisted.
 let _expoTimelineMode = 'compact';
-// Period: 'month' (single month, default) | 'overall' (whole history, the Gantt
-// scrolls horizontally). Shared across all 5 widgets.
+// Period: 'month' (single month, default) | 'year' (a whole calendar year) |
+// 'overall' (whole history). 'year' and 'overall' are "wide" — the Gantt goes
+// px-wide + scrolls horizontally. Shared across all 5 widgets.
 let _expoPeriodMode = 'month';
+// Overall/Year mode: fraction { s, e } of the day-range currently visible in the
+// Positions Timeline scroll viewport, mirrored as a band on Over Time. null when
+// the timeline isn't horizontally scrollable (single-month, or it all fits).
+let _expoViewFrac = null;
+let _expoViewRaf = 0;
 // Over Time widget render mode: 'line' (area, default) | 'bars' (per-day bars).
 let _expoOverMode = 'line';
 // By-pair timeline: when false, only pairs traded in the period get a row; when
@@ -27621,7 +27629,7 @@ function _expoPeakLabel(days, maxCC) {
 // Empty-state markup shared by the 3 Concurrent Positions widgets.
 function _expoEmptyHtml(anyTrades) {
   return `<div class="expo-empty">${anyTrades
-    ? 'Map your <b>Exit date</b> column in Data Setup to unlock concurrent-position analysis.'
+    ? 'Map your <b>Exit date</b> column in Data Setup to unlock simultaneous-position analysis.'
     : 'No data'}</div>`;
 }
 
@@ -27678,12 +27686,31 @@ function _expoBuildModel(trades) {
 
   const years = Array.from(new Set(valid.map(t => t.date.slice(0, 4)))).sort().reverse();
   const overall = _expoPeriodMode === 'overall';
+  const yearMode = _expoPeriodMode === 'year';
+  const wide = overall || yearMode;   // px-wide scrolling Gantt + month-level axis
 
   let year = null, selMonth = null, monthIdx = 0, daysInMonth = 0, start, end, label;
   if (overall) {
     start = valid.reduce((mn, t) => t.date < mn ? t.date : mn, valid[0].date);
     end   = valid.reduce((mx, t) => t.exitDate > mx ? t.exitDate : mx, valid[0].exitDate);
     label = 'All history';
+  } else if (yearMode) {
+    year = (_expoUserPicked && _expoSelYear && years.includes(String(_expoSelYear)))
+      ? String(_expoSelYear) : years[0];
+    _expoSelYear = year;
+    // Bound the range to the data actually present within the year (mirrors how
+    // Overall clamps to real extents) so empty leading/trailing months are trimmed.
+    const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+    const inYear = valid.filter(t => t.date <= yEnd && t.exitDate >= yStart);
+    if (inYear.length) {
+      const dMin = inYear.reduce((mn, t) => t.date < mn ? t.date : mn, inYear[0].date);
+      const dMax = inYear.reduce((mx, t) => t.exitDate > mx ? t.exitDate : mx, inYear[0].exitDate);
+      start = dMin < yStart ? yStart : dMin;
+      end   = dMax > yEnd ? yEnd : dMax;
+    } else {
+      start = yStart; end = yEnd;
+    }
+    label = `Year ${year}`;
   } else {
     year = (_expoUserPicked && _expoSelYear && years.includes(String(_expoSelYear)))
       ? String(_expoSelYear) : years[0];
@@ -27707,10 +27734,10 @@ function _expoBuildModel(trades) {
   const active = days.filter(d => d.count > 0);
   const avgIM = active.length ? (active.reduce((s, d) => s + d.count, 0) / active.length) : 0;
   const pctGe2 = active.length ? (active.filter(d => d.count >= 2).length / active.length * 100) : 0;
-  const peakLabel = _expoPeakLabelDays(days, maxCC, overall);
+  const peakLabel = _expoPeakLabelDays(days, maxCC, wide);
 
   return {
-    empty: false, overall, valid, years, year, selMonth, monthIdx, daysInMonth,
+    empty: false, overall, yearMode, wide, valid, years, year, selMonth, monthIdx, daysInMonth,
     start, end, label, days, maxCC, active, avgIM, pctGe2, peakLabel,
     // back-compat aliases used by the renderers
     inMonth: inRange, monthStart: start, monthEnd: end,
@@ -27729,28 +27756,60 @@ function _expoDarken(hex, pct) {
   const b = Math.round(parseInt(h.slice(4, 6), 16) * (1 - pct));
   return '#' + [r, g, b].map(x => Math.max(0, x).toString(16).padStart(2, '0')).join('');
 }
-function _expoRampColors() {
-  return [tc('--t'), tc('--a'), tc('--r'), _expoDarken(tc('--r'), 0.4)];
+// Interpolate n colours along the teal→amber→red→dark-red risk ramp. Canvas
+// can't use color-mix, so we lerp the hex channels ourselves.
+function _expoLerpHex(a, b, t) {
+  const pa = (a || '').replace('#', ''), pb = (b || '').replace('#', '');
+  if (pa.length < 6 || pb.length < 6) return a;
+  const ch = i => {
+    const x = parseInt(pa.slice(i, i + 2), 16), y = parseInt(pb.slice(i, i + 2), 16);
+    return Math.max(0, Math.min(255, Math.round(x + (y - x) * t))).toString(16).padStart(2, '0');
+  };
+  return '#' + ch(0) + ch(2) + ch(4);
+}
+function _expoRampColors(n) {
+  const stops = [tc('--t'), tc('--a'), tc('--r'), _expoDarken(tc('--r'), 0.4)];
+  const count = n || stops.length;
+  if (count <= 1) return [stops[0]];
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const p = (i / (count - 1)) * (stops.length - 1);
+    const lo = Math.floor(p), hi = Math.min(stops.length - 1, lo + 1);
+    out.push(_expoLerpHex(stops[lo], stops[hi], p - lo));
+  }
+  return out;
 }
 
-// Distribution of in-market days by concurrency bucket: 1 / 2-3 / 4-5 / 6+.
+// Bucket labels + inclusive [lo,hi] bounds — single source of truth shared by
+// the donut / duration renderers and their click-through occurrence drawers.
+const _EXPO_CONC_LABELS = ['1 position', '2–3 positions', '4–5 positions', '6–8 positions', '9–10 positions', '11+ positions'];
+const _EXPO_CONC_SHORT  = ['1', '2–3', '4–5', '6–8', '9–10', '11+'];
+const _EXPO_CONC_RANGES = [[1, 1], [2, 3], [4, 5], [6, 8], [9, 10], [11, Infinity]];
+const _EXPO_DUR_LABELS  = ['1 day', '2–3 days', '4–7 days', '8–10 days', '11–14 days', '15+ days'];
+const _EXPO_DUR_RANGES  = [[1, 1], [2, 3], [4, 7], [8, 10], [11, 14], [15, Infinity]];
+
+// Distribution of in-market days by concurrency bucket:
+// 1 / 2-3 / 4-5 / 6-8 / 9-10 / 11+.
 function _expoConcurrencyBuckets(active) {
-  const labels = ['1 position', '2–3 positions', '4–5 positions', '6+ positions'];
-  const counts = [0, 0, 0, 0];
+  const labels = _EXPO_CONC_LABELS;
+  const counts = [0, 0, 0, 0, 0, 0];
   active.forEach(d => {
     const k = d.count;
     if (k === 1) counts[0]++;
     else if (k <= 3) counts[1]++;
     else if (k <= 5) counts[2]++;
-    else counts[3]++;
+    else if (k <= 8) counts[3]++;
+    else if (k <= 10) counts[4]++;
+    else counts[5]++;
   });
   return { labels, counts };
 }
 
-// Distribution of positions by hold-duration bucket: 1d / 2-3d / 4-7d / 8d+.
+// Distribution of positions by hold-duration bucket:
+// 1d / 2-3d / 4-7d / 8-10d / 11-14d / 15d+.
 function _expoDurationBuckets(inMonth) {
-  const labels = ['1 day', '2–3 days', '4–7 days', '8+ days'];
-  const counts = [0, 0, 0, 0];
+  const labels = _EXPO_DUR_LABELS;
+  const counts = [0, 0, 0, 0, 0, 0];
   let totalDur = 0;
   inMonth.forEach(t => {
     const dur = _expoDurationDays(t.date, t.exitDate);
@@ -27758,7 +27817,9 @@ function _expoDurationBuckets(inMonth) {
     if (dur <= 1) counts[0]++;
     else if (dur <= 3) counts[1]++;
     else if (dur <= 7) counts[2]++;
-    else counts[3]++;
+    else if (dur <= 10) counts[3]++;
+    else if (dur <= 14) counts[4]++;
+    else counts[5]++;
   });
   const avg = inMonth.length ? totalDur / inMonth.length : 0;
   return { labels, counts, avg };
@@ -27787,18 +27848,42 @@ function _expoPairLegs(pair) {
   if (c.length)      return [c, ''];
   return null;
 }
-// Correlation load for the set of positions open on one day. Sums signed
-// exposure per currency (base +sign, quote −sign) across the positions that have
-// a known direction, then takes the currency with the largest net |exposure|.
-// Returns { intensity, currency, cluster, n }: intensity 0 = diversified,
-// 1 = every directional position leans the same currency the same way. Needs
-// ≥2 directional positions; otherwise intensity 0 (can't assess).
+// Non-forex families that move together but share no currency leg (US30 ↔ NAS100,
+// BTC ↔ ETH, WTI ↔ Brent). Symbols matching a family route to one synthetic
+// "factor" so they correlate like same-currency forex does. Keyed to a friendly
+// label for the KPI caption. Order matters — first match wins.
+const _EXPO_FACTORS = [
+  { re: /^(US30|DJ30|WALL|DOW|US500|SPX500|SPX|SP500|US100|USTEC|NAS100|NDX|NASDAQ|GER40|GER30|DAX|DE40|UK100|FTSE100|FTSE|JP225|JPN225|NIKKEI|NKY|EU50|STOXX50|STOXX|FRA40|CAC40|CAC|AUS200|ASX200|HK50|HSI|US2000|RUSSELL)/, label: 'indices' },
+  { re: /^(BTC|XBT|ETH|LTC|XRP|SOL|BNB|ADA|DOGE|DOT|AVAX)/, label: 'crypto' },
+  { re: /^(WTI|USOIL|UKOIL|BRENT|XTIUSD|XBRUSD|OIL|NGAS|NATGAS)/, label: 'energy' },
+];
+// Return the synthetic factor token for a non-forex family symbol, else ''.
+function _expoSymbolFactor(pair) {
+  const s = String(pair || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!s) return '';
+  for (const f of _EXPO_FACTORS) if (f.re.test(s)) return 'FX_' + f.label;
+  return '';
+}
+// Friendly label for a net-exposure key (a currency code stays as-is; a synthetic
+// factor 'FX_indices' → 'indices').
+function _expoFactorLabel(code) {
+  return String(code || '').startsWith('FX_') ? code.slice(3) : code;
+}
+// Correlation load for the set of positions open on one day. Sums signed exposure
+// per currency (base +sign, quote −sign) — or per synthetic factor for non-forex
+// families — across positions with a known direction, then takes the key with the
+// largest net |exposure|. Returns { intensity, currency, cluster, n }: intensity
+// 0 = diversified, 1 = every directional position leans the same key the same
+// way. Needs ≥2 directional positions; otherwise intensity 0 (can't assess).
 function _expoCorrelationLoad(open) {
   const net = {};
   let n = 0;
   (open || []).forEach(t => {
     const sign = _expoDirSign(t);
     if (!sign) return;
+    // Non-forex family → one factor token so siblings cluster (US30 ↔ NAS100).
+    const factor = _expoSymbolFactor(t.pair);
+    if (factor) { n++; net[factor] = (net[factor] || 0) + sign; return; }
     const legs = _expoPairLegs(t.pair);
     if (!legs) return;
     n++;
@@ -27849,14 +27934,39 @@ function _expoSyncControls(suffix, m) {
     yearSel.innerHTML = m.years.map(y => `<option value="${y}">${y}</option>`).join('');
     yearSel.value = m.year;
   }
+  // Month select only in month mode; in year mode the arrows step the year.
   if (monthSel) {
-    const months = _expoMonthsForYear(m.valid, m.year);
-    monthSel.innerHTML = months.map(mm => `<option value="${mm}">${_EXPO_MONTHS[parseInt(mm, 10) - 1]}</option>`).join('');
-    monthSel.value = m.selMonth;
+    monthSel.style.display = m.yearMode ? 'none' : '';
+    if (!m.yearMode) {
+      const months = _expoMonthsForYear(m.valid, m.year);
+      monthSel.innerHTML = months.map(mm => `<option value="${mm}">${_EXPO_MONTHS[parseInt(mm, 10) - 1]}</option>`).join('');
+      monthSel.value = m.selMonth;
+    }
   }
 }
 
-// Widget 1 — summary line + 4 KPI cards.
+// Win-rate + expectancy of trades bucketed by how many positions were open on
+// their entry day (concurrency-at-entry, incl. the trade itself). Only trades
+// that ENTERED within the period are counted, so a run isn't double-counted
+// across periods. Returns one { n, wins, totalR } per concurrency bucket.
+function _expoWinRateByConcurrency(m) {
+  const tpConfig = appState.ui.tpConfig;
+  const valid = m.valid;
+  const buckets = _EXPO_CONC_RANGES.map(() => ({ n: 0, wins: 0, totalR: 0 }));
+  m.inMonth.forEach(t => {
+    if (t.date < m.start || t.date > m.end) return;   // entered outside the period
+    const k = valid.reduce((c, x) => c + (x.date <= t.date && x.exitDate >= t.date ? 1 : 0), 0);
+    const bi = _EXPO_CONC_RANGES.findIndex(([lo, hi]) => k >= lo && k <= hi);
+    if (bi < 0) return;
+    const b = buckets[bi];
+    b.n++;
+    if (isWinner(t, tpConfig)) b.wins++;
+    b.totalR += Number(computeEffectiveRR(t, tpConfig)) || 0;
+  });
+  return buckets;
+}
+
+// Widget 1 — summary line + 4 KPI cards + win-rate-by-concurrency breakdown.
 function renderExpoKpis(trades) {
   const body = document.getElementById('expo-kpis-body');
   if (!body) return;
@@ -27871,12 +27981,37 @@ function renderExpoKpis(trades) {
   let corrHtml = '';
   if (m.maxCC >= 2 && corr.n >= 2) {
     const tint = _expoCorrTint(corr.intensity);
-    const txt = corr.intensity < 0.15 ? 'diversified' : `${corr.cluster}/${corr.n} ${corr.currency}`;
+    const cLbl = _expoFactorLabel(corr.currency);
+    const txt = corr.intensity < 0.15 ? 'diversified' : `${corr.cluster}/${corr.n} ${cLbl}`;
     const tip = corr.intensity < 0.15
-      ? `At the peak, the ${corr.n} directional positions spread across currencies — genuine diversification.`
-      : `At the peak, ${corr.cluster} of ${corr.n} directional positions net-bet ${corr.currency} the same way — a concentrated exposure disguised as diversification.`;
+      ? `At the peak, the ${corr.n} directional positions spread out — genuine diversification.`
+      : `At the peak, ${corr.cluster} of ${corr.n} directional positions net-bet ${cLbl} the same way — a concentrated exposure disguised as diversification.`;
     corrHtml = `<span class="expo-kpi-corr" style="color:${tint}" title="${_escapeHtml(tip)}"><span class="expo-corr-dot" style="background:${tint}"></span>${_escapeHtml(txt)}</span>`;
   }
+
+  // Win-rate breakdown: does edge decay as you stack positions? Bar width = win
+  // rate, bar colour = expectancy sign (green +R / red −R). Rows clickable.
+  const wr = _expoWinRateByConcurrency(m);
+  const wrRows = wr.map((b, i) => {
+    if (!b.n) return '';
+    const wrPct = Math.round(b.wins / b.n * 100);
+    const exp = b.totalR / b.n;
+    const expCol = exp >= 0 ? 'var(--g)' : 'var(--r)';
+    const tip = `${b.n} trade${b.n > 1 ? 's' : ''} entered at ${_EXPO_CONC_LABELS[i]}: ${wrPct}% win rate, ${exp >= 0 ? '+' : ''}${exp.toFixed(2)}R avg`;
+    return `<div class="expo-wr-row" data-action="expo-open-wr" data-idx="${i}" title="${_escapeHtml(tip)}">
+      <span class="expo-wr-k">${_EXPO_CONC_SHORT[i]}</span>
+      <span class="expo-wr-track"><span class="expo-wr-fill" style="width:${wrPct}%;background:${expCol}"></span></span>
+      <span class="expo-wr-pct">${wrPct}%</span>
+      <span class="expo-wr-exp" style="color:${expCol}">${exp >= 0 ? '+' : ''}${exp.toFixed(1)}R</span>
+      <span class="expo-wr-n">${b.n}</span>
+    </div>`;
+  }).join('');
+  const wrHtml = wrRows
+    ? `<div class="expo-wr">
+        <div class="expo-wr-title">Win rate by simultaneous positions</div>
+        <div class="expo-wr-list">${wrRows}</div>
+      </div>`
+    : '';
 
   body.innerHTML = `<div class="expo-shell">
     <div class="expo-summary">
@@ -27888,6 +28023,7 @@ function renderExpoKpis(trades) {
       <div class="expo-kpi"><span class="expo-kpi-lbl">Time ≥ 2 positions</span><span class="expo-kpi-val">${Math.round(m.pctGe2)}%</span></div>
       <div class="expo-kpi"><span class="expo-kpi-lbl">Peak window</span><span class="expo-kpi-val expo-kpi-sm">${m.peakLabel}</span></div>
     </div>
+    ${wrHtml}
   </div>`;
 }
 
@@ -27915,9 +28051,9 @@ function renderExpoDist(trades) {
   if (!hasChartJs()) return;
 
   const { labels, counts } = _expoConcurrencyBuckets(m.active);
-  const colors = _expoRampColors();
+  const colors = _expoRampColors(labels.length);
   const total = m.active.length;
-  const idx = [0, 1, 2, 3].filter(i => counts[i] > 0);
+  const idx = labels.map((_, i) => i).filter(i => counts[i] > 0);
 
   const canvas = getByIdSafe('expoDistCanvas');
   if (!canvas) return;
@@ -27930,6 +28066,10 @@ function renderExpoDist(trades) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false, cutout: '64%',
+      // Click a slice → drawer of every occurrence of that concurrency level.
+      // els index is into the filtered `idx` list, so map it back to a bucket.
+      onClick: (evt, els) => { if (els && els.length) _expoOpenConcurrencyBucket(idx[els[0].index]); },
+      onHover: (evt, els) => { if (evt.native) evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
       plugins: {
         legend: { display: false },
         tooltip: { bodyFont: { size: _chartTipFs() }, callbacks: {
@@ -27940,7 +28080,7 @@ function renderExpoDist(trades) {
   });
   if (center) center.innerHTML = `<span class="expo-donut-big">${total}</span><span class="expo-donut-sub">in-market days</span>`;
   if (legend) legend.innerHTML = idx.map(i =>
-    `<div class="expo-leg-row"><span class="expo-leg-dot" style="background:${colors[i]}"></span><span class="expo-leg-lbl">${labels[i]}</span><span class="expo-leg-val">${Math.round(counts[i] / total * 100)}%</span><span class="expo-leg-n">${counts[i]}d</span></div>`
+    `<div class="expo-leg-row" data-action="expo-open-conc" data-idx="${i}" title="See occurrences"><span class="expo-leg-dot" style="background:${colors[i]}"></span><span class="expo-leg-lbl">${labels[i]}</span><span class="expo-leg-val">${Math.round(counts[i] / total * 100)}%</span><span class="expo-leg-n">${counts[i]}d</span></div>`
   ).join('');
 }
 
@@ -27967,7 +28107,7 @@ function renderExpoDuration(trades) {
   clearCanvasEmptyState(WRAP);
   if (!hasChartJs()) return;
 
-  const colors = _expoRampColors();
+  const colors = _expoRampColors(labels.length);
   const canvas = getByIdSafe('expoDurationCanvas');
   if (!canvas) return;
   canvas.removeAttribute('width'); canvas.removeAttribute('height');
@@ -27976,6 +28116,9 @@ function renderExpoDuration(trades) {
     data: { labels, datasets: [{ data: counts, backgroundColor: colors, borderRadius: 3, barPercentage: 0.74, categoryPercentage: 0.78 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false,
+      // Click a bar → drawer listing the positions in that hold-duration bucket.
+      onClick: (evt, els) => { if (els && els.length) _expoOpenDurationBucket(els[0].index); },
+      onHover: (evt, els) => { if (evt.native) evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
       plugins: {
         legend: { display: false },
         tooltip: { bodyFont: { size: _chartTipFs() }, callbacks: {
@@ -28014,7 +28157,7 @@ function renderExpoTimeline(trades) {
   }
 
   const tpConfig = appState.ui.tpConfig;
-  const { days, start, end, inMonth, overall } = m;
+  const { days, start, end, inMonth, wide } = m;
   // Day-string → column index, so spans position correctly across months.
   const dayIdx = {}; days.forEach((d, i) => { dayIdx[d.ds] = i; });
 
@@ -28062,13 +28205,13 @@ function renderExpoTimeline(trades) {
 
   const dayW = 100 / days.length;
   const gutter = byPair ? 84 : 0;
-  const innerW = overall ? `width:${gutter + days.length * _EXPO_OVERALL_DAY_PX}px;` : '';
-  let html = `<div class="expo-shell"><div class="expo-gantt-wrap${overall ? ' is-overall' : ''}" style="--expo-gutter:${gutter}px;--expo-lanes:${laneCount}">`;
+  const innerW = wide ? `width:${gutter + days.length * _EXPO_OVERALL_DAY_PX}px;` : '';
+  let html = `<div class="expo-shell"><div class="expo-gantt-wrap${wide ? ' is-overall' : ''}" style="--expo-gutter:${gutter}px;--expo-lanes:${laneCount}">`;
   html += `<div class="expo-gantt-scroll"><div class="expo-gantt-inner" style="${innerW}">`;
 
   // Head: sticky day/month axis aligned to the plot.
   let axis = '';
-  if (overall) {
+  if (wide) {
     days.forEach((d, idx) => {
       if (d.ds.slice(8, 10) !== '01' && idx !== 0) return;
       const left = (idx * dayW).toFixed(3);
@@ -28093,7 +28236,7 @@ function renderExpoTimeline(trades) {
   let gridCols = '';
   days.forEach(d => {
     const monthStartCol = d.ds.slice(8, 10) === '01';
-    gridCols += `<div class="expo-gcol${_expoIsWeekend(d.ds) ? ' is-we' : ''}${overall && monthStartCol ? ' is-month' : ''}"></div>`;
+    gridCols += `<div class="expo-gcol${_expoIsWeekend(d.ds) ? ' is-we' : ''}${wide && monthStartCol ? ' is-month' : ''}"></div>`;
   });
   html += `<div class="expo-grid">${gridCols}</div>`;
   items.forEach(it => {
@@ -28130,6 +28273,128 @@ function renderExpoTimeline(trades) {
     const lh = Math.max(16, Math.min(laneCount > 0 ? avail / laneCount : 18, 100));
     wrapEl.style.setProperty('--expo-lane-h', lh.toFixed(1) + 'px');
   }
+
+  // Wide (Year/Overall) modes scroll horizontally → mirror the visible day-window
+  // as a band on the Over Time chart, kept live as the user scrolls the Gantt.
+  // The old listener dies with the previous body.innerHTML, so no leak.
+  if (wide && scrollEl) {
+    scrollEl.addEventListener('scroll', _expoUpdateViewportBand, { passive: true });
+    requestAnimationFrame(_expoUpdateViewportBand);
+  } else {
+    _expoViewFrac = null;
+  }
+}
+
+// Read the Positions Timeline scroll metrics → fraction of the day-range visible,
+// then repaint the Over Time band. The sticky left gutter overlays the first
+// `--expo-gutter` px of the viewport, so it's excluded from both the plot width
+// and the visible width. null when there's no horizontal overflow.
+function _expoUpdateViewportBand() {
+  const scrollEl = document.querySelector('#expo-timeline-body .expo-gantt-scroll');
+  if (!scrollEl) { _expoPushViewFrac(null); return; }
+  const wrapEl = scrollEl.closest('.expo-gantt-wrap');
+  const gutter = wrapEl ? (parseFloat(getComputedStyle(wrapEl).getPropertyValue('--expo-gutter')) || 0) : 0;
+  const plotW = scrollEl.scrollWidth - gutter;
+  const viewW = scrollEl.clientWidth - gutter;
+  if (plotW <= 0 || viewW <= 0 || scrollEl.scrollWidth <= scrollEl.clientWidth + 1) {
+    _expoPushViewFrac(null); return;
+  }
+  const s = scrollEl.scrollLeft / plotW;
+  const e = (scrollEl.scrollLeft + viewW) / plotW;
+  _expoPushViewFrac({ s: Math.max(0, Math.min(1, s)), e: Math.max(0, Math.min(1, e)) });
+}
+function _expoPushViewFrac(frac) {
+  _expoViewFrac = frac;
+  if (_expoOverChart) {
+    if (_expoViewRaf) cancelAnimationFrame(_expoViewRaf);
+    _expoViewRaf = requestAnimationFrame(() => { _expoViewRaf = 0; if (_expoOverChart) _expoOverChart.draw(); });
+  }
+}
+
+// ── Over Time band is draggable (line AND bars mode) ─────────────────────────
+// Dragging the band on the Over Time chart scrolls the Positions Timeline, which
+// then re-syncs the band through _expoUpdateViewportBand — so the timeline's
+// scrollLeft stays the single source of truth for the visible window. In bars
+// mode a *press-and-drag* moves the range while a plain *click* still opens that
+// day's trade cards: we only treat the gesture as a drag once the pointer moves
+// past a small threshold, and suppress the trailing click if it did drag.
+const _EXPO_DRAG_THRESHOLD = 4;   // px of horizontal travel before it's a drag
+let _expoOverArmed = false;       // pointer is down, gesture not yet classified
+let _expoOverDidDrag = false;     // gesture crossed the threshold → a real drag
+let _expoOverStartX = 0;
+let _expoOverGrabOffset = 0;
+let _expoOverPointerBound = false;
+let _expoSuppressNextOverClick = false;
+
+function _expoScrollTimelineToFrac(sFrac) {
+  const sc = document.querySelector('#expo-timeline-body .expo-gantt-scroll');
+  if (!sc) return;
+  const wrapEl = sc.closest('.expo-gantt-wrap');
+  const gutter = wrapEl ? (parseFloat(getComputedStyle(wrapEl).getPropertyValue('--expo-gutter')) || 0) : 0;
+  const plotW = sc.scrollWidth - gutter;
+  const maxScroll = sc.scrollWidth - sc.clientWidth;
+  sc.scrollLeft = Math.max(0, Math.min(maxScroll, sFrac * plotW));   // fires the scroll listener
+}
+// Pointer x → fraction [0,1] across the Over Time plot area.
+function _expoOverPointerFrac(e) {
+  if (!_expoOverChart || !_expoOverChart.chartArea) return null;
+  const canvas = getByIdSafe('expoOvertimeCanvas');
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  const { left, right } = _expoOverChart.chartArea;
+  const w = right - left;
+  if (w <= 0) return null;
+  return Math.max(0, Math.min(1, ((e.clientX - rect.left) - left) / w));
+}
+function _expoOverPointerDown(e) {
+  if (!_expoViewFrac) return;                        // need a scroll band to move
+  const f = _expoOverPointerFrac(e);
+  if (f == null) return;
+  const bandW = _expoViewFrac.e - _expoViewFrac.s;
+  const inBand = f >= _expoViewFrac.s && f <= _expoViewFrac.e;
+  _expoOverGrabOffset = inBand ? (f - _expoViewFrac.s) : bandW / 2;
+  _expoOverStartX = e.clientX;
+  _expoOverArmed = true;
+  _expoOverDidDrag = false;
+  // Line mode: a press outside the band immediately jumps it there (there is no
+  // competing click action). Bars mode never jumps on down — a bare click must
+  // stay available to open the day; movement past the threshold starts the drag.
+  if (_expoOverMode === 'line' && !inBand) {
+    _expoScrollTimelineToFrac(f - bandW / 2);
+    _expoOverDidDrag = true;
+    const cv = getByIdSafe('expoOvertimeCanvas'); if (cv) cv.style.cursor = 'grabbing';
+    e.preventDefault();
+  }
+  window.addEventListener('pointermove', _expoOverPointerMove);
+  window.addEventListener('pointerup', _expoOverPointerUp);
+}
+function _expoOverPointerMove(e) {
+  if (!_expoOverArmed) return;
+  if (!_expoOverDidDrag && Math.abs(e.clientX - _expoOverStartX) < _EXPO_DRAG_THRESHOLD) return;
+  _expoOverDidDrag = true;
+  const cv = getByIdSafe('expoOvertimeCanvas'); if (cv) cv.style.cursor = 'grabbing';
+  const f = _expoOverPointerFrac(e);
+  if (f == null) return;
+  _expoScrollTimelineToFrac(f - _expoOverGrabOffset);
+}
+function _expoOverPointerUp() {
+  _expoOverArmed = false;
+  window.removeEventListener('pointermove', _expoOverPointerMove);
+  window.removeEventListener('pointerup', _expoOverPointerUp);
+  const cv = getByIdSafe('expoOvertimeCanvas');
+  if (cv) cv.style.cursor = _expoOverCursor();
+  // If the gesture dragged, swallow the click Chart.js is about to fire so a
+  // drag never also opens a day drawer (bars mode).
+  if (_expoOverDidDrag) {
+    _expoSuppressNextOverClick = true;
+    setTimeout(() => { _expoSuppressNextOverClick = false; }, 0);
+  }
+}
+// Resting cursor for the Over Time canvas given the current mode + band state.
+function _expoOverCursor() {
+  if (_expoViewFrac && _expoOverMode === 'line') return 'grab';       // drag-only
+  if (_expoOverMode === 'bars') return 'pointer';                     // click a bar (drag bonus)
+  return 'default';
 }
 
 // Widget 5 — line/area: concurrent open positions per day over the month, with a
@@ -28156,7 +28421,7 @@ function renderExpoOvertime(trades) {
   const canvas = getByIdSafe('expoOvertimeCanvas');
   if (!canvas) return;
   canvas.removeAttribute('width'); canvas.removeAttribute('height');
-  const labels = m.days.map(d => m.overall ? _expoFmtMD(d.ds) : parseInt(d.ds.slice(8, 10), 10));
+  const labels = m.days.map(d => m.wide ? _expoFmtMD(d.ds) : parseInt(d.ds.slice(8, 10), 10));
   const data = m.days.map(d => d.count);
   const peak = m.maxCC;
   const bars = _expoOverMode === 'bars';
@@ -28174,12 +28439,14 @@ function renderExpoOvertime(trades) {
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       onClick: bars ? (evt, els) => {
+        // A press that turned into a band drag suppresses this trailing click.
+        if (_expoSuppressNextOverClick) { _expoSuppressNextOverClick = false; return; }
         if (els && els.length) { const d = m.days[els[0].index]; if (d && d.count > 0) _expoOpenDay(d.ds); }
       } : undefined,
       plugins: {
         legend: { display: false },
         tooltip: { bodyFont: { size: _chartTipFs() }, callbacks: {
-          title: ctx => m.overall ? String(ctx[0].label) : `Day ${ctx[0].label}`,
+          title: ctx => m.wide ? String(ctx[0].label) : `Day ${ctx[0].label}`,
           label: ctx => ` ${ctx.raw} open`,
         } },
       },
@@ -28201,8 +28468,56 @@ function renderExpoOvertime(trades) {
         ctx.fillText('peak ' + peak, right - 2, py - 3);
         ctx.restore();
       },
+    }, {
+      // Viewport band: in Year/Overall mode, shade the slice of the timeline the
+      // user currently has scrolled into view (see _expoUpdateViewportBand).
+      id: 'expoViewport',
+      afterDraw(chart) {
+        if (!_expoViewFrac || !m.wide) return;
+        const { ctx, chartArea: { left, right, top, bottom } } = chart;
+        const w = right - left;
+        const x1 = left + Math.max(0, Math.min(1, _expoViewFrac.s)) * w;
+        const x2 = left + Math.max(0, Math.min(1, _expoViewFrac.e)) * w;
+        ctx.save();
+        ctx.fillStyle = tc('--t') + '26';
+        ctx.fillRect(x1, top, Math.max(0, x2 - x1), bottom - top);
+        ctx.strokeStyle = tc('--t'); ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x1, top); ctx.lineTo(x1, bottom);
+        ctx.moveTo(x2, top); ctx.lineTo(x2, bottom);
+        ctx.stroke();
+        // Date-range label for the visible window, on a chip so it stays legible
+        // over the area fill. Centred on the band, clamped inside the plot.
+        const days = m.days;
+        if (days && days.length) {
+          const last = days.length - 1;
+          const d1 = days[Math.max(0, Math.min(last, Math.round(_expoViewFrac.s * last)))];
+          const d2 = days[Math.max(0, Math.min(last, Math.round(_expoViewFrac.e * last)))];
+          if (d1 && d2) {
+            const lbl = d1.ds === d2.ds ? _expoFmtMD(d1.ds) : `${_expoFmtMD(d1.ds)} – ${_expoFmtMD(d2.ds)}`;
+            ctx.font = '8px "DM Mono", monospace';
+            const tw = ctx.measureText(lbl).width;
+            let cx = (x1 + x2) / 2;
+            cx = Math.max(left + tw / 2 + 4, Math.min(right - tw / 2 - 4, cx));
+            ctx.fillStyle = tc('--bg') + 'e6';
+            ctx.fillRect(cx - tw / 2 - 4, top + 2, tw + 8, 12);
+            ctx.fillStyle = tc('--t');
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillText(lbl, cx, top + 4);
+          }
+        }
+        ctx.restore();
+      },
     }],
   });
+
+  // Bind the drag-to-scroll handler once (the canvas element persists across
+  // re-renders) + reflect draggability in the cursor.
+  const _ovCv = getByIdSafe('expoOvertimeCanvas');
+  if (_ovCv) {
+    _ovCv.style.cursor = _expoOverCursor();
+    if (!_expoOverPointerBound) { _ovCv.addEventListener('pointerdown', _expoOverPointerDown); _expoOverPointerBound = true; }
+  }
 }
 
 // Re-render the 5 Concurrent Positions widgets together (after a synced
@@ -28224,18 +28539,31 @@ function _expoSetTimelineMode(mode) {
   _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(getFiltered()));
 }
 
-// Toggle the shared period (month ↔ overall) — re-renders all 5 widgets.
+// Switch the shared period (month | year | overall) — re-renders all 5 widgets.
 function _expoSetPeriod(p) {
-  if (p !== 'month' && p !== 'overall') return;
+  if (p !== 'month' && p !== 'year' && p !== 'overall') return;
   if (_expoPeriodMode === p) return;
   _expoPeriodMode = p;
+  _expoViewFrac = null;   // drop any stale viewport band when the scroll mode changes
   _expoRerenderAll();
 }
 
-// Step to the previous/next month that actually has data (crosses years).
+// Step the selection: in year mode the arrows walk years-with-data; otherwise
+// they walk to the previous/next month that has data (crossing years).
 function _expoStepMonth(dir) {
   const valid = _expoValidTrades(getFiltered());
   if (!valid.length) return;
+  if (_expoPeriodMode === 'year') {
+    const ys = Array.from(new Set(valid.map(t => t.date.slice(0, 4)))).sort(); // asc
+    if (!ys.length) return;
+    let yi = ys.indexOf(String(_expoSelYear));
+    if (yi === -1) yi = ys.length - 1;
+    yi = Math.min(ys.length - 1, Math.max(0, yi + (dir < 0 ? -1 : 1)));
+    _expoSelYear = ys[yi];
+    _expoUserPicked = true;
+    _expoRerenderAll();
+    return;
+  }
   const ym = Array.from(new Set(valid.map(t => t.date.slice(0, 7)))).sort(); // 'YYYY-MM' asc
   if (!ym.length) return;
   let idx = ym.indexOf(`${_expoSelYear}-${_expoSelMonth}`);
@@ -28308,6 +28636,107 @@ function _expoOpenDay(ds) {
   const el = document.querySelector(`#expo-timeline-body [data-date="${ds}"]`);
   if (el) el.classList.add('wd-cell-active');
   openWidgetDrawer(ds, `${open.length} position${open.length > 1 ? 's' : ''} open`, open, null, { dim: 'Date' });
+}
+
+// Click a Position Duration bar → drawer of the positions in that hold-length
+// bucket (flat chronological list of trade cards).
+function _expoOpenDurationBucket(idx) {
+  const rng = _EXPO_DUR_RANGES[idx];
+  if (!rng) return;
+  const m = _expoBuildModel(getFiltered());
+  if (m.empty) return;
+  const [lo, hi] = rng;
+  const list = m.inMonth.filter(t => {
+    const d = _expoDurationDays(t.date, t.exitDate);
+    return d >= lo && d <= hi;
+  });
+  if (!list.length) { _showToast('No positions in that duration bucket', 'info'); return; }
+  openWidgetDrawer(`Position Duration — ${_EXPO_DUR_LABELS[idx]}`,
+    `${list.length} position${list.length > 1 ? 's' : ''} · ${m.label}`, list, null, { dim: 'Date' });
+}
+
+// Click a win-rate row → drawer of the trades that entered at that concurrency
+// level (flat chronological list of trade cards).
+function _expoOpenWinRateBucket(idx) {
+  const rng = _EXPO_CONC_RANGES[idx];
+  if (!rng) return;
+  const m = _expoBuildModel(getFiltered());
+  if (m.empty) return;
+  const [lo, hi] = rng;
+  const valid = m.valid;
+  const list = m.inMonth.filter(t => {
+    if (t.date < m.start || t.date > m.end) return false;
+    const k = valid.reduce((c, x) => c + (x.date <= t.date && x.exitDate >= t.date ? 1 : 0), 0);
+    return k >= lo && k <= hi;
+  });
+  if (!list.length) { _showToast('No entries at that concurrency', 'info'); return; }
+  openWidgetDrawer(`Entered at ${_EXPO_CONC_LABELS[idx]}`,
+    `${list.length} trade${list.length > 1 ? 's' : ''} · ${m.label}`, list, null, { dim: 'Date' });
+}
+
+// Click a Share-of-Open-Positions donut slice / legend row → drawer of every
+// "occurrence" of that concurrency level: each contiguous run of in-market days
+// whose open-count falls in the bucket, listing the union of positions held
+// across the run. Mirrors the streak / DD-recovery occurrence drawer.
+function _expoOpenConcurrencyBucket(idx) {
+  const rng = _EXPO_CONC_RANGES[idx];
+  if (!rng) return;
+  const m = _expoBuildModel(getFiltered());
+  if (m.empty) return;
+  const [lo, hi] = rng;
+  // Group consecutive qualifying days into occurrence runs.
+  const runs = [];
+  let cur = null;
+  m.days.forEach(d => {
+    if (d.count >= lo && d.count <= hi) {
+      if (!cur) { cur = { startDs: d.ds, endDs: d.ds, peak: d.count, dayCount: 0, trades: new Map() }; runs.push(cur); }
+      cur.endDs = d.ds;
+      cur.peak = Math.max(cur.peak, d.count);
+      cur.dayCount++;
+      d.trades.forEach(t => cur.trades.set(t.tradeId ?? (t.date + '|' + t.pair + '|' + t.hour), t));
+    } else {
+      cur = null;
+    }
+  });
+  if (!runs.length) { _showToast('No occurrences in that bucket', 'info'); return; }
+
+  const drawer = _ensureWidgetDrawerEls();
+  const totalDays = runs.reduce((s, r) => s + r.dayCount, 0);
+  const title = `Share of Open Positions — ${_EXPO_CONC_LABELS[idx]}`;
+  const sub = `${runs.length} occurrence${runs.length > 1 ? 's' : ''} · ${totalDays} in-market day${totalDays > 1 ? 's' : ''} · ${m.label}`;
+
+  const occHtml = runs.map((r, i) => {
+    const trades = _sortTradesChronological(Array.from(r.trades.values()));
+    const range = r.startDs === r.endDs ? _expoFmtMD(r.startDs) : `${_expoFmtMD(r.startDs)} → ${_expoFmtMD(r.endDs)}`;
+    const isExpanded = i === 0 ? ' is-expanded' : '';
+    return `
+      <div class="wd-occ${isExpanded}" data-occ-idx="${i}">
+        <button class="wd-occ-head" data-action="toggle-recovery-occ" type="button">
+          <span class="wd-occ-chevron">▸</span>
+          <span class="wd-occ-title">Occurrence ${i + 1}</span>
+          <span class="wd-occ-meta">${range} · peak ${r.peak} · ${trades.length} position${trades.length > 1 ? 's' : ''}</span>
+        </button>
+        <div class="wd-occ-body">${trades.map(_wdTradeCard).join('')}</div>
+      </div>`;
+  }).join('');
+
+  drawer.innerHTML = `
+    <div class="wd-drawer-head">
+      <div class="wd-drawer-head-main">
+        <div class="wd-drawer-title">${title}</div>
+        <div class="wd-drawer-sub">${sub}</div>
+      </div>
+      <div class="wd-drawer-head-side">
+        <button class="wd-drawer-close" data-action="close-widget-drawer">×</button>
+      </div>
+    </div>
+    <div class="wd-drawer-body wd-drawer-body-recovery">${occHtml}</div>`;
+
+  requestAnimationFrame(() => {
+    drawer.classList.add('is-open');
+    const bd = document.getElementById('wd-backdrop');
+    if (bd) bd.classList.add('is-open');
+  });
 }
 
 function _calRenderMonthlyDayCell(dateStr, day, data, maxAbs, cG, cR) {
@@ -44676,7 +45105,7 @@ function _collectAllManagedWidgets() {
 
 const _SECTION_LABEL_MAP = {
   'global':                'Global',
-  'concurrent-positions':  'Concurrent',
+  'concurrent-positions':  'Simultaneous',
   'optimal-rr':           'Optimal RR',
   'partials':             'Partials',
 };

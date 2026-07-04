@@ -11420,9 +11420,22 @@ body.ms-sidebar-open .view-tabs {
 .expo-band-col.is-click:hover .expo-band-fill { filter: brightness(1.2); }
 .expo-band-col.wd-cell-active { background: var(--bg3); box-shadow: inset 0 0 0 2px var(--gold); }
 /* Concurrent Positions section — each widget fills its own tile. */
-.chart-card[data-gs-id="w-expo-kpis"] .expo-kpis { flex: 1 1 auto; }
+.chart-card[data-gs-id="w-expo-kpis"] .expo-kpis { flex: 0 0 auto; }
 .chart-card[data-gs-id="w-expo-kpis"] .expo-kpi { justify-content: center; }
 #expo-duration-body, #expo-overtime-body { flex: 1 1 0; min-height: 0; }
+
+/* Win-rate by simultaneous positions — compact breakdown under the KPI cards. */
+.expo-wr { display: flex; flex-direction: column; gap: 5px; flex: 1 1 auto; min-height: 0; overflow: auto; }
+.expo-wr-title { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.expo-wr-list { display: flex; flex-direction: column; gap: 3px; }
+.expo-wr-row { display: grid; grid-template-columns: 34px 1fr 34px 46px 24px; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: background var(--dur-fast, .12s) ease; }
+.expo-wr-row:hover { background: var(--bg2); }
+.expo-wr-k { font-weight: 700; color: var(--body); text-align: right; }
+.expo-wr-track { position: relative; height: 7px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.expo-wr-fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; min-width: 2px; }
+.expo-wr-pct { color: var(--body); text-align: right; font-variant-numeric: tabular-nums; }
+.expo-wr-exp { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.expo-wr-n { color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Distribution donut: canvas + centre overlay + side legend. */
 .expo-donut-body { display: flex; flex-direction: row; align-items: center; gap: 10px; flex: 1 1 0; min-height: 0; padding: 6px 8px; }
@@ -11431,7 +11444,8 @@ body.ms-sidebar-open .view-tabs {
 .expo-donut-big { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-cal-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
 .expo-donut-sub { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin-top: 3px; }
 .expo-donut-legend { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.expo-leg-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); }
+.expo-leg-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); cursor: pointer; border-radius: 3px; padding: 1px 3px; transition: background var(--dur-fast, .12s) ease; }
+.expo-leg-row:hover { background: var(--bg2); }
 .expo-leg-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
 .expo-leg-lbl { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .expo-leg-val { color: var(--body); font-weight: 700; font-variant-numeric: tabular-nums; }

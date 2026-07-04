@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=355">
+<link rel="stylesheet" href="dashboard.css?v=357">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -1739,7 +1739,7 @@
     <span>⬡</span> Global Overview
   </div>
   <div class="view-tab" data-action="set-section" data-section="concurrent-positions">
-    Concurrent Positions
+    Simultaneous Positions
   </div>
   <div class="view-tab" data-action="set-section" data-section="optimal-rr">
     Optimal RR Analysis
@@ -2514,15 +2514,16 @@
       <div id="calendar-grid" class="scroll-panel-fill"></div>
     </div>
 
-    <!-- ══ WIDGET: Concurrent Positions ══ -->
-    <!-- ══ WIDGET: Concurrent Positions — KPIs ══ -->
+    <!-- ══ WIDGET: Simultaneous Positions ══ -->
+    <!-- ══ WIDGET: Simultaneous Positions — KPIs ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-expo-kpis" data-section="concurrent-positions">
       <div class="cc-head cc-head-fixed cc-head-wrap">
-        <span class="cc-title">Concurrent Positions</span>
+        <span class="cc-title">Simultaneous Positions</span>
         <div class="cc-head-controls cc-head-controls-wrap">
           <div class="control-group control-group-calendar" id="expo-period-k">
-            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
-            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="year" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole calendar year">Year</button>
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split active" title="Single month">Month</button>
           </div>
           <div class="expo-monthctl" id="expo-monthctl-k">
             <select id="expo-year-sel-k" class="widget-select"></select>
@@ -2535,14 +2536,15 @@
       <div id="expo-kpis-body" class="scroll-panel-fill"></div>
     </div>
 
-    <!-- ══ WIDGET: Concurrent Positions — Distribution (donut) ══ -->
+    <!-- ══ WIDGET: Simultaneous Positions — Distribution (donut) ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-expo-dist" data-section="concurrent-positions">
       <div class="cc-head cc-head-fixed cc-head-wrap">
         <span class="cc-title">Share of Open Positions</span>
         <div class="cc-head-controls cc-head-controls-wrap">
           <div class="control-group control-group-calendar" id="expo-period-d">
-            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
-            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="year" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole calendar year">Year</button>
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split active" title="Single month">Month</button>
           </div>
           <div class="expo-monthctl" id="expo-monthctl-d">
             <select id="expo-year-sel-d" class="widget-select"></select>
@@ -2561,14 +2563,15 @@
       </div>
     </div>
 
-    <!-- ══ WIDGET: Concurrent Positions — Duration (horizontal bars) ══ -->
+    <!-- ══ WIDGET: Simultaneous Positions — Duration (horizontal bars) ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-expo-duration" data-section="concurrent-positions">
       <div class="cc-head cc-head-fixed cc-head-wrap">
         <span class="cc-title">Position Duration <span class="cc-sub" id="expo-dur-avg"></span></span>
         <div class="cc-head-controls cc-head-controls-wrap">
           <div class="control-group control-group-calendar" id="expo-period-u">
-            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
-            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="year" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole calendar year">Year</button>
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split active" title="Single month">Month</button>
           </div>
           <div class="expo-monthctl" id="expo-monthctl-u">
             <select id="expo-year-sel-u" class="widget-select"></select>
@@ -2583,7 +2586,7 @@
       </div>
     </div>
 
-    <!-- ══ WIDGET: Concurrent Positions — Timeline (Gantt, compact/by-pair) ══ -->
+    <!-- ══ WIDGET: Simultaneous Positions — Timeline (Gantt, compact/by-pair) ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-expo-timeline" data-section="concurrent-positions">
       <div class="cc-head cc-head-fixed cc-head-wrap">
         <span class="cc-title">Positions Timeline</span>
@@ -2594,8 +2597,9 @@
           </div>
           <button class="bar-sort-btn expo-icon-btn" id="expo-empty-toggle" data-action="expo-toggle-empty" title="Show pairs with no trade this period">∅ pairs</button>
           <div class="control-group control-group-calendar" id="expo-period-t">
-            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
-            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history (scroll)">Overall</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment" title="Whole history (scroll)">Overall</button>
+            <button data-action="expo-set-period" data-period="year" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole calendar year">Year</button>
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split active" title="Single month">Month</button>
           </div>
           <div class="expo-monthctl" id="expo-monthctl-t">
             <select id="expo-year-sel-t" class="widget-select"></select>
@@ -2612,18 +2616,19 @@
       <div id="expo-timeline-body" class="scroll-panel-fill"></div>
     </div>
 
-    <!-- ══ WIDGET: Concurrent Positions — Over Time (line / bars) ══ -->
+    <!-- ══ WIDGET: Simultaneous Positions — Over Time (line / bars) ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-expo-overtime" data-section="concurrent-positions">
       <div class="cc-head cc-head-fixed cc-head-wrap">
-        <span class="cc-title">Concurrent Positions Over Time</span>
+        <span class="cc-title">Simultaneous Positions Over Time</span>
         <div class="cc-head-controls cc-head-controls-wrap">
           <div class="control-group control-group-calendar" id="expo-overmode-toggle">
             <button data-action="expo-set-overmode" data-omode="line" class="bar-sort-btn bar-sort-btn-segment active" title="Line / area">Line</button>
             <button data-action="expo-set-overmode" data-omode="bars" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Per-day bars (click a day)">Bars</button>
           </div>
           <div class="control-group control-group-calendar" id="expo-period-o">
-            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment active" title="Single month">Month</button>
-            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="year" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole calendar year">Year</button>
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split active" title="Single month">Month</button>
           </div>
           <div class="expo-monthctl" id="expo-monthctl-o">
             <select id="expo-year-sel-o" class="widget-select"></select>
@@ -3083,6 +3088,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1275"></script>
+<script src="dashboard.js?v=1311"></script>
 </body>
 </html>
