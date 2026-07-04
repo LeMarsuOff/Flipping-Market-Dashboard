@@ -627,7 +627,7 @@ body {
 .img-lightbox-crosshair {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 2;
   pointer-events: none;
   display: none;
 }
@@ -667,8 +667,8 @@ body {
   cursor: pointer;
   pointer-events: all;
 }
-/* While drawing, hide the mire to avoid visual noise. */
-.img-lightbox-overlay.draw-on .img-lightbox-crosshair { display: none !important; }
+/* Mire stays visible in draw mode when the crosshair toggle is on (z-index 2
+   keeps it above the annotation SVG); its own crosshair-on gate controls it. */
 /* Left vertical drawing toolbar. */
 .img-lightbox-draw-tools {
   position: absolute;
@@ -11374,6 +11374,9 @@ body.ms-sidebar-open .view-tabs {
 .expo-kpi-val { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-cal-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
 .expo-kpi-val.is-peak { color: var(--r); }
 .expo-kpi-val.expo-kpi-sm { font-size: var(--fs-cal-value, 13px); }
+/* Peak correlation caption — tinted green (diversified) → red (disguised bet). */
+.expo-kpi-corr { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expo-corr-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .expo-dist-wrap { display: flex; flex-direction: column; gap: 4px; }
 .expo-dist-lbl, .expo-band-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
 .expo-dist { display: flex; height: 20px; border-radius: 5px; overflow: hidden; }

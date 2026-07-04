@@ -4614,7 +4614,7 @@ function handleActionClick(event) {
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-day': _expoOpenDay(actionEl.dataset.date || ''); break;
-    case 'expo-open-trade': _expoOpenTrade(actionEl.dataset.tradeId || ''); break;
+    case 'expo-open-cohort': _expoOpenTradeCohort(actionEl.dataset.tradeId || ''); break;
     case 'expo-open-pair': _expoOpenPair(actionEl.dataset.pair || ''); break;
     case 'expo-set-mode': _expoSetTimelineMode(actionEl.dataset.mode || 'compact'); break;
     case 'expo-set-period': _expoSetPeriod(actionEl.dataset.period || 'month'); break;
@@ -27716,6 +27716,74 @@ function _expoDurationBuckets(inMonth) {
   return { labels, counts, avg };
 }
 
+// ── Peak correlation load (shared-currency + direction heuristic) ──
+// Two positions that share a currency in the same net direction are a single
+// disguised bet, not real diversification (e.g. long EURUSD + short USDCHF are
+// both a short-USD bet). These helpers measure how concentrated the peak really
+// is so the "Max simultaneous" KPI can be tinted green→red accordingly.
+
+// Long/short sign from a free-text direction value. +1 long, -1 short, 0 unknown.
+function _expoDirSign(t) {
+  const d = String((t && t.direction) || '').toLowerCase();
+  if (!d) return 0;
+  if (/(long|buy|bull)/.test(d) || d.includes('achat')) return 1;
+  if (/(short|sell|bear)/.test(d) || d.includes('vente')) return -1;
+  return 0;
+}
+// Split a pair symbol into [base, quote] currency codes. Majors → 3+3; anything
+// that doesn't cleanly split (indices, short/custom symbols) stays one opaque
+// leg so it only ever correlates with an identical symbol.
+function _expoPairLegs(pair) {
+  const c = String(pair || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (c.length >= 6) return [c.slice(0, 3), c.slice(3, 6)];
+  if (c.length)      return [c, ''];
+  return null;
+}
+// Correlation load for the set of positions open on one day. Sums signed
+// exposure per currency (base +sign, quote −sign) across the positions that have
+// a known direction, then takes the currency with the largest net |exposure|.
+// Returns { intensity, currency, cluster, n }: intensity 0 = diversified,
+// 1 = every directional position leans the same currency the same way. Needs
+// ≥2 directional positions; otherwise intensity 0 (can't assess).
+function _expoCorrelationLoad(open) {
+  const net = {};
+  let n = 0;
+  (open || []).forEach(t => {
+    const sign = _expoDirSign(t);
+    if (!sign) return;
+    const legs = _expoPairLegs(t.pair);
+    if (!legs) return;
+    n++;
+    net[legs[0]] = (net[legs[0]] || 0) + sign;
+    if (legs[1]) net[legs[1]] = (net[legs[1]] || 0) - sign;
+  });
+  if (n < 2) return { intensity: 0, currency: '', cluster: 0, n };
+  let currency = '', cluster = 0;
+  Object.keys(net).forEach(k => {
+    const mag = Math.abs(net[k]);
+    if (mag > cluster) { cluster = mag; currency = k; }
+  });
+  return { intensity: Math.max(0, Math.min(1, (cluster - 1) / (n - 1))), currency, cluster, n };
+}
+// Worst-case correlation load across every day sitting at max concurrency.
+function _expoPeakCorrelation(m) {
+  let worst = { intensity: 0, currency: '', cluster: 0, n: 0 };
+  if (!m || m.maxCC < 2) return worst;
+  m.days.forEach(d => {
+    if (d.count !== m.maxCC) return;
+    const l = _expoCorrelationLoad(d.trades);
+    if (l.intensity > worst.intensity || (l.intensity === worst.intensity && l.n > worst.n)) worst = l;
+  });
+  return worst;
+}
+// Tint colour for a correlation intensity: green (diversified) → gold → red.
+function _expoCorrTint(intensity) {
+  const p = Math.max(0, Math.min(1, intensity));
+  return p < 0.5
+    ? `color-mix(in srgb, var(--gold) ${Math.round(p * 2 * 100)}%, var(--g))`
+    : `color-mix(in srgb, var(--r) ${Math.round((p - 0.5) * 2 * 100)}%, var(--gold))`;
+}
+
 // Populate & sync one widget's period controls to the shared selection:
 // the [Month|Overall] toggle, the year select, and the (dynamic, data-only)
 // month select. suffix ∈ {'k','d','u','t','o'}. The month controls are hidden
@@ -27748,12 +27816,26 @@ function renderExpoKpis(trades) {
   if (m.empty) { body.innerHTML = _expoEmptyHtml(m.anyTrades); return; }
   _expoSyncControls('k', m);
 
+  // Correlation load at the peak: are the simultaneously-open pairs genuinely
+  // diversified, or a single disguised directional bet? Tints the caption
+  // green→red. Only shown when the peak has ≥2 positions with a known direction.
+  const corr = _expoPeakCorrelation(m);
+  let corrHtml = '';
+  if (m.maxCC >= 2 && corr.n >= 2) {
+    const tint = _expoCorrTint(corr.intensity);
+    const txt = corr.intensity < 0.15 ? 'diversified' : `${corr.cluster}/${corr.n} ${corr.currency}`;
+    const tip = corr.intensity < 0.15
+      ? `At the peak, the ${corr.n} directional positions spread across currencies — genuine diversification.`
+      : `At the peak, ${corr.cluster} of ${corr.n} directional positions net-bet ${corr.currency} the same way — a concentrated exposure disguised as diversification.`;
+    corrHtml = `<span class="expo-kpi-corr" style="color:${tint}" title="${_escapeHtml(tip)}"><span class="expo-corr-dot" style="background:${tint}"></span>${_escapeHtml(txt)}</span>`;
+  }
+
   body.innerHTML = `<div class="expo-shell">
     <div class="expo-summary">
       <span class="expo-summary-meta">${m.label} &nbsp;${m.inMonth.length} position${m.inMonth.length > 1 ? 's' : ''}</span>
     </div>
     <div class="expo-kpis">
-      <div class="expo-kpi"><span class="expo-kpi-lbl">Max simultaneous</span><span class="expo-kpi-val is-peak">${m.maxCC}</span></div>
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Max simultaneous</span><span class="expo-kpi-val is-peak">${m.maxCC}</span>${corrHtml}</div>
       <div class="expo-kpi"><span class="expo-kpi-lbl">Avg in market</span><span class="expo-kpi-val">${m.avgIM.toFixed(1)}</span></div>
       <div class="expo-kpi"><span class="expo-kpi-lbl">Time ≥ 2 positions</span><span class="expo-kpi-val">${Math.round(m.pctGe2)}%</span></div>
       <div class="expo-kpi"><span class="expo-kpi-lbl">Peak window</span><span class="expo-kpi-val expo-kpi-sm">${m.peakLabel}</span></div>
@@ -27916,8 +27998,9 @@ function renderExpoTimeline(trades) {
     pairLabels = pairs;
   } else {
     // Greedy lane-pack: a lane is free when its previous occupant closed strictly
-    // before this trade opens (same day = still simultaneous → new lane).
-    items.sort((a, b) => (a.sIdx - b.sIdx) || (a.eIdx - b.eIdx));
+    // before this trade opens (same day = still simultaneous → new lane). Same-day
+    // entries are ordered by entry hour so lanes read top-to-bottom by open time.
+    items.sort((a, b) => (a.sIdx - b.sIdx) || (a.eIdx - b.eIdx) || ((a.t.hour ?? 99) - (b.t.hour ?? 99)));
     const laneEnds = [];
     items.forEach(it => {
       let placed = false;
@@ -27966,16 +28049,24 @@ function renderExpoTimeline(trades) {
   });
   html += `<div class="expo-grid">${gridCols}</div>`;
   items.forEach(it => {
-    const left = it.sIdx * dayW;
-    const width = (it.eIdx - it.sIdx + 1) * dayW;
+    const spanCols = it.eIdx - it.sIdx + 1;
+    // Entry-hour approximation: nudge the bar start into its entry-day column by
+    // the entry hour (0–23) when that day is visible. Exit stays day-level (no
+    // exit-time data) so only the left edge moves — the right edge stays pinned.
+    // Capped so the bar keeps ≥0.4 day of visible width (stays clickable).
+    const h = it.t.hour;
+    const rawFrac = (!it.contLeft && h != null && !isNaN(h)) ? (Number(h) / 24) : 0;
+    const entryFrac = Math.max(0, Math.min(rawFrac, spanCols - 0.4));
+    const left = (it.sIdx + entryFrac) * dayW;
+    const width = (spanCols - entryFrac) * dayW;
     const col = _expoBarColor(it.t, tpConfig);
     const rEff = Number(computeEffectiveRR(it.t, tpConfig)) || 0;
     const dur = _expoDurationDays(it.t.date, it.t.exitDate);
-    const tip = `${it.t.pair || '—'} · ${it.t.date} → ${it.t.exitDate} · ${dur}d · ${rEff >= 0 ? '+' : ''}${rEff.toFixed(1)}R`;
+    const hTag = (h != null && !isNaN(h)) ? ` ${String(Number(h)).padStart(2, '0')}h` : '';
+    const tip = `${it.t.pair || '—'} · ${it.t.date}${hTag} → ${it.t.exitDate} · ${dur}d · ${rEff >= 0 ? '+' : ''}${rEff.toFixed(1)}R`;
     const contClass = (it.contLeft ? ' cont-l' : '') + (it.contRight ? ' cont-r' : '');
-    const spanCols = it.eIdx - it.sIdx + 1;
     const durTag = spanCols >= 4 ? `<span class="expo-bar-dur">${dur}d</span>` : '';
-    html += `<div class="expo-bar${contClass}" data-action="expo-open-trade" data-trade-id="${_escapeAttr(String(it.t.tradeId || ''))}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;--expo-row:${it.lane};background:${col}" title="${_escapeHtml(tip)}"><span class="expo-bar-lbl">${_escapeHtml(it.t.pair || '')}</span>${durTag}</div>`;
+    html += `<div class="expo-bar${contClass}" data-action="expo-open-cohort" data-trade-id="${_escapeAttr(String(it.t.tradeId || ''))}" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;--expo-row:${it.lane};background:${col}" title="${_escapeHtml(tip)}"><span class="expo-bar-lbl">${_escapeHtml(it.t.pair || '')}</span>${durTag}</div>`;
   });
   html += `</div></div></div></div></div></div>`; // lanes / body / inner / scroll / wrap / shell
   body.innerHTML = html;
@@ -28136,17 +28227,27 @@ function _expoOpenPair(pair) {
   openWidgetDrawer(pair, `${list.length} position${list.length > 1 ? 's' : ''} · ${m.label}`, list, null, { dim: 'Date' });
 }
 
-// Click a Gantt bar → drawer for that single trade (highlighted).
-function _expoOpenTrade(id) {
+// Click a Gantt bar → drawer for that trade's *simultaneous exposure cohort*:
+// every position whose [entry,exit] span overlaps the clicked trade's span
+// (the clicked trade itself included + highlighted). Answers "what else was I
+// holding at the same time?" rather than isolating the single trade.
+function _expoOpenTradeCohort(id) {
   if (!id) return;
-  const t = _expoValidTrades(getFiltered()).find(x => String(x.tradeId) === String(id));
-  if (!t) return;
+  const valid = _expoValidTrades(getFiltered());
+  const t0 = valid.find(x => String(x.tradeId) === String(id));
+  if (!t0) return;
   document.querySelectorAll('#expo-timeline-body .expo-bar.wd-bar-active').forEach(el => el.classList.remove('wd-bar-active'));
   const el = document.querySelector(`#expo-timeline-body .expo-bar[data-trade-id="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`);
   if (el) el.classList.add('wd-bar-active');
-  const rEff = Number(computeEffectiveRR(t, appState.ui.tpConfig)) || 0;
-  const sub = `${t.date} → ${t.exitDate} · ${_expoDurationDays(t.date, t.exitDate)}d · ${rEff >= 0 ? '+' : ''}${rEff.toFixed(1)}R`;
-  openWidgetDrawer(t.pair || 'Trade', sub, [t], t, { dim: 'Date' });
+  // Two spans overlap when each opens on/before the other closes.
+  const cohort = valid
+    .filter(t => t.date <= t0.exitDate && t.exitDate >= t0.date)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.exitDate.localeCompare(b.exitDate));
+  const others = cohort.length - 1;
+  const sub = others > 0
+    ? `${others} other position${others > 1 ? 's' : ''} open · ${t0.pair || '—'} held ${t0.date} → ${t0.exitDate}`
+    : `No overlapping positions · ${t0.date} → ${t0.exitDate}`;
+  openWidgetDrawer(t0.pair || 'Trade', sub, cohort, t0, { dim: 'Date' });
 }
 
 // Click a day column in the exposure band → drawer listing that day's open positions.
