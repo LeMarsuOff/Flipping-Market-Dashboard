@@ -10359,8 +10359,18 @@ function _mergeMediaCache(trades, source = null) {
     media.forEach(m => {
       if (m && m._notionId) byNotionId.set(String(m._notionId), m);
     });
-    return trades.map((t, i) => {
-      const m = (t?._notionId && byNotionId.get(String(t._notionId))) || media[i] || {};
+    return trades.map((t) => {
+      // Match media strictly by _notionId. NEVER fall back to positional
+      // (media[i]): the media cache (sessionStorage) and the trades cache
+      // (localStorage) are persisted independently — different debounced writes,
+      // incremental syncs — so their array order/size drift apart. Index i in
+      // one is unrelated to index i in the other, so a positional match silently
+      // grafts a DIFFERENT trade's screenshots onto this card (root cause of the
+      // cross-trade / cross-source screenshot bug reported 2026-07-04: e.g. a
+      // GBPJPY M15-after slot rendering an unrelated USDCAD image). On a miss we
+      // leave the slot empty (same trade-off as the raw-blob path) rather than
+      // show a wrong-trade image — the next Sync fills it correctly.
+      const m = (t?._notionId && byNotionId.get(String(t._notionId))) || {};
       return {
         ...t,
         imgM15: t.imgM15 || m.imgM15 || '',
@@ -10374,6 +10384,44 @@ function _mergeMediaCache(trades, source = null) {
   } catch {
     return trades;
   }
+}
+// ── Screenshot ownership self-heal ────────────────────────────────────────────
+// Migrated screenshots live at a deterministic Supabase path
+// `<notionId>_<slot>.png`. A slot URL whose embedded notionId differs from the
+// trade's own _notionId is ALWAYS corruption: a deleted "ghost" trade's image
+// grafted on by the (now removed) positional `_mergeMediaCache` media[i]
+// fallback. Because the trade's own object still lives at the canonical path, we
+// rewrite the URL's notionId back to the trade's own — keeping slot + query
+// (cache-buster) untouched. Deterministic, idempotent, and a no-op for healthy
+// trades (URL id already matches). This repairs poison already frozen in
+// localStorage AND the cross-device raw blob, which a plain Full resync cannot
+// (preserve keeps the stale permanent URL by notionId). See the 2026-07-04
+// cross-trade screenshot investigation. Applied at the universal display
+// chokepoint (_injectTrades) so every load / device / data source renders the
+// trade's own image regardless of what stale caches hold.
+const _SCREENSHOT_URL_ID_RX = /(\/notion-screenshots\/)([0-9a-fA-F-]{36})(_(?:m15|h4)_(?:before|after)\.png)/;
+function _healScreenshotOwnership(trades) {
+  if (!Array.isArray(trades) || !trades.length) return trades;
+  const FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig'];
+  let healed = 0;
+  const out = trades.map(t => {
+    const id = String(t && t._notionId || '').trim();
+    if (!id) return t;
+    let copy = null;
+    for (const field of FIELDS) {
+      const url = String(t[field] || '');
+      if (!url) continue;
+      const m = url.match(_SCREENSHOT_URL_ID_RX);
+      if (m && m[2].toLowerCase() !== id.toLowerCase()) {
+        if (!copy) copy = { ...t };
+        copy[field] = url.replace(_SCREENSHOT_URL_ID_RX, `$1${id}$3`);
+        healed++;
+      }
+    }
+    return copy || t;
+  });
+  if (healed) debugLog('[HealScreenshot] repaired', healed, 'mismatched screenshot URL(s)');
+  return out;
 }
 function _debugH4MediaState(label, trades, rawRows = null) {
   try {
@@ -10922,7 +10970,7 @@ function updateSourceUI(mode) {
 function _injectTrades(parsed, totalLabel, savedState, sourceProfileId = null) {
   hideEmptyState();
   invalidateFilterCache();
-  const valid = parsed
+  const valid = _healScreenshotOwnership(parsed)
     .map(t => ({
       ...t,
       hour: t.hour != null ? _parseHourValue(t.hour) : _extractTradeHour(t),
