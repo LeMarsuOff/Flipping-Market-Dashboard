@@ -392,6 +392,14 @@ body.is-booting #dhb-badge {
   --fs-cal-day:     7.5px;
   --fs-cal-summary: 20px;
 
+  /* ── Simultaneous Positions typography (own theme-editor group, decoupled
+     from the P&L Calendar --fs-cal-* set — defaults kept identical) ── */
+  --fs-expo-header:  9px;
+  --fs-expo-value:   11px;
+  --fs-expo-stats:   7px;
+  --fs-expo-day:     7.5px;
+  --fs-expo-summary: 20px;
+
   /* G18 — Equity & Drawdown widget */
   --typo-eq-axis-size:    8.5px;
   --typo-eq-xaxis-size:   8px;
@@ -11356,34 +11364,34 @@ body.ms-sidebar-open .view-tabs {
 }
 
 /* ── Concurrent Positions section (w-expo-kpis / w-expo-dist / w-expo-timeline) — Gantt of overlapping trades +
-   per-day exposure band + KPIs. Reuses the calendar's --fs-cal-* typography
-   tokens so it stays in the existing theme-editor group. ── */
+   per-day exposure band + KPIs. Typography = own --fs-expo-* tokens driven by the
+   "Simultaneous Positions" theme-editor group (decoupled from P&L Calendar). ── */
 .expo-shell { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; padding: 2px; }
 .expo-summary, .expo-kpis, .expo-dist-wrap, .expo-band-lbl { flex-shrink: 0; }
 .expo-empty {
   display: flex; align-items: center; justify-content: center; height: 100%; min-height: 120px;
   padding: 20px; text-align: center; color: var(--dim);
-  font-family: 'DM Mono', monospace; font-size: var(--fs-cal-header, 11px); line-height: 1.6;
+  font-family: 'DM Mono', monospace; font-size: var(--fs-expo-header, 11px); line-height: 1.6;
 }
 .expo-empty b { color: var(--body); font-weight: 700; }
 .expo-summary { display: flex; align-items: center; background: var(--bg2); border-radius: 5px; padding: 5px 11px; flex-shrink: 0; }
-.expo-summary-meta { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-header, 9px); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
+.expo-summary-meta { font-family: 'DM Mono', monospace; font-size: var(--fs-expo-header, 9px); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
 .expo-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .expo-kpi { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.expo-kpi-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.expo-kpi-val { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-cal-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
+.expo-kpi-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-expo-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expo-kpi-val { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-expo-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
 .expo-kpi-val.is-peak { color: var(--r); }
-.expo-kpi-val.expo-kpi-sm { font-size: var(--fs-cal-value, 13px); }
+.expo-kpi-val.expo-kpi-sm { font-size: var(--fs-expo-value, 13px); }
 /* Peak correlation caption — tinted green (diversified) → red (disguised bet). */
-.expo-kpi-corr { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expo-kpi-corr { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-stats, 9px); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .expo-corr-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .expo-dist-wrap { display: flex; flex-direction: column; gap: 4px; }
-.expo-dist-lbl, .expo-band-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.expo-dist-lbl, .expo-band-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-expo-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
 .expo-dist { display: flex; height: 20px; border-radius: 5px; overflow: hidden; }
-.expo-dist-seg { display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); font-weight: 700; color: var(--bg); min-width: 0; overflow: hidden; white-space: nowrap; }
+.expo-dist-seg { display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-stats, 9px); font-weight: 700; color: var(--bg); min-width: 0; overflow: hidden; white-space: nowrap; }
 .expo-gantt-wrap { position: relative; display: flex; flex-direction: column; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; flex: 1 1 0; min-height: 90px; }
 .expo-axis { position: relative; height: 12px; flex-shrink: 0; }
-.expo-axis-tick { position: absolute; top: 0; transform: translateX(-50%); font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); }
+.expo-axis-tick { position: absolute; top: 0; transform: translateX(-50%); font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); font-weight: 700; color: var(--body); }
 .expo-axis-tick.is-we { color: var(--dim); font-weight: 400; }
 .expo-lanes { position: relative; width: 100%; flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 /* Per-day background grid: equal flex columns = day cells; right borders are the
@@ -11397,12 +11405,12 @@ body.ms-sidebar-open .view-tabs {
 .expo-bar.wd-bar-active { box-shadow: inset 0 0 0 2px var(--gold); }
 .expo-bar.cont-l { border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .expo-bar.cont-r { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.expo-bar-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--bg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.expo-bar-dur { margin-left: auto; flex-shrink: 0; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: color-mix(in srgb, var(--bg) 55%, transparent); }
+.expo-bar-lbl { font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); font-weight: 700; color: var(--bg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expo-bar-dur { margin-left: auto; flex-shrink: 0; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); font-weight: 700; color: color-mix(in srgb, var(--bg) 55%, transparent); }
 .expo-band-lbl { margin-top: 2px; }
 .expo-band-wrap { display: flex; flex-direction: row; gap: 6px; flex: 0.55 1 0; min-height: 64px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 .expo-band-yaxis { position: relative; width: 18px; flex-shrink: 0; }
-.expo-yt { position: absolute; right: 0; transform: translateY(50%); font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--dim); line-height: 1; }
+.expo-yt { position: absolute; right: 0; transform: translateY(50%); font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); font-weight: 700; color: var(--dim); line-height: 1; }
 .expo-band-plot { position: relative; flex: 1 1 0; min-width: 0; }
 .expo-band-grid { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
 .expo-bgridline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
@@ -11410,7 +11418,7 @@ body.ms-sidebar-open .view-tabs {
 .expo-band-days { display: flex; gap: 6px; border: 1px solid transparent; padding: 0 8px; margin-top: 2px; flex-shrink: 0; }
 .expo-band-days-gutter { width: 18px; flex-shrink: 0; }
 .expo-band-days-cells { flex: 1 1 0; min-width: 0; display: flex; gap: 1px; }
-.expo-band-dcell { flex: 1 1 0; min-width: 0; text-align: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); line-height: 1.1; overflow: hidden; }
+.expo-band-dcell { flex: 1 1 0; min-width: 0; text-align: center; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); font-weight: 700; color: var(--body); line-height: 1.1; overflow: hidden; }
 .expo-band-dcell.is-we { color: var(--dim); font-weight: 400; }
 .expo-band-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; border-radius: 2px; min-width: 0; }
 .expo-band-col.is-weekend { background: color-mix(in srgb, var(--bg2) 60%, transparent); }
@@ -11424,11 +11432,11 @@ body.ms-sidebar-open .view-tabs {
 .chart-card[data-gs-id="w-expo-kpis"] .expo-kpi { justify-content: center; }
 #expo-duration-body, #expo-overtime-body { flex: 1 1 0; min-height: 0; }
 
-/* Win-rate by simultaneous positions — compact breakdown under the KPI cards. */
+/* Win-rate by simultaneous positions — its own tile (w-expo-winrate). */
 .expo-wr { display: flex; flex-direction: column; gap: 5px; flex: 1 1 auto; min-height: 0; overflow: auto; }
-.expo-wr-title { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.expo-wr-title { font-family: 'DM Mono', monospace; font-size: var(--fs-expo-stats, 9px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
 .expo-wr-list { display: flex; flex-direction: column; gap: 3px; }
-.expo-wr-row { display: grid; grid-template-columns: 34px 1fr 34px 46px 24px; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: background var(--dur-fast, .12s) ease; }
+.expo-wr-row { display: grid; grid-template-columns: 34px 1fr 34px 46px 24px; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-stats, 9px); cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: background var(--dur-fast, .12s) ease; }
 .expo-wr-row:hover { background: var(--bg2); }
 .expo-wr-k { font-weight: 700; color: var(--body); text-align: right; }
 .expo-wr-track { position: relative; height: 7px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
@@ -11441,16 +11449,19 @@ body.ms-sidebar-open .view-tabs {
 .expo-donut-body { display: flex; flex-direction: row; align-items: center; gap: 10px; flex: 1 1 0; min-height: 0; padding: 6px 8px; }
 .expo-donut-stage { position: relative; flex: 0 0 46%; height: 100%; min-height: 0; }
 .expo-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
-.expo-donut-big { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-cal-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
-.expo-donut-sub { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin-top: 3px; }
+.expo-donut-big { font-family: 'Anybody', sans-serif; font-weight: 800; font-size: var(--fs-expo-summary, 20px); line-height: 1; color: var(--body); font-variant-numeric: tabular-nums; }
+.expo-donut-sub { font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin-top: 3px; }
 .expo-donut-legend { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.expo-leg-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-stats, 9px); cursor: pointer; border-radius: 3px; padding: 1px 3px; transition: background var(--dur-fast, .12s) ease; }
+.expo-leg-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 7px; align-items: center; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-stats, 9px); cursor: pointer; border-radius: 3px; padding: 1px 3px; transition: background var(--dur-fast, .12s) ease; }
 .expo-leg-row:hover { background: var(--bg2); }
 .expo-leg-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
 .expo-leg-lbl { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .expo-leg-val { color: var(--body); font-weight: 700; font-variant-numeric: tabular-nums; }
 .expo-leg-n { color: var(--dim); font-variant-numeric: tabular-nums; }
 .cc-sub { font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 600; color: var(--dim); letter-spacing: .03em; margin-left: 6px; }
+/* Section-scoped: expo widget subtitles follow the Simultaneous Positions group
+   (the global .cc-sub above stays on --fs-cal-day for the Setup/Pair widgets). */
+.chart-card[data-section="concurrent-positions"] .cc-sub { font-size: var(--fs-expo-day, 8px); }
 
 /* Timeline Gantt: head (label gutter + day axis) over body (pair-label column +
    lane plot). --expo-gutter is 0 in compact mode, ~84px in by-pair mode. */
@@ -11470,10 +11481,10 @@ body.ms-sidebar-open .view-tabs {
 .expo-gantt-head { display: flex; align-items: flex-end; position: sticky; top: 0; z-index: 3; background: var(--bg); }
 .expo-gantt-gutter { flex: 0 0 var(--expo-gutter, 0); position: sticky; left: 0; z-index: 1; background: var(--bg); }
 .expo-gantt-head .expo-axis { flex: 1 1 0; }
-.expo-axis-mtick { position: absolute; bottom: 0; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); white-space: nowrap; padding-left: 3px; border-left: 1px solid var(--line2); }
+.expo-axis-mtick { position: absolute; bottom: 0; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); font-weight: 700; color: var(--body); white-space: nowrap; padding-left: 3px; border-left: 1px solid var(--line2); }
 .expo-gantt-body { display: flex; flex: 1 1 0; min-height: 0; }
 .expo-gantt-laxis { flex: 0 0 var(--expo-gutter, 0); position: sticky; left: 0; z-index: 2; background: var(--bg); display: flex; flex-direction: column; }
-.expo-laxis-row { height: var(--expo-lane-h, 18px); display: flex; align-items: center; padding-right: 8px; font-family: 'DM Mono', monospace; font-size: var(--fs-cal-day, 8px); font-weight: 700; color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.expo-laxis-row { height: var(--expo-lane-h, 18px); display: flex; align-items: center; padding-right: 8px; font-family: 'DM Mono', monospace; font-size: var(--fs-expo-day, 8px); font-weight: 700; color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .expo-laxis-row:hover { color: var(--gold); }
 .expo-laxis-row.wd-cell-active { color: var(--gold); }
 .expo-gantt-body .expo-lanes { width: auto; flex: 1 1 0; min-width: 0; overflow: visible; min-height: calc(var(--expo-lanes, 1) * var(--expo-lane-h, 18px)); }

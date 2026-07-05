@@ -4775,7 +4775,7 @@ function handleActionChange(event) {
     renderCalendar(getFiltered());
     return;
   }
-  if (/^expo-(year|month)-sel-[kduto]$/.test(event.target.id)) {
+  if (/^expo-(year|month)-sel-[kwduto]$/.test(event.target.id)) {
     _expoUserPicked = true;
     if (event.target.id.startsWith('expo-year-sel-'))  _expoSelYear  = event.target.value;
     if (event.target.id.startsWith('expo-month-sel-')) _expoSelMonth = event.target.value;
@@ -27919,7 +27919,7 @@ function _expoCorrTint(intensity) {
 
 // Populate & sync one widget's period controls to the shared selection:
 // the [Month|Overall] toggle, the year select, and the (dynamic, data-only)
-// month select. suffix ∈ {'k','d','u','t','o'}. The month controls are hidden
+// month select. suffix ∈ {'k','w','d','u','t','o'}. The month controls are hidden
 // in Overall mode.
 function _expoSyncControls(suffix, m) {
   document.querySelectorAll('#expo-period-' + suffix + ' [data-period]').forEach(b =>
@@ -27966,7 +27966,8 @@ function _expoWinRateByConcurrency(m) {
   return buckets;
 }
 
-// Widget 1 — summary line + 4 KPI cards + win-rate-by-concurrency breakdown.
+// Widget 1 — summary line + 4 KPI cards. (The win-rate-by-concurrency breakdown
+// lives in its own tile now — see renderExpoWinrate.)
 function renderExpoKpis(trades) {
   const body = document.getElementById('expo-kpis-body');
   if (!body) return;
@@ -27989,8 +27990,30 @@ function renderExpoKpis(trades) {
     corrHtml = `<span class="expo-kpi-corr" style="color:${tint}" title="${_escapeHtml(tip)}"><span class="expo-corr-dot" style="background:${tint}"></span>${_escapeHtml(txt)}</span>`;
   }
 
-  // Win-rate breakdown: does edge decay as you stack positions? Bar width = win
-  // rate, bar colour = expectancy sign (green +R / red −R). Rows clickable.
+  body.innerHTML = `<div class="expo-shell">
+    <div class="expo-summary">
+      <span class="expo-summary-meta">${m.label} &nbsp;${m.inMonth.length} position${m.inMonth.length > 1 ? 's' : ''}</span>
+    </div>
+    <div class="expo-kpis">
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Max simultaneous</span><span class="expo-kpi-val is-peak">${m.maxCC}</span>${corrHtml}</div>
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Avg in market</span><span class="expo-kpi-val">${m.avgIM.toFixed(1)}</span></div>
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Time ≥ 2 positions</span><span class="expo-kpi-val">${Math.round(m.pctGe2)}%</span></div>
+      <div class="expo-kpi"><span class="expo-kpi-lbl">Peak window</span><span class="expo-kpi-val expo-kpi-sm">${m.peakLabel}</span></div>
+    </div>
+  </div>`;
+}
+
+// Widget — win-rate + expectancy of trades bucketed by concurrency-at-entry.
+// Does edge decay as you stack positions? Bar width = win rate, bar colour =
+// expectancy sign (green +R / red −R). Rows clickable → cohort drawer. Split out
+// of the KPIs tile so it can be moved/resized on its own.
+function renderExpoWinrate(trades) {
+  const body = document.getElementById('expo-winrate-body');
+  if (!body) return;
+  const m = _expoBuildModel(trades);
+  if (m.empty) { body.innerHTML = _expoEmptyHtml(m.anyTrades); return; }
+  _expoSyncControls('w', m);
+
   const wr = _expoWinRateByConcurrency(m);
   const wrRows = wr.map((b, i) => {
     if (!b.n) return '';
@@ -28006,24 +28029,18 @@ function renderExpoKpis(trades) {
       <span class="expo-wr-n">${b.n}</span>
     </div>`;
   }).join('');
-  const wrHtml = wrRows
-    ? `<div class="expo-wr">
-        <div class="expo-wr-title">Win rate by simultaneous positions</div>
-        <div class="expo-wr-list">${wrRows}</div>
-      </div>`
-    : '';
 
+  if (!wrRows) {
+    body.innerHTML = `<div class="expo-empty">No entries in <b>${_escapeHtml(m.label)}</b></div>`;
+    return;
+  }
   body.innerHTML = `<div class="expo-shell">
     <div class="expo-summary">
       <span class="expo-summary-meta">${m.label} &nbsp;${m.inMonth.length} position${m.inMonth.length > 1 ? 's' : ''}</span>
     </div>
-    <div class="expo-kpis">
-      <div class="expo-kpi"><span class="expo-kpi-lbl">Max simultaneous</span><span class="expo-kpi-val is-peak">${m.maxCC}</span>${corrHtml}</div>
-      <div class="expo-kpi"><span class="expo-kpi-lbl">Avg in market</span><span class="expo-kpi-val">${m.avgIM.toFixed(1)}</span></div>
-      <div class="expo-kpi"><span class="expo-kpi-lbl">Time ≥ 2 positions</span><span class="expo-kpi-val">${Math.round(m.pctGe2)}%</span></div>
-      <div class="expo-kpi"><span class="expo-kpi-lbl">Peak window</span><span class="expo-kpi-val expo-kpi-sm">${m.peakLabel}</span></div>
+    <div class="expo-wr">
+      <div class="expo-wr-list">${wrRows}</div>
     </div>
-    ${wrHtml}
   </div>`;
 }
 
@@ -28525,6 +28542,7 @@ function renderExpoOvertime(trades) {
 function _expoRerenderAll() {
   const f = getFiltered();
   _withWidgetScale('w-expo-kpis', () => renderExpoKpis(f));
+  _withWidgetScale('w-expo-winrate', () => renderExpoWinrate(f));
   _withWidgetScale('w-expo-dist', () => renderExpoDist(f));
   _withWidgetScale('w-expo-duration', () => renderExpoDuration(f));
   _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(f));
@@ -34031,6 +34049,7 @@ function renderPanels(filtered) {
   renderPairSession(filtered);
   renderCalendar(filtered);
   _withWidgetScale('w-expo-kpis', () => renderExpoKpis(filtered));
+  _withWidgetScale('w-expo-winrate', () => renderExpoWinrate(filtered));
   _withWidgetScale('w-expo-dist', () => renderExpoDist(filtered));
   _withWidgetScale('w-expo-duration', () => renderExpoDuration(filtered));
   _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(filtered));
@@ -35051,6 +35070,8 @@ const WIDGET_SCOPED_TYPO_VARS = [
   '--typo-panel-size', '--typo-ctrl-size', '--typo-micro-size', '--typo-nano-size',
   // Calendar
   '--fs-cal-header', '--fs-cal-value', '--fs-cal-stats', '--fs-cal-day', '--fs-cal-summary',
+  // Simultaneous Positions
+  '--fs-expo-header', '--fs-expo-value', '--fs-expo-stats', '--fs-expo-day', '--fs-expo-summary',
   // Partials Planner
   '--pp-hero-r-size', '--pp-hero-delta-size', '--pp-editor-title-size', '--pp-placeholder-title-size',
   // Equity / Drawdown
@@ -35875,6 +35896,13 @@ const THEME_DEFAULT = {
   '--fs-cal-stats':   '7px',
   '--fs-cal-day':     '7.5px',
   '--fs-cal-summary': '20px',
+
+  /* G16b Simultaneous Positions */
+  '--fs-expo-header':  '9px',
+  '--fs-expo-value':   '11px',
+  '--fs-expo-stats':   '7px',
+  '--fs-expo-day':     '7.5px',
+  '--fs-expo-summary': '20px',
 
   /* G17 Partials Planner */
   '--pp-hero-r-size':            '46px',
@@ -42183,6 +42211,7 @@ function importTheme(input) {
         if (_isSafeCssValue(v)) sanitized[k] = v;
         else console.warn('[importTheme] rejected unsafe CSS value for', k);
       }
+      _migrateCalTypoToExpo(sanitized);   // legacy theme files: carry --fs-cal-* into the section group
       currentTheme = { ...THEME_DEFAULT, ...sanitized };
       applyThemeToCss(currentTheme);
       buildColorSection('tp-bg-colors',        Object.entries(THEME_META).filter(([,m])=>m.group==='backgrounds'));
@@ -42216,6 +42245,27 @@ function importTheme(input) {
   input.value = '';
 }
 
+// One-shot, idempotent backfill. The Simultaneous Positions section used to
+// share the P&L Calendar --fs-cal-* tokens; it now has its own --fs-expo-* group.
+// For a member who had customised a --fs-cal-* size, copy it into the matching
+// --fs-expo-* IF they haven't already got an expo value — so their section keeps
+// its current size instead of snapping back to the default after the decouple.
+// Operates on a RAW stored theme object (pre-THEME_DEFAULT merge), where the
+// expo keys are genuinely absent for legacy data. No-op once expo keys exist.
+const _CAL_TO_EXPO_TYPO = {
+  '--fs-cal-header':  '--fs-expo-header',
+  '--fs-cal-value':   '--fs-expo-value',
+  '--fs-cal-stats':   '--fs-expo-stats',
+  '--fs-cal-day':     '--fs-expo-day',
+  '--fs-cal-summary': '--fs-expo-summary',
+};
+function _migrateCalTypoToExpo(theme) {
+  if (!theme || typeof theme !== 'object') return;
+  Object.entries(_CAL_TO_EXPO_TYPO).forEach(([cal, expo]) => {
+    if (theme[cal] !== undefined && theme[expo] === undefined) theme[expo] = theme[cal];
+  });
+}
+
 function loadSavedTheme() {
   // Fresh-user default theme. Dawn is the warm-cream light theme — chosen
   // as the brand-new-user landing experience. Existing users keep whatever
@@ -42232,6 +42282,7 @@ function loadSavedTheme() {
       return false;
     }
     const theme = JSON.parse(saved);
+    _migrateCalTypoToExpo(theme);   // keep the section's size for calendar-customisers
     currentTheme = { ...THEME_DEFAULT, ...theme };
     // Persist the merged version only if it differs — avoids a redundant
     // ~4.5KB write on every boot when no new theme vars were introduced.
@@ -44625,10 +44676,11 @@ const GLOBAL_OVERVIEW_LAYOUT = {
 // (KPIs / distribution / Gantt+band timeline) can be moved & resized alone.
 const CONCURRENT_POSITIONS_LAYOUT = {
   'w-expo-kpis':     {x:0, y:0,   w:12, h:16, minW:4, minH:12},
-  'w-expo-dist':     {x:0, y:16,  w:6,  h:36, minW:3, minH:24},
-  'w-expo-duration': {x:6, y:16,  w:6,  h:36, minW:3, minH:24},
-  'w-expo-timeline': {x:0, y:52,  w:12, h:58, minW:6, minH:40},
-  'w-expo-overtime': {x:0, y:110, w:12, h:34, minW:4, minH:22},
+  'w-expo-winrate':  {x:0, y:16,  w:12, h:20, minW:3, minH:12},
+  'w-expo-dist':     {x:0, y:36,  w:6,  h:36, minW:3, minH:24},
+  'w-expo-duration': {x:6, y:36,  w:6,  h:36, minW:3, minH:24},
+  'w-expo-timeline': {x:0, y:72,  w:12, h:58, minW:6, minH:40},
+  'w-expo-overtime': {x:0, y:130, w:12, h:34, minW:4, minH:22},
 };
 const OPTIMAL_RR_LAYOUT = {
   'w-optimal-rr': {x:0, y:0, w:12, h:77, minW:4, minH:30},
@@ -45480,7 +45532,7 @@ function _msGetWidgetIcon(id) {
     'w-outcome':'donut',
     'w-stats':'cells', 'w-tradelog':'cells',
     'w-selection':'mixed', 'w-monthly':'mixed', 'w-partial-optimizer':'mixed',
-    'w-expo-kpis':'cells', 'w-expo-dist':'donut', 'w-expo-duration':'bars',
+    'w-expo-kpis':'cells', 'w-expo-winrate':'bars', 'w-expo-dist':'donut', 'w-expo-duration':'bars',
     'w-expo-timeline':'mixed', 'w-expo-overtime':'line',
   };
   let kind = KIND_BY_ID[id] || 'mixed';
@@ -47022,6 +47074,16 @@ const TYPO_GROUPS = [
       { label: 'Stats',          cssVar: '--fs-cal-stats',   min: 4,  max: 22, unit: 'px' },
       { label: 'Day Label',      cssVar: '--fs-cal-day',     min: 4,  max: 22, unit: 'px' },
       { label: 'Summary Total',  cssVar: '--fs-cal-summary', min: 10, max: 64, unit: 'px' },
+    ],
+  },
+  {
+    id: 'G16b', label: 'Simultaneous Positions',
+    sliders: [
+      { label: 'KPI Value',       cssVar: '--fs-expo-summary', min: 10, max: 64, unit: 'px' },
+      { label: 'Small Value',     cssVar: '--fs-expo-value',   min: 6,  max: 32, unit: 'px' },
+      { label: 'Header / Meta',   cssVar: '--fs-expo-header',  min: 6,  max: 24, unit: 'px' },
+      { label: 'Labels / Stats',  cssVar: '--fs-expo-stats',   min: 4,  max: 22, unit: 'px' },
+      { label: 'Timeline / Axis', cssVar: '--fs-expo-day',     min: 4,  max: 22, unit: 'px' },
     ],
   },
   {

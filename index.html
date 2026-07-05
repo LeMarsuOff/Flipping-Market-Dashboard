@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=357">
+<link rel="stylesheet" href="dashboard.css?v=382">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -2536,6 +2536,27 @@
       <div id="expo-kpis-body" class="scroll-panel-fill"></div>
     </div>
 
+    <!-- ══ WIDGET: Simultaneous Positions — Win Rate by concurrency ══ -->
+    <div class="chart-card gs-widget" data-gs-id="w-expo-winrate" data-section="concurrent-positions">
+      <div class="cc-head cc-head-fixed cc-head-wrap">
+        <span class="cc-title">Win Rate by Simultaneous Positions</span>
+        <div class="cc-head-controls cc-head-controls-wrap">
+          <div class="control-group control-group-calendar" id="expo-period-w">
+            <button data-action="expo-set-period" data-period="overall" class="bar-sort-btn bar-sort-btn-segment" title="Whole history">Overall</button>
+            <button data-action="expo-set-period" data-period="year" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split" title="Whole calendar year">Year</button>
+            <button data-action="expo-set-period" data-period="month" class="bar-sort-btn bar-sort-btn-segment bar-sort-btn-segment-split active" title="Single month">Month</button>
+          </div>
+          <div class="expo-monthctl" id="expo-monthctl-w">
+            <select id="expo-year-sel-w" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="-1" title="Previous month">‹</button>
+            <select id="expo-month-sel-w" class="widget-select"></select>
+            <button class="expo-arrow" data-action="expo-step" data-dir="1" title="Next month">›</button>
+          </div>
+        </div>
+      </div>
+      <div id="expo-winrate-body" class="scroll-panel-fill"></div>
+    </div>
+
     <!-- ══ WIDGET: Simultaneous Positions — Distribution (donut) ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-expo-dist" data-section="concurrent-positions">
       <div class="cc-head cc-head-fixed cc-head-wrap">
@@ -3088,6 +3109,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1311"></script>
+<script src="dashboard.js?v=1325"></script>
 </body>
 </html>
