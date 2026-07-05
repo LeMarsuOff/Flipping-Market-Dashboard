@@ -17000,6 +17000,11 @@ const _LB_ANN_PALETTE = ['#3a86ff', '#e74c3c', '#26c281', '#f5c518', '#ffffff', 
 const _LB_FIB_LEVELS  = [-0.27, 0, 0.5, 0.71, 1];   // Max's SMC set (0 & 1 = anchors)
 // Fixed per-level fib colours (independent of the shape's palette colour).
 const _LB_FIB_COLORS  = { '-0.27': '#14307a', '0': '#111111', '0.5': '#111111', '0.71': '#c25600', '1': '#111111' };
+// Long/Short position tool — fixed semantic colours (green = reward, red = risk),
+// theme-independent like the fib set. Reward/risk zones fill with the rgba tints.
+const _LB_POS_GREEN = '#26a69a';   // target / reward
+const _LB_POS_RED   = '#ef5350';   // stop / risk
+const _LB_POS_ENTRY = '#b0b3bacc'; // neutral entry line
 const _LB_ANN_HIT = 14;   // transparent hit-stroke width so thin lines are easy to re-select
 let _lbDrawMode  = false;
 let _lbAnnTool   = 'select';
@@ -17225,6 +17230,39 @@ function _lbAnnShapeSvg(s, W, H) {
     });
     return `<g>${g}${hit}</g>`;
   }
+  if (s.type === 'pos') {
+    // TradingView-style Long/Short position: entry line + reward (green) zone
+    // toward the target and risk (red) zone toward the stop; R = reward/risk in
+    // vertical (price) distance. Colours are fixed literals (semantic, not theme).
+    const xL = Math.min(s.x1, s.x2) * W, xR = Math.max(s.x1, s.x2) * W;
+    const bw = Math.max(2, xR - xL);
+    const cx = xL + bw / 2;
+    const ey = s.ey * H, sy = s.sy * H, ty = s.ty * H;
+    const riskN = Math.abs(s.sy - s.ey), rewN = Math.abs(s.ty - s.ey);
+    const rr = riskN > 1e-5 ? rewN / riskN : 0;
+    const rrLabel = riskN > 1e-5 ? (rr >= 10 ? rr.toFixed(0) : rr.toFixed(1)) + 'R' : '—';
+    const zone = (a, b, fill) => {
+      const top = Math.min(a, b), h = Math.abs(b - a);
+      return h > 0.5 ? `<rect x="${xL.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" pointer-events="none" />` : '';
+    };
+    const line = (y, c, w) => `<line x1="${xL.toFixed(1)}" y1="${y.toFixed(1)}" x2="${xR.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${c}" stroke-width="${w}" pointer-events="none" />`;
+    const tag = (y, c, txt, above) => `<text x="${(xL + 3).toFixed(1)}" y="${(y + (above ? -3 : 11)).toFixed(1)}" fill="${c}" font-size="9.5" font-weight="600" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width="2" pointer-events="none">${txt}</text>`;
+    let g = zone(ey, ty, 'rgba(38,166,154,.20)') + zone(ey, sy, 'rgba(239,83,80,.20)');
+    g += line(ty, _LB_POS_GREEN, isSel ? 2.2 : 1.6) + line(sy, _LB_POS_RED, isSel ? 2.2 : 1.6) + line(ey, _LB_POS_ENTRY, isSel ? 2.4 : 1.8);
+    g += tag(ty, _LB_POS_GREEN, 'TP', ty < ey) + tag(sy, _LB_POS_RED, 'SL', sy < ey);
+    // R label sits just OUTSIDE the SL line (below SL for a long, above SL for a
+    // short) so it never overlaps the price action inside the reward/risk zones.
+    const rrY = sy > ey ? sy + 14 : sy - 6;
+    g += `<text x="${cx.toFixed(1)}" y="${rrY.toFixed(1)}" fill="${_LB_POS_GREEN}" font-size="13" font-weight="700" text-anchor="middle" paint-order="stroke" stroke="rgba(0,0,0,.65)" stroke-width="3" pointer-events="none">${rrLabel}</text>`;
+    // Move hit region (whole box), then per-line grab strokes on top (level drag).
+    const top = Math.min(ty, sy, ey), bot = Math.max(ty, sy, ey);
+    let hit = `<rect data-sid="${sid}" x="${xL.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(2, bot - top).toFixed(1)}" fill="transparent" pointer-events="all" style="cursor:move" />`;
+    const hitLn = (y, role) => `<line data-sid="${sid}" data-h="${role}" x1="${xL.toFixed(1)}" y1="${y.toFixed(1)}" x2="${xR.toFixed(1)}" y2="${y.toFixed(1)}" stroke="transparent" stroke-width="${_LB_ANN_HIT}" pointer-events="stroke" style="cursor:ns-resize" />`;
+    // Entry line is intentionally NOT grabbable for height — that's the left dot's job
+    // only (avoids accidental entry moves). SL/TP lines stay directly draggable.
+    hit += hitLn(ty, 'pt') + hitLn(sy, 'ps');
+    return g + hit;
+  }
   if (s.type === 'brush') {
     const pts = (s.pts || []).map(([x, y]) => `${(x * W).toFixed(1)},${(y * H).toFixed(1)}`).join(' ');
     return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round" pointer-events="none" />`
@@ -17293,6 +17331,15 @@ function _lbAnnHandlesSvg(s, W, H) {
   if (s.type === 'text')  return dot(s.x, s.y, 'move');
   if (s.type === 'brush') return (s.pts && s.pts.length) ? dot(s.pts[0][0], s.pts[0][1], 'move') : '';
   if (s.type === 'callout') return dot(s.x, s.y, 'bubble') + dot(s.tx, s.ty, 'tail');
+  if (s.type === 'pos') {
+    const midx = (s.x1 + s.x2) / 2;
+    // Entry height + left edge are merged into one corner handle at (x1, ey), kept
+    // as a circle; the standalone centre entry dot is dropped. SL / TP centre and
+    // the right-edge width handle are squares to visually distinguish them.
+    const sq = (nx, ny, role) => `<rect class="lb-ann-h" data-h="${role}" data-sid="${s.id}" x="${(nx * W - 5).toFixed(1)}" y="${(ny * H - 5).toFixed(1)}" width="10" height="10" />`;
+    return sq(midx, s.ty, 'pt') + sq(midx, s.sy, 'ps')
+         + dot(s.x1, s.ey, 'pex1') + sq(s.x2, s.ey, 'px2');
+  }
   if (s.type === 'trend' || s.type === 'fib' || s.type === 'rect') return dot(s.x1, s.y1, 'p1') + dot(s.x2, s.y2, 'p2');
   return '';
 }
@@ -17348,6 +17395,20 @@ function _lbAnnPointerDown(e) {
   if (_lbAnnTool === 'hray') {
     _lbAnnSnapshot();
     const s = { id: 'a' + (++_lbAnnSeq), type: 'hray', y: ny, c: _lbAnnColor };
+    _lbAnnShapes.push(s); _lbAnnSel = s.id; _lbAnnPersist(); _lbAnnRender();
+    _lbAnnSetTool('select'); _lbAnnUpdateToolbar();
+    return;
+  }
+  if (_lbAnnTool === 'long' || _lbAnnTool === 'short') {
+    // Single-click drops a TradingView-style position at the entry point with a
+    // default 1:2 R box; the user then drags the Entry/SL/TP lines to fine-tune.
+    _lbAnnSnapshot();
+    const dir = _lbAnnTool, halfW = 0.04, risk = 0.06, reward = 0.12;
+    const sy = dir === 'long' ? ny + risk   : ny - risk;
+    const ty = dir === 'long' ? ny - reward : ny + reward;
+    const s = { id: 'a' + (++_lbAnnSeq), type: 'pos', dir,
+      x1: _lbClamp01(nx - halfW), x2: _lbClamp01(nx + halfW),
+      ey: _lbClamp01(ny), sy: _lbClamp01(sy), ty: _lbClamp01(ty) };
     _lbAnnShapes.push(s); _lbAnnSel = s.id; _lbAnnPersist(); _lbAnnRender();
     _lbAnnSetTool('select'); _lbAnnUpdateToolbar();
     return;
@@ -17428,11 +17489,18 @@ function _lbAnnPointerMove(e) {
     else if (s.type === 'text') { s.x = _lbClamp01(s.x + dx); s.y = _lbClamp01(s.y + dy); }
     else if (s.type === 'brush') { s.pts = s.pts.map(([x, y]) => [_lbClamp01(x + dx), _lbClamp01(y + dy)]); }
     else if (s.type === 'callout') { s.x = _lbClamp01(s.x + dx); s.y = _lbClamp01(s.y + dy); s.tx = _lbClamp01(s.tx + dx); s.ty = _lbClamp01(s.ty + dy); }
+    else if (s.type === 'pos') { s.x1 = _lbClamp01(s.x1 + dx); s.x2 = _lbClamp01(s.x2 + dx); s.ey = _lbClamp01(s.ey + dy); s.sy = _lbClamp01(s.sy + dy); s.ty = _lbClamp01(s.ty + dy); }
     else { s.x1 = _lbClamp01(s.x1 + dx); s.y1 = _lbClamp01(s.y1 + dy); s.x2 = _lbClamp01(s.x2 + dx); s.y2 = _lbClamp01(s.y2 + dy); }
   } else if (_lbAnnDrag.mode === 'p1')     { s.x1 = nx; s.y1 = ny; }
   else if (_lbAnnDrag.mode === 'p2')       { s.x2 = nx; s.y2 = ny; }
   else if (_lbAnnDrag.mode === 'bubble')   { s.x = nx; s.y = ny; }   // callout bubble moves alone
   else if (_lbAnnDrag.mode === 'tail')     { s.tx = nx; s.ty = ny; } // callout tip moves alone
+  else if (_lbAnnDrag.mode === 'pe')       { s.ey = ny; }  // position entry line (grab the line)
+  else if (_lbAnnDrag.mode === 'ps')       { s.sy = ny; }  // position stop line
+  else if (_lbAnnDrag.mode === 'pt')       { s.ty = ny; }  // position target line
+  else if (_lbAnnDrag.mode === 'pex1')     { s.x1 = nx; s.ey = ny; }  // merged: left edge + entry height
+  else if (_lbAnnDrag.mode === 'px1')      { s.x1 = nx; }  // position left edge (legacy)
+  else if (_lbAnnDrag.mode === 'px2')      { s.x2 = nx; }  // position right edge
   _lbAnnRender();
 }
 function _lbAnnPointerUp() {
@@ -17524,7 +17592,7 @@ function _lbAnnSetColor(c) {
   _lbAnnColor = c;
   if (_lbAnnSel) {
     const s = _lbAnnShapes.find(x => x.id === _lbAnnSel);
-    if (s && s.type !== 'fib' && s.c !== c) { _lbAnnSnapshot(); s.c = c; _lbAnnPersist(); _lbAnnRender(); }
+    if (s && s.type !== 'fib' && s.type !== 'pos' && s.c !== c) { _lbAnnSnapshot(); s.c = c; _lbAnnPersist(); _lbAnnRender(); }
   }
   _lbAnnUpdateToolbar();
 }
@@ -17577,6 +17645,8 @@ const _LB_ICO = {
   text:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4h10M8 4v9"/></svg>',
   brush:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37-1.34-1.34a1 1 0 0 0-1.41 0L9 12l2.34 2.34 8.37-8.37a1 1 0 0 0 0-1.34z"/></svg>',
   callout:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 2.5h11v7h-6l-3 3v-3h-2z"/></svg>',
+  long:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M8 11V5M5.5 7.5 8 5l2.5 2.5"/></svg>',
+  short:  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M8 5v6M5.5 8.5 8 11l2.5-2.5"/></svg>',
   undo:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5 3 7.5l3 3M3 7.5h7a3.3 3.3 0 0 1 0 6.6H7"/></svg>',
   redo:   '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4.5 13 7.5l-3 3M13 7.5H6a3.3 3.3 0 0 0 0 6.6h3"/></svg>',
   trash:  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 4h10M6 4V2.6h4V4M4.5 4l.6 9h5.8l.6-9"/></svg>',
@@ -17709,7 +17779,11 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
     overlay.appendChild(crosshair);
     overlay.classList.toggle('crosshair-on', _lbCrosshair);
     overlay.classList.add('ch-theme-' + _lbCrosshairTheme);
-    overlay.addEventListener('mousemove', e => {
+    // pointermove (not mousemove): _lbAnnPointerDown calls preventDefault(), which
+    // suppresses compatibility mouse events (incl. mousemove) while the button is
+    // held — the mire would freeze mid-drag and jump on release. Pointer events keep
+    // firing throughout a held drag, so the crosshair tracks the cursor continuously.
+    overlay.addEventListener('pointermove', e => {
       if (!_lbCrosshair) return;
       _lbPlaceCrosshair(e.clientX, e.clientY);
     });
@@ -17740,6 +17814,8 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
       `<button class="lb-ann-tool" data-tool="text" title="Texte (double-clic pour éditer)">${_LB_ICO.text}</button>` +
       `<button class="lb-ann-tool" data-tool="callout" title="Étiquette bulle (bulle + pointe déplaçables)">${_LB_ICO.callout}</button>` +
       `<button class="lb-ann-tool" data-tool="brush" title="Pinceau (dessin libre)">${_LB_ICO.brush}</button>` +
+      `<button class="lb-ann-tool" data-tool="long" title="Position Long — Entry / SL / TP + ratio R (glisser les niveaux)">${_LB_ICO.long}</button>` +
+      `<button class="lb-ann-tool" data-tool="short" title="Position Short — Entry / SL / TP + ratio R (glisser les niveaux)">${_LB_ICO.short}</button>` +
       `<div class="lb-ann-sep"></div>` +
       `<div class="lb-ann-colors">${_LB_ANN_PALETTE.map(c => `<button class="lb-ann-color" data-color="${c}" style="background:${c}"></button>`).join('')}</div>` +
       `<div class="lb-ann-sep"></div>` +
