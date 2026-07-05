@@ -17721,6 +17721,7 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
   }
 
   let overlay = document.getElementById('img-lightbox-overlay');
+  const freshOpen = !overlay;   // false when navigating within an already-open lightbox
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'img-lightbox-overlay';
@@ -17867,14 +17868,20 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
     document.addEventListener('keydown', _lbKeyHandler);
     document.body.appendChild(overlay);
   }
-  // Every open starts in view mode (draw mode is not sticky across screenshots).
-  _lbDrawMode = false;
+  // Draw mode is sticky across screenshot changes: a fresh open starts in view
+  // mode, but clicking another screenshot while the toolbox is active keeps it
+  // active (matches keyboard nav, which goes through _lbShow and never resets it).
+  // Always clear a dangling two-click pending draft so it can't leak onto the new
+  // screenshot.
   _lbAnnPending = null; _lbAnnUnbindHover();
-  overlay.classList.remove('draw-on');
-  const _annS = document.getElementById('img-lightbox-ann');
-  if (_annS) _annS.style.pointerEvents = 'none';
-  const _dBtn = document.getElementById('img-lightbox-draw-btn');
-  if (_dBtn) _dBtn.classList.remove('active');
+  if (freshOpen) {
+    _lbDrawMode = false;
+    overlay.classList.remove('draw-on');
+    const _annS = document.getElementById('img-lightbox-ann');
+    if (_annS) _annS.style.pointerEvents = 'none';
+    const _dBtn = document.getElementById('img-lightbox-draw-btn');
+    if (_dBtn) _dBtn.classList.remove('active');
+  }
   _lbShow(_lbTradeIdx, _lbStep);
 }
 
