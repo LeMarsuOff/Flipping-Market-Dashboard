@@ -26753,7 +26753,7 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
         <button class="wd-drawer-close" data-action="close-widget-drawer">×</button>
       </div>
     </div>
-    <div class="wd-drawer-body">${
+    <div class="wd-drawer-body${groupCol ? ' has-day-sep' : ''}">${
       groupCol
         ? sorted.map((t, i) => {
             const prevKey = i > 0 ? _sectionKey(sorted[i - 1]) : null;

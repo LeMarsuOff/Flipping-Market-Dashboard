@@ -564,7 +564,11 @@ body {
 .img-lightbox-label {
   font-size: var(--typo-table-body-size);
   font-weight: 600;
-  color: var(--white);
+  /* Literal white, not var(--white): this overlay bar is theme-independent
+     (dark rgba background). var(--white) resolves to dark text in the light
+     theme → the pair · date label vanishes. Matches .img-lightbox-count /
+     -step and the share-view convention. */
+  color: rgba(255,255,255,.95);
   letter-spacing: .02em;
 }
 .img-lightbox-step {
@@ -11746,6 +11750,15 @@ body.ms-sidebar-open .view-tabs {
      section header (.wd-day-sep) so trade cards never peek above it. */
   padding: 0 14px 20px;
 }
+/* Grouped drawers render a sticky .wd-day-sep header per section. Keep it
+   pinned but stop it cropping cards: cards gently snap to just below the
+   header when scrolling settles. scroll-padding-top matches the sticky
+   header height so a snapped card lands clear of it. Only applied when a
+   header actually exists (flat / cohort drawers get no inset, no snap). */
+.wd-drawer-body.has-day-sep {
+  scroll-snap-type: y proximity;
+  scroll-padding-top: 36px;
+}
 .wd-trade-card {
   border-radius: 4px;
   padding: 10px 14px;
@@ -11758,6 +11771,8 @@ body.ms-sidebar-open .view-tabs {
   /* Sit below the sticky section header so cards never bleed over it. */
   position: relative;
   z-index: 1;
+  /* Snap target so a card settles fully below the sticky month header. */
+  scroll-snap-align: start;
 }
 .wd-trade-card-tp { background: color-mix(in srgb, var(--g) 12%, transparent); }
 .wd-trade-card-sl { background: color-mix(in srgb, var(--r) 12%, transparent); }

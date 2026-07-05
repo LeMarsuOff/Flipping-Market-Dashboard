@@ -535,6 +535,12 @@ html, body {
      (see the .wd-drawer-body max-height override). The smooth-scroll
      applies to whichever ancestor actually scrolls. */
   scroll-behavior: smooth;
+  /* Keep the sticky month header pinned but stop it cropping cards: cards
+     gently snap to just below the header when scrolling settles. The
+     scroll-padding-top matches the sticky .wd-day-sep height so a snapped
+     card lands clear of the header instead of underneath it. */
+  scroll-snap-type: y proximity;
+  scroll-padding-top: 36px;
 }
 /* While the lightbox is open, add a viewport-worth of empty space below
    the last card so any trade can be snapped to the top of its scroll
@@ -579,6 +585,8 @@ body.share-lightbox-open { scroll-behavior: smooth; }
   transition: border-color .15s;
   position: relative;
   z-index: 1;
+  /* Snap target so a card settles fully below the sticky month header. */
+  scroll-snap-align: start;
 }
 .wd-trade-card-tp   { background: color-mix(in srgb, var(--g) 12%, transparent); }
 .wd-trade-card-sl   { background: color-mix(in srgb, var(--r) 12%, transparent); }
@@ -703,7 +711,14 @@ body.share-lightbox-open { scroll-behavior: smooth; }
      whole page becomes the scroll container — otherwise
      scrollIntoView can't move the active trade card under the
      fixed lightbox. */
-  html { overflow: auto; height: auto; }
+  html {
+    overflow: auto;
+    height: auto;
+    /* On mobile the document itself is the scroll container, so the
+       snap + header offset must live here (not on .wd-drawer-body). */
+    scroll-snap-type: y proximity;
+    scroll-padding-top: 36px;
+  }
   body { overflow: visible; height: auto; min-height: 100%; }
   #share-root[data-state="loaded"] {
     grid-template-columns: 1fr;
