@@ -631,9 +631,6 @@ body {
   border-color: var(--gold);
   background: color-mix(in srgb, var(--gold) 18%, transparent);
 }
-/* Colour-flip button appears only while the crosshair is on. */
-.img-lightbox-ch-theme-btn { display: none; }
-.img-lightbox-overlay.crosshair-on .img-lightbox-ch-theme-btn { display: flex; }
 /* Crosshair guide lines — hidden until the tool is toggled on. Bounded to the
    image rect at runtime (left/width/top/height set inline by JS). */
 .img-lightbox-crosshair {
@@ -656,11 +653,8 @@ body {
   border-left: 1px dotted rgba(255,255,255,.6);
   transform: translateX(-0.5px);
 }
-/* Mire colour themes — dark = black lines (for light screenshots),
-   light = white lines (for dark screenshots). Each line carries a faint
-   opposite-colour halo so it never fully disappears against noise. */
-.img-lightbox-overlay.ch-theme-light .lb-ch-h { border-top-color: rgba(255,255,255,.75); box-shadow: 0 1px 0 rgba(0,0,0,.35); }
-.img-lightbox-overlay.ch-theme-light .lb-ch-v { border-left-color: rgba(255,255,255,.75); box-shadow: 1px 0 0 rgba(0,0,0,.35); }
+/* Mire — black lines with a faint white halo so they never fully disappear
+   against chart noise. (The light/white variant was removed 2026-07-05.) */
 .img-lightbox-overlay.ch-theme-dark  .lb-ch-h { border-top-color: rgba(0,0,0,.72);  box-shadow: 0 1px 0 rgba(255,255,255,.35); }
 .img-lightbox-overlay.ch-theme-dark  .lb-ch-v { border-left-color: rgba(0,0,0,.72);  box-shadow: 1px 0 0 rgba(255,255,255,.35); }
 

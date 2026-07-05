@@ -16686,10 +16686,11 @@ function _installTvImageFallback(imgEl) {
 let _lbData = [], _lbTradeIdx = 0, _lbStep = 'm15Before';
 let _lbKeyHandler = null;
 // Crosshair (mire) — TradingView-style guide lines over the screenshot to
-// eyeball unmarked support/resistance. Preferences persisted per-machine.
-// _lbCrosshairTheme : 'dark' (black lines, for light screenshots) | 'light'.
+// eyeball unmarked support/resistance. Preference persisted per-machine.
+// The mire is always dark (black lines + white halo) — the light variant was
+// visually indistinguishable, so it was removed (2026-07-05).
 let _lbCrosshair = (() => { try { return localStorage.getItem('lightboxCrosshair') === '1'; } catch { return false; } })();
-let _lbCrosshairTheme = (() => { try { return localStorage.getItem('lightboxCrosshairTheme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } })();
+const _lbCrosshairTheme = 'dark';
 
 const _LB_STEPS       = ['h4Before', 'm15Before', 'm15After'];
 const _LB_STEP_LABELS = { h4Before: 'TV Image 1', m15Before: 'TV Image 2', m15After: 'TV Image 3' };
@@ -16966,20 +16967,8 @@ function _lbToggleCrosshair() {
       _lbPlaceCrosshair(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
     }
   }
-}
-
-// Flip the mire between dark (black lines) and light (white lines) + persist.
-function _lbSetCrosshairTheme(theme) {
-  _lbCrosshairTheme = theme === 'light' ? 'light' : 'dark';
-  try { localStorage.setItem('lightboxCrosshairTheme', _lbCrosshairTheme); } catch {}
-  const ov = document.getElementById('img-lightbox-overlay');
-  if (ov) {
-    ov.classList.remove('ch-theme-dark', 'ch-theme-light');
-    ov.classList.add('ch-theme-' + _lbCrosshairTheme);
-  }
-}
-function _lbToggleCrosshairTheme() {
-  _lbSetCrosshairTheme(_lbCrosshairTheme === 'dark' ? 'light' : 'dark');
+  // Keep the annotation-layer cursor in sync (crosshair while the mire is on).
+  _lbAnnUpdateCursor();
 }
 
 // ===================================================================
@@ -17609,7 +17598,11 @@ function _lbAnnClear() {
 }
 function _lbAnnUpdateCursor() {
   const { svg } = _lbAnnRefs();
-  if (svg) svg.style.cursor = (_lbDrawMode && _lbAnnTool !== 'select') ? 'crosshair' : 'default';
+  if (!svg) return;
+  // When the mire is on, keep the crosshair cursor (matching the dotted guide)
+  // even in draw mode — never fall back to the default arrow ("mouse mode").
+  if (_lbCrosshair) { svg.style.cursor = 'crosshair'; return; }
+  svg.style.cursor = (_lbDrawMode && _lbAnnTool !== 'select') ? 'crosshair' : 'default';
 }
 function _lbAnnToggleDraw() {
   _lbDrawMode = !_lbDrawMode;
@@ -17741,7 +17734,7 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
     img.addEventListener('click', e => e.stopPropagation());
     overlay.appendChild(img);
 
-    // Crosshair (mire) toolbar — top-right corner: on/off toggle + colour flip.
+    // Crosshair (mire) toolbar — top-right corner: on/off toggle.
     const tools = document.createElement('div');
     tools.className = 'img-lightbox-tools';
     tools.addEventListener('click', e => e.stopPropagation());
@@ -17754,14 +17747,6 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
     toolBtn.classList.toggle('active', _lbCrosshair);
     toolBtn.addEventListener('click', e => { e.stopPropagation(); _lbToggleCrosshair(); });
     tools.appendChild(toolBtn);
-
-    const themeBtn = document.createElement('button');
-    themeBtn.id = 'img-lightbox-crosshair-theme-btn';
-    themeBtn.className = 'img-lightbox-tool-btn img-lightbox-ch-theme-btn';
-    themeBtn.title = 'Mire — couleur claire / sombre';
-    themeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.4"/><path d="M8 2.6 A5.4 5.4 0 0 1 8 13.4 Z" fill="currentColor" stroke="none"/></svg>';
-    themeBtn.addEventListener('click', e => { e.stopPropagation(); _lbToggleCrosshairTheme(); });
-    tools.appendChild(themeBtn);
 
     // Draw-mode toggle — reveals the annotation toolbar + enables editing.
     const drawBtn = document.createElement('button');
