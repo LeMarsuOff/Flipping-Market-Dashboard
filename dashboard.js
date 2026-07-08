@@ -22982,25 +22982,32 @@ function _filtersClearAll() {
   // additional/custom filters). Without this, the golden +N pills linger
   // until the next chip click even though the underlying live chips are gone.
   _syncLiveSlotFromActiveChips();
-  // Grouped filters on Clear: don't discard them. Saved groups (present in the
-  // active preset snapshot) restore their saved enabled state; unsaved groups
-  // are KEPT but hidden (enabled=false) so Clear stops them filtering without
-  // losing the user's work. Mirrors how Clear reverts chips to the snapshot
-  // while leaving preset-owned filters intact.
+  // Grouped filters on Clear: revert to the active preset's saved state, exactly
+  // like chips re-hydrate from the snapshot. Saved groups (present in the preset
+  // snapshot) are fully restored — re-ADDED if the user had deleted them, and
+  // reset to their saved conditions/enabled state. Live-only groups (absent from
+  // the snapshot) are KEPT but hidden (enabled=false) so Clear stops them
+  // filtering without discarding the user's work. Previously this loop only
+  // walked the live groups, so a deleted saved group was never brought back.
   {
-    const groups = appState.filters.groupedFilters || [];
-    if (groups.length) {
-      const snapById = new Map();
-      if (typeof appState.presets.activeId === 'number') {
-        const snap = presetSnapshots[appState.presets.activeId];
-        if (snap && Array.isArray(snap.groupedFilters)) {
-          for (const sg of snap.groupedFilters) snapById.set(sg.id, sg);
+    const liveGroups = appState.filters.groupedFilters || [];
+    let snapGroups = [];
+    if (typeof appState.presets.activeId === 'number') {
+      const snap = presetSnapshots[appState.presets.activeId];
+      if (snap && Array.isArray(snap.groupedFilters)) snapGroups = snap.groupedFilters;
+    }
+    if (liveGroups.length || snapGroups.length) {
+      // Fresh deep clones of the saved groups, in snapshot order.
+      const restored = _sanitizeGroupedFilters(snapGroups);
+      const savedIds = new Set(restored.map(g => g.id));
+      // Append the live-only groups, disabled so they stop filtering.
+      for (const g of liveGroups) {
+        if (!savedIds.has(g.id)) {
+          g.enabled = false;
+          restored.push(g);
         }
       }
-      for (const g of groups) {
-        const saved = snapById.get(g.id);
-        g.enabled = saved ? (saved.enabled !== false) : false;
-      }
+      appState.filters.groupedFilters = restored;
       _gfPersistAndRender();
     }
   }
