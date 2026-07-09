@@ -14507,6 +14507,13 @@ function closeCustomPropsDrawer() {
 /** Add a fresh group with the given mode and open the drawer to edit it. */
 function _gfAddGroup(mode) {
   const groups = _gfGetGroups();
+  // Re-sync the id counter against the live groups before minting a new id.
+  // applyPreset (and other hydration sites) repopulate groupedFilters from a
+  // preset's saved slot WITHOUT touching _gfNextId — so after switching to a
+  // preset that already holds e.g. "g_1", a fresh group would otherwise reuse
+  // "g_1" and collide, making _gfFindGroup resolve add-condition to the wrong
+  // (first-matching) group. Bumping here guarantees a strictly-greater id.
+  _gfBumpIdCounterFromGroups(groups);
   const id = _gfMakeId();
   groups.push({
     id,
@@ -14549,6 +14556,9 @@ function _gfDuplicateGroup(id) {
   const i = groups.findIndex(g => g.id === id);
   if (i < 0) return;
   const src = groups[i];
+  // Same collision guard as _gfAddGroup — the counter may be stale after a
+  // preset hydration that didn't bump it.
+  _gfBumpIdCounterFromGroups(groups);
   const clone = {
     id: _gfMakeId(),
     mode: src.mode,
