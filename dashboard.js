@@ -315,6 +315,10 @@ const _SYNC_KEY_PREFIXES = [
   // reorder ▲▼). Synced so the chosen order follows the profile across devices,
   // same as the mapping it sits next to.
   'screenshotOrder_v1_',
+  // Per-profile trade-card field visibility (widget drawer → "Card fields"
+  // toggle). Synced so the chosen set of visible props follows the profile
+  // across devices, and is identical for every preset (profile-level pref).
+  'tradeCardFields_v1_',
   'outcomeValueMapping_v1_',
   'flipping_notion_properties_',
   'flipping_custom_widgets_',
@@ -4610,6 +4614,14 @@ function handleActionClick(event) {
     case 'close-widget-drawer': closeWidgetDrawer(); break;
     case 'open-share-popover':  event.stopPropagation(); _handleOpenSharePopover(); break;
     case 'export-trades-pdf':   event.stopPropagation(); _exportTradesPdf(); break;
+    case 'toggle-wd-fields':    event.stopPropagation(); _wdToggleFieldsPopover(); break;
+    case 'wd-field-toggle':
+      // preventDefault suppresses the checkbox's native toggle (which fires
+      // AFTER this listener and would re-flip it out of sync with the config);
+      // _wdHandleFieldToggle is the single source of truth for `checked`.
+      event.stopPropagation(); event.preventDefault();
+      _wdHandleFieldToggle(actionEl);
+      break;
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
@@ -10793,6 +10805,9 @@ function _reloadProfileScopedState() {
   // Same for the custom Notion properties cache — declared per-profile via
   // getProfileScopedKey(CUSTOM_PROPS_LS_KEY).
   _customPropsCache = null;
+  // Same for the trade-card field-visibility cache — per-profile via
+  // getProfileScopedKey(TRADE_CARD_FIELDS_LS_KEY).
+  _tradeCardFieldsCache = null;
   // ── 1. Reset + reload all preset in-memory state for the new slot ──
   Object.keys(presetOverrides).forEach(k => delete presetOverrides[k]);
   // Reset PRESETS to defaults first so that if the new slot has no saved
@@ -16748,6 +16763,132 @@ function _moveScreenshotStep(step, dir) {
   _setScreenshotStepOrder(order);
   return true;
 }
+
+// ── Trade-card field visibility (per profile) ────────────────────────────────
+// Which optional fields render on each trade card in the shared widget drawer
+// (_wdTradeCard). Pair / R / Outcome are the card's identity anchors and are
+// never toggleable. Standard fields default ON (legacy behaviour); custom
+// Notion props default OFF (they were never shown on the live card before).
+// Stored per profile (getProfileScopedKey) + synced via the tradeCardFields_v1_
+// prefix, so the config follows the profile across devices and is shared by
+// EVERY preset (it is a profile-level display preference, not a filter). The
+// config is a sparse map { fieldKey: bool } — only keys the user has toggled
+// away from their default appear; an empty map === current default rendering.
+const TRADE_CARD_FIELDS_LS_KEY = 'tradeCardFields_v1';
+// The 8 core, nicely-styled fields — the universal SMC concepts, drawn with
+// dedicated markup in _wdTradeCard, default ON. Every OTHER property is offered
+// dynamically from the trade's own Notion columns (t.extras, keyed 'x:<col>'),
+// so the panel always mirrors THIS user's actual API / Notion Fields rather than
+// a hardcoded list. Dynamic columns default OFF. Pair / R / Outcome stay as
+// unconditional identity anchors and are never in the list.
+const _WD_CARD_FIELD_SPECS = [
+  { key: 'direction',    label: 'Direction',      def: true  },
+  { key: 'date',         label: 'Date',           def: true  },
+  { key: 'sess',         label: 'Session & hour', def: true  },
+  { key: 'setup',        label: 'Setup',          def: true  },
+  { key: 'rrmax',        label: 'RR Max',         def: true  },
+  { key: 'tphits',       label: 'TP hits',        def: true  },
+  { key: 'h4',           label: 'Obstacles H4',   def: true  },
+  { key: 'm15',          label: 'Obstacles M15',  def: true  },
+];
+const _WD_FIELD_DEFAULTS = Object.fromEntries(_WD_CARD_FIELD_SPECS.map(s => [s.key, s.def]));
+let _tradeCardFieldsCache = null;
+function _getTradeCardFieldsConfig() {
+  if (_tradeCardFieldsCache) return _tradeCardFieldsCache;
+  let cfg = {};
+  try {
+    const raw = (typeof getProfileScopedKey === 'function')
+      ? localStorage.getItem(getProfileScopedKey(TRADE_CARD_FIELDS_LS_KEY))
+      : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) cfg = parsed;
+  } catch (e) { cfg = {}; }
+  _tradeCardFieldsCache = cfg;
+  return cfg;
+}
+function _setTradeCardFieldsConfig(cfg) {
+  _tradeCardFieldsCache = (cfg && typeof cfg === 'object' && !Array.isArray(cfg)) ? cfg : {};
+  try {
+    localStorage.setItem(getProfileScopedKey(TRADE_CARD_FIELDS_LS_KEY), JSON.stringify(_tradeCardFieldsCache));
+  } catch (e) {}
+}
+// Resolve visibility for a field key: an explicit user override wins, else the
+// default (standard field → ON, custom prop → OFF).
+function _wdFieldVisible(key) {
+  const cfg = _getTradeCardFieldsConfig();
+  if (Object.prototype.hasOwnProperty.call(cfg, key)) return !!cfg[key];
+  return !!_WD_FIELD_DEFAULTS[key]; // dynamic columns (x:*) → undefined → false
+}
+
+// Raw Notion column names already surfaced by the 8 core styled fields (+ the
+// identity anchors and screenshot/url slots), so they are NOT offered again as
+// generic "other property" toggles. Resolved from the user's live mapping
+// overrides, so it tracks whatever columns THIS profile mapped to each dim.
+function _wdConsumedCoreColumns() {
+  let ov = {};
+  try {
+    ov = (typeof _getAPIFieldOverrides === 'function')
+      ? (_getAPIFieldOverrides(typeof _getCurrentHTFSource === 'function' ? _getCurrentHTFSource() : null) || {})
+      : {};
+  } catch (e) { ov = {}; }
+  // Dims drawn by the 8 core fields + pair/outcome/r anchors + notion url +
+  // screenshot slots. NOT included: beManagement, positionType, exitDate, day,
+  // badFeeling and any custom column — those flow into the dynamic list so the
+  // user sees every one of their own properties, named as in their Notion DB.
+  const CORE_DIMS = ['pair', 'outcome', 'r', 'date', 'direction', 'session', 'hour',
+    'setup', 'setupDetail', 'rrMax', 'tp1_rr', 'tp2_rr', 'tp3_rr', 'obstacles', 'h4',
+    'notionUrl', 'img_m15', 'img_h4_before', 'img_m15_after'];
+  const set = new Set();
+  const noMap = (typeof NO_MAPPING_VALUE !== 'undefined') ? NO_MAPPING_VALUE : '__NO_MAPPING__';
+  for (const d of CORE_DIMS) { const v = ov[d]; if (v && v !== noMap) set.add(v); }
+  return set;
+}
+
+// Friendly label for a dynamic column key: the declared custom-prop name when
+// the user named it, else a humanized version of the raw Notion key.
+function _wdDynamicColumnLabel(key, customBySrc) {
+  if (customBySrc && customBySrc.has(key)) return customBySrc.get(key);
+  return (typeof _humanizeWidgetPropertyLabel === 'function') ? _humanizeWidgetPropertyLabel(key) : key;
+}
+
+// Map of extras-key → friendly custom-prop name, for labeling dynamic columns
+// the user has explicitly declared in Data Setup.
+function _wdCustomPropLabelMap() {
+  const m = new Map();
+  let custom = [];
+  try { custom = (typeof loadCustomProps === 'function') ? loadCustomProps() : []; }
+  catch (e) { custom = []; }
+  for (const p of custom) {
+    const src = p.notionSourceName || p.key;
+    const label = String(p.name || p.notionSourceName || p.key || '').trim();
+    if (src && label) m.set(src, label);
+  }
+  return m;
+}
+
+// Enumerate the dynamic (non-core) columns present across a set of trades, as
+// [{ key, label }] sorted by label. `key` is the raw t.extras key; the panel
+// namespaces it 'x:<key>'. Excludes core-consumed columns + Notion system keys.
+function _wdDynamicColumnDefs(trades) {
+  const consumed = _wdConsumedCoreColumns();
+  const customBySrc = _wdCustomPropLabelMap();
+  const seen = new Map();
+  for (const t of (Array.isArray(trades) ? trades : [])) {
+    const e = t && t.extras;
+    if (!e || typeof e !== 'object') continue;
+    for (const k in e) {
+      if (seen.has(k) || consumed.has(k)) continue;
+      if (_NOTION_EXTRAS_SYSTEM_KEYS.has(k)) continue;
+      const v = e[k];
+      if (v == null || v === '' || (Array.isArray(v) && !v.length)) continue;
+      seen.set(k, _wdDynamicColumnLabel(k, customBySrc));
+    }
+  }
+  return [...seen.entries()]
+    .map(([key, label]) => ({ key, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 // Lightbox step → JOURNAL_DIMS key. Used by _getTradeMediaStepLabel to look
 // up the mapped Notion column name and surface it as the modal title (e.g.
 // "URL H4 Before" instead of the generic "TV Image 1") — same auto-rename
@@ -25785,27 +25926,31 @@ function _wdTradeCard(t) {
          title="Open in Notion">🔗</button>`
     : '';
 
+  // Optional per-card fields honour the per-profile "Card fields" visibility
+  // config (_wdFieldVisible). Pair / R / Outcome below stay unconditional —
+  // they are the card's identity anchors and are never toggleable.
+
   // H4 obstacles
   const h4Arr = Array.isArray(t.h4) ? t.h4 : (t.h4 ? [t.h4] : []);
-  const h4Html = h4Arr.length
+  const h4Html = (h4Arr.length && _wdFieldVisible('h4'))
     ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
          <span class="wd-trade-meta-title">Obstacles H4 :</span><span class="wd-trade-meta-value">${[...h4Arr].sort().join(' · ')}</span></div>`
     : '';
 
   // M15 obstacles
   const obsArr = Array.isArray(t.obstacles) ? t.obstacles : (t.obstacles ? [t.obstacles] : []);
-  const obsHtml = obsArr.length
+  const obsHtml = (obsArr.length && _wdFieldVisible('m15'))
     ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
          <span class="wd-trade-meta-title">Obstacles M15 :</span><span class="wd-trade-meta-value">${[...obsArr].sort().join(' · ')}</span></div>`
     : '';
 
   // Session + hour line
-  const sessionHourHtml = (t.session||t.hour!=null)
+  const sessionHourHtml = ((t.session||t.hour!=null) && _wdFieldVisible('sess'))
     ? `<div class="wd-trade-session-hour wd-trade-meta-line-full">${t.session?`<span>${t.session}</span>`:''}${t.hour!=null?`<span>${String(t.hour).padStart(2,'0')}:00</span>`:''}</div>`
     : '';
 
   // RR Max line — always shown when the trade has a finite rrMax, regardless of TP mode
-  const rrMaxHtml = (typeof t.rrMax === 'number' && Number.isFinite(t.rrMax))
+  const rrMaxHtml = (typeof t.rrMax === 'number' && Number.isFinite(t.rrMax) && _wdFieldVisible('rrmax'))
     ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
          <span class="wd-trade-meta-title">RR Max :</span><span class="wd-trade-meta-value">${t.rrMax.toFixed(1)}R</span></div>`
     : '';
@@ -25817,7 +25962,7 @@ function _wdTradeCard(t) {
   const _tpModeForCard   = _tpConfigForCard && _tpConfigForCard.mode;
   const _showTpHits      = _tpModeForCard === 'multi' || _tpModeForCard === 'personalised';
   const tpHitsHtml = (() => {
-    if (!_showTpHits) return '';
+    if (!_showTpHits || !_wdFieldVisible('tphits')) return '';
     // Hide the whole TP hits line for losing or BE-neutre trades — the big R
     // figure already conveys the outcome, and per-TP detail is meaningful only
     // when at least one tier was actually captured (effectiveClass === 'win').
@@ -25843,12 +25988,45 @@ function _wdTradeCard(t) {
 
   // Direction line — Achat = blue, Vente = rose
   const _dirCol = t.direction === 'Achat' ? '#5b9cf6' : t.direction === 'Vente' ? '#f472b6' : 'var(--dim)';
-  const directionHtml = t.direction
+  const directionHtml = (t.direction && _wdFieldVisible('direction'))
     ? `<div class="wd-trade-direction" style="color:${_dirCol}">${t.direction}</div>`
     : '';
 
   // Setup line: prefer setupDetail over setup
   const setupLine = t.setupDetail || t.setup || '—';
+  const setupHtml = _wdFieldVisible('setup')
+    ? `<div class="wd-trade-setup wd-trade-meta-line-full">${_escapeHtml(setupLine)}</div>`
+    : '';
+
+  // Date line (in the pair block) — honours the 'date' toggle.
+  const dateHtml = (t.date && _wdFieldVisible('date'))
+    ? `<div class="wd-trade-date">${_escapeHtml(t.date)}</div>`
+    : '';
+
+  // Dynamic Notion properties — one meta line per ENABLED column present on this
+  // trade (t.extras), keyed 'x:<col>'. This is the whole point of the redesign:
+  // the offered set is THIS user's real Notion columns, not a hardcoded list.
+  // Core-consumed columns (mapped to the 8 styled fields + anchors) are skipped
+  // so nothing double-renders. All default OFF.
+  const dynamicPropsHtml = (() => {
+    const e = t.extras;
+    if (!e || typeof e !== 'object') return '';
+    const consumed = _wdConsumedCoreColumns();
+    const customBySrc = _wdCustomPropLabelMap();
+    const out = [];
+    for (const k in e) {
+      if (consumed.has(k) || _NOTION_EXTRAS_SYSTEM_KEYS.has(k)) continue;
+      if (!_wdFieldVisible('x:' + k)) continue;
+      const raw = e[k];
+      if (raw == null || raw === '' || (Array.isArray(raw) && !raw.length)) continue;
+      const val = Array.isArray(raw) ? raw.filter(x => x != null && x !== '').map(String).join(' · ') : String(raw);
+      if (!val) continue;
+      const label = _wdDynamicColumnLabel(k, customBySrc);
+      out.push(`<div class="wd-trade-meta-line wd-trade-meta-line-full">
+         <span class="wd-trade-meta-title">${_escapeHtml(label)} :</span><span class="wd-trade-meta-value">${_escapeHtml(val)}</span></div>`);
+    }
+    return out.join('');
+  })();
 
   return `
     <div class="wd-trade-card ${_WD_BG_CLASS[t.outcome]||''}">
@@ -25856,7 +26034,7 @@ function _wdTradeCard(t) {
         <div class="wd-trade-pair-row">
           ${_escapeHtml(t.pair||'—')}${notionBtn}
         </div>
-        ${t.date?`<div class="wd-trade-date">${_escapeHtml(t.date)}</div>`:''}
+        ${dateHtml}
       </div>
       <div class="wd-trade-side">
         <div class="wd-trade-r ${t.outcome==='BE-TP'?'wd-trade-r-betp':t.outcome==='BE-SL'?'wd-trade-r-besl':t.outcome==='BE'?'wd-trade-r-be':t.r>0?'wd-trade-r-pos':t.r<0?'wd-trade-r-neg':'wd-trade-r-neu'}">
@@ -25890,12 +26068,13 @@ function _wdTradeCard(t) {
         <span class="${_WD_OC_CLASS[t.outcome]||''} wd-trade-outcome">
           ${_escapeHtml(t.outcome||'—')}</span>
       </div>
-      <div class="wd-trade-setup wd-trade-meta-line-full">${_escapeHtml(setupLine)}</div>
+      ${setupHtml}
       ${sessionHourHtml}
       ${rrMaxHtml}
       ${tpHitsHtml}
       ${h4Html}
       ${obsHtml}
+      ${dynamicPropsHtml}
     </div>`;
 }
 
@@ -26723,6 +26902,73 @@ document.addEventListener('click', (e) => {
   pop.setAttribute('hidden', '');
 }, true);
 
+// Same outside-click closer for the "Card fields" popover. Clicks inside (on a
+// checkbox) keep it open so the user can toggle several fields in a row.
+document.addEventListener('click', (e) => {
+  const pop = document.querySelector('#wd-drawer .wd-fields-popover:not([hidden])');
+  if (!pop) return;
+  if (pop.contains(e.target)) return;
+  if (e.target.closest('[data-action="toggle-wd-fields"]')) return;
+  pop.setAttribute('hidden', '');
+}, true);
+
+/* Build the "Card fields" popover contents. Standard fields first (in card
+   render order), then declared custom Notion props (if any), each a checkbox
+   reflecting the current per-profile visibility. Rebuilt on every open so it
+   tracks the active profile's custom props. */
+function _wdBuildFieldsPanelHtml() {
+  const row = (key, label) => {
+    const checked = _wdFieldVisible(key) ? ' checked' : '';
+    return `<label class="wd-fields-opt"><input type="checkbox" data-action="wd-field-toggle" data-field-key="${_escapeHtml(key)}"${checked}><span>${_escapeHtml(label)}</span></label>`;
+  };
+  // Dynamic columns come from the open drawer's own trade set (stashed on the
+  // node), so the list mirrors the properties actually present in this data.
+  const drawer = document.getElementById('wd-drawer');
+  const trades = (drawer && drawer._pdfCtx && Array.isArray(drawer._pdfCtx.sorted)) ? drawer._pdfCtx.sorted : [];
+  const dynDefs = _wdDynamicColumnDefs(trades);
+  const dynRows = dynDefs.map(d => row('x:' + d.key, d.label)).join('');
+  return `<div class="wd-fields-title">Card fields</div>`
+    + _WD_CARD_FIELD_SPECS.map(s => row(s.key, s.label)).join('')
+    + (dynRows ? `<div class="wd-fields-sep"></div>${dynRows}` : '');
+}
+
+/* Toggle the "Card fields" popover open/closed. Content is (re)built on open. */
+function _wdToggleFieldsPopover() {
+  const drawer = document.getElementById('wd-drawer');
+  if (!drawer) return;
+  const pop = drawer.querySelector('.wd-fields-popover');
+  if (!pop) return;
+  if (pop.hasAttribute('hidden')) {
+    pop.innerHTML = _wdBuildFieldsPanelHtml();
+    pop.removeAttribute('hidden');
+  } else {
+    pop.setAttribute('hidden', '');
+  }
+}
+
+/* Flip one field's visibility in the per-profile config, then re-render the
+   open drawer's cards in place. Deterministic (reads current resolved state and
+   inverts it) so it never depends on the checkbox's native toggle. */
+function _wdHandleFieldToggle(inputEl) {
+  const key = inputEl && inputEl.dataset ? inputEl.dataset.fieldKey : '';
+  if (!key) return;
+  const next = !_wdFieldVisible(key);          // config is the source of truth
+  _setTradeCardFieldsConfig({ ..._getTradeCardFieldsConfig(), [key]: next });
+  const drawer = document.getElementById('wd-drawer');
+  if (!drawer) return;
+  // Rebuild the popover from config rather than trusting the checkbox's native
+  // toggle — its ordering vs. this listener is unreliable (and a checkbox
+  // nested in its <label> can fire twice), which would desync the tick from the
+  // persisted state. Regenerating every `checked` from _wdFieldVisible is exact.
+  const pop = drawer.querySelector('.wd-fields-popover');
+  if (pop && !pop.hasAttribute('hidden')) pop.innerHTML = _wdBuildFieldsPanelHtml();
+  // Re-render the drawer cards in place with the new visibility.
+  if (typeof drawer._wdRebuildBody === 'function') {
+    const body = drawer.querySelector('.wd-drawer-body');
+    if (body) body.innerHTML = drawer._wdRebuildBody();
+  }
+}
+
 /* Open the shared widget drawer with a filtered set of trades.
    Trades are always sorted by date asc → hour asc regardless of widget source. */
 function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts = {}) {
@@ -26825,6 +27071,29 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm0 2 4 4h-4V4zM8 13.5h8V15H8v-1.5zm0 3h8V18H8v-1.5zm0-6h4V12H8v-1.5z"/></svg>
        </button>`;
 
+  // "Card fields" toggle — per-profile choice of which optional properties show
+  // on each trade card. Local, auth-independent; the popover is built lazily on
+  // open (_wdBuildFieldsPanelHtml) so it always reflects the active profile's
+  // custom props. Sits just left of the PDF/Share cluster ("à côté du Share").
+  const _fieldsBtnHtml = `<button class="wd-drawer-fields-btn" data-action="toggle-wd-fields" type="button" title="Choisir les propriétés affichées sur les trade cards">
+         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+       </button>
+       <div class="wd-fields-popover" hidden></div>`;
+
+  // Body-build closure — reused verbatim when a "Card fields" toggle re-renders
+  // the open drawer in place (stashed as drawer._wdRebuildBody). Reads the live
+  // visibility config through _wdTradeCard, so a toggle just needs a re-run.
+  const buildBodyHtml = () => groupCol
+    ? sorted.map((t, i) => {
+        const prevKey = i > 0 ? _sectionKey(sorted[i - 1]) : null;
+        const curKey  = _sectionKey(t);
+        const sep = curKey !== prevKey
+          ? `<div class="wd-day-sep">${_sectionLabel(t)}</div>`
+          : '';
+        return sep + _wdTradeCard(t);
+      }).join('')
+    : sorted.map(_wdTradeCard).join('');
+
   drawer.innerHTML = `
     <div class="wd-drawer-head">
       <div class="wd-drawer-head-main">
@@ -26833,23 +27102,16 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
       </div>
       <div class="wd-drawer-head-side">
         <div class="wd-drawer-total ${totalR >= 0 ? 'wd-drawer-total-pos' : 'wd-drawer-total-neg'}">${sign}${totalR.toFixed(1)}R</div>
+        ${_fieldsBtnHtml}
         ${_pdfBtnHtml}
         ${_shareBtnHtml}
         <button class="wd-drawer-close" data-action="close-widget-drawer">×</button>
       </div>
     </div>
-    <div class="wd-drawer-body${groupCol ? ' has-day-sep' : ''}">${
-      groupCol
-        ? sorted.map((t, i) => {
-            const prevKey = i > 0 ? _sectionKey(sorted[i - 1]) : null;
-            const curKey  = _sectionKey(t);
-            const sep = curKey !== prevKey
-              ? `<div class="wd-day-sep">${_sectionLabel(t)}</div>`
-              : '';
-            return sep + _wdTradeCard(t);
-          }).join('')
-        : sorted.map(_wdTradeCard).join('')
-    }</div>`;
+    <div class="wd-drawer-body${groupCol ? ' has-day-sep' : ''}">${buildBodyHtml()}</div>`;
+
+  // Expose the body-builder for in-place re-render on field-visibility toggles.
+  drawer._wdRebuildBody = buildBodyHtml;
 
   // Stash share context on the drawer DOM node for _handleOpenSharePopover.
   // Kept across drawer renders; the ctxKey check inside the handler decides
