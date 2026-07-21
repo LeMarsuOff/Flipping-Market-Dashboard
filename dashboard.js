@@ -9725,7 +9725,7 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
     beManagement: _parseField(_pick('beManagement', t.beManagement ?? t['BE Management']), v => v),
     outcome:     oc,
     outcomeRaw:  rawOutcome,
-    r:           _mapR(oc, t.rrTp1 ?? t['RR TP 1']),
+    r:           _mapR(oc, _pick('r', t.rrTp1 ?? t['RR TP 1'])),
     rrMax:       (() => {
       const n = _parseNumeric(t.rrMax ?? t.rrMaxAtteint ?? t['RR Max'] ?? t['RR Max '] ?? t['RR max atteint']);
       return n !== null && Number.isFinite(n) ? n : null;
