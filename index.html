@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=389">
+<link rel="stylesheet" href="dashboard.css?v=397">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -2870,6 +2870,149 @@
       </div>
     </div>
 
+    <!-- ══ WIDGET: Prop Firm Risk Optimizer ══ -->
+    <div class="chart-card gs-widget pf-widget" data-gs-id="w-prop-optimizer" data-section="optimal-rr">
+      <div class="cc-head cc-head-fixed">
+        <div class="stack-tight">
+          <span class="cc-title">Prop Firm Risk Optimizer</span>
+          <span class="cc-hint">Monte Carlo on your real R distribution · finds the risk % that maximizes pass probability</span>
+        </div>
+      </div>
+
+      <div class="pf-body">
+        <!-- ── Inputs column ── -->
+        <section class="pf-col pf-col-inputs" aria-label="Challenge settings">
+          <div class="pf-edge-block">
+            <div class="pf-edge-head">
+              <span class="pf-edge-title">Your edge</span>
+              <button type="button" class="pf-edge-reset" id="pf-edge-reset" hidden>↻ Reset to my data</button>
+            </div>
+            <div class="pf-grid2">
+              <div class="pf-field">
+                <label for="pf-in-wr">Win rate</label>
+                <div class="pf-input-wrap"><input id="pf-in-wr" type="number" step="0.5" min="0" max="100" class="pf-input"><span class="pf-suffix">%</span></div>
+              </div>
+              <div class="pf-field">
+                <label for="pf-in-exp">Expectancy</label>
+                <div class="pf-input-wrap"><input id="pf-in-exp" type="number" step="0.05" class="pf-input"><span class="pf-suffix">R</span></div>
+              </div>
+            </div>
+            <div class="pf-field">
+              <label for="pf-in-tpm">Avg trades / month</label>
+              <div class="pf-input-wrap"><input id="pf-in-tpm" type="number" step="1" min="1" class="pf-input"></div>
+            </div>
+            <div class="pf-edge-derived" id="pf-edge-derived">—</div>
+            <div class="pf-edge-status" id="pf-edge-status"></div>
+          </div>
+
+          <div class="pf-field">
+            <label for="pf-in-preset">Firm preset</label>
+            <select id="pf-in-preset" class="pf-input pf-select">
+              <option value="ftmo">FTMO-style (2-step)</option>
+              <option value="onestep">1-step (trailing)</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+
+          <div class="pf-field">
+            <label for="pf-in-balance">Account size</label>
+            <div class="pf-input-wrap"><span class="pf-prefix">$</span><input id="pf-in-balance" type="number" step="1000" min="1" class="pf-input pf-input-prefixed"></div>
+          </div>
+
+          <div class="pf-grid2">
+            <div class="pf-field">
+              <label for="pf-in-target1">Profit target · P1</label>
+              <div class="pf-input-wrap"><input id="pf-in-target1" type="number" step="0.5" min="0.1" class="pf-input"><span class="pf-suffix">%</span></div>
+            </div>
+            <div class="pf-field">
+              <label for="pf-in-target2">Profit target · P2</label>
+              <div class="pf-input-wrap"><input id="pf-in-target2" type="number" step="0.5" min="0.1" class="pf-input"><span class="pf-suffix">%</span></div>
+            </div>
+          </div>
+
+          <div class="pf-grid2">
+            <div class="pf-field">
+              <label for="pf-in-maxdd">Max drawdown</label>
+              <div class="pf-input-wrap"><input id="pf-in-maxdd" type="number" step="0.5" min="0.5" class="pf-input"><span class="pf-suffix">%</span></div>
+            </div>
+            <div class="pf-field">
+              <label for="pf-in-dailydd">Daily drawdown</label>
+              <div class="pf-input-wrap"><input id="pf-in-dailydd" type="number" step="0.5" min="0.5" class="pf-input"><span class="pf-suffix">%</span></div>
+            </div>
+          </div>
+
+          <div class="pf-field">
+            <label for="pf-in-ddtype">Drawdown type</label>
+            <select id="pf-in-ddtype" class="pf-input pf-select">
+              <option value="static">Static (from initial balance)</option>
+              <option value="trailing">Trailing (from equity peak)</option>
+            </select>
+          </div>
+
+          <div class="pf-field">
+            <label for="pf-in-threshold">Min pass probability</label>
+            <div class="pf-input-wrap"><input id="pf-in-threshold" type="number" step="1" min="1" max="100" class="pf-input"><span class="pf-suffix">%</span></div>
+            <span class="pf-field-note">Optimal = the highest risk that still passes this often.</span>
+          </div>
+
+          <div class="pf-checks">
+            <label class="pf-check" for="pf-in-dailyon">
+              <input type="checkbox" id="pf-in-dailyon">
+              <span class="pf-check-box"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5 l2 2 l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="pf-check-text"><span class="pf-check-title">Enforce daily drawdown</span></span>
+            </label>
+            <label class="pf-check" for="pf-in-twophase">
+              <input type="checkbox" id="pf-in-twophase">
+              <span class="pf-check-box"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5 l2 2 l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="pf-check-text"><span class="pf-check-title">Two phases (P1 + P2)</span></span>
+            </label>
+            <label class="pf-check" for="pf-in-compound">
+              <input type="checkbox" id="pf-in-compound">
+              <span class="pf-check-box"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5 l2 2 l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="pf-check-text"><span class="pf-check-title">Compounding</span><span class="pf-check-hint">Risk % of current equity (vs fixed % of initial)</span></span>
+            </label>
+          </div>
+
+          <div class="pf-run-row">
+            <button data-action="run-prop-optimizer" class="pf-optimize-btn" id="pf-optimize-btn" type="button">Optimize</button>
+            <span class="pf-status" id="pf-status">Ready</span>
+          </div>
+        </section>
+
+        <!-- ── Results column ── -->
+        <section class="pf-col pf-col-results" aria-label="Results">
+          <div class="pf-cards" id="pf-cards">
+            <div class="pf-card pf-card-hero">
+              <div class="pf-card-lbl">Optimal risk / trade</div>
+              <div class="pf-card-val" data-pf-slot="risk">—</div>
+              <div class="pf-card-sub" data-pf-slot="riskcash">—</div>
+            </div>
+            <div class="pf-card">
+              <div class="pf-card-lbl">Pass probability</div>
+              <div class="pf-card-val" data-pf-slot="pass">—</div>
+            </div>
+            <div class="pf-card">
+              <div class="pf-card-lbl">Blow-up rate</div>
+              <div class="pf-card-val" data-pf-slot="blow">—</div>
+            </div>
+            <div class="pf-card">
+              <div class="pf-card-lbl">Avg trades to pass</div>
+              <div class="pf-card-val" data-pf-slot="trades">—</div>
+            </div>
+            <div class="pf-card">
+              <div class="pf-card-lbl">Avg max drawdown</div>
+              <div class="pf-card-val" data-pf-slot="maxdd">—</div>
+            </div>
+          </div>
+          <div class="pf-note" data-pf-slot="note"></div>
+          <div class="pf-chart-wrap canvas-stage">
+            <canvas id="pfCanvas" class="canvas-absolute-fill"></canvas>
+            <div class="pf-chart-empty" id="pf-chart-empty">Set your challenge parameters and click <strong>Optimize</strong> to sweep risk levels against your real trade history.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <!-- ══ WIDGET: Trade Log ══ -->
     <div class="chart-card gs-widget" data-gs-id="w-tradelog" data-section="global">
     <div class="trade-table-wrap trade-table-wrap-fill">
@@ -3109,6 +3252,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1379"></script>
+<script src="dashboard.js?v=1418"></script>
 </body>
 </html>

@@ -4420,6 +4420,7 @@ function handleActionClick(event) {
     case 'set-cal-mode': setCalMode(actionEl.dataset.mode); break;
     case 'set-cal-month-sort': setCalMonthSort(actionEl.dataset.sort); break;
     case 'run-monte-carlo': _mc2RunSimulate(); break;
+    case 'run-prop-optimizer': _pfRun(); break;
     case 'set-sort': setSort(actionEl.dataset.key, actionEl.dataset.dir); break;
     case 'cycle-sort-col': cycleSortCol(actionEl.dataset.col); break;
     case 'set-share-mode': setShareMode(actionEl.dataset.mode); break;
@@ -30238,6 +30239,557 @@ function _mc2InitSectionLayoutEdit() {
 }
 
 // ══════════════════════════════════════════════════════
+// PROP FIRM RISK OPTIMIZER — w-prop-optimizer
+//   Monte Carlo BARRIER simulation on the trader's REAL R distribution
+//   (bootstrap resample), sweeping risk-% per trade to find the level that
+//   maximizes the probability of passing a prop-firm challenge (reach the
+//   profit target before breaching max / daily drawdown). Distinct from the
+//   parametric Monte Carlo widget (w-montecarlo): that one draws win/loss from
+//   a win-rate% + fixed RR and answers "what does my equity look like"; this
+//   one resamples the actual per-trade R and answers "what risk passes".
+// ══════════════════════════════════════════════════════
+let _pfChart = null;
+let _pfSimToken = 0;         // cancels in-flight sweeps on re-run
+let _pfBound = false;
+let _pfEdgeCache = null;     // { Rs, dayCounts, n, wr, expectancy, avgWin, avgLoss }
+let _pfLastRun = null;       // reduced sweep result
+
+const _PF_ITER = 2000;          // challenges simulated per risk level
+const _PF_MAX_TRADES = 800;     // per-phase safety cap → 'timeout' (not passed)
+const _PF_RISK_MIN = 0.1;       // % per trade — sweep start
+const _PF_RISK_MAX = 3.0;       // % per trade — sweep end
+const _PF_RISK_STEP = 0.1;      // % increment
+const _PF_INPUTS_KEY = 'pf-inputs-v1';
+
+// Firm presets. Values are editable — the moment a user changes any field the
+// preset select flips to "custom". Labels stay generic/recognisable rather
+// than claiming exact live firm rules (which change): treat as starting points.
+const _PF_PRESETS = {
+  ftmo: {
+    label: 'FTMO-style (2-step)',
+    balance: 100000, target1: 10, target2: 5, maxDD: 10, dailyDD: 5,
+    ddType: 'static', dailyOn: true, twoPhase: true, compound: false,
+  },
+  onestep: {
+    label: '1-step (trailing)',
+    balance: 100000, target1: 10, target2: 6, maxDD: 6, dailyDD: 4,
+    ddType: 'trailing', dailyOn: false, twoPhase: false, compound: false,
+  },
+};
+const _PF_DEFAULTS = { preset: 'ftmo', ..._PF_PRESETS.ftmo };
+delete _PF_DEFAULTS.label;
+// Pass-probability floor for the "most aggressive still-safe" pick. Not a firm
+// rule — a personal risk-tolerance knob, so it lives outside the presets.
+_PF_DEFAULTS.threshold = 90;
+// Fallback edge shown only when there is NO journal data to auto-fill from.
+const _PF_EDGE_FALLBACK = { wr: 45, exp: 0.30, tpm: 20 };
+const _PF_TRADING_DAYS_PER_MONTH = 21;
+
+// The edge fields (win rate / expectancy / trades-month) auto-fill from the
+// real dataset and stay in sync with it UNTIL the user overrides one. Once
+// touched, we stop stomping their values and switch the sim to the parametric
+// model built from their numbers (a "Reset to my data" link brings auto back).
+let _pfEdgeTouched = false;
+let _pfModeState = 'trades';   // 'trades' (real bootstrap) | 'manual' (parametric)
+let _pfLastTrades = [];
+
+// ── Public entry from renderPanels(): refresh the edge read-out from the
+// current filtered dataset. Does NOT auto-run — the user clicks Optimize. ──
+function renderPropOptimizer(trades) {
+  _pfBindOnce();
+  _pfLastTrades = trades || [];
+  _pfRefreshEdge();
+  _pfUpdateChartEmpty();
+}
+
+// Recompute the active edge + repaint. The edge fields auto-fill from the real
+// dataset while untouched; the sim then samples the FULL real R distribution.
+// Once the user overrides a field we keep their numbers and switch to the
+// parametric model built from them. No mode button — it's all automatic.
+function _pfRefreshEdge() {
+  const real = _pfReadDatasetEdge(_pfLastTrades);
+  const hasReal = !!real && real.n >= 1;
+  if (hasReal && !_pfEdgeTouched) _pfAutofillEdgeFields(real);
+  else if (!hasReal) _pfFillFallbackIfEmpty();
+  _pfEdgeCache = _pfResolveEdge(real, hasReal);
+  _pfModeState = _pfEdgeCache.manual ? 'manual' : 'trades';
+  _pfRenderEdgeStatus(_pfEdgeCache, hasReal);
+  _pfUpdateEdgeDerived(_pfEdgeCache);
+  const reset = document.getElementById('pf-edge-reset');
+  if (reset) reset.hidden = !(hasReal && _pfEdgeTouched);
+}
+
+function _pfMode() { return _pfModeState === 'manual' ? 'manual' : 'trades'; }
+
+// No journal to auto-fill from → seed empty fields with sensible defaults so
+// the user starts from something rather than blanks. Never stomps typed values.
+function _pfFillFallbackIfEmpty() {
+  const seed = (id, v) => { const el = document.getElementById(id); if (el && el.value === '') el.value = v; };
+  seed('pf-in-wr',  _PF_EDGE_FALLBACK.wr);
+  seed('pf-in-exp', _PF_EDGE_FALLBACK.exp);
+  seed('pf-in-tpm', _PF_EDGE_FALLBACK.tpm);
+}
+
+// Write the real summary stats into the (untouched) edge fields.
+function _pfAutofillEdgeFields(real) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+  set('pf-in-wr',  +real.wr.toFixed(1));
+  set('pf-in-exp', +real.expectancy.toFixed(2));
+  set('pf-in-tpm', Math.max(1, Math.round(real.tpm || _PF_EDGE_FALLBACK.tpm)));
+}
+
+// Edge used by the engine: the real bootstrap when the fields are still in sync
+// with the journal, else the parametric model from whatever is in the fields.
+function _pfResolveEdge(real, hasReal) {
+  if (hasReal && !_pfEdgeTouched) return real;              // full real distribution
+  return _pfManualEdge(hasReal ? 'custom' : 'nodata');     // parametric from fields
+}
+
+// One-line source label + the derived payoff read-out.
+function _pfRenderEdgeStatus(edge, hasReal) {
+  const el = document.getElementById('pf-edge-status');
+  if (!el) return;
+  let txt, tone;
+  if (!edge.manual)              { txt = `Based on your ${edge.n} real trades (full R distribution).`; tone = 'ok'; }
+  else if (edge.source === 'custom') { txt = `Custom edge — overriding your journal (simplified model).`; tone = 'warn'; }
+  else                          { txt = `No journal data — simulating a hypothetical edge.`; tone = 'warn'; }
+  el.textContent = txt;
+  el.dataset.tone = tone;
+}
+
+// Payoff derived from the current fields (loss = −1R). Shown under the inputs.
+function _pfUpdateEdgeDerived(edge) {
+  const el = document.getElementById('pf-edge-derived');
+  if (!el) return;
+  if (edge && !edge.manual) {
+    el.innerHTML = `Avg win <b>${(edge.avgWin>=0?'+':'')}${edge.avgWin.toFixed(2)}R</b> · avg loss <b>${edge.avgLoss.toFixed(2)}R</b> · from your trades`;
+    return;
+  }
+  const num = (id, fb) => { const v = parseFloat(document.getElementById(id)?.value); return Number.isFinite(v) ? v : fb; };
+  const wr = Math.max(0, Math.min(100, num('pf-in-wr', _PF_EDGE_FALLBACK.wr))) / 100;
+  const E  = num('pf-in-exp', _PF_EDGE_FALLBACK.exp);
+  if (wr <= 0) { el.innerHTML = 'Implied avg win <b data-tone="neg">n/a</b> (win rate 0)'; return; }
+  const avgWin = (E + (1 - wr)) / wr;   // avgLoss fixed at 1R
+  el.innerHTML = `Implied avg win <b${avgWin>0?'':' data-tone="neg"'}>${avgWin>=0?'+':''}${avgWin.toFixed(2)}R</b> per win (loss = −1R)`;
+}
+
+function _pfBindOnce() {
+  if (_pfBound) return;
+  _pfBound = true;
+  _pfApplyInputs(_pfLoadInputs());
+
+  // Edge fields → editing any one marks the edge "touched": we stop auto-syncing
+  // from the dataset and switch the sim to the parametric model from these values.
+  ['pf-in-wr','pf-in-exp','pf-in-tpm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => { _pfEdgeTouched = true; _pfRefreshEdge(); });
+  });
+
+  // Reset to my data → drop the override, re-sync fields to the journal.
+  const resetBtn = document.getElementById('pf-edge-reset');
+  if (resetBtn) resetBtn.addEventListener('click', () => { _pfEdgeTouched = false; _pfRefreshEdge(); });
+
+  // Preset select
+  const sel = document.getElementById('pf-in-preset');
+  if (sel) sel.addEventListener('change', () => {
+    const p = _PF_PRESETS[sel.value];
+    if (p) { _pfApplyInputs({ preset: sel.value, ...p }); _pfSaveInputs(); }
+  });
+
+  // Any manual field edit → flip preset to "custom" + persist
+  const fieldIds = ['pf-in-balance','pf-in-target1','pf-in-target2','pf-in-maxdd','pf-in-dailydd'];
+  fieldIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => { _pfMarkCustom(); _pfSaveInputs(); });
+  });
+  ['pf-in-ddtype'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { _pfMarkCustom(); _pfSaveInputs(); });
+  });
+  ['pf-in-dailyon','pf-in-twophase','pf-in-compound'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => {
+      if (id !== 'pf-in-compound') _pfMarkCustom();
+      _pfSyncDependentFields();
+      _pfSaveInputs();
+    });
+  });
+
+  // Threshold is a risk-tolerance knob, not a firm rule — changing it doesn't
+  // flip the preset to custom and doesn't need a re-simulation: the curve is
+  // unchanged, only which point we call "optimal". Re-reduce live from the
+  // stored rows so the hero card + marker update instantly.
+  const thr = document.getElementById('pf-in-threshold');
+  if (thr) thr.addEventListener('input', () => {
+    _pfSaveInputs();
+    if (!_pfLastRun) return;
+    const inp = _pfReadInputs();
+    _pfLastRun = _pfReduce(_pfLastRun.levels, _pfLastRun.rows, inp, _pfLastRun.edge);
+    _pfRenderCards(_pfLastRun, inp, _pfLastRun.edge);
+    _pfRenderChart(_pfLastRun);
+  });
+
+  _pfSyncDependentFields();
+}
+
+// Grey out target2 when two-phase is off, daily-DD input when daily is off.
+function _pfSyncDependentFields() {
+  const twoPhase = !!document.getElementById('pf-in-twophase')?.checked;
+  const dailyOn  = !!document.getElementById('pf-in-dailyon')?.checked;
+  const t2 = document.getElementById('pf-in-target2');
+  if (t2) { t2.disabled = !twoPhase; t2.closest('.pf-field')?.classList.toggle('is-disabled', !twoPhase); }
+  const dd = document.getElementById('pf-in-dailydd');
+  if (dd) { dd.disabled = !dailyOn; dd.closest('.pf-field')?.classList.toggle('is-disabled', !dailyOn); }
+}
+
+function _pfMarkCustom() {
+  const sel = document.getElementById('pf-in-preset');
+  if (sel && sel.value !== 'custom') sel.value = 'custom';
+}
+
+function _pfLoadInputs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(_PF_INPUTS_KEY));
+    if (raw && typeof raw === 'object') return { ..._PF_DEFAULTS, ...raw };
+  } catch {}
+  return { ..._PF_DEFAULTS };
+}
+function _pfSaveInputs() {
+  try { localStorage.setItem(_PF_INPUTS_KEY, JSON.stringify(_pfReadInputs())); } catch {}
+}
+
+function _pfApplyInputs(o) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el != null && v != null) el.value = v; };
+  const chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+  const selEl = document.getElementById('pf-in-preset');
+  if (selEl && o.preset) selEl.value = o.preset;
+  set('pf-in-balance', o.balance); set('pf-in-target1', o.target1); set('pf-in-target2', o.target2);
+  set('pf-in-maxdd', o.maxDD);     set('pf-in-dailydd', o.dailyDD);
+  if (o.threshold != null) set('pf-in-threshold', o.threshold);
+  const ddt = document.getElementById('pf-in-ddtype'); if (ddt && o.ddType) ddt.value = o.ddType;
+  chk('pf-in-dailyon', o.dailyOn); chk('pf-in-twophase', o.twoPhase); chk('pf-in-compound', o.compound);
+  _pfSyncDependentFields();
+}
+
+function _pfReadInputs() {
+  const num = (id, fb) => { const v = parseFloat(document.getElementById(id)?.value); return Number.isFinite(v) ? v : fb; };
+  return {
+    preset:   document.getElementById('pf-in-preset')?.value || 'custom',
+    balance:  Math.max(1,    num('pf-in-balance', _PF_DEFAULTS.balance)),
+    target1:  Math.max(0.1,  num('pf-in-target1', _PF_DEFAULTS.target1)),
+    target2:  Math.max(0.1,  num('pf-in-target2', _PF_DEFAULTS.target2)),
+    maxDD:    Math.max(0.5,  num('pf-in-maxdd',   _PF_DEFAULTS.maxDD)),
+    dailyDD:  Math.max(0.5,  num('pf-in-dailydd', _PF_DEFAULTS.dailyDD)),
+    ddType:   document.getElementById('pf-in-ddtype')?.value === 'trailing' ? 'trailing' : 'static',
+    dailyOn:  !!document.getElementById('pf-in-dailyon')?.checked,
+    twoPhase: !!document.getElementById('pf-in-twophase')?.checked,
+    compound: !!document.getElementById('pf-in-compound')?.checked,
+    threshold: Math.max(1, Math.min(100, num('pf-in-threshold', _PF_DEFAULTS.threshold))),
+  };
+}
+
+// ── Build the real edge model from the filtered dataset ──
+// Rs        : effective-R multiple of every trade (bootstrap population)
+// dayCounts : real trades-per-day counts (resampled to build day-grouped runs
+//             so the daily-drawdown rule has a realistic intraday structure)
+// tpm       : avg trades per calendar month (auto-fills the field + pace note)
+function _pfReadDatasetEdge(trades) {
+  const cfg = appState.ui.tpConfig;
+  const Rs = [];
+  const byDay = new Map();
+  const byMonth = new Set();
+  for (const t of trades) {
+    let R = (typeof t.effectiveR === 'number') ? t.effectiveR : computeEffectiveRR(t, cfg);
+    if (!Number.isFinite(R)) continue;
+    Rs.push(R);
+    const day = String(t.date || t.exitDate || ('_' + byDay.size)).slice(0, 10);
+    byDay.set(day, (byDay.get(day) || 0) + 1);
+    const mo = day.slice(0, 7);
+    if (mo && mo.length === 7) byMonth.add(mo);
+  }
+  const dayCounts = [...byDay.values()].filter(c => c > 0);
+  const n = Rs.length;
+  const wins = Rs.filter(x => x > 0), losses = Rs.filter(x => x < 0);
+  const sum = Rs.reduce((a, b) => a + b, 0);
+  const months = Math.max(1, byMonth.size);
+  return {
+    Rs,
+    dayCounts: dayCounts.length ? dayCounts : [1],
+    n, manual: false,
+    wr:         n ? (wins.length / n) * 100 : 0,
+    expectancy: n ? sum / n : 0,
+    avgWin:     wins.length ? wins.reduce((a, b) => a + b, 0) / wins.length : 0,
+    avgLoss:    losses.length ? losses.reduce((a, b) => a + b, 0) / losses.length : 0,
+    tpm:        Math.round(n / months),
+  };
+}
+
+// Parametric fallback edge, built from the current edge fields (loss = −1R).
+// Used when the user overrides the auto-filled numbers, or when there is no
+// journal data. A 1,000-sample population lets the bootstrap engine run as-is.
+function _pfManualEdge(source) {
+  const num = (id, fb) => { const v = parseFloat(document.getElementById(id)?.value); return Number.isFinite(v) ? v : fb; };
+  const wr  = Math.max(0, Math.min(100, num('pf-in-wr', _PF_EDGE_FALLBACK.wr))) / 100;
+  const E   = num('pf-in-exp', _PF_EDGE_FALLBACK.exp);
+  const tpm = Math.max(1, Math.round(num('pf-in-tpm', _PF_EDGE_FALLBACK.tpm)));
+  const avgLoss = 1;
+  const avgWin = wr > 0 ? (E + (1 - wr) * avgLoss) / wr : 0;
+  const N = 1000;
+  const nWin = Math.round(wr * N);
+  const Rs = new Array(N);
+  for (let i = 0; i < N; i++) Rs[i] = (i < nWin) ? avgWin : -avgLoss;
+  const perDay = Math.max(1, Math.round(tpm / _PF_TRADING_DAYS_PER_MONTH));
+  return {
+    Rs, dayCounts: [perDay], n: N,
+    wr: wr * 100, expectancy: E, avgWin, avgLoss: -avgLoss,
+    manual: true, source: source || 'custom', tpm, validEdge: avgWin > 0,
+  };
+}
+
+function _pfSetStatus(text, tone) {
+  const el = document.getElementById('pf-status');
+  if (!el) return;
+  el.textContent = text;
+  el.dataset.tone = tone || '';
+}
+
+function _pfUpdateChartEmpty() {
+  const empty = document.getElementById('pf-chart-empty');
+  if (empty) empty.style.display = _pfLastRun ? 'none' : 'flex';
+}
+
+// ── Public entry: Optimize button ──
+function _pfRun() {
+  _pfRefreshEdge();
+  const edge = _pfEdgeCache;
+  if (!edge || !edge.n) { _pfSetStatus('No edge to simulate', 'warn'); return; }
+  if (edge.manual && edge.validEdge === false) {
+    _pfSetStatus('Implied avg win ≤ 0 — raise win rate or expectancy', 'warn');
+    return;
+  }
+
+  const inp = _pfReadInputs();
+  _pfSaveInputs();
+  const token = ++_pfSimToken;
+  _pfSetStatus(`Sweeping ${_PF_ITER.toLocaleString()} runs × ${_pfLevelCount()} risk levels…`);
+  const btn = document.getElementById('pf-optimize-btn');
+  if (btn) { btn.disabled = true; btn.classList.add('is-busy'); }
+
+  _pfSimulateAsync(edge, inp, token, (result) => {
+    if (btn) { btn.disabled = false; btn.classList.remove('is-busy'); }
+    if (token !== _pfSimToken) return;
+    if (!result) { _pfSetStatus('Cancelled', 'warn'); return; }
+    _pfLastRun = result;
+    _pfUpdateChartEmpty();
+    _pfRenderCards(result, inp, edge);
+    _pfRenderChart(result);
+    if (!result.thresholdMet) {
+      _pfSetStatus(`No risk hits ${result.threshold}% pass`, 'warn');
+    } else {
+      _pfSetStatus('Done', 'ok');
+    }
+  });
+}
+
+function _pfLevelCount() {
+  return Math.round((_PF_RISK_MAX - _PF_RISK_MIN) / _PF_RISK_STEP) + 1;
+}
+
+// ── Async sweep engine (chunked via MessageChannel, no setTimeout clamp) ──
+function _pfSimulateAsync(edge, inp, token, done) {
+  const levels = [];
+  for (let p = _PF_RISK_MIN; p <= _PF_RISK_MAX + 1e-9; p += _PF_RISK_STEP) levels.push(+p.toFixed(3));
+  const rows = new Array(levels.length);
+  let i = 0;
+  const LEVELS_PER_CHUNK = 2;
+
+  const chan = new MessageChannel();
+  const scheduleNext = () => chan.port2.postMessage(0);
+  function step() {
+    if (token !== _pfSimToken) { done(null); return; }
+    const end = Math.min(levels.length, i + LEVELS_PER_CHUNK);
+    for (; i < end; i++) rows[i] = _pfSimLevel(edge, inp, levels[i] / 100);
+    if (i < levels.length) { scheduleNext(); }
+    else { chan.port1.onmessage = null; done(_pfReduce(levels, rows, inp, edge)); }
+  }
+  chan.port1.onmessage = step;
+  step();
+}
+
+// Simulate _PF_ITER challenges at a single risk fraction r → aggregate stats.
+function _pfSimLevel(edge, inp, r) {
+  const Rs = edge.Rs, nR = Rs.length;
+  const dc = edge.dayCounts, nD = dc.length;
+  const targ1 = inp.target1 / 100, targ2 = inp.target2 / 100;
+  const ddFrac = inp.maxDD / 100, dailyFrac = inp.dailyDD / 100;
+  const trailing = inp.ddType === 'trailing';
+  const dailyOn = inp.dailyOn, twoPhase = inp.twoPhase, compound = inp.compound;
+
+  let pass = 0, blow = 0, timeout = 0, sumTrades = 0, cntTrades = 0, sumMaxDD = 0;
+  for (let it = 0; it < _PF_ITER; it++) {
+    const p1 = _pfRunPhase(Rs, nR, dc, nD, r, targ1, ddFrac, dailyFrac, trailing, dailyOn, compound);
+    sumMaxDD += p1.maxDD;
+    if (p1.result === 'pass') {
+      if (!twoPhase) { pass++; sumTrades += p1.trades; cntTrades++; continue; }
+      const p2 = _pfRunPhase(Rs, nR, dc, nD, r, targ2, ddFrac, dailyFrac, trailing, dailyOn, compound);
+      if (p2.result === 'pass') { pass++; sumTrades += p1.trades + p2.trades; cntTrades++; }
+      else if (p2.result === 'blow') blow++;
+      else timeout++;
+    } else if (p1.result === 'blow') blow++;
+    else timeout++;
+  }
+  return {
+    risk:        r * 100,
+    passProb:    (pass / _PF_ITER) * 100,
+    blowRate:    (blow / _PF_ITER) * 100,
+    timeoutRate: (timeout / _PF_ITER) * 100,
+    avgTrades:   cntTrades ? sumTrades / cntTrades : 0,
+    avgMaxDD:    (sumMaxDD / _PF_ITER) * 100,
+  };
+}
+
+// One challenge phase. Equity in fraction-of-initial-account units (starts 1.0).
+// Trades are drawn in day-sized groups so the daily-loss rule sees real
+// intraday clustering. Absorbing barriers: profit target (pass) vs max/daily
+// drawdown (blow). Hitting the trade cap first = timeout (not passed).
+function _pfRunPhase(Rs, nR, dc, nD, r, targFrac, ddFrac, dailyFrac, trailing, dailyOn, compound) {
+  let eq = 1, peak = 1, maxDD = 0, trades = 0;
+  while (trades < _PF_MAX_TRADES) {
+    const dayStart = eq;
+    const c = dc[(Math.random() * nD) | 0] || 1;
+    for (let j = 0; j < c; j++) {
+      const R = Rs[(Math.random() * nR) | 0];
+      eq += compound ? R * r * eq : R * r;
+      trades++;
+      if (eq > peak) peak = eq;
+      const dd = peak - eq;
+      if (dd > maxDD) maxDD = dd;
+      const floor = trailing ? (peak - ddFrac) : (1 - ddFrac);
+      if (eq <= floor) return { result: 'blow', trades, maxDD };
+      if (dailyOn && eq <= dayStart - dailyFrac) return { result: 'blow', trades, maxDD };
+      if (eq >= 1 + targFrac) return { result: 'pass', trades, maxDD };
+      if (trades >= _PF_MAX_TRADES) break;
+    }
+  }
+  return { result: 'timeout', trades, maxDD };
+}
+
+// Pick the "most aggressive still-safe" risk: the HIGHEST risk whose pass
+// probability stays ≥ the user's threshold. Rationale: with a positive edge and
+// no time limit, raw max-pass-probability degenerates to the smallest risk
+// (≈ risk nothing, but needs hundreds of trades). The actionable sweet spot is
+// the top of the safe band — fewer trades, faster payout, controlled blow-up.
+// Fallback: if no level clears the threshold (weak edge), surface the safest
+// available (max pass probability) and flag thresholdMet=false.
+function _pfReduce(levels, rows, inp, edge) {
+  const thr = inp.threshold != null ? inp.threshold : 90;
+  let best = rows[0];                       // max pass probability (fallback)
+  for (const row of rows) if (row.passProb > best.passProb + 1e-9) best = row;
+  let safe = null;                          // highest risk clearing the floor
+  for (const row of rows) {
+    if (row.passProb >= thr - 1e-9 && (!safe || row.risk > safe.risk)) safe = row;
+  }
+  return {
+    levels, rows, inp, edge,
+    threshold: thr,
+    thresholdMet: !!safe,
+    optimal: safe || best,
+    best,
+  };
+}
+
+function _pfRenderCards(run, inp, edge) {
+  const o = run.optimal;
+  const set = (slot, text, tone) => {
+    const el = document.querySelector(`.pf-widget [data-pf-slot="${slot}"]`);
+    if (!el) return;
+    el.textContent = text;
+    if (tone !== undefined) el.dataset.tone = tone || '';
+  };
+  const passTone = o.passProb >= 70 ? 'pos' : (o.passProb >= 40 ? 'warn' : 'neg');
+  const riskCash = Math.round(inp.balance * o.risk / 100);
+  set('risk',   o.risk.toFixed(2) + '%', passTone);
+  set('riskcash', '≈ $' + riskCash.toLocaleString('en-US') + ' / trade on $' + Math.round(inp.balance).toLocaleString('en-US'));
+  set('pass',   o.passProb.toFixed(1) + '%', passTone);
+  set('blow',   o.blowRate.toFixed(1) + '%', 'neg');
+  set('trades', o.avgTrades ? Math.round(o.avgTrades).toString() : '—');
+  set('maxdd',  '−' + o.avgMaxDD.toFixed(1) + '%', 'neg');
+  const timeoutNote = o.timeoutRate >= 5
+    ? ` · ${o.timeoutRate.toFixed(0)}% ran ${_PF_MAX_TRADES}+ trades without resolving`
+    : '';
+  const phaseNote = inp.twoPhase ? ' (both phases combined)' : '';
+  // Translate trades-to-pass into an approximate calendar duration using the
+  // pace (trades/month) — known in both real and manual edges.
+  const paceNote = (edge && edge.tpm && o.avgTrades)
+    ? ` ≈ ${(o.avgTrades / edge.tpm).toFixed(1)} months at ${edge.tpm} trades/mo.`
+    : '';
+  const thr = run.threshold;
+  const note = run.thresholdMet
+    ? `Most aggressive risk keeping pass probability ≥ ${thr}%${phaseNote}: ${o.risk.toFixed(2)}% per trade — ${o.passProb.toFixed(0)}% pass, ${o.blowRate.toFixed(0)}% blow-up.${paceNote} Risking less is safer but slower; the curve shows the full trade-off${timeoutNote}.`
+    : `No risk level reaches a ${thr}% pass rate with this edge — showing the safest available (${o.risk.toFixed(2)}%, ${o.passProb.toFixed(0)}% pass). Lower the threshold, or filter to a stronger sub-set of setups${timeoutNote}.`;
+  set('note', note);
+}
+
+function _pfRenderChart(run) {
+  const canvas = document.getElementById('pfCanvas');
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (_pfChart) { _pfChart.destroy(); _pfChart = null; }
+
+  const cG = tc('--g'), cR = tc('--r'), cGold = tc('--gold');
+  const cText = tc('--text-secondary') || tc('--t') || '#888';
+  const cGrid = tc('--border-1') || 'rgba(255,255,255,.06)';
+  const labels = run.levels.map(v => v.toFixed(1));
+  const pass = run.rows.map(r => +r.passProb.toFixed(2));
+  const blow = run.rows.map(r => +r.blowRate.toFixed(2));
+  const optIdx = run.rows.indexOf(run.optimal);
+  const thr = run.threshold != null ? run.threshold : 90;
+
+  const pointRadius = run.rows.map((_, i) => i === optIdx ? 5 : 0);
+  const pointBg = run.rows.map((_, i) => i === optIdx ? cGold : cG);
+
+  _pfChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Pass probability', data: pass, borderColor: cG, backgroundColor: 'transparent',
+          borderWidth: 2, tension: 0.25, pointRadius, pointBackgroundColor: pointBg, pointBorderColor: pointBg, order: 1 },
+        { label: 'Blow-up rate', data: blow, borderColor: cR, backgroundColor: 'transparent',
+          borderWidth: 1.5, borderDash: [4, 4], tension: 0.25, pointRadius: 0, order: 2 },
+        { label: `Target ${thr}%`, data: run.rows.map(() => thr), borderColor: cGold, backgroundColor: 'transparent',
+          borderWidth: 1, borderDash: [2, 3], tension: 0, pointRadius: 0, order: 3 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { title: { display: true, text: 'Risk % per trade', color: cText, font: { size: 10 } },
+             ticks: { color: cText, font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+             grid: { color: cGrid } },
+        y: { min: 0, max: 100, title: { display: true, text: '% of challenges', color: cText, font: { size: 10 } },
+             ticks: { color: cText, font: { size: 9 }, callback: v => v + '%' }, grid: { color: cGrid } },
+      },
+      plugins: {
+        legend: { labels: { color: cText, boxWidth: 12, font: { size: 10 } } },
+        tooltip: {
+          filter: item => !String(item.dataset.label).startsWith('Target'),
+          callbacks: {
+            title: items => 'Risk ' + items[0].label + '% / trade',
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`,
+            afterBody: items => {
+              const i = items[0].dataIndex;
+              const row = run.rows[i];
+              return `Avg trades to pass: ${row.avgTrades ? Math.round(row.avgTrades) : '—'}\nAvg max DD: −${row.avgMaxDD.toFixed(1)}%`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ══════════════════════════════════════════════════════
 // PARTIALS PLANNER — CUSTOM EXIT STRATEGY SIMULATOR
 // ══════════════════════════════════════════════════════
 
@@ -34402,6 +34954,7 @@ function renderPanels(filtered) {
   _withWidgetScale('w-expo-timeline', () => renderExpoTimeline(filtered));
   _withWidgetScale('w-expo-overtime', () => renderExpoOvertime(filtered));
   _withWidgetScale('w-montecarlo', () => runMonteCarlo(filtered));
+  _withWidgetScale('w-prop-optimizer', () => renderPropOptimizer(filtered));
 
   if (typeof updateContextStrip === 'function') updateContextStrip();
   if (appState.filters.temporal.tf.compare) tfUpdateCompareUI();
@@ -45030,8 +45583,9 @@ const CONCURRENT_POSITIONS_LAYOUT = {
   'w-expo-overtime': {x:0, y:130, w:12, h:34, minW:4, minH:22},
 };
 const OPTIMAL_RR_LAYOUT = {
-  'w-optimal-rr': {x:0, y:0, w:12, h:77, minW:4, minH:30},
-  'w-montecarlo': {x:0, y:77, w:12, h:82, minW:4, minH:80},
+  'w-optimal-rr':     {x:0, y:0,   w:12, h:77, minW:4, minH:30},
+  'w-montecarlo':     {x:0, y:77,  w:12, h:82, minW:4, minH:80},
+  'w-prop-optimizer': {x:0, y:159, w:12, h:78, minW:4, minH:56},
 };
 const PARTIAL_PLANNERS_LAYOUT = {
   'w-partial-optimizer': {x:0, y:0,   w:12, h:236, minW: 8, minH: 100},
@@ -45110,6 +45664,7 @@ const TEMPLATE_LAYOUTS = {
     'optimal-rr': {
       'w-optimal-rr':       { x: 0, y: 0,   w: 12, h: 77,  minW: 4, minH: 30 },
       'w-montecarlo':       { x: 0, y: 77,  w: 12, h: 82,  minW: 4, minH: 80 },
+      'w-prop-optimizer':   { x: 0, y: 159, w: 12, h: 78,  minW: 4, minH: 56 },
     },
     partials: {
       'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 200, minW: 8, minH: 100 },
@@ -45141,6 +45696,7 @@ const TEMPLATE_LAYOUTS = {
     'optimal-rr': {
       'w-optimal-rr':       { x: 0, y: 0,   w: 12, h: 77,  minW: 4, minH: 30 },
       'w-montecarlo':       { x: 0, y: 77,  w: 12, h: 82,  minW: 4, minH: 80 },
+      'w-prop-optimizer':   { x: 0, y: 159, w: 12, h: 78,  minW: 4, minH: 56 },
     },
     partials: {
       'w-partial-optimizer':{ x: 2, y: 0,   w: 9,  h: 196, minW: 8, minH: 100 },
@@ -45194,6 +45750,7 @@ const TEMPLATE_LAYOUTS = {
     'optimal-rr': {
       'w-optimal-rr':       { x: 0, y: 0,   w: 12, h: 77,  minW: 4, minH: 30 },
       'w-montecarlo':       { x: 0, y: 77,  w: 12, h: 82,  minW: 4, minH: 80 },
+      'w-prop-optimizer':   { x: 0, y: 159, w: 12, h: 78,  minW: 4, minH: 56 },
     },
     partials: {
       'w-partial-optimizer':{ x: 1, y: 0,   w: 10, h: 200, minW: 8, minH: 100 },
@@ -45875,7 +46432,7 @@ function _msGetWidgetIcon(id) {
     'w-hour':'bars',  'w-m15':'bars',  'w-h4':'bars',      'w-pair-session':'bars',
     'w-heatmap':'heatmap', 'w-calendar':'heatmap',
     'w-equity':'line', 'w-recovery':'line', 'w-streak-analytics':'line',
-    'w-optimal-rr':'line', 'w-montecarlo':'line',
+    'w-optimal-rr':'line', 'w-montecarlo':'line', 'w-prop-optimizer':'line',
     'w-outcome':'donut',
     'w-stats':'cells', 'w-tradelog':'cells',
     'w-selection':'mixed', 'w-monthly':'mixed', 'w-partial-optimizer':'mixed',

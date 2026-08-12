@@ -4659,6 +4659,241 @@ body.cw-col-resizing * {
 }
 
 
+/* ══════════════════════════════════════════════════════════════════
+   PROP FIRM RISK OPTIMIZER — w-prop-optimizer
+   ══════════════════════════════════════════════════════════════════ */
+.pf-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-4, 16px);
+  padding: var(--space-4, 16px);
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: auto;
+}
+.pf-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+.pf-col-inputs  { flex: 1 1 250px; max-width: 340px; }
+.pf-col-results { flex: 4 1 360px; gap: 12px; }
+/* When the card gets tight, let inputs take the full row too. */
+.pf-col-inputs:only-child, .pf-col-results:only-child { max-width: none; }
+
+/* ── Edge block: auto-filled, editable win rate / expectancy / trades ── */
+.pf-edge-block {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--surface-3, var(--bg3)) 45%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--rad-sm);
+}
+.pf-edge-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pf-edge-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.pf-edge-reset {
+  all: unset;
+  cursor: pointer;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--accent-primary);
+  padding: 2px 4px;
+  border-radius: var(--rad-sm);
+}
+.pf-edge-reset:hover { text-decoration: underline; }
+.pf-edge-reset[hidden] { display: none; }
+.pf-edge-derived {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; line-height: 1.35;
+  color: var(--text-secondary);
+}
+.pf-edge-derived b { color: var(--text-primary); font-weight: 600; }
+.pf-edge-derived b[data-tone="neg"] { color: var(--color-danger, var(--r)); }
+.pf-edge-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; line-height: 1.35;
+  color: var(--text-muted);
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+.pf-edge-status[data-tone="ok"]   { color: var(--color-success, var(--g)); }
+.pf-edge-status[data-tone="warn"] { color: var(--color-warning, var(--gold)); }
+
+/* ── Inputs (reuse mc2 token conventions) ── */
+.pf-field { display: flex; flex-direction: column; gap: 3px; }
+.pf-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pf-field label {
+  font-family: 'DM Mono', monospace;
+  font-size: var(--typo-chart-axis-size, 10px);
+  letter-spacing: .4px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.pf-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--surface-3, var(--bg3));
+  border: 1px solid var(--border-normal);
+  border-radius: var(--rad-sm);
+  transition: border-color var(--ease-fast), background var(--ease-fast);
+}
+.pf-input-wrap:focus-within {
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 6%, var(--surface-3));
+}
+.pf-input {
+  flex: 1 1 0; min-width: 0; width: 100%;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px; font-weight: 500;
+  padding: 6px 10px;
+  background: transparent; border: none;
+  color: var(--text-primary); outline: none;
+  -moz-appearance: textfield;
+}
+.pf-input::-webkit-outer-spin-button,
+.pf-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pf-select {
+  border: 1px solid var(--border-normal);
+  border-radius: var(--rad-sm);
+  background: var(--surface-3, var(--bg3));
+  cursor: pointer;
+}
+.pf-select:focus-visible { border-color: var(--accent-primary); }
+.pf-input-prefixed { padding-left: 4px; }
+.pf-prefix, .pf-suffix {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px; color: var(--text-muted);
+  padding: 0 8px; user-select: none;
+}
+.pf-prefix { border-right: 1px solid var(--border-subtle); }
+.pf-suffix { border-left: 1px solid var(--border-subtle); }
+.pf-field.is-disabled { opacity: .45; }
+.pf-field.is-disabled .pf-input { cursor: not-allowed; }
+.pf-field-note {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; line-height: 1.3;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* ── Checkboxes ── */
+.pf-checks { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.pf-check {
+  display: flex; align-items: flex-start; gap: 8px;
+  cursor: pointer; padding: 2px;
+}
+.pf-check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.pf-check-box {
+  flex: 0 0 auto;
+  width: 16px; height: 16px; margin-top: 1px;
+  display: grid; place-items: center;
+  border: 1px solid var(--border-normal);
+  border-radius: 4px;
+  color: #fff;
+  background: var(--surface-3, var(--bg3));
+  transition: background var(--ease-fast), border-color var(--ease-fast);
+}
+.pf-check-box svg { width: 12px; height: 12px; opacity: 0; transition: opacity var(--ease-fast); }
+.pf-check input:checked ~ .pf-check-box { background: var(--accent-primary); border-color: var(--accent-primary); }
+.pf-check input:checked ~ .pf-check-box svg { opacity: 1; }
+.pf-check input:focus-visible ~ .pf-check-box { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 40%, transparent); }
+.pf-check-text { display: flex; flex-direction: column; line-height: 1.2; }
+.pf-check-title { font-size: 12px; color: var(--text-secondary); }
+.pf-check-hint { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.pf-check input:checked ~ .pf-check-text .pf-check-title { color: var(--text-primary); }
+
+/* ── Run row ── */
+.pf-run-row { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 6px; }
+.pf-optimize-btn {
+  all: unset;
+  box-sizing: border-box;
+  padding: 8px 18px;
+  background: var(--accent-primary);
+  color: var(--on-accent, #fff);
+  font-weight: 600; font-size: 13px;
+  border-radius: var(--rad-sm);
+  cursor: pointer;
+  text-align: center;
+  transition: filter var(--ease-fast), transform var(--ease-fast);
+}
+.pf-optimize-btn:hover:not(:disabled) { filter: brightness(1.08); }
+.pf-optimize-btn:active:not(:disabled) { transform: translateY(1px); }
+.pf-optimize-btn:disabled, .pf-optimize-btn.is-busy { opacity: .55; cursor: default; }
+.pf-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: .3px;
+  color: var(--text-muted);
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--rad-pill, 999px);
+}
+.pf-status[data-tone="ok"]   { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 40%, transparent); }
+.pf-status[data-tone="warn"] { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 40%, transparent); }
+
+/* ── Result cards ── */
+.pf-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+.pf-card {
+  background: color-mix(in srgb, var(--surface-3, var(--bg3)) 55%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--rad-sm);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.pf-card-hero {
+  grid-column: 1 / -1;
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--surface-3, var(--bg3)));
+  border-color: color-mix(in srgb, var(--accent-primary) 35%, transparent);
+}
+.pf-card-lbl {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pf-card-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 20px; font-weight: 600;
+  color: var(--text-primary);
+}
+.pf-card-hero .pf-card-val { font-size: 28px; }
+.pf-card-val[data-tone="pos"]  { color: var(--color-success, var(--g)); }
+.pf-card-val[data-tone="warn"] { color: var(--color-warning, var(--gold)); }
+.pf-card-val[data-tone="neg"]  { color: var(--color-danger, var(--r)); }
+.pf-card-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--text-muted);
+}
+.pf-note {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; line-height: 1.4;
+  color: var(--text-secondary);
+}
+.pf-note:empty { display: none; }
+
+/* ── Chart ── */
+.pf-chart-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+.pf-chart-empty {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  padding: 20px;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px; line-height: 1.5;
+  color: var(--text-muted);
+}
+.pf-chart-empty strong { color: var(--text-secondary); }
+
+
 /* ══ BAR CHARTS ══ */
 /* .bar-list is a CSS Grid container so its child .bar-row items can use
    `grid-template-columns: subgrid` and share a single label column track —
