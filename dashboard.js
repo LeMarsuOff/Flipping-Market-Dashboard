@@ -18288,6 +18288,31 @@ function renderCustomHeatmap(def, trades) {
       );
       return rowVals.includes(rowVal) && colVals.includes(colVal);
     }),
+    // Right-click a cell → include/exclude BOTH axes as two independent single-dim
+    // filters (not a combo filter — custom heatmaps have no combo chip). Each axis
+    // resolves lazily to its native dim chip or a declared custom prop, auto-declared
+    // at the moment of intent — mirroring the custom Table's right-click path.
+    onCellContextMenu: (e, rowVal, colVal, title) => {
+      const dims = [];
+      const rowChip = _cwEnsureFilterableChipKey(def);
+      if (rowChip) dims.push({
+        chipKey: rowChip, rawKey: rowVal,
+        displayLabel: _formatHeatmapAxisLabel(rowVal, def.field, true),
+        dimLabel: def.fieldLabel || def.field,
+      });
+      const colChip = _cwEnsureFilterableChipKey({
+        field: def.field2,
+        fieldLabel: def.field2Label,
+        label: def.field2Label,
+        inferredType: '',
+      });
+      if (colChip) dims.push({
+        chipKey: colChip, rawKey: colVal,
+        displayLabel: _formatHeatmapAxisLabel(colVal, def.field2, true),
+        dimLabel: def.field2Label || def.field2,
+      });
+      if (dims.length) _showHeatmapContextMenu(dims, title, e);
+    },
     rowLabelWidth: 72,
   });
 }
@@ -36326,6 +36351,14 @@ document.addEventListener('contextmenu', e => {
   const list = row.parentElement;
   if (!list || !list.id) return;
   let chipKey = _BAR_CONTAINER_TO_CHIP[list.id];
+  // Custom (Query Widget) bar charts live in `bars-w-cust-*` containers with no
+  // hardcoded chip mapping. Resolve the chip lazily from the widget def — same
+  // path the custom Table uses — so right-click Include/Exclude routes to the
+  // native dim chip or a declared custom prop (auto-declared on first intent).
+  if (!chipKey && list.id.startsWith('bars-w-cust-')) {
+    const def = _getCustomBarChartDef(_getBarChartIdFromContainerId(list.id));
+    if (def) chipKey = _cwEnsureFilterableChipKey(def);
+  }
   if (!chipKey) return;
   // Setup widget in detail mode → resolve to the backing custom prop chip if any.
   if (list.id === 'bars-setup') chipKey = _setupDetailChipKey();
