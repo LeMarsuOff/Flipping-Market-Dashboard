@@ -18141,6 +18141,11 @@ function groupByEV(trades, keyFn, labelFn) {
         label:   labelFn ? labelFn(k) : k,
         _rawKey: rawKey,
         n:       rs.length,
+        // Effective winner count (effective R > 0) — same classification as
+        // calcStats / isWinner, so BE-TP wins and positive BE-SL count as wins.
+        // Drives the WR bar metric; the oc.* buckets below stay outcome-keyed
+        // for the split-view colour breakdown only.
+        wins:    rs.filter(r => r > 0).length,
         ev:      sum(rs) / rs.length,
         totalR:  sum(rs),
         oc: {
@@ -18237,6 +18242,7 @@ function renderCustomBars(def, trades) {
       label: k,
       _rawKey: rawKey,
       n: rs.length,
+      wins: rs.filter(r => r > 0).length,
       ev: sum(rs) / rs.length,
       totalR: sum(rs),
       oc: {
@@ -18935,7 +18941,7 @@ function renderBarsSplit(containerId, items, small, chart) {
   const useTotal = barMode === 'total';
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
-  const _wrFn    = d => d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0;
+  const _wrFn    = d => d.n > 0 ? (d.wins / d.n) * 100 : 0;
   const sorted = chart
     ? sortItems(items, chart, useTotal ? d => d.totalR : useWR ? _wrFn : useN ? d => d.n : null)
     : [...items].sort((a, b) => useTotal ? b.totalR - a.totalR : useWR ? _wrFn(b) - _wrFn(a) : useN ? b.n - a.n : b.ev - a.ev);
@@ -19003,7 +19009,7 @@ function renderBarsSplit(containerId, items, small, chart) {
     const op = barOpacityForN(d.n);
     const totalNCls = _isLowVolume(d.n) ? 'split-n bar-n-low' : 'split-n';
     const totalNStr = _isLowVolume(d.n) ? `×${d.n} ⚠` : `×${d.n}`;
-    return `<div class="${cls}" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_ocStr}" data-bar-totalr="${d.totalR.toFixed(2)}">
+    return `<div class="${cls}" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-wins="${d.wins}" data-bar-oc="${_ocStr}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="split-track">
         <div class="split-left">${losBar}</div>
@@ -19065,7 +19071,7 @@ function renderBars(containerId, data, maxAbsR, small, chart) {
   const useTotal = barMode === 'total';
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
-  const valFn    = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0) : d.ev;
+  const valFn    = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.wins / d.n) * 100 : 0) : d.ev;
   const forceAlphaSort = containerId === 'sv-bars-pair' || containerId === 'sv-bars-setup';
 
   // Apply sort — sort by current metric
@@ -19104,7 +19110,7 @@ function renderBars(containerId, data, maxAbsR, small, chart) {
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
-    return `<div class="${cls}" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_oc(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
+    return `<div class="${cls}" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-wins="${d.wins}" data-bar-oc="${_oc(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
       <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_netStr(d)}</span><span class="${nCls}">${nStr}</span></div>
@@ -19133,7 +19139,7 @@ function renderDayBars(trades) {
   const useTotal = barMode === 'total';
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
-  const valFn  = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0) : d.ev;
+  const valFn  = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.wins / d.n) * 100 : 0) : d.ev;
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
   const getColBar = (v, d) => useWR
     ? (barColorMode === 'binary'
@@ -19158,7 +19164,7 @@ function renderDayBars(trades) {
     const { rs, _oc } = groups[d];
     const ev = _dsum(rs) / rs.length;
     return {
-      label: DAY_FULL[d] || DAY_EN[d] || d, _rawKey: d, n: rs.length, ev, totalR: _dsum(rs),
+      label: DAY_FULL[d] || DAY_EN[d] || d, _rawKey: d, n: rs.length, wins: rs.filter(r => r > 0).length, ev, totalR: _dsum(rs),
       oc: {
         tp:   { r: _dsum(_oc.TP),       n: _oc.TP.length },
         betp: { r: _dsum(_oc['BE-TP']), n: _oc['BE-TP'].length },
@@ -19193,7 +19199,7 @@ function renderDayBars(trades) {
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
-    return `<div class="bar-row" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_ocD(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
+    return `<div class="bar-row" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${(d._rawKey||d.label).replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-wins="${d.wins}" data-bar-oc="${_ocD(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
       <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_dayNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
@@ -19225,7 +19231,7 @@ function renderObsBars(trades) {
     .map(o => {
       const { rs, _oc } = obsData[o];
       return {
-        label: o, n: rs.length, ev: _osum(rs)/rs.length, totalR: _osum(rs),
+        label: o, n: rs.length, wins: rs.filter(r => r > 0).length, ev: _osum(rs)/rs.length, totalR: _osum(rs),
         oc: {
           tp:   { r: _osum(_oc.TP),       n: _oc.TP.length },
           betp: { r: _osum(_oc['BE-TP']), n: _oc['BE-TP'].length },
@@ -19238,7 +19244,7 @@ function renderObsBars(trades) {
   const useTotal = barMode === 'total';
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
-  const valFn  = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0) : d.ev;
+  const valFn  = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.wins / d.n) * 100 : 0) : d.ev;
   items = sortItems(items, 'obs', useTotal ? d => d.totalR : useN ? d => d.n : null);
   if (!items.length) { container.innerHTML = '<div class="no-data">No data</div>'; return; }
   if (barView === 'split') { renderBarsSplit('bars-obs', items, false, null); return; }
@@ -19270,7 +19276,7 @@ function renderObsBars(trades) {
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
-    return `<div class="bar-row obs tip-always" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${d.label.replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_ocO(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
+    return `<div class="bar-row obs tip-always" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${d.label.replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-wins="${d.wins}" data-bar-oc="${_ocO(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
       <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_obsNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
@@ -19304,6 +19310,7 @@ function renderH4ObsBars(trades) {
     .map(([tag, { rs, _oc }]) => ({
       label:  tag,
       n:      rs.length,
+      wins:   rs.filter(r => r > 0).length,
       ev:     _h4sum(rs) / rs.length,
       totalR: _h4sum(rs),
       oc: {
@@ -19317,7 +19324,7 @@ function renderH4ObsBars(trades) {
   const useTotal = barMode === 'total';
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
-  const valFn  = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0) : d.ev;
+  const valFn  = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.wins / d.n) * 100 : 0) : d.ev;
   items = sortItems(items, 'h4obs', useTotal ? d => d.totalR : useN ? d => d.n : null);
 
   if (!items.length) {
@@ -19355,7 +19362,7 @@ function renderH4ObsBars(trades) {
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
-    return `<div class="bar-row obs tip-always" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${d.label.replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-oc="${_ocH4(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
+    return `<div class="bar-row obs tip-always" style="opacity:${op}" data-bar-label="${d.label.replace(/"/g,'&quot;')}" data-bar-rawkey="${d.label.replace(/"/g,'&quot;')}" data-bar-n="${d.n}" data-bar-wins="${d.wins}" data-bar-oc="${_ocH4(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label" title="${d.label}">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
       <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_h4NetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
@@ -21062,14 +21069,24 @@ function drawMonthly(trades) {
   const tpConfig = appState.ui.tpConfig;
   const monthly = {};
   trades.forEach(t => {
-    if(!monthly[t.month]) monthly[t.month] = { r:0, n:0, tp:0, betp:0, sl:0, besl:0, wins:0, losses:0 };
+    if(!monthly[t.month]) monthly[t.month] = { r:0, n:0, tp:0, betp:0, sl:0, besl:0, wins:0, losses:0, bes:0, grossW:0, grossL:0 };
     const d = monthly[t.month];
     const r = computeEffectiveRR(t, tpConfig);
     d.r += r; d.n++;
-    if(t.outcome==='TP')    { d.tp   += r; d.wins++; }
-    if(t.outcome==='BE-TP') { d.betp += r; d.wins++; }
-    if(t.outcome==='SL')    { d.sl   += r; d.losses++; }
-    if(t.outcome==='BE-SL') { d.besl += r; d.losses++; }
+    // Outcome-keyed R buckets — stacked mode draws these as Notion-outcome
+    // colour segments (TP / BE-TP / BE-SL / SL). Notion-pure by design.
+    if(t.outcome==='TP')    d.tp   += r;
+    if(t.outcome==='BE-TP') d.betp += r;
+    if(t.outcome==='SL')    d.sl   += r;
+    if(t.outcome==='BE-SL') d.besl += r;
+    // Win/loss/BE classification — effective-R under the active TP config
+    // (mode-dependent), same source of truth as calcStats (isWinner/isLoser).
+    // Drives the tooltip win rate + profit factor and the volume-mode win/loss
+    // stack, so they react to Optimal RR / Partial Optimizer changes instead of
+    // freezing on the journaled outcome.
+    if(isWinner(t, tpConfig))     { d.wins++;   d.grossW += r; }
+    else if(isLoser(t, tpConfig)) { d.losses++; d.grossL += Math.abs(r); }
+    else d.bes++;
   });
   const _dataMonths = Object.keys(monthly).sort();
   if(!_dataMonths.length) return;
@@ -21079,7 +21096,7 @@ function drawMonthly(trades) {
   const months = _monthlyDisplayMonths(_dataMonths);
   const N = months.length;
   if(!N) return;
-  months.forEach(m => { if(!monthly[m]) monthly[m] = { r:0, n:0, tp:0, betp:0, sl:0, besl:0, wins:0, losses:0 }; });
+  months.forEach(m => { if(!monthly[m]) monthly[m] = { r:0, n:0, tp:0, betp:0, sl:0, besl:0, wins:0, losses:0, bes:0, grossW:0, grossL:0 }; });
   // Last slot that actually has trades — overlays (3M avg / cumul) stop here so
   // they don't trail downward through empty future months in 'year' mode.
   let _lastActiveIdx = -1;
@@ -21438,8 +21455,11 @@ function drawMonthly(trades) {
     const wins = d.wins, losses = d.losses, n = d.n;
     const wr = n > 0 ? (wins/n*100) : 0;
     const ev = n > 0 ? d.r/n : 0;
-    const grossW = d.tp + d.betp;
-    const grossL = Math.abs(d.sl + d.besl);
+    // Effective-R gross win/loss (mode-dependent, matches calcStats profit
+    // factor) — not the outcome-keyed d.tp/d.betp buckets, which stay Notion-pure
+    // for the stacked colour bars.
+    const grossW = d.grossW;
+    const grossL = d.grossL;
     const pf = grossL > 0 ? grossW/grossL : 9.99;
     const mTrades = trades.filter(t=>t.month===m);
     let maxL=0, cur=0, curR=0, maxLossR=0;
@@ -22987,7 +23007,7 @@ function renderHourBars(trades) {
   const useTotal = barMode === 'total';
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
-  const valFn = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.oc.tp.n / d.n) * 100 : 0) : d.ev;
+  const valFn = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.wins / d.n) * 100 : 0) : d.ev;
   const cG = tc('--g'), cA = tc('--gold') || tc('--a'), cT = tc('--t'), cR = tc('--r');
   const getColBar = (v, d) => useWR
     ? (barColorMode === 'binary'
@@ -23010,7 +23030,7 @@ function renderHourBars(trades) {
     const totalR = _hrsum(rs);
     const label = String(hour).padStart(2,'0') + 'h';
     return {
-      label, hour, _rawKey: String(hour), n: rs.length, ev, totalR,
+      label, hour, _rawKey: String(hour), n: rs.length, wins: rs.filter(r => r > 0).length, ev, totalR,
       oc: {
         tp:   { r: _hrsum(_oc.TP),       n: _oc.TP.length },
         betp: { r: _hrsum(_oc['BE-TP']), n: _oc['BE-TP'].length },
@@ -23050,7 +23070,7 @@ function renderHourBars(trades) {
     const op = barOpacityForN(d.n);
     const nCls = _isLowVolume(d.n) ? 'bar-n bar-n-low' : 'bar-n';
     const nStr = _isLowVolume(d.n) ? ` ×${d.n} ⚠` : ` ×${d.n}`;
-    return `<div class="bar-row" style="opacity:${op}" data-bar-label="${d.label}" data-bar-rawkey="${d.hour}" data-bar-n="${d.n}" data-bar-oc="${_ocHr(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
+    return `<div class="bar-row" style="opacity:${op}" data-bar-label="${d.label}" data-bar-rawkey="${d.hour}" data-bar-n="${d.n}" data-bar-wins="${d.wins}" data-bar-oc="${_ocHr(d)}" data-bar-totalr="${d.totalR.toFixed(2)}">
       <div class="bar-label">${d.label}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div>
       <div class="bar-val" style="color:${colVal}"><span class="bar-r">${valStr}</span><span class="bar-net">${_hrNetStr(d)}</span><span class="${nCls}">${nStr}</span></div>
@@ -36158,9 +36178,14 @@ function _initTypoModeUI() {
 }
 
 // ── Bar hover tooltip (uses unified utip system) ──
-function _buildBarTipHTML(label, n, oc) {
+function _buildBarTipHTML(label, n, oc, wins) {
   const [tpN, tpR, slN, slR, betpN, betpR, beslN, beslR] = oc.split(',').map(Number);
-  const wr = n > 0 ? ((tpN + betpN) / n * 100).toFixed(0) : 0;
+  // Win Rate uses the effective winner count (effective R > 0 — passed in via
+  // data-bar-wins), matching the bar value + calcStats + isWinner. A positive
+  // BE-SL (partial banked before BE) counts as a win. Fallback to the outcome-
+  // pure TP+BE-TP count only if the attribute is missing (legacy safety).
+  const effWins = Number.isFinite(wins) ? wins : (tpN + betpN);
+  const wr = n > 0 ? (effWins / n * 100).toFixed(0) : 0;
   const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
   // Each row hides itself when its count is 0. Net TP / Net SL / Total Net
   // breakdown is shown only when BOTH sides have data AND at least one side
@@ -36228,7 +36253,8 @@ function _showBarTip(e) {
   if (!row) return;
   const oc = row.dataset.barOc;
   if (!oc) return;
-  showUtip(e, _buildBarTipHTML(row.dataset.barLabel || '—', parseInt(row.dataset.barN) || 0, oc));
+  const wins = row.dataset.barWins != null ? parseInt(row.dataset.barWins, 10) : NaN;
+  showUtip(e, _buildBarTipHTML(row.dataset.barLabel || '—', parseInt(row.dataset.barN) || 0, oc, wins));
 }
 function _hideBarTip() { hideUtip(); }
 
