@@ -3008,7 +3008,18 @@
               <div class="pf-card-val" data-pf-slot="blow">—</div>
             </div>
             <div class="pf-card">
-              <div class="pf-card-lbl">Avg trades to pass</div>
+              <div class="pf-card-lbl pf-label-row">
+                <span>Avg trades to pass</span>
+                <span class="orr-sim-mode-info pf-info" tabindex="0" role="button" aria-label="How the time estimate works">?
+                  <div class="orr-sim-mode-info-pop" role="tooltip">
+                    <div class="orr-sim-mode-info-title">Est. time to pass</div>
+                    <div class="orr-sim-mode-info-body">
+                      <p>The <strong>≈ months</strong> line below divides the average trades-to-pass by your <strong>trades/month</strong> pace. It's a rough calendar estimate: it assumes you keep trading at your average monthly volume with no breaks, and it doesn't account for attempts that blow up and restart.</p>
+                      <p>Two-phase challenges are split into <strong>P1</strong> and <strong>P2</strong>; otherwise it's a single total.</p>
+                    </div>
+                  </div>
+                </span>
+              </div>
               <div class="pf-card-val" data-pf-slot="trades">—</div>
               <div class="pf-card-sub" data-pf-slot="tradesdur">—</div>
             </div>
@@ -3265,6 +3276,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1442"></script>
+<script src="dashboard.js?v=1448"></script>
 </body>
 </html>

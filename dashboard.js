@@ -30307,6 +30307,13 @@ const _PF_RISK_MIN = 0.1;       // % per trade — sweep start
 const _PF_RISK_MAX = 3.0;       // % per trade — sweep end
 const _PF_RISK_STEP = 0.1;      // % increment
 const _PF_INPUTS_KEY = 'pf-inputs-v1';
+const _PF_MIN_SAMPLE = 40;      // below this the bootstrapped R distribution is thin/unreliable
+let _pfLoadedInputsKey = null;  // which (profile-scoped) key the fields currently reflect
+// Challenge inputs are saved per journal profile — different accounts have
+// different firm rules. Falls back to the legacy global key on read (migration).
+function _pfInputsKey() {
+  return (typeof getProfileScopedKey === 'function') ? getProfileScopedKey(_PF_INPUTS_KEY) : _PF_INPUTS_KEY;
+}
 
 // Firm presets. Values are editable — the moment a user changes any field the
 // preset select flips to "custom". Labels stay generic/recognisable rather
@@ -30344,6 +30351,12 @@ let _pfLastTrades = [];
 // current filtered dataset. Does NOT auto-run — the user clicks Optimize. ──
 function renderPropOptimizer(trades) {
   _pfBindOnce();
+  // Inputs are per-profile: if the active profile changed, reload its saved config.
+  const key = _pfInputsKey();
+  if (key !== _pfLoadedInputsKey) {
+    _pfApplyInputs(_pfLoadInputs());
+    _pfLoadedInputsKey = key;
+  }
   _pfLastTrades = trades || [];
   _pfRefreshEdge();
   _pfUpdateChartEmpty();
@@ -30397,7 +30410,15 @@ function _pfRenderEdgeStatus(edge, hasReal) {
   const el = document.getElementById('pf-edge-status');
   if (!el) return;
   let txt, tone;
-  if (!edge.manual)              { txt = `Based on your ${edge.n} real trades (full R distribution).`; tone = 'ok'; }
+  if (edge.expectancy <= 0) {
+    // Negative edge → the challenge is mathematically unwinnable at any risk.
+    txt = `⚠ Negative edge (expectancy ${edge.expectancy.toFixed(2)}R ≤ 0) — no risk level can pass. Improve the strategy or filter to a profitable subset of trades.`;
+    tone = 'neg';
+  } else if (!edge.manual && edge.n < _PF_MIN_SAMPLE) {
+    // Real edge but too few trades → the bootstrapped distribution is unreliable.
+    txt = `Based on only ${edge.n} trades — small sample, results are indicative. Add more history for a reliable read.`;
+    tone = 'warn';
+  } else if (!edge.manual)      { txt = `Based on your ${edge.n} real trades (full R distribution).`; tone = 'ok'; }
   else if (edge.source === 'custom') { txt = `Custom edge — overriding your journal (simplified model).`; tone = 'warn'; }
   else                          { txt = `No journal data — simulating a hypothetical edge.`; tone = 'warn'; }
   el.textContent = txt;
@@ -30424,6 +30445,7 @@ function _pfBindOnce() {
   if (_pfBound) return;
   _pfBound = true;
   _pfApplyInputs(_pfLoadInputs());
+  _pfLoadedInputsKey = _pfInputsKey();
 
   // Edge fields → editing any one marks the edge "touched": we stop auto-syncing
   // from the dataset and switch the sim to the parametric model from these values.
@@ -30496,14 +30518,17 @@ function _pfMarkCustom() {
 }
 
 function _pfLoadInputs() {
+  const key = _pfInputsKey();
   try {
-    const raw = JSON.parse(localStorage.getItem(_PF_INPUTS_KEY));
-    if (raw && typeof raw === 'object') return { ..._PF_DEFAULTS, ...raw };
+    let raw = localStorage.getItem(key);
+    if (raw == null && key !== _PF_INPUTS_KEY) raw = localStorage.getItem(_PF_INPUTS_KEY); // migrate legacy global config
+    const o = raw != null ? JSON.parse(raw) : null;
+    if (o && typeof o === 'object') return { ..._PF_DEFAULTS, ...o };
   } catch {}
   return { ..._PF_DEFAULTS };
 }
 function _pfSaveInputs() {
-  try { localStorage.setItem(_PF_INPUTS_KEY, JSON.stringify(_pfReadInputs())); } catch {}
+  try { localStorage.setItem(_pfInputsKey(), JSON.stringify(_pfReadInputs())); } catch {}
 }
 
 function _pfApplyInputs(o) {
@@ -30641,6 +30666,11 @@ function _pfRun() {
   _pfRefreshEdge();
   const edge = _pfEdgeCache;
   if (!edge || !edge.n) { _pfSetStatus('No edge to simulate', 'warn'); return; }
+  if (edge.expectancy <= 0) {
+    // Detail is spelled out in the edge-status line (rendered by _pfRefreshEdge).
+    _pfSetStatus('Negative edge — no risk level can pass', 'warn');
+    return;
+  }
   if (edge.manual && edge.validEdge === false) {
     _pfSetStatus('Implied avg win ≤ 0 — raise win rate or expectancy', 'warn');
     return;
