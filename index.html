@@ -8,7 +8,7 @@
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=397">
+<link rel="stylesheet" href="dashboard.css?v=398">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -2898,7 +2898,19 @@
               </div>
             </div>
             <div class="pf-field">
-              <label for="pf-in-tpm">Avg trades / month</label>
+              <div class="pf-label-row">
+                <label for="pf-in-tpm">Avg trades / month</label>
+                <span class="orr-sim-mode-info pf-info" tabindex="0" role="button" aria-label="Why trades per month matters">?
+                  <div class="orr-sim-mode-info-pop" role="tooltip">
+                    <div class="orr-sim-mode-info-title">Why trades / month matters</div>
+                    <div class="orr-sim-mode-info-body">
+                      <p>Only used to model how many trades land in the <strong>same day</strong>. It converts to trades-per-day by dividing by <strong>21 trading days/month</strong> — weekends are closed, so a month has ~21 weekdays (the standard 252 ÷ 12), not ~30.</p>
+                      <p>It changes the optimal risk <strong>only when “Enforce daily drawdown” is on</strong>: more trades per day means losses can stack up faster within a single day and hit the daily limit — so the safe risk drops.</p>
+                      <p>With the daily limit off, it only affects the estimated time to pass (≈ X months), not the risk itself.</p>
+                    </div>
+                  </div>
+                </span>
+              </div>
               <div class="pf-input-wrap"><input id="pf-in-tpm" type="number" step="1" min="1" class="pf-input"></div>
             </div>
             <div class="pf-edge-derived" id="pf-edge-derived">—</div>
@@ -2998,6 +3010,7 @@
             <div class="pf-card">
               <div class="pf-card-lbl">Avg trades to pass</div>
               <div class="pf-card-val" data-pf-slot="trades">—</div>
+              <div class="pf-card-sub" data-pf-slot="tradesdur">—</div>
             </div>
             <div class="pf-card">
               <div class="pf-card-lbl">Avg max drawdown</div>
@@ -3252,6 +3265,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1434"></script>
+<script src="dashboard.js?v=1442"></script>
 </body>
 </html>

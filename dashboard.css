@@ -4778,6 +4778,13 @@ body.cw-col-resizing * {
   color: var(--text-muted);
   margin-top: 1px;
 }
+/* Label + help "?" on one line (reuses the shared .orr-sim-mode-info tooltip). */
+.pf-label-row { display: flex; align-items: center; gap: 6px; }
+.pf-info { width: 15px; height: 15px; font-size: 9px; flex: none; }
+/* Result cards dim while a re-optimize is pending (input changed after a run). */
+.pf-widget.pf-stale .pf-cards,
+.pf-widget.pf-stale .pf-note,
+.pf-widget.pf-stale .pf-chart-wrap { opacity: .4; transition: opacity .15s ease; }
 
 /* ── Checkboxes ── */
 .pf-checks { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }

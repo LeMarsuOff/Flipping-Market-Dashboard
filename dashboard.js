@@ -30298,6 +30298,8 @@ let _pfSimToken = 0;         // cancels in-flight sweeps on re-run
 let _pfBound = false;
 let _pfEdgeCache = null;     // { Rs, dayCounts, n, wr, expectancy, avgWin, avgLoss }
 let _pfLastRun = null;       // reduced sweep result
+let _pfRerunTimer = null;    // debounced auto-rerun after an input change
+const _PF_RERUN_DEBOUNCE_MS = 600;
 
 const _PF_ITER = 2000;          // challenges simulated per risk level
 const _PF_MAX_TRADES = 800;     // per-phase safety cap → 'timeout' (not passed)
@@ -30427,29 +30429,29 @@ function _pfBindOnce() {
   // from the dataset and switch the sim to the parametric model from these values.
   ['pf-in-wr','pf-in-exp','pf-in-tpm'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('input', () => { _pfEdgeTouched = true; _pfRefreshEdge(); });
+    if (el) el.addEventListener('input', () => { _pfEdgeTouched = true; _pfRefreshEdge(); _pfInvalidateAndRerun(); });
   });
 
   // Reset to my data → drop the override, re-sync fields to the journal.
   const resetBtn = document.getElementById('pf-edge-reset');
-  if (resetBtn) resetBtn.addEventListener('click', () => { _pfEdgeTouched = false; _pfRefreshEdge(); });
+  if (resetBtn) resetBtn.addEventListener('click', () => { _pfEdgeTouched = false; _pfRefreshEdge(); _pfInvalidateAndRerun(); });
 
   // Preset select
   const sel = document.getElementById('pf-in-preset');
   if (sel) sel.addEventListener('change', () => {
     const p = _PF_PRESETS[sel.value];
-    if (p) { _pfApplyInputs({ preset: sel.value, ...p }); _pfSaveInputs(); }
+    if (p) { _pfApplyInputs({ preset: sel.value, ...p }); _pfSaveInputs(); _pfInvalidateAndRerun(); }
   });
 
   // Any manual field edit → flip preset to "custom" + persist
   const fieldIds = ['pf-in-balance','pf-in-target1','pf-in-target2','pf-in-maxdd','pf-in-dailydd'];
   fieldIds.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('input', () => { _pfMarkCustom(); _pfSaveInputs(); });
+    if (el) el.addEventListener('input', () => { _pfMarkCustom(); _pfSaveInputs(); _pfInvalidateAndRerun(); });
   });
   ['pf-in-ddtype'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('change', () => { _pfMarkCustom(); _pfSaveInputs(); });
+    if (el) el.addEventListener('change', () => { _pfMarkCustom(); _pfSaveInputs(); _pfInvalidateAndRerun(); });
   });
   ['pf-in-dailyon','pf-in-twophase','pf-in-compound'].forEach(id => {
     const el = document.getElementById(id);
@@ -30457,6 +30459,7 @@ function _pfBindOnce() {
       if (id !== 'pf-in-compound') _pfMarkCustom();
       _pfSyncDependentFields();
       _pfSaveInputs();
+      _pfInvalidateAndRerun();
     });
   });
 
@@ -30569,6 +30572,19 @@ function _pfReadDatasetEdge(trades) {
   };
 }
 
+// Spread a fractional trades-per-day mean across a 20-slot day-count population
+// so the sim's per-day grouping averages the real pace instead of snapping to a
+// single rounded integer (which made 30 vs 40 trades/mo simulate identically).
+// A day that has trades has at least 1; ≤ 1 trade/day collapses to [1].
+function _pfFractionalDayCounts(perDayF) {
+  if (!(perDayF > 1)) return [1];
+  const lo = Math.floor(perDayF), hi = lo + 1, wHi = perDayF - lo;
+  const SLOTS = 20, hiSlots = Math.round(wHi * SLOTS);
+  const out = new Array(SLOTS);
+  for (let i = 0; i < SLOTS; i++) out[i] = i < hiSlots ? hi : lo;
+  return out;
+}
+
 // Parametric fallback edge, built from the current edge fields (loss = −1R).
 // Used when the user overrides the auto-filled numbers, or when there is no
 // journal data. A 1,000-sample population lets the bootstrap engine run as-is.
@@ -30583,9 +30599,12 @@ function _pfManualEdge(source) {
   const nWin = Math.round(wr * N);
   const Rs = new Array(N);
   for (let i = 0; i < N; i++) Rs[i] = (i < nWin) ? avgWin : -avgLoss;
-  const perDay = Math.max(1, Math.round(tpm / _PF_TRADING_DAYS_PER_MONTH));
+  // Convert trades/month → trades/day (÷ trading days). Keep the mean FRACTIONAL
+  // so the daily-drawdown rule responds smoothly: 30 vs 40 trades/mo must produce
+  // a different intraday clustering, not the same rounded integer.
+  const dayCounts = _pfFractionalDayCounts(tpm / _PF_TRADING_DAYS_PER_MONTH);
   return {
-    Rs, dayCounts: [perDay], n: N,
+    Rs, dayCounts, n: N,
     wr: wr * 100, expectancy: E, avgWin, avgLoss: -avgLoss,
     manual: true, source: source || 'custom', tpm, validEdge: avgWin > 0,
   };
@@ -30598,6 +30617,18 @@ function _pfSetStatus(text, tone) {
   el.dataset.tone = tone || '';
 }
 
+// A field that feeds the sim changed after a run → the shown cards are now
+// stale. Dim them immediately (visual feedback) AND schedule a debounced
+// re-optimize so the result refreshes on its own without a manual re-click.
+// Threshold is excluded — it re-reduces live from stored rows, no re-sim needed.
+function _pfInvalidateAndRerun() {
+  if (!_pfLastRun) return;                       // nothing simulated yet to invalidate
+  document.querySelector('.pf-widget')?.classList.add('pf-stale');
+  _pfSetStatus('Edge changed — re-optimizing…', 'warn');
+  clearTimeout(_pfRerunTimer);
+  _pfRerunTimer = setTimeout(() => { _pfRun(); }, _PF_RERUN_DEBOUNCE_MS);
+}
+
 function _pfUpdateChartEmpty() {
   const empty = document.getElementById('pf-chart-empty');
   if (empty) empty.style.display = _pfLastRun ? 'none' : 'flex';
@@ -30605,6 +30636,8 @@ function _pfUpdateChartEmpty() {
 
 // ── Public entry: Optimize button ──
 function _pfRun() {
+  clearTimeout(_pfRerunTimer);                   // cancel any pending auto-rerun
+  document.querySelector('.pf-widget')?.classList.remove('pf-stale');
   _pfRefreshEdge();
   const edge = _pfEdgeCache;
   if (!edge || !edge.n) { _pfSetStatus('No edge to simulate', 'warn'); return; }
@@ -30670,14 +30703,16 @@ function _pfSimLevel(edge, inp, r) {
   const trailing = inp.ddType === 'trailing';
   const dailyOn = inp.dailyOn, twoPhase = inp.twoPhase, compound = inp.compound;
 
-  let pass = 0, blow = 0, timeout = 0, sumTrades = 0, cntTrades = 0, sumMaxDD = 0;
+  // sumTradesP1/P2 accumulate over FULL passes only, so the per-phase averages
+  // stay consistent with avgTrades (avgTradesP1 + avgTradesP2 = avgTrades).
+  let pass = 0, blow = 0, timeout = 0, sumTrades = 0, sumTradesP1 = 0, sumTradesP2 = 0, cntTrades = 0, sumMaxDD = 0;
   for (let it = 0; it < _PF_ITER; it++) {
     const p1 = _pfRunPhase(Rs, nR, dc, nD, r, targ1, ddFrac, dailyFrac, trailing, dailyOn, compound);
     sumMaxDD += p1.maxDD;
     if (p1.result === 'pass') {
-      if (!twoPhase) { pass++; sumTrades += p1.trades; cntTrades++; continue; }
+      if (!twoPhase) { pass++; sumTrades += p1.trades; sumTradesP1 += p1.trades; cntTrades++; continue; }
       const p2 = _pfRunPhase(Rs, nR, dc, nD, r, targ2, ddFrac, dailyFrac, trailing, dailyOn, compound);
-      if (p2.result === 'pass') { pass++; sumTrades += p1.trades + p2.trades; cntTrades++; }
+      if (p2.result === 'pass') { pass++; sumTrades += p1.trades + p2.trades; sumTradesP1 += p1.trades; sumTradesP2 += p2.trades; cntTrades++; }
       else if (p2.result === 'blow') blow++;
       else timeout++;
     } else if (p1.result === 'blow') blow++;
@@ -30689,6 +30724,8 @@ function _pfSimLevel(edge, inp, r) {
     blowRate:    (blow / _PF_ITER) * 100,
     timeoutRate: (timeout / _PF_ITER) * 100,
     avgTrades:   cntTrades ? sumTrades / cntTrades : 0,
+    avgTradesP1: cntTrades ? sumTradesP1 / cntTrades : 0,
+    avgTradesP2: cntTrades ? sumTradesP2 / cntTrades : 0,
     avgMaxDD:    (sumMaxDD / _PF_ITER) * 100,
   };
 }
@@ -30759,18 +30796,28 @@ function _pfRenderCards(run, inp, edge) {
   set('blow',   o.blowRate.toFixed(1) + '%', 'neg');
   set('trades', o.avgTrades ? Math.round(o.avgTrades).toString() : '—');
   set('maxdd',  '−' + o.avgMaxDD.toFixed(1) + '%', 'neg');
+  // Est. time to pass = avg trades ÷ pace (trades/month). Rough — assumes the
+  // user keeps trading at their average monthly volume with no breaks. Shows a
+  // per-phase split when the challenge is two-phase.
+  const tpm = edge && edge.tpm;
+  const fmtDur = t => {
+    const m = t / tpm;
+    return m >= 1 ? m.toFixed(1) + ' mo' : Math.max(1, Math.round(m * 4.33)) + ' wk';
+  };
+  let durText = '—';
+  if (tpm && o.avgTrades) {
+    durText = inp.twoPhase && o.avgTradesP2
+      ? `≈ ${fmtDur(o.avgTrades)} total · P1 ${fmtDur(o.avgTradesP1)} · P2 ${fmtDur(o.avgTradesP2)}`
+      : `≈ ${fmtDur(o.avgTrades)} at ${tpm}/mo`;
+  }
+  set('tradesdur', durText);
   const timeoutNote = o.timeoutRate >= 5
     ? ` · ${o.timeoutRate.toFixed(0)}% ran ${_PF_MAX_TRADES}+ trades without resolving`
     : '';
   const phaseNote = inp.twoPhase ? ' (both phases combined)' : '';
-  // Translate trades-to-pass into an approximate calendar duration using the
-  // pace (trades/month) — known in both real and manual edges.
-  const paceNote = (edge && edge.tpm && o.avgTrades)
-    ? ` ≈ ${(o.avgTrades / edge.tpm).toFixed(1)} months at ${edge.tpm} trades/mo.`
-    : '';
   const thr = run.threshold;
   const note = run.thresholdMet
-    ? `Most aggressive risk keeping pass probability ≥ ${thr}%${phaseNote}: ${o.risk.toFixed(2)}% per trade — ${o.passProb.toFixed(0)}% pass, ${o.blowRate.toFixed(0)}% blow-up.${paceNote} Risking less is safer but slower; the curve shows the full trade-off${timeoutNote}.`
+    ? `Most aggressive risk keeping pass probability ≥ ${thr}%${phaseNote}: ${o.risk.toFixed(2)}% per trade — ${o.passProb.toFixed(0)}% pass, ${o.blowRate.toFixed(0)}% blow-up. Risking less is safer but slower; the curve shows the full trade-off${timeoutNote}.`
     : `No risk level reaches a ${thr}% pass rate with this edge — showing the safest available (${o.risk.toFixed(2)}%, ${o.passProb.toFixed(0)}% pass). Lower the threshold, or filter to a stronger sub-set of setups${timeoutNote}.`;
   set('note', note);
 }
