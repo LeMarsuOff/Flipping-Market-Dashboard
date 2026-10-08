@@ -26698,6 +26698,12 @@ function _shareResolveMediaSlot(t, field) {
     return { url, orig };
   }
 
+  return { url: _shareMediaStorageUrl(t, field), orig };
+}
+
+/* Deterministic Supabase Storage URL of a trade's media slot
+   (`<notionId>_<slot>.png`). Caller guarantees `t._notionId`. */
+function _shareMediaStorageUrl(t, field) {
   const slotName = (field === 'imgH4Before')
     ? 'h4_before'
     : (field === 'imgM15')
@@ -26705,8 +26711,7 @@ function _shareResolveMediaSlot(t, field) {
       : (typeof _getCurrentHTFSource === 'function' && _getCurrentHTFSource() === 'h4')
         ? 'h4_after'
         : 'm15_after';
-  const url = `${_SUPABASE_SCREENSHOTS_BASE}/${t._notionId}_${slotName}.png`;
-  return { url, orig };
+  return `${_SUPABASE_SCREENSHOTS_BASE}/${t._notionId}_${slotName}.png`;
 }
 
 function _buildShareSnapshot(sortedTrades, tpConfig) {
@@ -27150,7 +27155,32 @@ function _buildPresetShareContext() {
   };
 
   const contentKey = _presetShareHash(JSON.stringify({ trades, dashboard, presetName }));
-  return { presetName, section, trades, stats, dashboard, contentKey };
+  return { presetName, section, trades, sourceTrades: ctxTrades, stats, dashboard, contentKey };
+}
+
+/* A slot can be empty on the live trade while its screenshot is already in
+   Storage (media cache miss after a refresh — filled on the next Sync). The
+   viewer has no Sync, so probe the deterministic Storage URL of every empty
+   slot (HEAD, public bucket) and keep the ones that exist. */
+async function _presetShareFillMissingMedia(ctx) {
+  const jobs = [];
+  ctx.sourceTrades.forEach((t, i) => {
+    if (!t || !t._notionId) return;
+    for (const f of _PRESET_SHARE_MEDIA_FIELDS) {
+      if (!ctx.trades[i][f]) jobs.push({ i, f, url: _shareMediaStorageUrl(t, f) });
+    }
+  });
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const job = jobs[next++];
+      try {
+        const r = await fetch(job.url, { method: 'HEAD', cache: 'no-store' });
+        if (r.ok) ctx.trades[job.i][job.f] = job.url;
+      } catch (_) { /* leave the slot empty */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, worker));
 }
 
 async function _createPresetShareRow(ctx) {
@@ -27158,6 +27188,7 @@ async function _createPresetShareRow(ctx) {
   const user = window._SW?.getUser?.();
   if (!sb || !user) throw new Error('You must be signed in to share.');
 
+  await _presetShareFillMissingMedia(ctx);
   const dashboard = { ...ctx.dashboard, snapshotAt: new Date().toISOString() };
   const bytes = JSON.stringify(ctx.trades).length + JSON.stringify(dashboard).length;
   if (bytes > _PRESET_SHARE_MAX_BYTES) {
@@ -27199,7 +27230,9 @@ async function _handleOpenPresetSharePopover(opts = {}) {
     _renderSharePopoverError(popEl, err?.message || err, 'retry-preset-share-create');
     return;
   }
-  const ctxKey = `preset|${ctx.contentKey}`;
+  // `m2`: snapshots with Storage-probed media (bumped so links cached before
+  // the probe existed are not reused).
+  const ctxKey = `preset|m2|${ctx.contentKey}`;
 
   const reuse = (_presetShareLast && _presetShareLast.key === ctxKey)
     ? _presetShareLast.url
