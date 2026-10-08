@@ -6807,6 +6807,112 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 35%, transparent);
 }
 
+/* ── Topbar preset Share (read-only dashboard link) ──
+   Popover reuses .wd-share-popover. Spec: docs/preset-share-feature.md */
+.topbar-share-wrap {
+  position: relative;
+}
+.topbar-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, var(--bg3));
+  border: 1px solid color-mix(in srgb, var(--gold) 38%, var(--border-normal));
+  border-radius: var(--rad-sm);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+  white-space: nowrap;
+  line-height: 1;
+}
+.topbar-share-btn:hover {
+  background: color-mix(in srgb, var(--gold) 18%, var(--bg3));
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border-normal));
+}
+.topbar-share-btn svg { width: 12px; height: 12px; display: block; }
+.topbar-share-wrap .wd-share-popover { z-index: var(--z-overlay); }
+
+/* ── Share-mode — read-only preset link (html.is-share-mode, set by the
+   head bootstrap in index.html). Hides every filter / edit / settings
+   surface; widgets, tooltips and the drilldown drawer stay.
+   Spec: docs/preset-share-feature.md §6 */
+html.is-share-mode {
+  --context-h: 0px;
+  --tabs-h: 0px;
+}
+html.is-share-mode .topbar-right,
+html.is-share-mode .data-hub-btn,
+html.is-share-mode #filter-context-strip,
+html.is-share-mode .view-tabs,
+html.is-share-mode #pcb-bar,
+html.is-share-mode #tpm-invalid-banner,
+html.is-share-mode #sidebar-toggle,
+html.is-share-mode .layout > .sidebar,
+html.is-share-mode #local-mode-badge,
+html.is-share-mode .gs-hide-btn,
+html.is-share-mode .gs-drag-handle,
+html.is-share-mode .wd-drawer-share-btn,
+html.is-share-mode .wd-drawer-pdf-btn,
+html.is-share-mode .trade-link-btn,
+html.is-share-mode .mob-preset-pill,
+html.is-share-mode .mob-preset-pill + .mob-presets-separator,
+html.is-share-mode #tpm-badge-mob,
+html.is-share-mode .mob-footer {
+  display: none !important;
+}
+/* Sidebar is display:none → main is the only grid item. */
+html.is-share-mode .layout,
+html.is-share-mode .layout.sidebar-collapsed {
+  grid-template-columns: 1fr;
+}
+.share-mode-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 7px 22px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .3px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--gold) 9%, var(--bg1));
+  border-bottom: 1px solid color-mix(in srgb, var(--gold) 30%, var(--border-normal));
+}
+.share-mode-banner .smb-eyebrow {
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--gold);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: var(--rad-sm);
+  padding: 2px 6px;
+}
+.share-mode-banner .smb-title {
+  font-family: 'Anybody', sans-serif;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.share-mode-banner .smb-sep { color: var(--text-muted); }
+.share-mode-banner .smb-spacer { flex: 1; }
+.share-mode-banner .smb-brand { color: var(--text-muted); }
+.share-mode-banner.is-expired .smb-title { color: var(--r); }
+@media (max-width: 600px) {
+  .share-mode-banner { padding: 8px 14px; }
+  .share-mode-banner .smb-sep,
+  .share-mode-banner .smb-spacer { display: none; }
+  .share-mode-banner .smb-title { flex-basis: 100%; }
+}
+html.is-share-expired .topbar-stats,
+html.is-share-expired .layout,
+html.is-share-expired #mobile-shell { display: none !important; }
+html.is-share-expired .share-mode-banner { justify-content: center; padding: 40px 22px; }
+
 /* ── Topbar "more" dropdown (settings / theme / reset) ── */
 .topbar-more-wrap {
   position: relative;

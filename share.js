@@ -658,6 +658,13 @@ async function loadShare(id) {
       return;
     }
 
+    // Preset shares (read-only dashboard) have a different trade shape —
+    // they are rendered by the dashboard itself. Spec: docs/preset-share-feature.md
+    if (data.chip_kind === 'preset') {
+      location.replace(`https://flipping-share-og.vercel.app/dash?id=${encodeURIComponent(id)}`);
+      return;
+    }
+
     renderShare(data);
   } catch (err) {
     console.error('[share] load failed', err);

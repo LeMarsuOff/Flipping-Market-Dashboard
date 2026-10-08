@@ -4,11 +4,111 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Flipping Strategy — Research Dashboard</title>
+<script>
+  // ── Share-mode bootstrap — MUST stay the first script of the page ──
+  // Read-only dashboard opened from a preset share link (docs/preset-share-feature.md §3).
+  // The public link goes through the Vercel /dash route, which inlines
+  // window.__FM_SHARE__ = { id, row } above this script. `?share=<id>` without an
+  // inlined payload is the local-dev fallback (sync XHR, so the payload is in
+  // place before anything below reads localStorage at parse time).
+  // In share-mode, localStorage + sessionStorage are swapped for in-memory
+  // stores pre-filled from the snapshot: nothing is ever written to the
+  // viewer's real storage.
+  (function () {
+    var S = window.__FM_SHARE__ || null;
+    var id = null;
+    try { id = new URLSearchParams(location.search).get('share'); } catch (e) {}
+    if (!S && id && /^[A-Za-z0-9]{4,32}$/.test(id)) {
+      S = { id: id, row: null };
+      try {
+        var K = 'sb_publishable_XYwK5z-G9Dhf1ZThUbje1g_ZW3SzeSC';
+        var x = new XMLHttpRequest();
+        x.open('GET', 'https://pjkilmmltbyugjxbvyvh.supabase.co/rest/v1/shares?id=eq.' + id
+          + '&chip_kind=eq.preset&select=id,chip_name,stats,trades,dashboard,expires_at,view_count&limit=1', false);
+        x.setRequestHeader('apikey', K);
+        x.setRequestHeader('Authorization', 'Bearer ' + K);
+        x.send();
+        var rows = x.status === 200 ? JSON.parse(x.responseText) : [];
+        S.row = (rows && rows[0]) || null;
+      } catch (e) {}
+    }
+    if (!S) return;
+    window.__FM_SHARE__ = S;
+    document.documentElement.classList.add('is-share-mode');
+    if (!S.row) document.documentElement.classList.add('is-share-expired');
+
+    function memStorage() {
+      var m = Object.create(null);
+      var api = {
+        getItem: function (k) { k = String(k); return k in m ? m[k] : null; },
+        setItem: function (k, v) { m[String(k)] = String(v); },
+        removeItem: function (k) { delete m[String(k)]; },
+        clear: function () { for (var k in m) delete m[k]; },
+        key: function (i) { var ks = Object.keys(m); return i < ks.length ? ks[i] : null; }
+      };
+      // Proxy so `localStorage[k]`, `Object.keys(localStorage)` and `.length`
+      // behave like a real Storage for the few call sites that use them.
+      return new Proxy(api, {
+        get: function (t, p) {
+          if (p === 'length') return Object.keys(m).length;
+          if (typeof p === 'string' && Object.prototype.hasOwnProperty.call(api, p)) return api[p];
+          return (typeof p === 'string' && p in m) ? m[p] : undefined;
+        },
+        set: function (t, p, v) {
+          // Monkey-patches of setItem/removeItem (the Supabase sync wrapper)
+          // are ignored on purpose: nothing may leave the in-memory store.
+          if (Object.prototype.hasOwnProperty.call(api, p)) return true;
+          m[String(p)] = String(v); return true;
+        },
+        deleteProperty: function (t, p) { delete m[String(p)]; return true; },
+        has: function (t, p) { return p in m; },
+        ownKeys: function () { return Object.keys(m); },
+        getOwnPropertyDescriptor: function (t, p) {
+          return (p in m) ? { value: m[p], writable: true, enumerable: true, configurable: true } : undefined;
+        }
+      });
+    }
+    // Per-browser "already counted" gate for the view counter, same rule as
+    // the trade-cards viewer (share_seen_<id>). The only key ever written to
+    // the real storage in share-mode.
+    var realLs = null;
+    try { realLs = window.localStorage; } catch (e) {}
+    S.markSeen = function () {
+      try {
+        var k = 'share_seen_' + S.id;
+        if (!realLs || realLs.getItem(k)) return false;
+        realLs.setItem(k, '1');
+        return true;
+      } catch (e) { return false; }
+    };
+    var ls = memStorage();
+    try {
+      Object.defineProperty(window, 'localStorage',   { value: ls,           configurable: true });
+      Object.defineProperty(window, 'sessionStorage', { value: memStorage(), configurable: true });
+    } catch (e) {}
+
+    var d = (S.row && S.row.dashboard) || {};
+    var htf = d.htfSource === 'h4' ? 'h4' : 'm15';
+    // Demo profile slot (`__demo`) — mirrors getProfileScopedKey / _htfKey.
+    function scoped(base) {
+      var m = /^(.*)_(m15|h4)$/.exec(base);
+      return m ? m[1] + '___demo_' + m[2] : base + '___demo';
+    }
+    var src = d.ls || {};
+    var k;
+    for (k in (src.global || {}))  ls.setItem(k, src.global[k]);
+    for (k in (src.htf || {}))     ls.setItem(scoped(htf === 'h4' ? k + '_h4' : k), src.htf[k]);
+    for (k in (src.profile || {})) ls.setItem(scoped(k), src.profile[k]);
+    ls.setItem('dataSource', 'demo');
+    ls.setItem('htfSource', htf);
+    ls.setItem('dashboard_section', 'global'); // only the Global Overview is shareable
+  })();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Anybody:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=398">
+<link rel="stylesheet" href="dashboard.css?v=404">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -991,6 +1091,14 @@
       <button class="htf-toggle-btn" id="htf-btn-h4" onclick="setHTFSource('h4')">H4</button>
     </div>
     <!-- ── Data source status moved to Settings → Data & Integrations (per-profile "Synced X ago") ── -->
+    <!-- ── Share the active preset as a read-only dashboard (docs/preset-share-feature.md) ── -->
+    <div class="topbar-share-wrap" id="topbar-preset-share-wrap" style="display:none">
+      <button class="topbar-share-btn" data-action="open-preset-share-popover" type="button" title="Share this dashboard view (read-only, 7 days)">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+        <span>Share</span>
+      </button>
+      <div class="wd-share-popover" id="preset-share-popover" hidden></div>
+    </div>
     <div class="tpm-badge-wrap">
       <span class="dhb-badge" id="tpm-badge" data-state="idle" data-action="toggle-tpm-dropdown" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" title="Switch TP Management mode">
         <span class="dhb-badge-text" id="tpm-badge-text">TP: Single</span>
@@ -3276,6 +3384,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1448"></script>
+<script src="dashboard.js?v=1456"></script>
 </body>
 </html>

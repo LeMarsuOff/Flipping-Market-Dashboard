@@ -585,6 +585,7 @@ const _SW = (() => {
         // Defer to DOMContentLoaded if needed so the panel/button DOM exists.
         if (!_user) {
           const _autoOpenSignIn = () => {
+            if (_isShareMode()) return;
             if (accountPanelOpen) return;
             if (!document.getElementById('account-panel')) return;
             try { toggleAccountPanel(); } catch (e) {}
@@ -3962,6 +3963,8 @@ function handleActionClick(event) {
   const actionEl = event.target.closest('[data-action]');
   if (!actionEl) return;
   const { action } = actionEl.dataset;
+  // Share-mode (read-only preset link): only display + drilldown actions.
+  if (_shareModeBlocksAction(action)) { event.preventDefault(); event.stopPropagation(); return; }
   switch (action) {
     case 'open-csv-overlay':
       // Direct file picker — skip the overlay, open OS file dialog immediately.
@@ -4625,6 +4628,8 @@ function handleActionClick(event) {
       break;
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
+    case 'open-preset-share-popover':  event.stopPropagation(); _handleOpenPresetSharePopover(); break;
+    case 'retry-preset-share-create':  event.stopPropagation(); _handleOpenPresetSharePopover({ force: true }); break;
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-day': _expoOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-cohort': _expoOpenTradeCohort(actionEl.dataset.tradeId || ''); break;
@@ -11581,6 +11586,13 @@ function setDataSource(mode) {
 
 // ── Load built-in demo dataset on startup ──
 function loadBuiltinCSV(savedState) {
+  // Share-mode: same Demo boot path, snapshot trades instead of DEMO_TRADES.
+  if (_isShareMode()) {
+    _injectTrades(_shareModeTrades(), 'Shared', savedState);
+    _csvFormat = 'flipping';
+    updateSourceUI('demo');
+    return;
+  }
   const parsed = DEMO_TRADES.map((t, _rawRowIndex) => ({
     _rawRowIndex,
     tradeId:    `demo:${_rawRowIndex}`,
@@ -26773,14 +26785,14 @@ function _renderSharePopoverLoading(popEl) {
     <div class="wd-share-popover-status">Snapshotting trade cards…</div>`;
 }
 
-function _renderSharePopoverError(popEl, message) {
+function _renderSharePopoverError(popEl, message, retryAction = 'retry-share-create') {
   popEl.innerHTML = `
     <div class="wd-share-popover-title">Couldn't create link</div>
     <div class="wd-share-popover-status is-error">${_escapeHtml(String(message || 'Unknown error'))}</div>
-    <button class="wd-share-popover-retry" data-action="retry-share-create" type="button">Retry</button>`;
+    <button class="wd-share-popover-retry" data-action="${_escapeHtml(retryAction)}" type="button">Retry</button>`;
 }
 
-function _renderSharePopoverSuccess(popEl, shareUrl, viewCount) {
+function _renderSharePopoverSuccess(popEl, shareUrl, viewCount, title = 'Shareable trade-cards link') {
   // viewCount: a number = display N views ; '…' = pending fetch ;
   // null/undefined = unknown (hide the segment).
   let vcLabel;
@@ -26789,7 +26801,7 @@ function _renderSharePopoverSuccess(popEl, shareUrl, viewCount) {
     vcLabel = (viewCount === 1) ? '1 view' : `${viewCount} views`;
   else vcLabel = '';
   popEl.innerHTML = `
-    <div class="wd-share-popover-title">Shareable trade-cards link</div>
+    <div class="wd-share-popover-title">${_escapeHtml(title)}</div>
     <div class="wd-share-popover-row">
       <div class="wd-share-popover-url" title="${_escapeHtml(shareUrl)}">${_escapeHtml(shareUrl)}</div>
       <button class="wd-share-popover-copy" data-action="copy-share-url" data-share-url="${_escapeHtml(shareUrl)}" type="button">Copy</button>
@@ -26916,14 +26928,14 @@ async function _handleOpenSharePopover(opts = {}) {
 /* Fire-and-forget refresh of the views label inside an already-rendered
    success popover. Idempotent against popover re-renders: aborts if the
    popover's URL no longer matches (user clicked away to another chip). */
-async function _refreshSharePopoverViewCount(popEl, expectedUrl) {
+async function _refreshSharePopoverViewCount(popEl, expectedUrl, title) {
   const id = _extractIdFromShareUrl(expectedUrl);
   if (!id) return;
   const vc = await _getShareViewCount(id);
   if (vc == null) return;
   const urlEl = popEl.querySelector('.wd-share-popover-url');
   if (!urlEl || urlEl.textContent !== expectedUrl) return;
-  _renderSharePopoverSuccess(popEl, expectedUrl, vc);
+  _renderSharePopoverSuccess(popEl, expectedUrl, vc, title);
 }
 
 function _copyShareUrl(actionEl) {
@@ -26947,6 +26959,433 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-action="open-share-popover"]')) return;
   pop.setAttribute('hidden', '');
 }, true);
+
+/* ─── Preset Share (read-only dashboard snapshot) ───────────────────
+   Snapshots the active section of the dashboard (trades of the active
+   preset + render config) to public.shares (chip_kind = 'preset', column
+   `dashboard`). The viewer is index.html in share-mode, served through the
+   flipping-share-og Vercel proxy (/dash). Spec: docs/preset-share-feature.md */
+
+// Kill-switch for the topbar button. When false, the button only shows with
+// localStorage.presetShareBeta = '1' (testing without exposing it to members).
+const _PRESET_SHARE_ENABLED = true;
+const _PRESET_SHARE_MAX_BYTES = 3 * 1024 * 1024;
+
+// LS allowlist (§5.2) — never a dump of localStorage. Stored under the base
+// name; the viewer rebuilds the real key with the same helper on its own
+// (demo) profile slot.
+const _PRESET_SHARE_LS_GLOBAL = [
+  'flipping_dashboard_theme', 'flipping_active_theme_meta', 'flipping_builtin_overrides',
+  'flipping_typo_mode', 'flipping_be_mode', 'flipping_bar_mode', 'flipping_bar_view',
+  'flipping_bar_color_mode', 'flipping_orr_sim_mode', 'colorblind_mode', 'warningThreshold',
+  'beRule', 'ghostMode', 'lightboxCrosshair', 'flipping_pair_session_threshold',
+  'flipping_heatmap_threshold', 'recoveryViewMode_v1', 'recoveryPercentile_v1',
+  'po-section-layout-v1', 'mc2-section-layout-v2', 'mc2-multi-tp-v1', 'htfSource',
+];
+const _PRESET_SHARE_LS_HTF     = ['gs_layout_active', 'gs_hidden_widgets', 'po_saved_partials_v1'];
+const _PRESET_SHARE_LS_PROFILE = ['flipping_custom_widgets', 'flipping_notion_properties',
+  'tradeCardFields_v1', 'screenshotOrder_v1', 'pf-inputs-v1'];
+
+// Normalized trade fields kept in the snapshot (= _STORAGE_COMPACT_KEYS minus
+// the Notion identifiers; media + extras are handled separately).
+const _PRESET_SHARE_TRADE_KEYS = [
+  'date', 'month', 'exitDate', 'pair', 'setup', 'setupDetail', 'session', 'sessionUtc', 'day',
+  'obstacles', 'h4', 'beManagement', 'outcome', 'outcomeRaw', 'r', 'rrMax', 'tp1_rr', 'tp2_rr',
+  'tp3_rr', 'direction', 'tradeType', 'badFeeling', 'invalide', 'hour', 'timeUtc1',
+];
+const _PRESET_SHARE_MEDIA_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After'];
+
+function _presetShareEnabled() {
+  if (_PRESET_SHARE_ENABLED) return true;
+  try { return localStorage.getItem('presetShareBeta') === '1'; } catch (_) { return false; }
+}
+
+function _presetShareViewerBaseUrl() {
+  return 'https://flipping-share-og.vercel.app/dash';
+}
+
+function _syncPresetShareBtn() {
+  const wrap = document.getElementById('topbar-preset-share-wrap');
+  if (!wrap) return;
+  const show = !!window._SW?.getUser?.() && _presetShareEnabled();
+  wrap.style.display = show ? '' : 'none';
+}
+
+/* Widget ids rendered in `section` (layout entries minus user-hidden ones). */
+function _presetShareSectionWidgetIds(section) {
+  const layout = (_liveSectionLayouts && _liveSectionLayouts[section]) || {};
+  return Object.keys(layout).filter(id => !_isWidgetHidden(id));
+}
+
+/* Custom widgets of the section, with the field keys they read. */
+function _presetShareSectionCustomDefs(widgetIds) {
+  const ids = new Set(widgetIds);
+  return _loadCustomWidgetDefs().filter(def => def && ids.has(def.id));
+}
+
+function _presetShareTrade(t, idx, customDefs, cardExtraKeys) {
+  const out = { tradeId: `share:${idx}` };
+  for (const k of _PRESET_SHARE_TRADE_KEYS) {
+    if (t[k] !== undefined) out[k] = t[k];
+  }
+  // Media → permanent Supabase URLs (the viewer has no media queue / Notion).
+  for (const f of _PRESET_SHARE_MEDIA_FIELDS) {
+    const m = _shareResolveMediaSlot(t, f);
+    out[f] = m.url;
+    out[f + 'Orig'] = m.orig;
+  }
+  // Extras: only the keys a visible custom widget or a visible card field
+  // reads — never the rest (free-text props can hold personal notes).
+  // Custom-widget values are baked through _cwGetFieldValue so values that
+  // only exist in the raw API/CSV cache survive in the viewer (demo mode).
+  const extras = {};
+  const src = t.extras || {};
+  for (const def of customDefs) {
+    for (const [fk, fsrc] of [[def.field, def.fieldSource || def.propertySource],
+                              [def.field2, def.field2Source || def.propertySource]]) {
+      if (!fk) continue;
+      const vk = (_CW_DIM_ALIAS[fk]?.value) || fk;
+      const top = t[vk];
+      if (top !== undefined && top !== null && !(typeof top === 'string' && top.trim() === '')) continue;
+      const v = _cwGetFieldValue(t, fk, def, fsrc);
+      if (v !== null && v !== undefined) extras[vk] = v;
+    }
+  }
+  for (const k of cardExtraKeys) {
+    if (src[k] !== undefined) extras[k] = src[k];
+  }
+  out.extras = extras;
+  return out;
+}
+
+/* JSON-safe copy of appState.ui (Sets / Maps / functions dropped). */
+function _presetShareUiState() {
+  const ui = JSON.parse(JSON.stringify(appState.ui, (k, v) =>
+    (v instanceof Set || v instanceof Map || typeof v === 'function') ? undefined : v));
+  delete ui.showRawAll;
+  delete ui.activeSection;
+  return ui;
+}
+
+/* Grouped by scope so the viewer's head bootstrap (index.html) can rebuild
+   the real key on its demo slot without knowing the allowlist:
+   global → as-is · htf → _htfKey(base) · profile → getProfileScopedKey(base). */
+function _presetShareLsSnapshot() {
+  const ls = { global: {}, htf: {}, profile: {} };
+  const read = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
+  for (const base of _PRESET_SHARE_LS_GLOBAL) {
+    const v = read(base);
+    if (v !== null) ls.global[base] = v;
+  }
+  for (const base of _PRESET_SHARE_LS_HTF) {
+    const v = read(_htfKey(base));
+    if (v !== null) ls.htf[base] = v;
+  }
+  for (const base of _PRESET_SHARE_LS_PROFILE) {
+    const v = read(getProfileScopedKey(base));
+    if (v !== null) ls.profile[base] = v;
+  }
+  return ls;
+}
+
+/* djb2 — cheap content hash used as the URL-cache key so a re-share of the
+   exact same view reuses the existing link, and any change (trades, layout,
+   theme, TP config…) produces a fresh one. */
+function _presetShareHash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+// Only the Global Overview is shareable — whatever section Max is on when
+// he clicks Share, the snapshot (layout + widgets) is the Global Overview one.
+const _PRESET_SHARE_SECTION = 'global';
+
+function _buildPresetShareContext() {
+  const section = _PRESET_SHARE_SECTION;
+  // Flush the live grid positions only when Global Overview is on screen —
+  // otherwise _liveSectionLayouts.global already holds its latest state.
+  if ((appState.ui.activeSection || 'global') === section && typeof _syncGridToLive === 'function') _syncGridToLive();
+
+  // Pre-simulation context set (preset + chips + temporal + dataset filters).
+  // The viewer re-applies rrMinFilter + TP simulation from `ui`.
+  const ctxTrades = _getContextFiltered(true);
+  if (!ctxTrades.length) throw new Error('No trades in this view — nothing to share.');
+
+  const widgetIds = _presetShareSectionWidgetIds(section);
+  const customDefs = _presetShareSectionCustomDefs(widgetIds);
+  const cardCfg = _getTradeCardFieldsConfig() || {};
+  const cardExtraKeys = Object.keys(cardCfg)
+    .filter(k => cardCfg[k] && k.startsWith('x:'))
+    .map(k => k.slice(2));
+
+  const trades = ctxTrades.map((t, i) => _presetShareTrade(t, i, customDefs, cardExtraKeys));
+
+  const st = calcStats(getFiltered()) || {};
+  const stats = {
+    trades: st.n || 0,
+    wins: st.w || 0,
+    losses: st.l || 0,
+    winrate: Number.isFinite(st.wr) ? +st.wr.toFixed(2) : 0,
+    netR: Number.isFinite(st.totalR) ? +st.totalR.toFixed(2) : 0,
+    avgR: Number.isFinite(st.ev) ? +st.ev.toFixed(3) : 0,
+    profitFactor: Number.isFinite(st.pf) ? +st.pf.toFixed(2) : null,
+  };
+
+  const presetName = getActivePresetDefinition()?.label || 'Custom view';
+  const sectionLabel = (document.querySelector(`.view-tab[data-section="${section}"]`)?.textContent || section)
+    .replace(/\s+/g, ' ').trim().replace(/^⬡\s*/, '');
+  stats.dim = sectionLabel;
+
+  const dashboard = {
+    v: 2,
+    section,
+    sectionLabel,
+    htfSource: (typeof _getCurrentHTFSource === 'function' ? _getCurrentHTFSource() : null) || 'm15',
+    presetName,
+    layout: JSON.parse(JSON.stringify((_liveSectionLayouts && _liveSectionLayouts[section]) || {})),
+    hidden: JSON.parse(JSON.stringify(_hiddenWidgets || {})),
+    ui: _presetShareUiState(),
+    ls: _presetShareLsSnapshot(),
+  };
+
+  const contentKey = _presetShareHash(JSON.stringify({ trades, dashboard, presetName }));
+  return { presetName, section, trades, stats, dashboard, contentKey };
+}
+
+async function _createPresetShareRow(ctx) {
+  const sb = window._SW?.getClient?.();
+  const user = window._SW?.getUser?.();
+  if (!sb || !user) throw new Error('You must be signed in to share.');
+
+  const dashboard = { ...ctx.dashboard, snapshotAt: new Date().toISOString() };
+  const bytes = JSON.stringify(ctx.trades).length + JSON.stringify(dashboard).length;
+  if (bytes > _PRESET_SHARE_MAX_BYTES) {
+    throw new Error(`Preset too large to share (${(bytes / 1048576).toFixed(1)} MB — max 3 MB). Narrow the preset or date range.`);
+  }
+
+  const id = _generateShareId();
+  const expiresAt = new Date(Date.now() + _SHARE_EXPIRY_DAYS * 86400000).toISOString();
+  const { error } = await sb.from('shares').insert({
+    id,
+    created_by: user.id,
+    chip_name: ctx.presetName,
+    chip_kind: 'preset',
+    stats: ctx.stats,
+    trades: ctx.trades,
+    dashboard,
+    expires_at: expiresAt,
+  });
+  if (error) throw error;
+  return { id, expiresAt };
+}
+
+const _PRESET_SHARE_POPOVER_TITLE = 'Shareable dashboard link';
+let _presetShareLast = null; // { key, url } — this session's last created link
+
+async function _handleOpenPresetSharePopover(opts = {}) {
+  const popEl = document.getElementById('preset-share-popover');
+  if (!popEl) return;
+  if (!opts.force && !popEl.hasAttribute('hidden')) {
+    popEl.setAttribute('hidden', '');
+    return;
+  }
+  popEl.removeAttribute('hidden');
+
+  let ctx;
+  try {
+    ctx = _buildPresetShareContext();
+  } catch (err) {
+    _renderSharePopoverError(popEl, err?.message || err, 'retry-preset-share-create');
+    return;
+  }
+  const ctxKey = `preset|${ctx.contentKey}`;
+
+  const reuse = (_presetShareLast && _presetShareLast.key === ctxKey)
+    ? _presetShareLast.url
+    : _getCachedShareUrl(ctxKey);
+  if (reuse) {
+    _presetShareLast = { key: ctxKey, url: reuse };
+    _renderSharePopoverSuccess(popEl, reuse, '…', _PRESET_SHARE_POPOVER_TITLE);
+    _refreshSharePopoverViewCount(popEl, reuse, _PRESET_SHARE_POPOVER_TITLE);
+    return;
+  }
+
+  popEl.innerHTML = `
+    <div class="wd-share-popover-title">Creating shareable link</div>
+    <div class="wd-share-popover-status">Snapshotting ${ctx.trades.length} trades…</div>`;
+  try {
+    const { id, expiresAt } = await _createPresetShareRow(ctx);
+    const url = `${_presetShareViewerBaseUrl()}?id=${id}`;
+    _presetShareLast = { key: ctxKey, url };
+    _putCachedShareUrl(ctxKey, url, expiresAt);
+    _renderSharePopoverSuccess(popEl, url, 0, _PRESET_SHARE_POPOVER_TITLE);
+  } catch (err) {
+    console.error('[preset-share] create failed', err);
+    _renderSharePopoverError(popEl, err?.message || err?.error_description || 'Network error', 'retry-preset-share-create');
+  }
+}
+
+// Outside-click closer for the topbar preset-share popover.
+document.addEventListener('click', (e) => {
+  const pop = document.querySelector('#preset-share-popover:not([hidden])');
+  if (!pop) return;
+  if (pop.contains(e.target)) return;
+  if (e.target.closest('[data-action="open-preset-share-popover"]')) return;
+  pop.setAttribute('hidden', '');
+}, true);
+
+/* ─── Share-mode (viewer side of Preset Share) ──────────────────────
+   Active when index.html's head bootstrap found a share payload
+   (window.__FM_SHARE__). The dashboard boots through the Demo path on an
+   in-memory localStorage pre-filled from the snapshot; this block swaps the
+   demo trades for the snapshot ones, restores the frozen render state and
+   locks every filter-mutating interaction. Spec: docs/preset-share-feature.md §6 */
+
+function _isShareMode() {
+  return !!window.__FM_SHARE__;
+}
+
+function _shareRow() {
+  return (window.__FM_SHARE__ && window.__FM_SHARE__.row) || null;
+}
+
+function _shareModeTrades() {
+  const row = _shareRow();
+  const rows = (row && Array.isArray(row.trades)) ? row.trades : [];
+  // No _rawRowIndex on purpose: _getRawForTrade would otherwise resolve the
+  // demo raw rows (DEMO_TRADES[i]) for these trades.
+  return rows.map(t => ({
+    ...t,
+    obstacles:    Array.isArray(t.obstacles) ? t.obstacles : [],
+    h4:           Array.isArray(t.h4) ? t.h4 : [],
+    beManagement: Array.isArray(t.beManagement) ? t.beManagement : [],
+    tradeType:    Array.isArray(t.tradeType) ? t.tradeType : [],
+    extras:       (t.extras && typeof t.extras === 'object') ? t.extras : {},
+    badFeeling:   !!t.badFeeling,
+    invalide:     !!t.invalide,
+    notionUrl:    '',
+  }));
+}
+
+// data-actions that only change how the frozen data is displayed, or open
+// the drilldown drawer / lightbox. Everything else is blocked in share-mode
+// (filters, presets, sections, edit, settings, exports, Notion…).
+const _SHARE_MODE_ALLOWED_ACTIONS = new Set([
+  // display toggles / sorts / tabs
+  'toggle-equity-mode', 'toggle-drawdown', 'toggle-cumul-markers', 'toggle-win-rate',
+  'clear-equity-selection', 'set-monthly-mode', 'set-monthly-period', 'toggle-monthly-curve',
+  'toggle-setup-detail', 'set-bar-sort', 'set-hour-sort', 'set-sort', 'cycle-sort-col',
+  'set-table-sort', 'set-bar-view', 'set-bar-mode', 'set-table-bars-mode', 'set-table-month-split',
+  'set-streak-tab', 'set-cal-mode', 'set-cal-month-sort',
+  'set-heatmap-metric', 'set-pair-session-metric', 'pcb-switch-period',
+  'set-recovery-view', 'set-recovery-pct', 'toggle-recovery-occ', 'toggle-recovery-section',
+  'expo-set-mode', 'expo-set-period', 'expo-step', 'expo-set-overmode', 'expo-toggle-empty',
+  'run-monte-carlo', 'run-prop-optimizer',
+  // drilldown drawer + lightbox
+  'open-custom-row-drawer', 'open-streak-timeline-drawer', 'focus-streak-trade',
+  'open-tradelog-drawer', 'recovery-hist-bar', 'cal-open-day', 'expo-open-day',
+  'expo-open-cohort', 'expo-open-pair', 'expo-open-conc', 'expo-open-wr',
+  'close-widget-drawer', 'toggle-wd-fields', 'wd-field-toggle',
+  'open-img-lightbox', 'lightbox-nav-trade',
+]);
+
+function _shareModeBlocksAction(action) {
+  return _isShareMode() && !_SHARE_MODE_ALLOWED_ACTIONS.has(action);
+}
+
+if (_isShareMode()) {
+  // Right-click Include/Exclude menus (bars, heatmaps, PO fields) — swallow
+  // the event before any app listener sees it. The native browser menu stays.
+  window.addEventListener('contextmenu', (e) => { e.stopPropagation(); }, true);
+}
+
+function _shareModeRenderBanner() {
+  const row = _shareRow();
+  const d = (row && row.dashboard) || {};
+  const st = (row && row.stats) || {};
+  let el = document.getElementById('share-mode-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'share-mode-banner';
+    el.className = 'share-mode-banner';
+    document.body.prepend(el);
+  }
+  if (!row) {
+    el.classList.add('is-expired');
+    el.innerHTML = `<span class="smb-title">This link has expired or doesn't exist.</span>`;
+    return;
+  }
+  const days = Math.max(0, Math.ceil((new Date(row.expires_at).getTime() - Date.now()) / 86400000));
+  const snap = d.snapshotAt ? new Date(d.snapshotAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  el.innerHTML = `
+    <span class="smb-eyebrow">Shared preset</span>
+    <span class="smb-title">${_escapeHtml(row.chip_name || d.presetName || 'Dashboard')}</span>
+    <span class="smb-sep">·</span>
+    <span>Global Overview</span>
+    <span class="smb-sep">·</span>
+    <span>${Number(st.trades) || 0} trades</span>
+    ${snap ? `<span class="smb-sep">·</span><span>snapshot ${_escapeHtml(snap)}</span>` : ''}
+    <span class="smb-sep">·</span>
+    <span>expires in ${days}d</span>
+    <span class="smb-spacer"></span>
+    <span class="smb-brand">Flipping Research · read-only</span>`;
+}
+
+function _shareModeBumpViewCount() {
+  const id = window.__FM_SHARE__?.id;
+  if (!id || !_shareRow()) return;
+  if (typeof window.__FM_SHARE__.markSeen === 'function' && !window.__FM_SHARE__.markSeen()) return;
+  try {
+    fetch(`${_SB_URL}/rest/v1/rpc/increment_share_view`, {
+      method: 'POST',
+      headers: { apikey: _SB_KEY, Authorization: `Bearer ${_SB_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_share_id: id }),
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+/* Restore the frozen render state on top of the booted Demo path:
+   UI state (TP config, BE mode, RR filter…), exact live layout of the
+   section, hidden widgets. Waits for GridStack (init is deferred). */
+function _shareModeApply() {
+  const row = _shareRow();
+  const d = (row && row.dashboard) || {};
+  const section = _PRESET_SHARE_SECTION; // Global Overview only, whatever the payload says
+
+  // No preset in the viewer: the snapshot trades are already the preset set.
+  appState.presets.activeId = null;
+  const ui = (d.ui && typeof d.ui === 'object') ? d.ui : {};
+  for (const [k, v] of Object.entries(ui)) {
+    if (k === 'activeSection' || k === 'showRawAll') continue;
+    appState.ui[k] = (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : v;
+  }
+
+  if (d.hidden && typeof d.hidden === 'object') _hiddenWidgets = { ...d.hidden };
+  if (d.layout && typeof d.layout === 'object' && Object.keys(d.layout).length) {
+    _liveSectionLayouts[section] = { ...d.layout };
+  }
+  appState.ui.activeSection = section;
+  if (_grid) {
+    _grid.setStatic(true);
+    _applySectionFilter(section, { skipSync: true });
+  }
+  invalidateFilterCache();
+  render();
+  requestAnimationFrame(() => { try { _redrawAll(); } catch (_) {} });
+}
+
+function _shareModeScheduleApply() {
+  _shareModeRenderBanner();
+  _shareModeBumpViewCount();
+  let tries = 0;
+  const tick = () => {
+    if (_gsReady && _grid) { _shareModeApply(); return; }
+    if (++tries > 100) { _shareModeApply(); return; }
+    setTimeout(tick, 50);
+  };
+  tick();
+}
 
 // Same outside-click closer for the "Card fields" popover. Clicks inside (on a
 // checkbox) keep it open so the user can toggle several fields in a row.
@@ -31414,6 +31853,7 @@ window._orrClearBeMgmt             = _orrClearBeMgmt;
 // ── RR Min Filter (bubble click → apply directly, no modal) ──
 
 function _rrFilterBubbleClick(lv, _label) {
+  if (_isShareMode()) return;
   const wasActive = appState.ui.rrMinFilter === lv;
   const activating = !wasActive;
   appState.ui.rrMinFilter = wasActive ? null : lv;
@@ -37863,6 +38303,7 @@ function _renderAccountPanelAuthState() {
   // have a one-click path back to the auth panel after dismissing it.
   const signinBtn = document.getElementById('topbar-signin-btn');
   if (signinBtn) signinBtn.style.display = user ? 'none' : 'inline-flex';
+  try { _syncPresetShareBtn(); } catch (_) { /* boot-order TDZ guard */ }
   _syncJournalProfileUI();
 }
 
@@ -43621,6 +44062,8 @@ window.addEventListener('load', () => {
   // renderStaticDashboardChrome so #tpm-active-preset-topbar-btn exists.
   try { _ppSyncActivePresetBadge(); } catch (e) {}
 
+  if (_isShareMode()) _shareModeScheduleApply();
+
   window.addEventListener('resize', _debounce(() => {
     if (!_gsReady) return;
     const filtered = getFiltered();
@@ -48015,6 +48458,7 @@ function initShareGridstack() {
 
 // ── Toggle Edit Mode ──
 function toggleEditMode() {
+  if (_isShareMode()) return; // read-only preset share
   _editMode = !_editMode;
   const btns    = document.querySelectorAll('.layout-edit-btn');
   const toolbar = document.getElementById('layout-toolbar');
