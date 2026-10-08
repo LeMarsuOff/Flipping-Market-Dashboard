@@ -832,3 +832,11 @@ Three sub-decisions, each cleared with Max:
 **Rationale:** Raw Notion PNGs pushed the bucket past the 1 GB free quota (1.07 GB). Lossless WebP is pixel-identical and ~5x smaller (→ 193 MB); lossy JPEG was larger than PNG on chart screenshots. The path stays `.png` because the dashboard rebuilds screenshot URLs deterministically (`_SCREENSHOT_URL_ID_RX`, `_SUPABASE_SCREENSHOTS_BASE` recovery) and URLs are frozen in localStorage, `notion_media_cache` and share snapshots — renaming would break all of them. Browsers, dom-to-image and html2canvas sniff the real format, verified live.
 
 **Consequence:** never infer the image format from the object extension; "Save image as" yields a WebP. Pre-migration originals backed up locally (`~/Backups/supabase-notion-screenshots-2026-10-06/`).
+
+### 2026-10-09 — Preset Share viewer = the dashboard itself in share-mode (not a standalone page)
+
+**Decision:** The read-only preset link renders `index.html` + `dashboard.js` (served by the `flipping-share-og` Vercel `/dash` route with the snapshot inlined as `window.__FM_SHARE__`), instead of a standalone viewer like `share.html`. A head bootstrap swaps `localStorage`/`sessionStorage` for pre-filled in-memory stores; the dashboard boots its Demo path on the snapshot trades, forces Global Overview, and only allows display + drilldown `data-action`s (allowlist). This reverses invariant §2.2 of `docs/share-link-feature.md` for preset shares.
+
+**Rationale:** Re-implementing ~18 widgets in a standalone viewer is not viable (`dashboard.js` ≈ 44k lines). The "don't leak business code" argument doesn't hold — `dashboard.js` is already public on GitHub Pages. What must be protected is data: the snapshot holds only the preset's trades (whitelisted normalized fields, no Notion ids/URLs, extras limited to keys a visible widget/card field reads) and an allowlist of LS keys. Inlining via Vercel keeps every parse-time LS read synchronous and leaves the normal boot path untouched.
+
+**Consequence:** Any new LS key a Global Overview widget needs must be added to `_PRESET_SHARE_LS_*` or it renders with defaults in shares. Any new `data-action` is blocked in share-mode unless added to `_SHARE_MODE_ALLOWED_ACTIONS`. Spec: `docs/preset-share-feature.md`.
