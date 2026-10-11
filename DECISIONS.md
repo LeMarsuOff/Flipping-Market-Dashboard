@@ -848,3 +848,12 @@ Three sub-decisions, each cleared with Max:
 **Rationale:** The 3 legacy slots are SMC-specific (H4 Before / M15 Before / M15 After) and their auto-detection relies on those keywords; other strategies' screenshots have arbitrary names, so explicit mapping is the only reliable source. A single descriptor table keeps the ~50 slot-aware sites (cache, media queue, lightbox, renders, PDF, shares, CSV) consistent and makes a 7th slot a one-line change. `overrideOnly` keeps 3-screenshot journals unaffected: unmapped extras are excluded from the coverage ring and render in a neutral "Available slots" group instead of "Missing".
 
 **Consequence:** Any new code path that enumerates screenshot fields must include `_EXTRA_SHOT_SLOTS` / `_EXTRA_SHOT_FIELDS`. The backend `media-sync` whitelist (`VALID_SLOTS`) must list every slot the front sends — it silently drops unknown slots (that is how `h4_after` went unmigrated until 2026-10-12). No LS key or schema migration: new fields are additive and the compact cache format is keyed.
+
+### 2026-10-12 — Trade-card order + colours in a separate per-profile key (`tradeCardLayout_v1`)
+
+**Decision:** Body-line order and per-field value colours of the drawer trade cards live in a new per-profile key `tradeCardLayout_v1` = `{ order: [fieldKey…], colors: { fieldKey: '#rrggbb' } }`, alongside (not inside) the sparse visibility map `tradeCardFields_v1`. Only body lines are orderable; the header (pair, date, R, screenshots, direction, outcome) stays fixed. Keys absent from `order` follow in default order (core, then Notion columns by label); reordering a drawer subset keeps absent columns in their saved slots.
+
+**Rationale:** `tradeCardFields_v1` is read as a flat `{key: bool}` map (incl. Preset Share's `x:` extraction), so mixing structured data into it would break readers. Every synced LS write is a Supabase upsert, so drag/colour-picker changes are previewed in memory and persisted only on drop / picker close.
+
+**Consequence:** Key is in `_SYNC_KEY_PREFIXES`, `_PRESET_SHARE_LS_PROFILE` and the profile-switch cache reset. PDF export and `share.js` cards do not honour it yet (ROADMAP TODO).
+

@@ -319,6 +319,9 @@ const _SYNC_KEY_PREFIXES = [
   // toggle). Synced so the chosen set of visible props follows the profile
   // across devices, and is identical for every preset (profile-level pref).
   'tradeCardFields_v1_',
+  // Per-profile trade-card body order + per-field value colours (same popover,
+  // drag ⋮⋮ / swatch). Synced for the same reason as the visibility map.
+  'tradeCardLayout_v1_',
   'outcomeValueMapping_v1_',
   'flipping_notion_properties_',
   'flipping_custom_widgets_',
@@ -2435,6 +2438,20 @@ const _EXTRA_SHOT_SLOTS = [4, 5, 6].map(n => ({
 }));
 const _EXTRA_SHOT_FIELDS = _EXTRA_SHOT_SLOTS.flatMap(s => [s.field, s.orig]);
 function _escShotAttr(v) { return String(v || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+// Number of screenshot buttons a trade renders (3 legacy slots + TV Image 4–6).
+function _tradeShotCount(t) {
+  if (!t) return 0;
+  return ['imgH4Before', 'imgM15', 'imgM15After', ..._EXTRA_SHOT_SLOTS.map(s => s.field)]
+    .filter(f => String(t[f] || '').trim()).length;
+}
+// Selection + Trade Log tables are table-layout:fixed, so the screenshot
+// column needs an explicit width for every camera to sit on one line. The
+// CSS sizes it from --media-n (widest row's button count, min 3 = legacy).
+function _fitTableMediaCol(tableEl, trades) {
+  if (!tableEl) return;
+  const n = Math.max(3, ...(trades || []).map(_tradeShotCount));
+  tableEl.style.setProperty('--media-n', String(n));
+}
 // data-trade-shotN(-orig) attributes carried by every 📷 button, so the
 // lightbox can rebuild all slots of a trade from whichever button opened it.
 function _extraShotDataAttrs(t) {
@@ -4646,6 +4663,7 @@ function handleActionClick(event) {
       event.stopPropagation(); event.preventDefault();
       _wdHandleFieldToggle(actionEl);
       break;
+    case 'wd-field-color-reset': event.stopPropagation(); _wdHandleFieldColorReset(actionEl); break;
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'open-preset-share-popover':  event.stopPropagation(); _handleOpenPresetSharePopover(); break;
@@ -10850,6 +10868,7 @@ function _reloadProfileScopedState() {
   // Same for the trade-card field-visibility cache — per-profile via
   // getProfileScopedKey(TRADE_CARD_FIELDS_LS_KEY).
   _tradeCardFieldsCache = null;
+  _tradeCardLayoutCache = null;
   // ── 1. Reset + reload all preset in-memory state for the new slot ──
   Object.keys(presetOverrides).forEach(k => delete presetOverrides[k]);
   // Reset PRESETS to defaults first so that if the new slot has no saved
@@ -16873,6 +16892,85 @@ function _wdFieldVisible(key) {
   return !!_WD_FIELD_DEFAULTS[key]; // dynamic columns (x:*) → undefined → false
 }
 
+// ── Trade-card body layout (per profile) ─────────────────────────────────────
+// Display order + per-field value colour of the card BODY lines (Setup down to
+// the dynamic Notion props). The header (pair, date, R, screenshots, direction,
+// outcome) stays fixed. Stored per profile + synced via the tradeCardLayout_v1_
+// prefix, like the visibility map above. Shape:
+//   { order: [fieldKey…], colors: { fieldKey: '#rrggbb' } }
+// Keys absent from `order` (new Notion columns, never-reordered fields) follow
+// the saved ones in default order, so an empty object === legacy rendering.
+const TRADE_CARD_LAYOUT_LS_KEY = 'tradeCardLayout_v1';
+const _WD_HEADER_FIELD_KEYS = ['direction', 'date'];
+// Legacy card render order (Setup above Session — differs from the specs list).
+const _WD_BODY_FIELD_KEYS = ['setup', 'sess', 'rrmax', 'tphits', 'h4', 'm15'];
+let _tradeCardLayoutCache = null;
+function _wdSanitizeColor(c) {
+  return (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ? c.toLowerCase() : '';
+}
+function _getTradeCardLayout() {
+  if (_tradeCardLayoutCache) return _tradeCardLayoutCache;
+  let parsed = null;
+  try {
+    const raw = (typeof getProfileScopedKey === 'function')
+      ? localStorage.getItem(getProfileScopedKey(TRADE_CARD_LAYOUT_LS_KEY))
+      : null;
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch (e) { parsed = null; }
+  const order = (parsed && Array.isArray(parsed.order))
+    ? [...new Set(parsed.order.filter(k => typeof k === 'string' && k))]
+    : [];
+  const colors = {};
+  if (parsed && parsed.colors && typeof parsed.colors === 'object') {
+    for (const [k, v] of Object.entries(parsed.colors)) {
+      const c = _wdSanitizeColor(v);
+      if (c) colors[k] = c;
+    }
+  }
+  _tradeCardLayoutCache = { order, colors };
+  return _tradeCardLayoutCache;
+}
+// `persist: false` updates the in-memory layout only (live colour-picker
+// preview) — every localStorage write of a synced key is a Supabase upsert.
+function _setTradeCardLayout(layout, persist = true) {
+  _tradeCardLayoutCache = {
+    order: Array.isArray(layout && layout.order) ? layout.order : [],
+    colors: (layout && layout.colors && typeof layout.colors === 'object') ? layout.colors : {},
+  };
+  if (!persist) return;
+  try {
+    localStorage.setItem(getProfileScopedKey(TRADE_CARD_LAYOUT_LS_KEY), JSON.stringify(_tradeCardLayoutCache));
+  } catch (e) {}
+}
+function _wdFieldColor(key) {
+  return _wdSanitizeColor(_getTradeCardLayout().colors[key]);
+}
+// Sort the available body keys by the saved order; unsaved keys keep their
+// incoming (default) order after the saved ones.
+function _wdOrderBodyKeys(available) {
+  const avail = new Set(available);
+  const out = [];
+  for (const k of _getTradeCardLayout().order) if (avail.has(k)) { out.push(k); avail.delete(k); }
+  for (const k of available) if (avail.has(k)) { out.push(k); avail.delete(k); }
+  return out;
+}
+// Body keys offered for a set of trades, default order: core fields, then the
+// dynamic Notion columns sorted by label (same basis as the popover).
+function _wdBodyKeysFor(dynDefs) {
+  return _wdOrderBodyKeys([..._WD_BODY_FIELD_KEYS, ...dynDefs.map(d => 'x:' + d.key)]);
+}
+// Persist a new order for the keys shown in the popover. Saved keys that are
+// not in this drawer (Notion columns absent from this trade subset) keep their
+// slot; the shown keys refill their own slots in the new sequence.
+function _wdSaveBodyOrder(shownKeys) {
+  const layout = _getTradeCardLayout();
+  const shown = new Set(shownKeys);
+  let i = 0;
+  const merged = layout.order.map(k => (shown.has(k) ? shownKeys[i++] : k));
+  while (i < shownKeys.length) merged.push(shownKeys[i++]);
+  _setTradeCardLayout({ ...layout, order: merged });
+}
+
 // Raw Notion column names already surfaced by the 8 core styled fields (+ the
 // identity anchors and screenshot/url slots), so they are NOT offered again as
 // generic "other property" toggles. Resolved from the user's live mapping
@@ -20316,6 +20414,7 @@ function updateSelectionWidget(sel) {
     // Single day — no separator; highlight the specific clicked trade if any
     tbody.innerHTML = trades.map(t => _selTradeRow(t, _ht && t === _ht)).join('');
   }
+  _fitTableMediaCol(tbody.closest('table'), trades);
 
   // Pulse the card border to signal update
   if (card) {
@@ -22084,6 +22183,7 @@ function renderTable(trades) {
     }
     return sep + createTradeTableRow(t);
   }).join('');
+  _fitTableMediaCol(tbody.closest('table'), sorted);
 }
 
 // ══════════════════════════════════════════════════════
@@ -26024,6 +26124,10 @@ function _wdTradeCard(t) {
     ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(x => [x.step, _wdBtn(_escShotAttr(t[x.field]), x.step, '📷', _getTradeMediaStepLabel(x.step))])),
   };
   const imgBtn = _getScreenshotStepOrder().map(s => _wdByStep[s]).filter(Boolean).join('');
+  // 4+ screenshots (TV Image 4–6) don't fit beside the R value in the 340px
+  // drawer: they move to their own full-width row under the header, all on
+  // one line. 1–3 keep the classic spot next to the R.
+  const _wdShotsOwnRow = _tradeShotCount(t) >= 4;
 
   // Notion page button
   const notionUrl = (t.notionUrl || '').trim();
@@ -26036,30 +26140,32 @@ function _wdTradeCard(t) {
   // Optional per-card fields honour the per-profile "Card fields" visibility
   // config (_wdFieldVisible). Pair / R / Outcome below stay unconditional —
   // they are the card's identity anchors and are never toggleable.
+  // Body lines also take the user's value colour (_wdFieldColor), if any.
+  const _colStyle = (key) => { const c = _wdFieldColor(key); return c ? ` style="color:${c}"` : ''; };
 
   // H4 obstacles
   const h4Arr = Array.isArray(t.h4) ? t.h4 : (t.h4 ? [t.h4] : []);
   const h4Html = (h4Arr.length && _wdFieldVisible('h4'))
     ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">Obstacles H4 :</span><span class="wd-trade-meta-value">${[...h4Arr].sort().join(' · ')}</span></div>`
+         <span class="wd-trade-meta-title">Obstacles H4 :</span><span class="wd-trade-meta-value"${_colStyle('h4')}>${[...h4Arr].sort().join(' · ')}</span></div>`
     : '';
 
   // M15 obstacles
   const obsArr = Array.isArray(t.obstacles) ? t.obstacles : (t.obstacles ? [t.obstacles] : []);
   const obsHtml = (obsArr.length && _wdFieldVisible('m15'))
     ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">Obstacles M15 :</span><span class="wd-trade-meta-value">${[...obsArr].sort().join(' · ')}</span></div>`
+         <span class="wd-trade-meta-title">Obstacles M15 :</span><span class="wd-trade-meta-value"${_colStyle('m15')}>${[...obsArr].sort().join(' · ')}</span></div>`
     : '';
 
   // Session + hour line
   const sessionHourHtml = ((t.session||t.hour!=null) && _wdFieldVisible('sess'))
-    ? `<div class="wd-trade-session-hour wd-trade-meta-line-full">${t.session?`<span>${t.session}</span>`:''}${t.hour!=null?`<span>${String(t.hour).padStart(2,'0')}:00</span>`:''}</div>`
+    ? `<div class="wd-trade-session-hour wd-trade-meta-line-full"${_colStyle('sess')}>${t.session?`<span>${t.session}</span>`:''}${t.hour!=null?`<span>${String(t.hour).padStart(2,'0')}:00</span>`:''}</div>`
     : '';
 
   // RR Max line — always shown when the trade has a finite rrMax, regardless of TP mode
   const rrMaxHtml = (typeof t.rrMax === 'number' && Number.isFinite(t.rrMax) && _wdFieldVisible('rrmax'))
     ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">RR Max :</span><span class="wd-trade-meta-value">${t.rrMax.toFixed(1)}R</span></div>`
+         <span class="wd-trade-meta-title">RR Max :</span><span class="wd-trade-meta-value"${_colStyle('rrmax')}>${t.rrMax.toFixed(1)}R</span></div>`
     : '';
 
   // TP hits line — shown in Multi / Personalised modes only.
@@ -26090,7 +26196,7 @@ function _wdTradeCard(t) {
       .map(s => `${s.label}: ${s.val.toFixed(1)}R`);
     if (!parts.length) return '';
     return `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-              <span class="wd-trade-meta-title">TP hits :</span><span class="wd-trade-meta-value">${parts.join(' · ')}</span></div>`;
+              <span class="wd-trade-meta-title">TP hits :</span><span class="wd-trade-meta-value"${_colStyle('tphits')}>${parts.join(' · ')}</span></div>`;
   })();
 
   // Direction line — Achat = blue, Vente = rose
@@ -26102,7 +26208,7 @@ function _wdTradeCard(t) {
   // Setup line: prefer setupDetail over setup
   const setupLine = t.setupDetail || t.setup || '—';
   const setupHtml = _wdFieldVisible('setup')
-    ? `<div class="wd-trade-setup wd-trade-meta-line-full">${_escapeHtml(setupLine)}</div>`
+    ? `<div class="wd-trade-setup wd-trade-meta-line-full"${_colStyle('setup')}>${_escapeHtml(setupLine)}</div>`
     : '';
 
   // Date line (in the pair block) — honours the 'date' toggle.
@@ -26114,13 +26220,14 @@ function _wdTradeCard(t) {
   // trade (t.extras), keyed 'x:<col>'. This is the whole point of the redesign:
   // the offered set is THIS user's real Notion columns, not a hardcoded list.
   // Core-consumed columns (mapped to the 8 styled fields + anchors) are skipped
-  // so nothing double-renders. All default OFF.
-  const dynamicPropsHtml = (() => {
+  // so nothing double-renders. All default OFF. Keyed 'x:<col>' so the body
+  // below can interleave them with the core lines in the user's order.
+  const dynamicByKey = (() => {
     const e = t.extras;
-    if (!e || typeof e !== 'object') return '';
+    if (!e || typeof e !== 'object') return {};
     const consumed = _wdConsumedCoreColumns();
     const customBySrc = _wdCustomPropLabelMap();
-    const out = [];
+    const out = {};
     for (const k in e) {
       if (consumed.has(k) || _NOTION_EXTRAS_SYSTEM_KEYS.has(k)) continue;
       if (!_wdFieldVisible('x:' + k)) continue;
@@ -26129,11 +26236,20 @@ function _wdTradeCard(t) {
       const val = Array.isArray(raw) ? raw.filter(x => x != null && x !== '').map(String).join(' · ') : String(raw);
       if (!val) continue;
       const label = _wdDynamicColumnLabel(k, customBySrc);
-      out.push(`<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">${_escapeHtml(label)} :</span><span class="wd-trade-meta-value">${_escapeHtml(val)}</span></div>`);
+      out['x:' + k] = { label, html: `<div class="wd-trade-meta-line wd-trade-meta-line-full">
+         <span class="wd-trade-meta-title">${_escapeHtml(label)} :</span><span class="wd-trade-meta-value"${_colStyle('x:' + k)}>${_escapeHtml(val)}</span></div>` };
     }
-    return out.join('');
+    return out;
   })();
+
+  // Body lines in the per-profile order (_wdOrderBodyKeys). Default order =
+  // core fields, then dynamic columns by label — mirrors the popover list.
+  const bodyByKey = { setup: setupHtml, sess: sessionHourHtml, rrmax: rrMaxHtml,
+    tphits: tpHitsHtml, h4: h4Html, m15: obsHtml };
+  const dynKeys = Object.keys(dynamicByKey)
+    .sort((a, b) => dynamicByKey[a].label.localeCompare(dynamicByKey[b].label));
+  for (const k of dynKeys) bodyByKey[k] = dynamicByKey[k].html;
+  const bodyHtml = _wdOrderBodyKeys(Object.keys(bodyByKey)).map(k => bodyByKey[k]).filter(Boolean).join('');
 
   return `
     <div class="wd-trade-card ${_WD_BG_CLASS[t.outcome]||''}">
@@ -26168,20 +26284,15 @@ function _wdTradeCard(t) {
             const _rNum = (typeof _rDisplay === 'number' && Number.isFinite(_rDisplay)) ? _rDisplay : t.r;
             return `${_rNum > 0 ? '+' : ''}${_rNum.toFixed(1)}R`;
           })()}</div>
-        ${imgBtn}
+        ${_wdShotsOwnRow ? '' : imgBtn}
       </div>
+      ${_wdShotsOwnRow ? `<div class="wd-trade-media-row wd-trade-meta-line-full">${imgBtn}</div>` : ''}
       ${directionHtml}
       <div class="wd-trade-outcome-wrap">
         <span class="${_WD_OC_CLASS[t.outcome]||''} wd-trade-outcome">
           ${_escapeHtml(t.outcome||'—')}</span>
       </div>
-      ${setupHtml}
-      ${sessionHourHtml}
-      ${rrMaxHtml}
-      ${tpHitsHtml}
-      ${h4Html}
-      ${obsHtml}
-      ${dynamicPropsHtml}
+      ${bodyHtml}
     </div>`;
 }
 
@@ -27055,7 +27166,7 @@ const _PRESET_SHARE_LS_GLOBAL = [
 ];
 const _PRESET_SHARE_LS_HTF     = ['gs_layout_active', 'gs_hidden_widgets', 'po_saved_partials_v1'];
 const _PRESET_SHARE_LS_PROFILE = ['flipping_custom_widgets', 'flipping_notion_properties',
-  'tradeCardFields_v1', 'screenshotOrder_v1', 'pf-inputs-v1'];
+  'tradeCardFields_v1', 'tradeCardLayout_v1', 'screenshotOrder_v1', 'pf-inputs-v1'];
 
 // Normalized trade fields kept in the snapshot (= _STORAGE_COMPACT_KEYS minus
 // the Notion identifiers; media + extras are handled separately).
@@ -27392,7 +27503,7 @@ const _SHARE_MODE_ALLOWED_ACTIONS = new Set([
   'open-custom-row-drawer', 'open-streak-timeline-drawer', 'focus-streak-trade',
   'open-tradelog-drawer', 'recovery-hist-bar', 'cal-open-day', 'expo-open-day',
   'expo-open-cohort', 'expo-open-pair', 'expo-open-conc', 'expo-open-wr',
-  'close-widget-drawer', 'toggle-wd-fields', 'wd-field-toggle',
+  'close-widget-drawer', 'toggle-wd-fields', 'wd-field-toggle', 'wd-field-color-reset',
   'open-img-lightbox', 'lightbox-nav-trade',
 ]);
 
@@ -27503,25 +27614,176 @@ document.addEventListener('click', (e) => {
   pop.setAttribute('hidden', '');
 }, true);
 
-/* Build the "Card fields" popover contents. Standard fields first (in card
-   render order), then declared custom Notion props (if any), each a checkbox
-   reflecting the current per-profile visibility. Rebuilt on every open so it
-   tracks the active profile's custom props. */
+/* Build the "Card fields" popover contents. Header fields (Direction, Date)
+   first — toggle only, their spot on the card is fixed. Then the body fields
+   (core + this drawer's Notion columns) in the per-profile order: drag handle
+   to reorder, checkbox for visibility, swatch for the value colour. Rebuilt on
+   every open so it tracks the active profile's columns. */
 function _wdBuildFieldsPanelHtml() {
-  const row = (key, label) => {
+  const check = (key, label) => {
     const checked = _wdFieldVisible(key) ? ' checked' : '';
-    return `<label class="wd-fields-opt"><input type="checkbox" data-action="wd-field-toggle" data-field-key="${_escapeHtml(key)}"${checked}><span>${_escapeHtml(label)}</span></label>`;
+    return `<input type="checkbox" data-action="wd-field-toggle" data-field-key="${_escapeHtml(key)}"${checked}><span>${_escapeHtml(label)}</span>`;
+  };
+  const headerRow = (key, label) => `<label class="wd-fields-opt">${check(key, label)}</label>`;
+  const defaultHex = _wdDefaultValueColors();
+  const bodyRow = (key, label) => {
+    const k = _escapeHtml(key);
+    const custom = _wdFieldColor(key);
+    const hex = custom || defaultHex[key] || defaultHex.meta;
+    return `<div class="wd-fields-opt is-sortable" data-field-key="${k}">
+      <span class="wd-fields-handle" data-wd-drag-handle title="Drag to reorder" aria-hidden="true">⋮⋮</span>
+      <label class="wd-fields-opt-lbl">${check(key, label)}</label>
+      ${custom ? `<button class="wd-fields-color-reset" type="button" data-action="wd-field-color-reset" data-field-key="${k}" title="Reset colour">↺</button>` : ''}
+      <label class="wd-fields-swatch${custom ? ' is-custom' : ''}" title="Value colour" style="background:${hex}">
+        <input type="color" data-wd-color-input data-field-key="${k}" value="${hex}">
+      </label>
+    </div>`;
   };
   // Dynamic columns come from the open drawer's own trade set (stashed on the
   // node), so the list mirrors the properties actually present in this data.
   const drawer = document.getElementById('wd-drawer');
   const trades = (drawer && drawer._pdfCtx && Array.isArray(drawer._pdfCtx.sorted)) ? drawer._pdfCtx.sorted : [];
   const dynDefs = _wdDynamicColumnDefs(trades);
-  const dynRows = dynDefs.map(d => row('x:' + d.key, d.label)).join('');
+  const labels = Object.fromEntries([
+    ..._WD_CARD_FIELD_SPECS.map(s => [s.key, s.label]),
+    ...dynDefs.map(d => ['x:' + d.key, d.label]),
+  ]);
+  const specByKey = Object.fromEntries(_WD_CARD_FIELD_SPECS.map(s => [s.key, s]));
   return `<div class="wd-fields-title">Card fields</div>`
-    + _WD_CARD_FIELD_SPECS.map(s => row(s.key, s.label)).join('')
-    + (dynRows ? `<div class="wd-fields-sep"></div>${dynRows}` : '');
+    + _WD_HEADER_FIELD_KEYS.map(k => headerRow(k, specByKey[k].label)).join('')
+    + `<div class="wd-fields-sep"></div>`
+    + `<div class="wd-fields-hint">Drag ⋮⋮ to reorder · swatch = value colour</div>`
+    + `<div class="wd-fields-list">${_wdBodyKeysFor(dynDefs).map(k => bodyRow(k, labels[k] || k)).join('')}</div>`;
 }
+
+/* Theme-resolved default value colour of each body line, as #rrggbb for the
+   colour input (it only accepts hex). Probed from a hidden card inside the
+   drawer so it follows the active theme; `meta` covers every "Title : value"
+   line (RR Max, TP hits, obstacles, Notion columns). */
+function _wdDefaultValueColors() {
+  // Only used if the probe can't resolve a colour (<input type=color> needs hex).
+  const NEUTRAL = '#808080';
+  const host = document.getElementById('wd-drawer') || document.body;
+  const probe = document.createElement('div');
+  probe.className = 'wd-trade-card';
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;';
+  probe.innerHTML = '<span class="wd-trade-meta-value"></span><div class="wd-trade-setup"></div><div class="wd-trade-session-hour"></div>';
+  host.appendChild(probe);
+  const toHex = (el) => {
+    const css = getComputedStyle(el).color || '';
+    const m = css.match(/[\d.]+/g);
+    if (!m || m.length < 3) return NEUTRAL;
+    // rgb()/rgba() → 0–255 channels; color(srgb r g b / a) (color-mix) → 0–1.
+    const scale = /^color\(/.test(css) ? 255 : 1;
+    return '#' + m.slice(0, 3)
+      .map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n) * scale))).toString(16).padStart(2, '0'))
+      .join('');
+  };
+  const out = {
+    meta: toHex(probe.children[0]),
+    setup: toHex(probe.children[1]),
+    sess: toHex(probe.children[2]),
+  };
+  probe.remove();
+  return out;
+}
+
+/* Re-render the open drawer's cards in place (visibility / order / colour). */
+function _wdRerenderDrawerCards() {
+  const drawer = document.getElementById('wd-drawer');
+  if (!drawer || typeof drawer._wdRebuildBody !== 'function') return;
+  const body = drawer.querySelector('.wd-drawer-body');
+  if (body) body.innerHTML = drawer._wdRebuildBody();
+}
+function _wdRebuildFieldsPopover() {
+  const pop = document.querySelector('#wd-drawer .wd-fields-popover');
+  if (pop && !pop.hasAttribute('hidden')) {
+    const top = pop.scrollTop;
+    pop.innerHTML = _wdBuildFieldsPanelHtml();
+    pop.scrollTop = top;
+  }
+}
+
+/* Colour picker: live preview on `input` (memory only), persist on `change`
+   (picker closed) — each synced LS write is a Supabase upsert. */
+let _wdColorRaf = 0;
+document.addEventListener('input', (e) => {
+  const inp = e.target.closest && e.target.closest('#wd-drawer [data-wd-color-input]');
+  if (!inp) return;
+  const key = inp.dataset.fieldKey;
+  const c = _wdSanitizeColor(inp.value);
+  if (!key || !c) return;
+  const layout = _getTradeCardLayout();
+  _setTradeCardLayout({ ...layout, colors: { ...layout.colors, [key]: c } }, false);
+  const sw = inp.closest('.wd-fields-swatch');
+  if (sw) sw.style.background = c;
+  if (!_wdColorRaf) _wdColorRaf = requestAnimationFrame(() => { _wdColorRaf = 0; _wdRerenderDrawerCards(); });
+});
+document.addEventListener('change', (e) => {
+  const inp = e.target.closest && e.target.closest('#wd-drawer [data-wd-color-input]');
+  if (!inp) return;
+  const key = inp.dataset.fieldKey;
+  const c = _wdSanitizeColor(inp.value);
+  if (!key || !c) return;
+  const layout = _getTradeCardLayout();
+  _setTradeCardLayout({ ...layout, colors: { ...layout.colors, [key]: c } });
+  _wdRerenderDrawerCards();
+  _wdRebuildFieldsPopover();
+});
+
+function _wdHandleFieldColorReset(btn) {
+  const key = btn && btn.dataset ? btn.dataset.fieldKey : '';
+  if (!key) return;
+  const layout = _getTradeCardLayout();
+  const colors = { ...layout.colors };
+  delete colors[key];
+  _setTradeCardLayout({ ...layout, colors });
+  _wdRerenderDrawerCards();
+  _wdRebuildFieldsPopover();
+}
+
+/* Drag-to-reorder on the ⋮⋮ handle (pointer events: mouse + touch). The row
+   moves live in the list; the order is persisted + cards re-rendered on drop. */
+document.addEventListener('pointerdown', (e) => {
+  const handle = e.target.closest && e.target.closest('#wd-drawer [data-wd-drag-handle]');
+  if (!handle || e.button > 0) return;
+  const row = handle.closest('.wd-fields-opt');
+  const list = row && row.parentElement;
+  const pop = list && list.closest('.wd-fields-popover');
+  if (!row || !list || !pop) return;
+  e.preventDefault();
+  const keysOf = () => [...list.querySelectorAll(':scope > .wd-fields-opt')].map(r => r.dataset.fieldKey);
+  const before = keysOf().join('|');
+  row.classList.add('is-dragging');
+  list.classList.add('is-sorting');
+  const move = (ev) => {
+    const pr = pop.getBoundingClientRect();
+    if (ev.clientY < pr.top + 28) pop.scrollTop -= 8;
+    else if (ev.clientY > pr.bottom - 28) pop.scrollTop += 8;
+    let target = null;
+    for (const r of list.querySelectorAll(':scope > .wd-fields-opt')) {
+      if (r === row) continue;
+      const b = r.getBoundingClientRect();
+      if (ev.clientY < b.top + b.height / 2) { target = r; break; }
+    }
+    if (target) { if (row.nextElementSibling !== target) list.insertBefore(row, target); }
+    else if (list.lastElementChild !== row) list.appendChild(row);
+  };
+  const end = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+    row.classList.remove('is-dragging');
+    list.classList.remove('is-sorting');
+    const keys = keysOf();
+    if (keys.join('|') === before) return;
+    _wdSaveBodyOrder(keys);
+    _wdRerenderDrawerCards();
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+});
 
 /* Toggle the "Card fields" popover open/closed. Content is (re)built on open. */
 function _wdToggleFieldsPopover() {
@@ -27551,13 +27813,9 @@ function _wdHandleFieldToggle(inputEl) {
   // toggle — its ordering vs. this listener is unreliable (and a checkbox
   // nested in its <label> can fire twice), which would desync the tick from the
   // persisted state. Regenerating every `checked` from _wdFieldVisible is exact.
-  const pop = drawer.querySelector('.wd-fields-popover');
-  if (pop && !pop.hasAttribute('hidden')) pop.innerHTML = _wdBuildFieldsPanelHtml();
+  _wdRebuildFieldsPopover();
   // Re-render the drawer cards in place with the new visibility.
-  if (typeof drawer._wdRebuildBody === 'function') {
-    const body = drawer.querySelector('.wd-drawer-body');
-    if (body) body.innerHTML = drawer._wdRebuildBody();
-  }
+  _wdRerenderDrawerCards();
 }
 
 /* Open the shared widget drawer with a filtered set of trades.

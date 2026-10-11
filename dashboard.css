@@ -1141,10 +1141,18 @@ body {
   justify-content: center;
   gap: 2px;
 }
-/* 4+ screenshots (extra slots TV Image 4–6): wrap instead of overflowing the
-   fixed-width media column. 1–3 buttons keep the classic single-line layout. */
-.trade-media-group:has(> :nth-child(4)) {
-  flex-wrap: wrap;
+/* Always one line — the Selection / Trade Log screenshot column is sized
+   from the widest row's button count (--media-n, set by _fitTableMediaCol). */
+.trade-media-group { flex-wrap: nowrap; }
+.sel-table .trade-media-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+table:has(> #trade-tbody) > thead th:last-child {
+  width: calc(var(--media-n, 3) * 30px + 6px);
 }
 .trade-media-btn {
   background: none;
@@ -11154,7 +11162,7 @@ body.ms-sidebar-open .view-tabs {
 .sel-table colgroup col:nth-child(7)  { width: 52px; }  /* Session */
 .sel-table colgroup col:nth-child(8)  { width: 1fr;  }  /* H4 */
 .sel-table colgroup col:nth-child(9)  { width: 1fr;  }  /* M15 Obs. */
-.sel-table colgroup col:nth-child(10) { width: 56px; }  /* Buttons */
+.sel-table colgroup col:nth-child(10) { width: max(56px, calc(var(--media-n, 3) * 24px + 6px)); }  /* Buttons */
 .sel-table thead th {
   background: var(--bg2);
   padding: 5px 6px;
@@ -12011,7 +12019,7 @@ body.ms-sidebar-open .view-tabs {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  width: 220px;
+  width: 250px;
   max-height: 60vh;
   overflow-y: auto;
   background: var(--bg2);
@@ -12059,6 +12067,75 @@ body.ms-sidebar-open .view-tabs {
   background: var(--line2);
   margin: 6px 4px;
 }
+/* Body fields: sortable rows (⋮⋮ handle · checkbox label · colour swatch). */
+.wd-fields-hint {
+  font-size: 10.5px;
+  color: var(--dim);
+  padding: 0 8px 6px;
+}
+.wd-fields-list { position: relative; }
+.wd-fields-opt.is-sortable { gap: 6px; padding-left: 2px; cursor: default; }
+.wd-fields-opt-lbl {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+.wd-fields-opt-lbl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wd-fields-handle {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: -2px;
+  line-height: 1;
+  color: var(--dim);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.wd-fields-handle:hover { color: var(--body); }
+.wd-fields-list.is-sorting, .wd-fields-list.is-sorting * { cursor: grabbing !important; }
+.wd-fields-opt.is-dragging {
+  background: var(--bg3);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold) 45%, transparent);
+  position: relative;
+  z-index: 1;
+}
+.wd-fields-swatch {
+  position: relative;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--line2);
+  cursor: pointer;
+  overflow: hidden;
+}
+.wd-fields-swatch.is-custom { box-shadow: 0 0 0 1.5px var(--bg2), 0 0 0 2.5px var(--gold); }
+.wd-fields-swatch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+.wd-fields-color-reset {
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--dim);
+  cursor: pointer;
+}
+.wd-fields-color-reset:hover { color: var(--body); }
 
 .wd-share-popover {
   position: absolute;
@@ -12376,13 +12453,21 @@ body.ms-sidebar-open .view-tabs {
   align-items: flex-start;
   gap: 6px;
 }
-/* 4+ screenshots (extra slots TV Image 4–6): wrap the cameras under the R
-   value instead of squeezing the pair column. 1–3 keep the single line. */
-.wd-trade-side:has(> .wd-media-item ~ .wd-media-item ~ .wd-media-item ~ .wd-media-item) {
-  flex-wrap: wrap;
+/* 4+ screenshots (TV Image 4–6): own full-width row under the header, one
+   line, right-aligned; long column labels ellipsize rather than wrap. */
+.wd-trade-media-row {
+  display: flex;
   justify-content: flex-end;
-  max-width: 190px;
-  row-gap: 4px;
+  gap: 6px;
+  min-width: 0;
+  margin: 2px 0 2px;
+}
+.wd-trade-media-row .wd-media-item { flex: 0 1 auto; min-width: 0; }
+.wd-trade-media-row .wd-media-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .wd-trade-r {
   font-family: 'Anybody', sans-serif;
