@@ -27614,17 +27614,20 @@ document.addEventListener('click', (e) => {
   pop.setAttribute('hidden', '');
 }, true);
 
-/* Build the "Card fields" popover contents. Header fields (Direction, Date)
-   first — toggle only, their spot on the card is fixed. Then the body fields
-   (core + this drawer's Notion columns) in the per-profile order: drag handle
-   to reorder, checkbox for visibility, swatch for the value colour. Rebuilt on
-   every open so it tracks the active profile's columns. */
+/* Build the "Card fields" popover contents, split in two sections:
+   · Shown — ticked header fields (Direction, Date: toggle only, their spot on
+     the card is fixed), then the ticked body fields (core + this drawer's
+     Notion columns) in the per-profile order: drag handle to reorder,
+     checkbox, swatch for the value colour.
+   · Hidden — every unticked field, checkbox only; ticking one moves it up
+     (back to its saved slot, else the end of the shown list).
+   Rebuilt on every open / toggle so it tracks the active profile's columns. */
 function _wdBuildFieldsPanelHtml() {
   const check = (key, label) => {
     const checked = _wdFieldVisible(key) ? ' checked' : '';
     return `<input type="checkbox" data-action="wd-field-toggle" data-field-key="${_escapeHtml(key)}"${checked}><span>${_escapeHtml(label)}</span>`;
   };
-  const headerRow = (key, label) => `<label class="wd-fields-opt">${check(key, label)}</label>`;
+  const plainRow = (key, label) => `<label class="wd-fields-opt">${check(key, label)}</label>`;
   const defaultHex = _wdDefaultValueColors();
   const bodyRow = (key, label) => {
     const k = _escapeHtml(key);
@@ -27648,12 +27651,24 @@ function _wdBuildFieldsPanelHtml() {
     ..._WD_CARD_FIELD_SPECS.map(s => [s.key, s.label]),
     ...dynDefs.map(d => ['x:' + d.key, d.label]),
   ]);
-  const specByKey = Object.fromEntries(_WD_CARD_FIELD_SPECS.map(s => [s.key, s]));
-  return `<div class="wd-fields-title">Card fields</div>`
-    + _WD_HEADER_FIELD_KEYS.map(k => headerRow(k, specByKey[k].label)).join('')
-    + `<div class="wd-fields-sep"></div>`
-    + `<div class="wd-fields-hint">Drag ⋮⋮ to reorder · swatch = value colour</div>`
-    + `<div class="wd-fields-list">${_wdBodyKeysFor(dynDefs).map(k => bodyRow(k, labels[k] || k)).join('')}</div>`;
+  const bodyKeys = _wdBodyKeysFor(dynDefs);
+  const shownHeader = _WD_HEADER_FIELD_KEYS.filter(k => _wdFieldVisible(k));
+  const shownBody = bodyKeys.filter(k => _wdFieldVisible(k));
+  const hidden = [..._WD_HEADER_FIELD_KEYS, ...bodyKeys].filter(k => !_wdFieldVisible(k));
+  let html = `<div class="wd-fields-title">Shown on cards</div>`
+    + shownHeader.map(k => plainRow(k, labels[k])).join('');
+  if (shownBody.length) {
+    html += (shownHeader.length ? `<div class="wd-fields-sep"></div>` : '')
+      + `<div class="wd-fields-hint">Drag ⋮⋮ to reorder · swatch = value colour</div>`
+      + `<div class="wd-fields-list">${shownBody.map(k => bodyRow(k, labels[k] || k)).join('')}</div>`;
+  }
+  if (!shownHeader.length && !shownBody.length) html += `<div class="wd-fields-hint">Nothing ticked yet.</div>`;
+  if (hidden.length) {
+    html += `<div class="wd-fields-section-sep"></div>`
+      + `<div class="wd-fields-title">Hidden</div>`
+      + hidden.map(k => plainRow(k, labels[k] || k)).join('');
+  }
+  return html;
 }
 
 /* Theme-resolved default value colour of each body line, as #rrggbb for the

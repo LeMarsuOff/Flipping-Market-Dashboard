@@ -12068,6 +12068,12 @@ body.ms-sidebar-open .view-tabs {
   margin: 6px 4px;
 }
 /* Body fields: sortable rows (⋮⋮ handle · checkbox label · colour swatch). */
+.wd-fields-section-sep {
+  height: 1px;
+  background: var(--line2);
+  margin: 8px 0 4px;
+}
+.wd-fields-section-sep + .wd-fields-title { padding-top: 6px; }
 .wd-fields-hint {
   font-size: 10.5px;
   color: var(--dim);
