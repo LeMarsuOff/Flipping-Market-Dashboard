@@ -616,6 +616,14 @@ body.share-lightbox-open { scroll-behavior: smooth; }
   align-items: flex-start;
   gap: 6px;
 }
+/* 4+ screenshots (extra slots TV Image 4–6): wrap the cameras under the R
+   value instead of squeezing the pair column. 1–3 keep the single line. */
+.wd-trade-side:has(> .wd-media-item ~ .wd-media-item ~ .wd-media-item ~ .wd-media-item) {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 190px;
+  row-gap: 4px;
+}
 .wd-trade-r {
   font-family: 'Anybody', sans-serif;
   font-size: var(--typo-kpi-val-size);

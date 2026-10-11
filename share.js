@@ -161,15 +161,12 @@ function renderCard(t, idx) {
 
   // Camera buttons — emojis match dashboard.js (📷📷📸).
   // A slot renders iff it has a url OR a TradingView orig fallback link.
-  const slots = {
-    h4:   _mediaSlot(t.media && t.media.h4),
-    m15:  _mediaSlot(t.media && t.media.m15),
-    m15a: _mediaSlot(t.media && t.media.m15a),
-  };
+  // Extra slots s4–s6 (TV Image 4–6) are only present in newer snapshots.
   const cams = [];
-  if (slots.h4.url   || slots.h4.orig)   cams.push({ emoji: '📷', label: 'H4',   slot: 'h4',   ...slots.h4   });
-  if (slots.m15.url  || slots.m15.orig)  cams.push({ emoji: '📷', label: 'M15',  slot: 'm15',  ...slots.m15  });
-  if (slots.m15a.url || slots.m15a.orig) cams.push({ emoji: '📸', label: 'M15A', slot: 'm15a', ...slots.m15a });
+  for (const slot of _SLOT_ORDER) {
+    const v = _mediaSlot(t.media && t.media[slot]);
+    if (v.url || v.orig) cams.push({ emoji: slot === 'm15a' ? '📸' : '📷', label: _SLOT_LABEL[slot], slot, ...v });
+  }
 
   const camsHtml = cams.map(c => `
     <div class="wd-media-item">
@@ -342,8 +339,8 @@ function renderShare(d) {
 //   ArrowUp / ArrowDown  → previous / next trade (keeps current step if available)
 //   ArrowLeft / ArrowRight → previous / next step within current trade
 //   Escape               → close screenshot view, back to watermark
-const _SLOT_ORDER = ['h4', 'm15', 'm15a'];
-const _SLOT_LABEL = { h4: 'H4', m15: 'M15', m15a: 'M15A' };
+const _SLOT_ORDER = ['h4', 'm15', 'm15a', 's4', 's5', 's6'];
+const _SLOT_LABEL = { h4: 'H4', m15: 'M15', m15a: 'M15A', s4: 'IMG 4', s5: 'IMG 5', s6: 'IMG 6' };
 const _navState = { trades: [], tradeIdx: -1, slot: '' };
 
 function _slotHasContent(t, slot) {
@@ -546,7 +543,7 @@ function _showLightbox(t, slot, slotData) {
   // Selector bar — info only (pair · date · STEP · n/total). Trade nav
   // lives in the floating ↑/↓ buttons; step nav in the floating ←/→ buttons.
   const sel = document.getElementById('img-lightbox-sel');
-  const stepLabel = ({ h4: 'H4 Before', m15: 'M15 Before', m15a: 'M15 After' })[slot] || slot;
+  const stepLabel = ({ h4: 'H4 Before', m15: 'M15 Before', m15a: 'M15 After', s4: 'Image 4', s5: 'Image 5', s6: 'Image 6' })[slot] || slot;
   const label = [t.pair, t.date].filter(Boolean).join('  ·  ');
   const total = _navState.trades.length;
   const tradeNum = _navState.tradeIdx + 1;

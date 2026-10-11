@@ -2423,6 +2423,26 @@ function _extractWidgetValueForExtras(rawVal) {
 // widget create now go through `_eagerBakeAfterWidgetCreate` (defined below
 // after `_bakeAllDetectedPropsToExtras`).
 
+// ── Extra screenshot slots (4–6) ──────────────────────────────────────────
+// Generic slots on top of the 3 legacy ones (img_h4_before / img_m15 /
+// img_m15_after), for journals that track more than 3 screenshots. Each one
+// is a plain mapped column (Data Setup → Screenshots → pencil): no template
+// default, no auto-detect. The Storage slot name is source-agnostic
+// (`<notionId>_shot_4.png`), unlike the legacy After slot (m15_/h4_after).
+const _EXTRA_SHOT_SLOTS = [4, 5, 6].map(n => ({
+  n, dim: `img_shot${n}`, field: `imgShot${n}`, orig: `imgShot${n}Orig`,
+  step: `shot${n}`, slot: `shot_${n}`,
+}));
+const _EXTRA_SHOT_FIELDS = _EXTRA_SHOT_SLOTS.flatMap(s => [s.field, s.orig]);
+function _escShotAttr(v) { return String(v || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+// data-trade-shotN(-orig) attributes carried by every 📷 button, so the
+// lightbox can rebuild all slots of a trade from whichever button opened it.
+function _extraShotDataAttrs(t) {
+  return _EXTRA_SHOT_SLOTS.map(s =>
+    ` data-trade-${s.step}="${_escShotAttr(t && t[s.field])}" data-trade-${s.step}-orig="${_escShotAttr(t && t[s.orig])}"`
+  ).join('');
+}
+
 // ── Eager bake: ALL detected Notion props → extras ────────────────────────
 // Walks every raw property for every trade, flattens the value,
 // write to `t.extras[propName]`. Standard-dim properties (pair, outcome,
@@ -2471,7 +2491,7 @@ function _bakeAllDetectedPropsToExtras(trades, rawCache, source) {
   // set to avoid re-baking screenshot dims (image URLs are routed elsewhere).
   const overrides = (typeof _getAPIFieldOverrides === 'function') ? _getAPIFieldOverrides(source) : {};
   const screenshotDimProps = new Set();
-  for (const slotKey of ['img_m15', 'img_h4_before', 'img_m15_after']) {
+  for (const slotKey of ['img_m15', 'img_h4_before', 'img_m15_after', ..._EXTRA_SHOT_SLOTS.map(s => s.dim)]) {
     const propName = overrides[slotKey];
     if (propName && propName !== NO_MAPPING_VALUE) screenshotDimProps.add(propName);
   }
@@ -9507,7 +9527,7 @@ function _reapplyTemplateMapping() {
   // user / previous auto-detect resolved them. If the user explicitly wants
   // to reset a screenshot mapping, they can still pencil-pick the dim back
   // to the template default (or 'No Mapping').
-  const SCREENSHOT_DIMS = ['img_m15', 'img_h4_before', 'img_m15_after'];
+  const SCREENSHOT_DIMS = ['img_m15', 'img_h4_before', 'img_m15_after', ..._EXTRA_SHOT_SLOTS.map(s => s.dim)];
   const overridesBefore = _getAPIFieldOverrides();
   const autoSetBefore = _getAutoMappedDims();
   const preservedOverrides = {};
@@ -9805,11 +9825,17 @@ function _normalizeAPITrade(t, _rawRowIndex, source = null) {
       const a = _normalizeTvImageUrl(_rawUrl(_pick('img_m15', aFallback)));
       const b = _normalizeTvImageUrl(_rawUrl(_pick('img_h4_before', bFallback)));
       const c = _normalizeTvImageUrl(_rawUrl(_pick('img_m15_after', cFallback)));
-      return {
+      const out = {
         imgM15:      a.url, imgM15Orig:      a.origLink,
         imgH4Before: b.url, imgH4BeforeOrig: b.origLink,
         imgM15After: c.url, imgM15AfterOrig: c.origLink,
       };
+      // Extra slots 4–6: mapped column only (no camelCase fallback chain).
+      for (const s of _EXTRA_SHOT_SLOTS) {
+        const x = _normalizeTvImageUrl(_rawUrl(_pick(s.dim, '')));
+        out[s.field] = x.url; out[s.orig] = x.origLink;
+      }
+      return out;
     })(),
     notionUrl: t.notionUrl || t.notionURL || t.pageUrl || t.pageURL ||
                (t.id ? `https://www.notion.so/${t.id.replace(/-/g, '')}` : ''),
@@ -9960,6 +9986,7 @@ function _extractMediaCache(trades) {
     imgM15Orig: keepPermanent(t.imgM15Orig),
     imgH4BeforeOrig: keepPermanent(t.imgH4BeforeOrig),
     imgM15AfterOrig: keepPermanent(t.imgM15AfterOrig),
+    ...Object.fromEntries(_EXTRA_SHOT_FIELDS.map(f => [f, keepPermanent(t[f])])),
   }));
 }
 
@@ -9993,6 +10020,7 @@ function _readPermanentMediaCacheMap(source) {
         imgM15: String(entry.imgM15 || ''),
         imgH4Before: String(entry.imgH4Before || ''),
         imgM15After: String(entry.imgM15After || ''),
+        ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.field, String(entry[s.field] || '')])),
       });
     }
   } catch {}
@@ -10007,6 +10035,7 @@ function _substitutePermanentImageUrls(rawTrades, source) {
     ['imgM15', overrides.img_m15],
     ['imgH4Before', overrides.img_h4_before],
     ['imgM15After', overrides.img_m15_after],
+    ..._EXTRA_SHOT_SLOTS.map(s => [s.field, overrides[s.dim]]),
   ].filter(([, propName]) => propName && propName !== NO_MAPPING_VALUE);
   if (!slotProps.length) return rawTrades;
   const mediaMap = _readPermanentMediaCacheMap(src);
@@ -10085,7 +10114,7 @@ function _preservePermanentImageUrls(freshParsed, source = null, priorTrades = n
   // the rebuild would be a no-op. A parallel sync of another profile passes a
   // non-matching (or empty) profileId and keeps normal preservation.
   if (_isRebuildingProfile(profileId)) return freshParsed;
-  const IMG_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig'];
+  const IMG_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig', ..._EXTRA_SHOT_FIELDS];
   const lookup = new Map();
   const addToLookup = (trades) => {
     if (!Array.isArray(trades)) return;
@@ -10305,7 +10334,8 @@ function _hasHeavyImageFields(trades) {
     const a = String(t?.imgM15 || '');
     const b = String(t?.imgH4Before || '');
     const c = String(t?.imgM15After || '');
-    return a.length > 128 || b.length > 128 || c.length > 128;
+    return a.length > 128 || b.length > 128 || c.length > 128
+      || _EXTRA_SHOT_SLOTS.some(s => String(t?.[s.field] || '').length > 128);
   });
 }
 function _cleanupLegacyUnscopedCacheKeysIfScopedExists(source = null) {
@@ -10399,6 +10429,10 @@ function _mergeMediaCache(trades, source = null) {
         imgM15Orig: t.imgM15Orig || m.imgM15Orig || t.imgM15 || m.imgM15 || '',
         imgH4BeforeOrig: t.imgH4BeforeOrig || m.imgH4BeforeOrig || t.imgH4Before || m.imgH4Before || '',
         imgM15AfterOrig: t.imgM15AfterOrig || m.imgM15AfterOrig || t.imgM15After || m.imgM15After || '',
+        ...Object.fromEntries(_EXTRA_SHOT_SLOTS.flatMap(s => [
+          [s.field, t[s.field] || m[s.field] || ''],
+          [s.orig, t[s.orig] || m[s.orig] || t[s.field] || m[s.field] || ''],
+        ])),
       };
     });
   } catch {
@@ -10419,10 +10453,10 @@ function _mergeMediaCache(trades, source = null) {
 // cross-trade screenshot investigation. Applied at the universal display
 // chokepoint (_injectTrades) so every load / device / data source renders the
 // trade's own image regardless of what stale caches hold.
-const _SCREENSHOT_URL_ID_RX = /(\/notion-screenshots\/)([0-9a-fA-F-]{36})(_(?:m15|h4)_(?:before|after)\.png)/;
+const _SCREENSHOT_URL_ID_RX = /(\/notion-screenshots\/)([0-9a-fA-F-]{36})(_(?:(?:m15|h4)_(?:before|after)|shot_[4-6])\.png)/;
 function _healScreenshotOwnership(trades) {
   if (!Array.isArray(trades) || !trades.length) return trades;
-  const FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig'];
+  const FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig', ..._EXTRA_SHOT_FIELDS];
   let healed = 0;
   const out = trades.map(t => {
     const id = String(t && t._notionId || '').trim();
@@ -10485,7 +10519,7 @@ const _STORAGE_COMPACT_KEYS = [
   'obstacles','h4','beManagement','outcome','outcomeRaw','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
   'imgM15','imgH4Before','imgM15After','imgM15Orig','imgH4BeforeOrig',
-  'imgM15AfterOrig','notionUrl','extras','_notionId','_lastEditedTime'
+  'imgM15AfterOrig', ..._EXTRA_SHOT_FIELDS,'notionUrl','extras','_notionId','_lastEditedTime'
 ];
 // `extras` was previously omitted from MINIMAL/ULTRA to keep the LS payload
 // small. It's the only place where custom-widget field values + custom
@@ -10498,14 +10532,14 @@ const _STORAGE_MINIMAL_KEYS = [
   'obstacles','h4','beManagement','outcome','outcomeRaw','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour','timeUtc1',
   'imgM15','imgM15Orig','imgH4Before','imgH4BeforeOrig','imgM15After','imgM15AfterOrig',
-  'notionUrl','extras','_notionId','_lastEditedTime'
+  ..._EXTRA_SHOT_FIELDS,'notionUrl','extras','_notionId','_lastEditedTime'
 ];
 const _STORAGE_ULTRA_KEYS = [
   'date','month','pair','setup','setupDetail','session','sessionUtc','day',
   'obstacles','h4','beManagement','outcome','outcomeRaw','r','rrMax','tp1_rr','tp2_rr',
   'tp3_rr','direction','tradeType','badFeeling','invalide','hour',
   'imgM15','imgM15Orig','imgH4Before','imgH4BeforeOrig','imgM15After','imgM15AfterOrig',
-  'notionUrl','extras','_notionId','_lastEditedTime'
+  ..._EXTRA_SHOT_FIELDS,'notionUrl','extras','_notionId','_lastEditedTime'
 ];
 function _deserializeTradesFromStorage(payload) {
   if (!payload) return null;
@@ -10526,6 +10560,7 @@ function _deserializeTradesFromStorage(payload) {
     trade.imgM15Orig = trade.imgM15Orig || trade.imgM15 || '';
     trade.imgH4BeforeOrig = trade.imgH4BeforeOrig || trade.imgH4Before || '';
     trade.imgM15AfterOrig = trade.imgM15AfterOrig || trade.imgM15After || '';
+    for (const s of _EXTRA_SHOT_SLOTS) trade[s.orig] = trade[s.orig] || trade[s.field] || '';
     return trade;
   });
 }
@@ -10544,7 +10579,8 @@ function _serializeTradesForStorage(trades, mode = 'full') {
   // a reload still shows the screenshot. Only active during a rebuild.
   const _rbActive = !!_screenshotRebuildProfileId;
   const _rbSlot = _rbActive
-    ? { imgM15: 'm15_before', imgH4Before: 'h4_before', imgM15After: (_getCurrentHTFSource() === 'h4' ? 'h4_after' : 'm15_after') }
+    ? { imgM15: 'm15_before', imgH4Before: 'h4_before', imgM15After: (_getCurrentHTFSource() === 'h4' ? 'h4_after' : 'm15_after'),
+        ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.field, s.slot])) }
     : null;
   return {
     __format: `api-cache-${mode}-v1`,
@@ -11811,9 +11847,10 @@ const _mediaQueue = (() => {
     if (field === 'imgM15') return 'm15_before';
     if (field === 'imgH4Before') return 'h4_before';
     if (field === 'imgM15After') return source === 'h4' ? 'h4_after' : 'm15_after';
-    return '';
+    const extra = _EXTRA_SHOT_SLOTS.find(s => s.field === field);
+    return extra ? extra.slot : '';
   };
-  const MEDIA_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After'];
+  const MEDIA_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', ..._EXTRA_SHOT_SLOTS.map(s => s.field)];
   const BATCH_SIZE = 50;
 
   let _queue = [];       // [{trade, notionId, slot, field, notionUrl, date, source, userId, tradesRef}]
@@ -12091,7 +12128,7 @@ function _enqueueMediaForCachedNotionTrades(trades, userId, source, profileIdOve
     urlsFound,
   }));
 
-  const FIELDS = ['imgM15', 'imgH4Before', 'imgM15After'];
+  const FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', ..._EXTRA_SHOT_SLOTS.map(s => s.field)];
   let needsQueue = 0;
   let skippedPermanent = 0;
   let missingId = 0;
@@ -16554,8 +16591,14 @@ function _normalizeTvImageUrl(raw) {
 // triple. Slot resolution: m15After is profile-source-dependent (h4_after on
 // H4 profiles vs m15_after on M15), per _fieldToSlot in _mediaQueue.
 const _SUPABASE_SCREENSHOTS_BASE = 'https://pjkilmmltbyugjxbvyvh.supabase.co/storage/v1/object/public/notion-screenshots';
-const _LB_STEP_TO_SLOT = { h4Before: 'h4_before', m15Before: 'm15_before' };
-const _LB_STEP_TO_TRADE_FIELD = { h4Before: 'imgH4Before', m15Before: 'imgM15', m15After: 'imgM15After' };
+const _LB_STEP_TO_SLOT = { h4Before: 'h4_before', m15Before: 'm15_before',
+  ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.step, s.slot])) };
+const _LB_STEP_TO_TRADE_FIELD = { h4Before: 'imgH4Before', m15Before: 'imgM15', m15After: 'imgM15After',
+  ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.step, s.field])) };
+// Every image field of a trade (current + Orig) — used to match a lightbox row
+// back to its source trade by URL.
+const _LB_ALL_IMG_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', 'imgM15Orig', 'imgH4BeforeOrig', 'imgM15AfterOrig', ..._EXTRA_SHOT_FIELDS];
+function _tradeHasImgUrl(t, url) { return _LB_ALL_IMG_FIELDS.some(f => t[f] === url); }
 function _resolveLbStepSlot(step) {
   return _LB_STEP_TO_SLOT[step] || ((_getCurrentHTFSource() === 'h4') ? 'h4_after' : 'm15_after');
 }
@@ -16568,8 +16611,7 @@ function _findTradeForLbRow(tr, url) {
   if (!Array.isArray(items) || !items.length) return null;
   return items.find(t => {
     if (t.pair !== tr.pair || t.date !== tr.date) return false;
-    return !url || t.imgM15 === url || t.imgH4Before === url || t.imgM15After === url
-        || t.imgM15Orig === url || t.imgH4BeforeOrig === url || t.imgM15AfterOrig === url;
+    return !url || _tradeHasImgUrl(t, url);
   }) || null;
 }
 // Pre-resolve a (potentially expired) Notion S3 URL to its deterministic
@@ -16589,10 +16631,7 @@ function _patchTradeAndLbRowToSupabase(tr, step, supabaseUrl, originalUrl) {
   const tradeField = _LB_STEP_TO_TRADE_FIELD[step] || 'imgM15After';
   const items = appState?.trades?.items;
   if (!Array.isArray(items)) return;
-  const matched = items.find(t => t.pair === tr.pair && t.date === tr.date && (
-    t.imgM15 === originalUrl || t.imgH4Before === originalUrl || t.imgM15After === originalUrl ||
-    t.imgM15Orig === originalUrl || t.imgH4BeforeOrig === originalUrl || t.imgM15AfterOrig === originalUrl
-  ));
+  const matched = items.find(t => t.pair === tr.pair && t.date === tr.date && _tradeHasImgUrl(t, originalUrl));
   if (!matched) return;
   if (matched[tradeField] === originalUrl) matched[tradeField] = supabaseUrl;
   const origField = tradeField + 'Orig';
@@ -16607,8 +16646,7 @@ function _tryRescueFromSupabase(imgEl, failedUrl) {
   // Match by pair+date+URL across all 6 image fields (current + Orig).
   const matchedItem = items.find(t => {
     if (t.pair !== tr.pair || t.date !== tr.date) return false;
-    return t.imgM15 === failedUrl || t.imgH4Before === failedUrl || t.imgM15After === failedUrl
-        || t.imgM15Orig === failedUrl || t.imgH4BeforeOrig === failedUrl || t.imgM15AfterOrig === failedUrl;
+    return _tradeHasImgUrl(t, failedUrl);
   });
   const notionId = matchedItem?._notionId;
   if (!notionId) return false;
@@ -16730,8 +16768,9 @@ let _lbKeyHandler = null;
 let _lbCrosshair = (() => { try { return localStorage.getItem('lightboxCrosshair') === '1'; } catch { return false; } })();
 const _lbCrosshairTheme = 'dark';
 
-const _LB_STEPS       = ['h4Before', 'm15Before', 'm15After'];
-const _LB_STEP_LABELS = { h4Before: 'TV Image 1', m15Before: 'TV Image 2', m15After: 'TV Image 3' };
+const _LB_STEPS       = ['h4Before', 'm15Before', 'm15After', ..._EXTRA_SHOT_SLOTS.map(s => s.step)];
+const _LB_STEP_LABELS = { h4Before: 'TV Image 1', m15Before: 'TV Image 2', m15After: 'TV Image 3',
+  ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.step, `TV Image ${s.n}`])) };
 
 // ── Screenshot display order (per profile) ──────────────────────────────────
 // The 3 screenshot slots render in a user-configurable order (Data Setup →
@@ -16742,7 +16781,8 @@ const _LB_STEP_LABELS = { h4Before: 'TV Image 1', m15Before: 'TV Image 2', m15Af
 // everywhere from one source of truth. Labels stay driven by the user's mapping
 // (_getTradeMediaStepLabel) — only the ORDER is configurable, never hardcoded.
 const SCREENSHOT_ORDER_LS_KEY = 'screenshotOrder_v1';
-const _DIM_KEY_TO_LB_STEP = { img_h4_before: 'h4Before', img_m15: 'm15Before', img_m15_after: 'm15After' };
+const _DIM_KEY_TO_LB_STEP = { img_h4_before: 'h4Before', img_m15: 'm15Before', img_m15_after: 'm15After',
+  ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.dim, s.step])) };
 function _getScreenshotStepOrder() {
   let order = null;
   try {
@@ -16850,7 +16890,7 @@ function _wdConsumedCoreColumns() {
   // user sees every one of their own properties, named as in their Notion DB.
   const CORE_DIMS = ['pair', 'outcome', 'r', 'date', 'direction', 'session', 'hour',
     'setup', 'setupDetail', 'rrMax', 'tp1_rr', 'tp2_rr', 'tp3_rr', 'obstacles', 'h4',
-    'notionUrl', 'img_m15', 'img_h4_before', 'img_m15_after'];
+    'notionUrl', 'img_m15', 'img_h4_before', 'img_m15_after', ..._EXTRA_SHOT_SLOTS.map(s => s.dim)];
   const set = new Set();
   const noMap = (typeof NO_MAPPING_VALUE !== 'undefined') ? NO_MAPPING_VALUE : '__NO_MAPPING__';
   for (const d of CORE_DIMS) { const v = ov[d]; if (v && v !== noMap) set.add(v); }
@@ -16906,7 +16946,8 @@ function _wdDynamicColumnDefs(trades) {
 // up the mapped Notion column name and surface it as the modal title (e.g.
 // "URL H4 Before" instead of the generic "TV Image 1") — same auto-rename
 // pattern as _getJournalDimLabel for the Mapping panel.
-const _LB_STEP_TO_DIM_KEY = { h4Before: 'img_h4_before', m15Before: 'img_m15', m15After: 'img_m15_after' };
+const _LB_STEP_TO_DIM_KEY = { h4Before: 'img_h4_before', m15Before: 'img_m15', m15After: 'img_m15_after',
+  ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.step, s.dim])) };
 
 function _getTradeMediaStepLabel(step) {
   // Override wins: when the user (or template auto-mapping) has set a
@@ -17837,6 +17878,10 @@ function openImgLightbox(url, scopeSelector, imgStep, triggerMeta = null) {
           h4BeforeOrig:  b.dataset.tradeH4beforeOrig  || '',
           m15BeforeOrig: b.dataset.tradeM15beforeOrig || '',
           m15AfterOrig:  b.dataset.tradeM15afterOrig  || '',
+          ...Object.fromEntries(_EXTRA_SHOT_SLOTS.flatMap(s => {
+            const k = 'trade' + s.step.charAt(0).toUpperCase() + s.step.slice(1);
+            return [[s.step, b.dataset[k] || ''], [s.step + 'Orig', b.dataset[k + 'Orig'] || '']];
+          })),
         });
       }
     });
@@ -20328,13 +20373,14 @@ function _selTradeRow(t, highlighted) {
          data-trade-id="${safeTradeId}"
          data-trade-pair="${safePair}" data-trade-date="${safeDate}"
          data-trade-h4before="${safeH4b}" data-trade-m15before="${safeM15b}" data-trade-m15after="${safeM15a}"
-         data-trade-h4before-orig="${safeH4bOrig}" data-trade-m15before-orig="${safeM15bOrig}" data-trade-m15after-orig="${safeM15aOrig}"
+         data-trade-h4before-orig="${safeH4bOrig}" data-trade-m15before-orig="${safeM15bOrig}" data-trade-m15after-orig="${safeM15aOrig}"${_extraShotDataAttrs(t)}
          title="${title}">${emoji}</button>`
     : '';
   const _selByStep = {
     h4Before:  _selBtn(safeH4b,'h4Before','📷',_getTradeMediaStepLabel('h4Before')),
     m15Before: _selBtn(safeM15b,'m15Before','📷',_getTradeMediaStepLabel('m15Before')),
     m15After:  _selBtn(safeM15a,'m15After','📸',_getTradeMediaStepLabel('m15After')),
+    ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(x => [x.step, _selBtn(_escShotAttr(t[x.field]), x.step, '📷', _getTradeMediaStepLabel(x.step))])),
   };
   const imgBtns    = `<div class="trade-media-group">
     ${_getScreenshotStepOrder().map(s => _selByStep[s] || '').join('')}
@@ -21971,7 +22017,7 @@ function renderTable(trades) {
          data-trade-id="${meta.safeTradeId}"
          data-trade-pair="${meta.safePair}" data-trade-date="${meta.safeDate}"
          data-trade-h4before="${meta.safeH4b}" data-trade-m15before="${meta.safeM15b}" data-trade-m15after="${meta.safeM15a}"
-         data-trade-h4before-orig="${meta.safeH4bOrig}" data-trade-m15before-orig="${meta.safeM15bOrig}" data-trade-m15after-orig="${meta.safeM15aOrig}"
+         data-trade-h4before-orig="${meta.safeH4bOrig}" data-trade-m15before-orig="${meta.safeM15bOrig}" data-trade-m15after-orig="${meta.safeM15aOrig}"${meta.extraAttrs}
          title="${title}">${emoji}</button>`
     : '';
   const createTradeDaySeparatorRow = dateLabel => `<tr class="tt-day-sep"><td colspan="10">${dateLabel}</td></tr>`;
@@ -21991,11 +22037,13 @@ function renderTable(trades) {
       safeH4bOrig:  (t.imgH4BeforeOrig || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'),
       safeM15bOrig: (t.imgM15Orig      || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'),
       safeM15aOrig: (t.imgM15AfterOrig || '').trim().replace(/'/g, "\\'").replace(/"/g, '&quot;'),
+      extraAttrs: _extraShotDataAttrs(t),
     };
     const _mediaByStep = {
       h4Before:  createTradeMediaButton(meta.safeH4b, 'h4Before', '📷', _getTradeMediaStepLabel('h4Before'), meta),
       m15Before: createTradeMediaButton(meta.safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before'), meta),
       m15After:  createTradeMediaButton(meta.safeM15a, 'm15After', '📸', _getTradeMediaStepLabel('m15After'), meta),
+      ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(x => [x.step, createTradeMediaButton(_escShotAttr(t[x.field]), x.step, '📷', _getTradeMediaStepLabel(x.step), meta)])),
     };
     const imgBtns = `<div class="trade-media-group">
       ${_getScreenshotStepOrder().map(s => _mediaByStep[s] || '').join('')}
@@ -25963,7 +26011,7 @@ function _wdTradeCard(t) {
            data-trade-m15after="${safeM15a}"
            data-trade-h4before-orig="${safeH4bOrig}"
            data-trade-m15before-orig="${safeM15bOrig}"
-           data-trade-m15after-orig="${safeM15aOrig}"
+           data-trade-m15after-orig="${safeM15aOrig}"${_extraShotDataAttrs(t)}
            title="${_escapeHtml(label)}">${emoji}</button>
          <span class="wd-media-label">${_escapeHtml(label)}</span>
        </div>`
@@ -25973,6 +26021,7 @@ function _wdTradeCard(t) {
     h4Before:  _wdBtn(safeH4b,  'h4Before',  '📷', _getTradeMediaStepLabel('h4Before')),
     m15Before: _wdBtn(safeM15b, 'm15Before', '📷', _getTradeMediaStepLabel('m15Before')),
     m15After:  _wdBtn(safeM15a, 'm15After',  '📸', _getTradeMediaStepLabel('m15After')),
+    ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(x => [x.step, _wdBtn(_escShotAttr(t[x.field]), x.step, '📷', _getTradeMediaStepLabel(x.step))])),
   };
   const imgBtn = _getScreenshotStepOrder().map(s => _wdByStep[s]).filter(Boolean).join('');
 
@@ -26209,6 +26258,14 @@ function _pdfBuildDoc(ctx) {
   let SHOT_ORDER;
   try { SHOT_ORDER = _getScreenshotStepOrder(); }
   catch (e) { SHOT_ORDER = ['h4Before', 'm15Before', 'm15After']; }
+  // Extra slots 4–6 only render when at least one exported trade carries an
+  // image there (journals without them keep the classic 3-box layout).
+  const EXTRA_LBL = {};
+  for (const x of _EXTRA_SHOT_SLOTS) {
+    const used = (ctx.sorted || []).some(t => String(t[x.field] || t[x.orig] || '').trim());
+    if (!used) { SHOT_ORDER = SHOT_ORDER.filter(st => st !== x.step); continue; }
+    try { EXTRA_LBL[x.step] = _getTradeMediaStepLabel(x.step); } catch (e) { EXTRA_LBL[x.step] = `TV Image ${x.n}`; }
+  }
 
   // Toggleable card fields. Standard fields default to ON (mirror the classic
   // trade card); custom Notion properties (read from t.extras) default to OFF
@@ -26291,6 +26348,7 @@ function _pdfBuildDoc(ctx) {
       h4Before:  shot(t.imgH4Before, t.imgH4BeforeOrig, LBL[0], 'h4'),
       m15Before: shot(t.imgM15, t.imgM15Orig, LBL[1], 'm15'),
       m15After:  shot(t.imgM15After, t.imgM15AfterOrig, LBL[2], 'after'),
+      ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(x => [x.step, shot(t[x.field], t[x.orig], EXTRA_LBL[x.step] || '', x.step)])),
     };
     const shots = `<div class="shots">${SHOT_ORDER.map(s => _shotByStep[s]).join('')}</div>`;
 
@@ -26411,6 +26469,7 @@ body[data-img-filter] .shots{grid-template-columns:1fr;margin-top:auto;}
 body[data-img-filter="h4"] .shot:not(.shot-h4){display:none;}
 body[data-img-filter="m15"] .shot:not(.shot-m15){display:none;}
 body[data-img-filter="after"] .shot:not(.shot-after){display:none;}
+${_EXTRA_SHOT_SLOTS.map(x => `body[data-img-filter="${x.step}"] .shot:not(.shot-${x.step}){display:none;}`).join('\n')}
 /* Raw gallery: stretch every card in a row to the row height and push the
    screenshot to the bottom (margin-top:auto) so the charts align across the
    row even when heads have different heights (variable obstacle lists). */
@@ -26476,6 +26535,7 @@ body[data-layout="page"]:not([data-img-filter]) .cover{display:flex;justify-cont
     h4Before:  `<option value="h4">${esc(LBL[0])}</option>`,
     m15Before: `<option value="m15">${esc(LBL[1])}</option>`,
     m15After:  `<option value="after">${esc(LBL[2])}</option>`,
+    ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(x => [x.step, `<option value="${x.step}">${esc(EXTRA_LBL[x.step] || '')}</option>`])),
   };
   const selOpts = `<option value="all">All screenshots</option>`
     + SHOT_ORDER.map(s => _optByStep[s] || '').join('');
@@ -26704,7 +26764,8 @@ function _shareResolveMediaSlot(t, field) {
 /* Deterministic Supabase Storage URL of a trade's media slot
    (`<notionId>_<slot>.png`). Caller guarantees `t._notionId`. */
 function _shareMediaStorageUrl(t, field) {
-  const slotName = (field === 'imgH4Before')
+  const extra = _EXTRA_SHOT_SLOTS.find(s => s.field === field);
+  const slotName = extra ? extra.slot : (field === 'imgH4Before')
     ? 'h4_before'
     : (field === 'imgM15')
       ? 'm15_before'
@@ -26731,6 +26792,11 @@ function _buildShareSnapshot(sortedTrades, tpConfig) {
       h4:   _shareResolveMediaSlot(t, 'imgH4Before'),
       m15:  _shareResolveMediaSlot(t, 'imgM15'),
       m15a: _shareResolveMediaSlot(t, 'imgM15After'),
+      // Extra slots 4–6 (s4/s5/s6) — only emitted when filled, so snapshots of
+      // 3-screenshot journals keep their exact shape and size.
+      ...Object.fromEntries(_EXTRA_SHOT_SLOTS
+        .filter(s => String(t[s.field] || t[s.orig] || '').trim())
+        .map(s => [`s${s.n}`, _shareResolveMediaSlot(t, s.field)])),
     },
   }));
 }
@@ -26998,7 +27064,7 @@ const _PRESET_SHARE_TRADE_KEYS = [
   'obstacles', 'h4', 'beManagement', 'outcome', 'outcomeRaw', 'r', 'rrMax', 'tp1_rr', 'tp2_rr',
   'tp3_rr', 'direction', 'tradeType', 'badFeeling', 'invalide', 'hour', 'timeUtc1',
 ];
-const _PRESET_SHARE_MEDIA_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After'];
+const _PRESET_SHARE_MEDIA_FIELDS = ['imgM15', 'imgH4Before', 'imgM15After', ..._EXTRA_SHOT_SLOTS.map(s => s.field)];
 
 function _presetShareEnabled() {
   if (_PRESET_SHARE_ENABLED) return true;
@@ -27164,9 +27230,16 @@ function _buildPresetShareContext() {
    slot (HEAD, public bucket) and keep the ones that exist. */
 async function _presetShareFillMissingMedia(ctx) {
   const jobs = [];
+  // Extra slots 4–6 are probed only when mapped — otherwise every trade would
+  // fire 3 pointless HEAD requests for a column the journal doesn't have.
+  const ov = (typeof _getAPIFieldOverrides === 'function') ? (_getAPIFieldOverrides() || {}) : {};
+  const unmapped = new Set(_EXTRA_SHOT_SLOTS
+    .filter(s => !ov[s.dim] || _isNoMappingValue(ov[s.dim]))
+    .map(s => s.field));
   ctx.sourceTrades.forEach((t, i) => {
     if (!t || !t._notionId) return;
     for (const f of _PRESET_SHARE_MEDIA_FIELDS) {
+      if (unmapped.has(f)) continue;
       if (!ctx.trades[i][f]) jobs.push({ i, f, url: _shareMediaStorageUrl(t, f) });
     }
   });
@@ -35675,6 +35748,19 @@ function _getEffectiveApiOverride(dimKey, source = null) {
   return '';
 }
 
+// Extra screenshot slots 4–6 from CSV: override-only (no default header), so
+// they stay empty until the user maps a column via the Mapping panel pencil.
+function _csvExtraShots(headers, get) {
+  const out = {};
+  for (const s of _EXTRA_SHOT_SLOTS) {
+    const ov = _csvColumnOverrides && _csvColumnOverrides[s.dim];
+    const idx = (ov && !_isNoMappingValue(ov)) ? _colFirst(headers, ov) : -1;
+    const x = _normalizeTvImageUrl(idx >= 0 ? get(idx) : '');
+    out[s.field] = x.url; out[s.orig] = x.origLink;
+  }
+  return out;
+}
+
 // ── Column lookup honoring user remap overrides ──
 function _colForDim(headers, dimKey, ...defaults) {
   const override = _csvColumnOverrides && _csvColumnOverrides[dimKey];
@@ -36169,6 +36255,7 @@ function parseFlippingMarketCSV(text) {
           imgM15:      a.url, imgM15Orig:      a.origLink,
           imgH4Before: b.url, imgH4BeforeOrig: b.origLink,
           imgM15After: c.url, imgM15AfterOrig: c.origLink,
+          ..._csvExtraShots(headers, get),
         };
       })(),
       notionUrl:   iNotionUrl  >= 0 ? get(iNotionUrl)  : '',
@@ -36272,6 +36359,7 @@ function parseProTemplateCSV(text) {
           imgM15:      a.url, imgM15Orig:      a.origLink,
           imgH4Before: b.url, imgH4BeforeOrig: b.origLink,
           imgM15After: c.url, imgM15AfterOrig: c.origLink,
+          ..._csvExtraShots(headers, get),
         };
       })(),
       extras:     _collectCustomExtrasFromCSV(headers, get),
@@ -36371,6 +36459,7 @@ function parseBeginnerCSV(text) {
           imgM15:      a.url, imgM15Orig:      a.origLink,
           imgH4Before: b.url, imgH4BeforeOrig: b.origLink,
           imgM15After: c.url, imgM15AfterOrig: c.origLink,
+          ..._csvExtraShots(headers, get),
         };
       })(),
       extras:    _collectCustomExtrasFromCSV(headers, get),
@@ -38831,6 +38920,13 @@ const JOURNAL_DIMS = [
   { key: 'img_m15_after',  label: 'TV Image 3', tier: 'screenshot', propType: 'url', defaults: {
     flipping: 'M15 After', pro: 'M15 After', beginner: 'M15 After',
   }, widgets: [] },
+  // Extra slots 4–6 — overrideOnly: no canonical column name, the user wires
+  // their own property via the pencil. Unmapped they stay neutral (never
+  // "missing", never in the coverage ring) — see _renderMappingSectionsHtml.
+  ..._EXTRA_SHOT_SLOTS.map(s => ({
+    key: s.dim, label: `TV Image ${s.n}`, tier: 'screenshot', propType: 'url', overrideOnly: true,
+    defaults: { flipping: '', pro: '', beginner: '' }, widgets: [],
+  })),
   // ── Multi TP mode fields (Phase 3) ──
   // Per-tier realized R. Nullable: null = tier not hit (value-presence = hit flag).
   // Defaults follow standard Notion conventions ('RR TP N'); the maps below
@@ -38879,7 +38975,8 @@ function _getJournalDimLabel(dimOrKey) {
   // hardcoded H4-mode relabel did, but generically — the override path
   // already returns 'URL H4 After' on H4-template profiles, no special case
   // needed.
-  const isScreenshot = key === 'img_m15' || key === 'img_h4_before' || key === 'img_m15_after';
+  const isScreenshot = key === 'img_m15' || key === 'img_h4_before' || key === 'img_m15_after'
+    || _EXTRA_SHOT_SLOTS.some(s => s.dim === key);
   if (isScreenshot) {
     const mode = localStorage.getItem(DS_KEY);
     let override = '';
@@ -39691,6 +39788,7 @@ const _JOURNAL_DIM_EXTRACTORS = {
   img_m15:       t => t.imgM15 || '',
   img_h4_before: t => t.imgH4Before || '',
   img_m15_after: t => t.imgM15After || '',
+  ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(s => [s.dim, t => t[s.field] || ''])),
 };
 
 // Scan the current in-memory trade set for a non-empty value on `dimKey`.
@@ -39929,9 +40027,17 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     const missingDims = [];
     const otherDims = [];
     const hiddenDims = [];  // is-no-mapping (USER manual): revealed via footer toggle
+    const spareDims = [];   // unmapped overrideOnly dims (extra screenshot slots): neutral, uncounted
     for (const dim of sectDims) {
       const st = getStatusForDim(dim);
       if (!st) continue;
+      // Opt-in extras (e.g. TV Image 4–6) that aren't wired yet: not a gap in
+      // the journal, so they never count toward the tier total nor go red —
+      // they sit in a closed "Available slots" group the user can open to map.
+      if (dim.overrideOnly === true && st.status === 'is-missing') {
+        spareDims.push({ dim, st, label: _getJournalDimLabel ? _getJournalDimLabel(dim) : (dim.label || dim.key) });
+        continue;
+      }
       // Template-auto no-mapping → fully invisible. The dim is irrelevant
       // for this template (e.g. session/hour/M15 obstacles on an H4 profile)
       // so we don't render it, don't count it, don't expose a toggle for it.
@@ -39962,6 +40068,7 @@ function _renderMappingSectionsHtml(getStatusForDim) {
       const byOrder = (a, b) => rank(a) - rank(b);
       missingDims.sort(byOrder);
       otherDims.sort(byOrder);
+      spareDims.sort(byOrder);
     }
     const missingLabels = missingDims.map(x => x.label);
 
@@ -39972,6 +40079,7 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     const missingHtml = missingDims.map(({ dim, st }) => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
     const otherHtml   = otherDims.map(({ dim, st })   => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
     const hiddenHtml  = hiddenDims.map(({ dim, st })  => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
+    const spareHtml   = spareDims.map(({ dim, st })   => _renderMappingTableRow(dim, st)).filter(Boolean).join('');
 
     const renderGroup = (groupKey, groupLabel, klass, rowsHtml, defaultOpen) => {
       if (!rowsHtml) return '';
@@ -40009,6 +40117,7 @@ function _renderMappingSectionsHtml(getStatusForDim) {
     const groupsHtml =
         renderGroup('missing', 'Missing', 'is-missing-group', missingHtml, /* defaultOpen */ true)
       + renderGroup('mapped',  'Mapped',  'is-mapped-group',  otherHtml,   /* defaultOpen */ onlyMapped)
+      + renderGroup('spare',   'Available slots', 'is-spare-group', spareHtml, /* defaultOpen */ false)
       + renderHiddenFooter(sect.tier, hiddenHtml, hiddenDims.length);
     if (!groupsHtml) return '';
 
