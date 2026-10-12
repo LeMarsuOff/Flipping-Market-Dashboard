@@ -4664,6 +4664,8 @@ function handleActionClick(event) {
       _wdHandleFieldToggle(actionEl);
       break;
     case 'wd-field-color-reset': event.stopPropagation(); _wdHandleFieldColorReset(actionEl); break;
+    case 'wd-color-palette-toggle': event.stopPropagation(); _wdToggleColorPalette(actionEl); break;
+    case 'wd-color-pick':       event.stopPropagation(); _wdHandleColorPick(actionEl); break;
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'open-preset-share-popover':  event.stopPropagation(); _handleOpenPresetSharePopover(); break;
@@ -16905,8 +16907,34 @@ const _WD_HEADER_FIELD_KEYS = ['direction', 'date'];
 // Legacy card render order (Setup above Session — differs from the specs list).
 const _WD_BODY_FIELD_KEYS = ['setup', 'sess', 'rrmax', 'tphits', 'h4', 'm15'];
 let _tradeCardLayoutCache = null;
+// Predefined colours of the Card fields swatch: theme tokens (stored as the
+// literal 'var(--token)'), so they follow the active theme and fields picked
+// from the same dot are guaranteed to share exactly the same colour.
+const _WD_COLOR_PALETTE = ['--chart-cat-1', '--chart-cat-2', '--chart-cat-3', '--chart-cat-4',
+  '--chart-cat-5', '--chart-cat-6', '--chart-cat-7', '--chart-cat-8',
+  '--g', '--r', '--white', '--dim'].map(t => `var(${t})`);
+// A stored colour is either a palette token or a custom #rrggbb.
 function _wdSanitizeColor(c) {
-  return (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ? c.toLowerCase() : '';
+  if (typeof c !== 'string') return '';
+  if (_WD_COLOR_PALETTE.includes(c)) return c;
+  return /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : '';
+}
+
+// Separate Notion "Hour" + "Min" columns render as one "Hour : 15:30" line
+// (the Min column is folded into the Hour one — card and popover alike).
+const _WD_HOUR_COL_RE = /^\s*(hour|hours|heure|heures)\s*$/i;
+const _WD_MIN_COL_RE = /^\s*(min|mins|minute|minutes)\s*$/i;
+function _wdHourMinPair(keys) {
+  const hour = keys.find(k => _WD_HOUR_COL_RE.test(k));
+  const min = keys.find(k => _WD_MIN_COL_RE.test(k));
+  return (hour && min) ? { hour, min } : null;
+}
+function _wdFormatHourMin(h, m) {
+  const one = v => String(Array.isArray(v) ? (v[0] ?? '') : (v ?? '')).trim();
+  const pad = v => (/^\d$/.test(v) ? '0' + v : v);
+  const hh = one(h);
+  if (!hh) return '';
+  return `${pad(hh)}:${pad(one(m) || '00')}`;
 }
 function _getTradeCardLayout() {
   if (_tradeCardLayoutCache) return _tradeCardLayoutCache;
@@ -17035,6 +17063,8 @@ function _wdDynamicColumnDefs(trades) {
       seen.set(k, _wdDynamicColumnLabel(k, customBySrc));
     }
   }
+  const hm = _wdHourMinPair([...seen.keys()]);
+  if (hm) seen.delete(hm.min);
   return [...seen.entries()]
     .map(([key, label]) => ({ key, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -17161,21 +17191,9 @@ function _lbShow(tradeIdx, step) {
       const card = activeBtn.closest('.wd-trade-card');
       if (card) {
         card.style.borderColor = 'var(--gold)';
-        // Only scroll when the card is fully outside the drawer body. The
-        // built-in `scrollIntoView({ block: 'nearest' })` was nudging the
-        // card to the edge on every keystroke (felt like the drawer
-        // "snapped back" each time the lightbox crossed a day separator).
-        const body = card.closest('.wd-drawer-body');
-        if (body) {
-          const cRect = body.getBoundingClientRect();
-          const eRect = card.getBoundingClientRect();
-          if (eRect.bottom <= cRect.top) {
-            body.scrollTop += (eRect.top - cRect.top);
-          } else if (eRect.top >= cRect.bottom) {
-            body.scrollTop += (eRect.bottom - cRect.bottom);
-          }
-          // Otherwise (partially or fully visible) leave scroll position alone.
-        }
+        // The selected card is always pinned to the top of the list, fully
+        // visible (Max: a half-hidden active card forced a manual scroll).
+        _wdPinCardTop(card);
       }
       activeBtn.style.outline = '2px solid var(--a)';
       activeBtn.style.borderRadius = '3px';
@@ -26085,6 +26103,29 @@ const _WD_BG_CLASS = {
   'BE': 'wd-trade-card-be',
 };
 
+/* Pin a drawer trade card to the top of the scroll area — just under the
+   sticky day header (its height = the body's scroll-padding-top, which is
+   also the snap inset). Near the end of the list there is not enough content
+   left to scroll that far, so the body gets just enough bottom padding. */
+// Instant scroll on purpose: a smooth scroll gets cancelled by the body's
+// scroll-snap / the lightbox opening and the card stayed half hidden.
+function _wdPinCardTop(card) {
+  const body = card && card.closest('.wd-drawer-body');
+  if (!body) return;
+  const cs = getComputedStyle(body);
+  if (body._wdBasePadB == null) body._wdBasePadB = parseFloat(cs.paddingBottom) || 0;
+  const inset = parseFloat(cs.scrollPaddingTop) || 0;
+  const target = Math.max(0, body.scrollTop
+    + (card.getBoundingClientRect().top - body.getBoundingClientRect().top) - inset);
+  const maxScroll = body.scrollHeight - body.clientHeight;
+  if (target > maxScroll) {
+    const curPad = parseFloat(body.style.paddingBottom) || body._wdBasePadB;
+    body.style.paddingBottom = (curPad + target - maxScroll) + 'px';
+  }
+  if (Math.abs(body.scrollTop - target) < 1) return;
+  body.scrollTo({ top: target, behavior: 'auto' });
+}
+
 /* Build one trade card HTML for the shared drawer */
 function _wdTradeCard(t) {
   // Screenshot buttons: H4 Before · M15 Before · M15 After
@@ -26228,12 +26269,16 @@ function _wdTradeCard(t) {
     const consumed = _wdConsumedCoreColumns();
     const customBySrc = _wdCustomPropLabelMap();
     const out = {};
+    const hm = _wdHourMinPair(Object.keys(e));
     for (const k in e) {
       if (consumed.has(k) || _NOTION_EXTRAS_SYSTEM_KEYS.has(k)) continue;
+      if (hm && k === hm.min) continue;            // folded into the Hour line
       if (!_wdFieldVisible('x:' + k)) continue;
       const raw = e[k];
       if (raw == null || raw === '' || (Array.isArray(raw) && !raw.length)) continue;
-      const val = Array.isArray(raw) ? raw.filter(x => x != null && x !== '').map(String).join(' · ') : String(raw);
+      const val = (hm && k === hm.hour)
+        ? _wdFormatHourMin(raw, e[hm.min])
+        : Array.isArray(raw) ? raw.filter(x => x != null && x !== '').map(String).join(' · ') : String(raw);
       if (!val) continue;
       const label = _wdDynamicColumnLabel(k, customBySrc);
       out['x:' + k] = { label, html: `<div class="wd-trade-meta-line wd-trade-meta-line-full">
@@ -27504,6 +27549,7 @@ const _SHARE_MODE_ALLOWED_ACTIONS = new Set([
   'open-tradelog-drawer', 'recovery-hist-bar', 'cal-open-day', 'expo-open-day',
   'expo-open-cohort', 'expo-open-pair', 'expo-open-conc', 'expo-open-wr',
   'close-widget-drawer', 'toggle-wd-fields', 'wd-field-toggle', 'wd-field-color-reset',
+  'wd-color-palette-toggle', 'wd-color-pick',
   'open-img-lightbox', 'lightbox-nav-trade',
 ]);
 
@@ -27629,17 +27675,26 @@ function _wdBuildFieldsPanelHtml() {
   };
   const plainRow = (key, label) => `<label class="wd-fields-opt">${check(key, label)}</label>`;
   const defaultHex = _wdDefaultValueColors();
+  // Swatch → inline palette (predefined theme colours + a custom picker).
   const bodyRow = (key, label) => {
     const k = _escapeHtml(key);
     const custom = _wdFieldColor(key);
-    const hex = custom || defaultHex[key] || defaultHex.meta;
+    const shown = custom || defaultHex[key] || defaultHex.meta;
+    const pickerHex = (custom && !custom.startsWith('#')) ? _wdCssColorToHex(custom) : shown;
+    const dots = _WD_COLOR_PALETTE.map(c =>
+      `<button class="wd-color-dot${custom === c ? ' is-sel' : ''}" type="button" data-action="wd-color-pick" data-field-key="${k}" data-color="${c}" style="background:${c}"></button>`
+    ).join('');
     return `<div class="wd-fields-opt is-sortable" data-field-key="${k}">
       <span class="wd-fields-handle" data-wd-drag-handle title="Drag to reorder" aria-hidden="true">⋮⋮</span>
       <label class="wd-fields-opt-lbl">${check(key, label)}</label>
       ${custom ? `<button class="wd-fields-color-reset" type="button" data-action="wd-field-color-reset" data-field-key="${k}" title="Reset colour">↺</button>` : ''}
-      <label class="wd-fields-swatch${custom ? ' is-custom' : ''}" title="Value colour" style="background:${hex}">
-        <input type="color" data-wd-color-input data-field-key="${k}" value="${hex}">
-      </label>
+      <button class="wd-fields-swatch${custom ? ' is-custom' : ''}" type="button" data-action="wd-color-palette-toggle" title="Value colour" style="background:${shown}"></button>
+      <div class="wd-color-palette" hidden>
+        ${dots}
+        <label class="wd-color-dot wd-color-custom${custom && custom.startsWith('#') ? ' is-sel' : ''}" title="Custom colour">+
+          <input type="color" data-wd-color-input data-field-key="${k}" value="${pickerHex}">
+        </label>
+      </div>
     </div>`;
   };
   // Dynamic columns come from the open drawer's own trade set (stashed on the
@@ -27675,29 +27730,39 @@ function _wdBuildFieldsPanelHtml() {
    colour input (it only accepts hex). Probed from a hidden card inside the
    drawer so it follows the active theme; `meta` covers every "Title : value"
    line (RR Max, TP hits, obstacles, Notion columns). */
+// Computed colour of an element as #rrggbb (<input type=color> only takes hex).
+function _wdComputedHex(el) {
+  const css = getComputedStyle(el).color || '';
+  const m = css.match(/[\d.]+/g);
+  if (!m || m.length < 3) return '#808080'; // neutral fallback, probe unresolved
+  // rgb()/rgba() → 0–255 channels; color(srgb r g b / a) (color-mix) → 0–1.
+  const scale = /^color\(/.test(css) ? 255 : 1;
+  return '#' + m.slice(0, 3)
+    .map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n) * scale))).toString(16).padStart(2, '0'))
+    .join('');
+}
+// Resolve any CSS colour (e.g. a palette 'var(--token)') to #rrggbb.
+function _wdCssColorToHex(cssColor) {
+  const host = document.getElementById('wd-drawer') || document.body;
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;';
+  probe.style.color = cssColor;
+  host.appendChild(probe);
+  const hex = _wdComputedHex(probe);
+  probe.remove();
+  return hex;
+}
 function _wdDefaultValueColors() {
-  // Only used if the probe can't resolve a colour (<input type=color> needs hex).
-  const NEUTRAL = '#808080';
   const host = document.getElementById('wd-drawer') || document.body;
   const probe = document.createElement('div');
   probe.className = 'wd-trade-card';
   probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;';
   probe.innerHTML = '<span class="wd-trade-meta-value"></span><div class="wd-trade-setup"></div><div class="wd-trade-session-hour"></div>';
   host.appendChild(probe);
-  const toHex = (el) => {
-    const css = getComputedStyle(el).color || '';
-    const m = css.match(/[\d.]+/g);
-    if (!m || m.length < 3) return NEUTRAL;
-    // rgb()/rgba() → 0–255 channels; color(srgb r g b / a) (color-mix) → 0–1.
-    const scale = /^color\(/.test(css) ? 255 : 1;
-    return '#' + m.slice(0, 3)
-      .map(n => Math.max(0, Math.min(255, Math.round(parseFloat(n) * scale))).toString(16).padStart(2, '0'))
-      .join('');
-  };
   const out = {
-    meta: toHex(probe.children[0]),
-    setup: toHex(probe.children[1]),
-    sess: toHex(probe.children[2]),
+    meta: _wdComputedHex(probe.children[0]),
+    setup: _wdComputedHex(probe.children[1]),
+    sess: _wdComputedHex(probe.children[2]),
   };
   probe.remove();
   return out;
@@ -27730,7 +27795,7 @@ document.addEventListener('input', (e) => {
   if (!key || !c) return;
   const layout = _getTradeCardLayout();
   _setTradeCardLayout({ ...layout, colors: { ...layout.colors, [key]: c } }, false);
-  const sw = inp.closest('.wd-fields-swatch');
+  const sw = inp.closest('.wd-fields-opt')?.querySelector('.wd-fields-swatch');
   if (sw) sw.style.background = c;
   if (!_wdColorRaf) _wdColorRaf = requestAnimationFrame(() => { _wdColorRaf = 0; _wdRerenderDrawerCards(); });
 });
@@ -27745,6 +27810,25 @@ document.addEventListener('change', (e) => {
   _wdRerenderDrawerCards();
   _wdRebuildFieldsPopover();
 });
+
+/* Swatch click: open this row's palette (closing any other one). */
+function _wdToggleColorPalette(btn) {
+  const pal = btn && btn.closest('.wd-fields-opt')?.querySelector('.wd-color-palette');
+  if (!pal) return;
+  const open = pal.hasAttribute('hidden');
+  document.querySelectorAll('#wd-drawer .wd-color-palette').forEach(p => p.setAttribute('hidden', ''));
+  if (open) pal.removeAttribute('hidden');
+}
+/* Palette dot: apply that theme colour to the field + persist. */
+function _wdHandleColorPick(btn) {
+  const key = btn && btn.dataset ? btn.dataset.fieldKey : '';
+  const c = _wdSanitizeColor(btn && btn.dataset ? btn.dataset.color : '');
+  if (!key || !c) return;
+  const layout = _getTradeCardLayout();
+  _setTradeCardLayout({ ...layout, colors: { ...layout.colors, [key]: c } });
+  _wdRerenderDrawerCards();
+  _wdRebuildFieldsPopover();
+}
 
 function _wdHandleFieldColorReset(btn) {
   const key = btn && btn.dataset ? btn.dataset.fieldKey : '';
@@ -28004,7 +28088,7 @@ function openWidgetDrawer(title, subtitle, trades, highlightTrade = null, opts =
       const card = cards[idx];
       if (card) {
         card.classList.add('is-active');
-        requestAnimationFrame(() => card.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+        requestAnimationFrame(() => _wdPinCardTop(card));
       }
     }
   }

@@ -12110,18 +12110,50 @@ body.ms-sidebar-open .view-tabs {
   position: relative;
   z-index: 1;
 }
+.wd-fields-opt.is-sortable { flex-wrap: wrap; }
 .wd-fields-swatch {
   position: relative;
   flex-shrink: 0;
   width: 16px;
   height: 16px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--line2);
   cursor: pointer;
-  overflow: hidden;
 }
 .wd-fields-swatch.is-custom { box-shadow: 0 0 0 1.5px var(--bg2), 0 0 0 2.5px var(--gold); }
-.wd-fields-swatch input {
+/* Inline palette under the row: theme colours + custom picker (+). */
+.wd-color-palette {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: repeat(7, 18px);
+  gap: 6px;
+  justify-content: end;
+  padding: 6px 2px 2px;
+}
+.wd-color-palette[hidden] { display: none; }
+.wd-color-dot {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line2);
+  cursor: pointer;
+}
+.wd-color-dot:hover { transform: scale(1.12); }
+.wd-color-dot.is-sel { box-shadow: 0 0 0 1.5px var(--bg2), 0 0 0 2.5px var(--gold); }
+.wd-color-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg3);
+  color: var(--body);
+  font-size: 13px;
+  line-height: 1;
+  overflow: hidden;
+}
+.wd-color-custom input {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -12277,7 +12309,11 @@ body.ms-sidebar-open .view-tabs {
   border-radius: 4px;
   padding: 10px 14px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* minmax(0,…) + overflow-wrap: long unbroken values (e.g. "-----" rulers
+     in a Notion text prop) wrap inside the card instead of widening it. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  overflow-wrap: anywhere;
+  min-width: 0;
   gap: 4px;
   margin-bottom: 6px;
   border: 1.5px solid transparent;
