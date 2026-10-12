@@ -148,6 +148,43 @@ function _mediaSlot(v) {
   return { url: (v.url || '').trim(), orig: (v.orig || '').trim() };
 }
 
+/* Sender-resolved layout (snapshot `t.card`, built by dashboard.js
+   _shareCardLayout): body lines in the sender's order/visibility/colours,
+   Date / Direction visibility, screenshots in the sender's order with their
+   column names. Absent on links created before it existed → legacy render. */
+function _cardLayout(t) {
+  const c = t && t.card;
+  return (c && c.v === 1 && Array.isArray(c.lines)) ? c : null;
+}
+function _safeHex(c) {
+  return (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ? c : '';
+}
+// Screenshot slots of a trade in display order, as [slot, label].
+function _slotEntries(t) {
+  const c = _cardLayout(t);
+  if (c && Array.isArray(c.shots)) {
+    return c.shots.filter(e => Array.isArray(e) && _SLOT_LABEL[e[0]]).map(e => [e[0], String(e[1] || _SLOT_LABEL[e[0]])]);
+  }
+  return _SLOT_ORDER.map(s => [s, _SLOT_LABEL[s]]);
+}
+function _slotOrder(t) { return _slotEntries(t).map(e => e[0]); }
+function _slotLabel(t, slot) {
+  const e = _slotEntries(t).find(x => x[0] === slot);
+  return e ? e[1] : slot;
+}
+// Body line → HTML (mirror of dashboard.js _wdRenderBodyLine).
+function _renderBodyLine(l) {
+  const c = _safeHex(l && l.c);
+  const st = c ? ` style="color:${c}"` : '';
+  if (l.k === 'sep') return '<div class="wd-trade-sep wd-trade-meta-line-full"></div>';
+  if (l.k === 'setup') return `<div class="wd-trade-setup wd-trade-meta-line-full"${st}>${escapeHtml(l.v)}</div>`;
+  if (l.k === 'sess') {
+    return `<div class="wd-trade-session-hour wd-trade-meta-line-full"${st}>${(Array.isArray(l.p) ? l.p : []).map(p => `<span>${escapeHtml(p)}</span>`).join('')}</div>`;
+  }
+  return `<div class="wd-trade-meta-line wd-trade-meta-line-full">
+         <span class="wd-trade-meta-title">${escapeHtml(l.ti)} :</span><span class="wd-trade-meta-value"${st}>${escapeHtml(l.v)}</span></div>`;
+}
+
 /* Renders a trade card with the SAME HTML structure as _wdTradeCard()
    in dashboard.js, so share.css can reuse the dashboard's `.wd-trade-card*`
    rules verbatim. */
@@ -162,10 +199,11 @@ function renderCard(t, idx) {
   // Camera buttons — emojis match dashboard.js (📷📷📸).
   // A slot renders iff it has a url OR a TradingView orig fallback link.
   // Extra slots s4–s6 (TV Image 4–6) are only present in newer snapshots.
+  const layout = _cardLayout(t);
   const cams = [];
-  for (const slot of _SLOT_ORDER) {
+  for (const [slot, label] of _slotEntries(t)) {
     const v = _mediaSlot(t.media && t.media[slot]);
-    if (v.url || v.orig) cams.push({ emoji: slot === 'm15a' ? '📸' : '📷', label: _SLOT_LABEL[slot], slot, ...v });
+    if (v.url || v.orig) cams.push({ emoji: slot === 'm15a' ? '📸' : '📷', label, slot, ...v });
   }
 
   const camsHtml = cams.map(c => `
@@ -219,6 +257,26 @@ function renderCard(t, idx) {
          <span class="wd-trade-meta-title">Obstacles M15 :</span><span class="wd-trade-meta-value">${escapeHtml([...obsM15].sort().join(' · '))}</span>
        </div>`
     : '';
+
+  if (layout) {
+    // 4+ screenshots: own full-width row under the header (mirror dashboard).
+    const ownRow = cams.length >= 4;
+    return `
+    <div class="wd-trade-card ${bgCls}" data-card-idx="${idx}">
+      <div class="wd-trade-main">
+        <div class="wd-trade-pair-row">${escapeHtml(t.pair || '—')}</div>
+        ${(layout.date && t.date) ? `<div class="wd-trade-date">${escapeHtml(t.date)}</div>` : ''}
+      </div>
+      <div class="wd-trade-side">
+        <div class="wd-trade-r ${rCls}">${escapeHtml(rDisplay)}</div>
+        ${ownRow ? '' : camsHtml}
+      </div>
+      ${ownRow ? `<div class="wd-trade-media-row wd-trade-meta-line-full">${camsHtml}</div>` : ''}
+      ${layout.dir ? directionHtml : ''}
+      ${outcomeHtml}
+      ${layout.lines.map(_renderBodyLine).join('')}
+    </div>`;
+  }
 
   const setupLine = t.style || '—';
 
@@ -380,10 +438,11 @@ function _navStepDelta(delta) {
   if (_navState.tradeIdx < 0) return;
   const t = _navState.trades[_navState.tradeIdx];
   if (!t) return;
-  const curIdx = _SLOT_ORDER.indexOf(_navState.slot);
-  for (let i = 1; i <= _SLOT_ORDER.length; i++) {
-    const newIdx  = ((curIdx + delta * i) % _SLOT_ORDER.length + _SLOT_ORDER.length) % _SLOT_ORDER.length;
-    const newSlot = _SLOT_ORDER[newIdx];
+  const order = _slotOrder(t);
+  const curIdx = order.indexOf(_navState.slot);
+  for (let i = 1; i <= order.length; i++) {
+    const newIdx  = ((curIdx + delta * i) % order.length + order.length) % order.length;
+    const newSlot = order[newIdx];
     if (_slotHasContent(t, newSlot)) { _navOpen(_navState.tradeIdx, newSlot); return; }
   }
 }
@@ -397,7 +456,7 @@ function _navTradeDelta(delta) {
     const t = _navState.trades[newIdx];
     // Prefer keeping the current step; otherwise pick the first available.
     if (_slotHasContent(t, _navState.slot)) { _navOpen(newIdx, _navState.slot); return; }
-    const fallback = _SLOT_ORDER.find(s => _slotHasContent(t, s));
+    const fallback = _slotOrder(t).find(s => _slotHasContent(t, s));
     if (fallback) { _navOpen(newIdx, fallback); return; }
   }
 }
@@ -543,12 +602,14 @@ function _showLightbox(t, slot, slotData) {
   // Selector bar — info only (pair · date · STEP · n/total). Trade nav
   // lives in the floating ↑/↓ buttons; step nav in the floating ←/→ buttons.
   const sel = document.getElementById('img-lightbox-sel');
-  const stepLabel = ({ h4: 'H4 Before', m15: 'M15 Before', m15a: 'M15 After', s4: 'Image 4', s5: 'Image 5', s6: 'Image 6' })[slot] || slot;
+  const stepLabel = _cardLayout(t)
+    ? _slotLabel(t, slot)
+    : (({ h4: 'H4 Before', m15: 'M15 Before', m15a: 'M15 After', s4: 'Image 4', s5: 'Image 5', s6: 'Image 6' })[slot] || slot);
   const label = [t.pair, t.date].filter(Boolean).join('  ·  ');
   const total = _navState.trades.length;
   const tradeNum = _navState.tradeIdx + 1;
   const hasMultiTrade = total > 1;
-  const availableSteps = _SLOT_ORDER.filter(s => _slotHasContent(t, s));
+  const availableSteps = _slotOrder(t).filter(s => _slotHasContent(t, s));
   const hasMultiStep = availableSteps.length > 1;
   if (sel) {
     sel.innerHTML = `

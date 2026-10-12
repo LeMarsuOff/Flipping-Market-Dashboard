@@ -26140,6 +26140,105 @@ function _wdPinCardTop(card) {
   body.scrollTo({ top: target, behavior: 'auto' });
 }
 
+/* Ordered body lines of a drawer trade card, as plain data:
+     { key, kind: 'meta'|'setup'|'sess'|'sep', title?, value?, parts?, color? }
+   Honours the per-profile visibility, order, colours and separators (extra
+   separators collapsed) and folds Hour + Min. Shared by _wdTradeCard and the
+   trade-cards share snapshot so the shared viewer renders the exact same card. */
+function _wdCardBodyLines(t) {
+  const vis = _wdFieldVisible;
+  const col = _wdFieldColor;
+  const meta = (key, title, value) => ({ key, kind: 'meta', title, value, color: col(key) });
+  const byKey = {};
+
+  const setupLine = t.setupDetail || t.setup || '—';
+  if (vis('setup')) byKey.setup = { key: 'setup', kind: 'setup', value: String(setupLine), color: col('setup') };
+
+  if ((t.session || t.hour != null) && vis('sess')) {
+    const parts = [];
+    if (t.session) parts.push(String(t.session));
+    if (t.hour != null) parts.push(String(t.hour).padStart(2, '0') + ':00');
+    byKey.sess = { key: 'sess', kind: 'sess', parts, color: col('sess') };
+  }
+
+  // RR Max — shown when the trade has a finite rrMax, regardless of TP mode.
+  if (typeof t.rrMax === 'number' && Number.isFinite(t.rrMax) && vis('rrmax')) {
+    byKey.rrmax = meta('rrmax', 'RR Max', `${t.rrMax.toFixed(1)}R`);
+  }
+
+  // TP hits — Multi / Personalised modes only, winning trades only (the big R
+  // already conveys a loss / BE). A TP slot shows only if t.tpN_rr is finite.
+  const tpc = appState.ui.tpConfig;
+  const tpMode = tpc && tpc.mode;
+  if ((tpMode === 'multi' || tpMode === 'personalised') && vis('tphits')
+      && t.effectiveClass !== 'loss' && t.effectiveClass !== 'be') {
+    const tpCount = (tpMode === 'multi' ? tpc.multi?.tpCount : tpc.personalised?.tpCount) || 2;
+    const fin = v => typeof v === 'number' && Number.isFinite(v);
+    const slots = [{ label: 'TP1', val: t.tp1_rr }, { label: 'TP2', val: t.tp2_rr }];
+    if (tpCount === 3) slots.push({ label: 'TP3', val: t.tp3_rr });
+    const parts = slots.filter(x => fin(x.val)).map(x => `${x.label}: ${x.val.toFixed(1)}R`);
+    if (parts.length) byKey.tphits = meta('tphits', 'TP hits', parts.join(' · '));
+  }
+
+  const h4Arr = Array.isArray(t.h4) ? t.h4 : (t.h4 ? [t.h4] : []);
+  if (h4Arr.length && vis('h4')) byKey.h4 = meta('h4', 'Obstacles H4', [...h4Arr].sort().join(' · '));
+  const obsArr = Array.isArray(t.obstacles) ? t.obstacles : (t.obstacles ? [t.obstacles] : []);
+  if (obsArr.length && vis('m15')) byKey.m15 = meta('m15', 'Obstacles M15', [...obsArr].sort().join(' · '));
+
+  // Dynamic Notion properties — one line per ENABLED column present on this
+  // trade (t.extras), keyed 'x:<col>', default OFF. Core-consumed columns are
+  // skipped so nothing double-renders; sorted by label = popover default order.
+  const e = t.extras;
+  if (e && typeof e === 'object') {
+    const consumed = _wdConsumedCoreColumns();
+    const customBySrc = _wdCustomPropLabelMap();
+    const isEmpty = v => v == null || v === '' || (Array.isArray(v) && !v.length);
+    const hm = _wdHourMinPair(
+      Object.keys(e).filter(k => !consumed.has(k) && !_NOTION_EXTRAS_SYSTEM_KEYS.has(k) && !isEmpty(e[k])),
+      k => vis('x:' + k));
+    const dyn = [];
+    for (const k in e) {
+      if (consumed.has(k) || _NOTION_EXTRAS_SYSTEM_KEYS.has(k)) continue;
+      if (hm && hm.mins.has(k)) continue;          // folded into the Hour line
+      if (!vis('x:' + k)) continue;
+      const raw = e[k];
+      if (isEmpty(raw)) continue;
+      const val = (hm && k === hm.hour)
+        ? _wdFormatHourMin(raw, e[hm.min])
+        : Array.isArray(raw) ? raw.filter(x => x != null && x !== '').map(String).join(' · ') : String(raw);
+      if (!val) continue;
+      dyn.push(meta('x:' + k, _wdDynamicColumnLabel(k, customBySrc), val));
+    }
+    dyn.sort((a, b) => a.title.localeCompare(b.title)).forEach(d => { byKey[d.key] = d; });
+  }
+
+  for (const k of _wdSeparatorKeys()) byKey[k] = { key: k, kind: 'sep' };
+
+  // Per-profile order; drop separators that would sit at the top / bottom or
+  // right after another one (the fields between them are hidden or empty).
+  const out = [];
+  for (const k of _wdOrderBodyKeys(Object.keys(byKey))) {
+    const d = byKey[k];
+    if (d.kind === 'sep' && (!out.length || out[out.length - 1].kind === 'sep')) continue;
+    out.push(d);
+  }
+  while (out.length && out[out.length - 1].kind === 'sep') out.pop();
+  return out;
+}
+
+/* HTML of one _wdCardBodyLines entry. Every value is escaped; `color` is
+   already sanitized (palette token or #rrggbb) by _wdFieldColor. */
+function _wdRenderBodyLine(d) {
+  const st = d.color ? ` style="color:${d.color}"` : '';
+  if (d.kind === 'sep') return '<div class="wd-trade-sep wd-trade-meta-line-full"></div>';
+  if (d.kind === 'setup') return `<div class="wd-trade-setup wd-trade-meta-line-full"${st}>${_escapeHtml(d.value)}</div>`;
+  if (d.kind === 'sess') {
+    return `<div class="wd-trade-session-hour wd-trade-meta-line-full"${st}>${(d.parts || []).map(p => `<span>${_escapeHtml(p)}</span>`).join('')}</div>`;
+  }
+  return `<div class="wd-trade-meta-line wd-trade-meta-line-full">
+         <span class="wd-trade-meta-title">${_escapeHtml(d.title)} :</span><span class="wd-trade-meta-value"${st}>${_escapeHtml(d.value)}</span></div>`;
+}
+
 /* Build one trade card HTML for the shared drawer */
 function _wdTradeCard(t) {
   // Screenshot buttons: H4 Before · M15 Before · M15 After
@@ -26194,65 +26293,8 @@ function _wdTradeCard(t) {
 
   // Optional per-card fields honour the per-profile "Card fields" visibility
   // config (_wdFieldVisible). Pair / R / Outcome below stay unconditional —
-  // they are the card's identity anchors and are never toggleable.
-  // Body lines also take the user's value colour (_wdFieldColor), if any.
-  const _colStyle = (key) => { const c = _wdFieldColor(key); return c ? ` style="color:${c}"` : ''; };
-
-  // H4 obstacles
-  const h4Arr = Array.isArray(t.h4) ? t.h4 : (t.h4 ? [t.h4] : []);
-  const h4Html = (h4Arr.length && _wdFieldVisible('h4'))
-    ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">Obstacles H4 :</span><span class="wd-trade-meta-value"${_colStyle('h4')}>${[...h4Arr].sort().join(' · ')}</span></div>`
-    : '';
-
-  // M15 obstacles
-  const obsArr = Array.isArray(t.obstacles) ? t.obstacles : (t.obstacles ? [t.obstacles] : []);
-  const obsHtml = (obsArr.length && _wdFieldVisible('m15'))
-    ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">Obstacles M15 :</span><span class="wd-trade-meta-value"${_colStyle('m15')}>${[...obsArr].sort().join(' · ')}</span></div>`
-    : '';
-
-  // Session + hour line
-  const sessionHourHtml = ((t.session||t.hour!=null) && _wdFieldVisible('sess'))
-    ? `<div class="wd-trade-session-hour wd-trade-meta-line-full"${_colStyle('sess')}>${t.session?`<span>${t.session}</span>`:''}${t.hour!=null?`<span>${String(t.hour).padStart(2,'0')}:00</span>`:''}</div>`
-    : '';
-
-  // RR Max line — always shown when the trade has a finite rrMax, regardless of TP mode
-  const rrMaxHtml = (typeof t.rrMax === 'number' && Number.isFinite(t.rrMax) && _wdFieldVisible('rrmax'))
-    ? `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">RR Max :</span><span class="wd-trade-meta-value"${_colStyle('rrmax')}>${t.rrMax.toFixed(1)}R</span></div>`
-    : '';
-
-  // TP hits line — shown in Multi / Personalised modes only.
-  // A given TP slot is displayed only if its per-trade value (t.tpN_rr) is a finite
-  // number. If no slot qualifies, the entire line is hidden.
-  const _tpConfigForCard = appState.ui.tpConfig;
-  const _tpModeForCard   = _tpConfigForCard && _tpConfigForCard.mode;
-  const _showTpHits      = _tpModeForCard === 'multi' || _tpModeForCard === 'personalised';
-  const tpHitsHtml = (() => {
-    if (!_showTpHits || !_wdFieldVisible('tphits')) return '';
-    // Hide the whole TP hits line for losing or BE-neutre trades — the big R
-    // figure already conveys the outcome, and per-TP detail is meaningful only
-    // when at least one tier was actually captured (effectiveClass === 'win').
-    // Under fixed mode: BE-SL with trade.r=-1 → effectiveClass='loss' → hidden,
-    // matching the legacy `t.r < 0 || outcome === 'BE-SL'` behavior.
-    if (t.effectiveClass === 'loss' || t.effectiveClass === 'be') return '';
-    const tpCount = (_tpModeForCard === 'multi'
-      ? _tpConfigForCard.multi?.tpCount
-      : _tpConfigForCard.personalised?.tpCount) || 2;
-    const isFiniteNum = v => typeof v === 'number' && Number.isFinite(v);
-    const slots = [
-      { label: 'TP1', val: t.tp1_rr },
-      { label: 'TP2', val: t.tp2_rr },
-    ];
-    if (tpCount === 3) slots.push({ label: 'TP3', val: t.tp3_rr });
-    const parts = slots
-      .filter(s => isFiniteNum(s.val))
-      .map(s => `${s.label}: ${s.val.toFixed(1)}R`);
-    if (!parts.length) return '';
-    return `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-              <span class="wd-trade-meta-title">TP hits :</span><span class="wd-trade-meta-value"${_colStyle('tphits')}>${parts.join(' · ')}</span></div>`;
-  })();
+  // they are the card's identity anchors and are never toggleable. The body
+  // lines come from _wdCardBodyLines (shared with the trade-card share snapshot).
 
   // Direction line — Achat = blue, Vente = rose
   const _dirCol = t.direction === 'Achat' ? '#5b9cf6' : t.direction === 'Vente' ? '#f472b6' : 'var(--dim)';
@@ -26260,69 +26302,12 @@ function _wdTradeCard(t) {
     ? `<div class="wd-trade-direction" style="color:${_dirCol}">${t.direction}</div>`
     : '';
 
-  // Setup line: prefer setupDetail over setup
-  const setupLine = t.setupDetail || t.setup || '—';
-  const setupHtml = _wdFieldVisible('setup')
-    ? `<div class="wd-trade-setup wd-trade-meta-line-full"${_colStyle('setup')}>${_escapeHtml(setupLine)}</div>`
-    : '';
-
   // Date line (in the pair block) — honours the 'date' toggle.
   const dateHtml = (t.date && _wdFieldVisible('date'))
     ? `<div class="wd-trade-date">${_escapeHtml(t.date)}</div>`
     : '';
 
-  // Dynamic Notion properties — one meta line per ENABLED column present on this
-  // trade (t.extras), keyed 'x:<col>'. This is the whole point of the redesign:
-  // the offered set is THIS user's real Notion columns, not a hardcoded list.
-  // Core-consumed columns (mapped to the 8 styled fields + anchors) are skipped
-  // so nothing double-renders. All default OFF. Keyed 'x:<col>' so the body
-  // below can interleave them with the core lines in the user's order.
-  const dynamicByKey = (() => {
-    const e = t.extras;
-    if (!e || typeof e !== 'object') return {};
-    const consumed = _wdConsumedCoreColumns();
-    const customBySrc = _wdCustomPropLabelMap();
-    const out = {};
-    const isEmpty = v => v == null || v === '' || (Array.isArray(v) && !v.length);
-    const hm = _wdHourMinPair(
-      Object.keys(e).filter(k => !consumed.has(k) && !_NOTION_EXTRAS_SYSTEM_KEYS.has(k) && !isEmpty(e[k])),
-      k => _wdFieldVisible('x:' + k));
-    for (const k in e) {
-      if (consumed.has(k) || _NOTION_EXTRAS_SYSTEM_KEYS.has(k)) continue;
-      if (hm && hm.mins.has(k)) continue;          // folded into the Hour line
-      if (!_wdFieldVisible('x:' + k)) continue;
-      const raw = e[k];
-      if (raw == null || raw === '' || (Array.isArray(raw) && !raw.length)) continue;
-      const val = (hm && k === hm.hour)
-        ? _wdFormatHourMin(raw, e[hm.min])
-        : Array.isArray(raw) ? raw.filter(x => x != null && x !== '').map(String).join(' · ') : String(raw);
-      if (!val) continue;
-      const label = _wdDynamicColumnLabel(k, customBySrc);
-      out['x:' + k] = { label, html: `<div class="wd-trade-meta-line wd-trade-meta-line-full">
-         <span class="wd-trade-meta-title">${_escapeHtml(label)} :</span><span class="wd-trade-meta-value"${_colStyle('x:' + k)}>${_escapeHtml(val)}</span></div>` };
-    }
-    return out;
-  })();
-
-  // Body lines in the per-profile order (_wdOrderBodyKeys). Default order =
-  // core fields, then dynamic columns by label — mirrors the popover list.
-  const bodyByKey = { setup: setupHtml, sess: sessionHourHtml, rrmax: rrMaxHtml,
-    tphits: tpHitsHtml, h4: h4Html, m15: obsHtml };
-  const dynKeys = Object.keys(dynamicByKey)
-    .sort((a, b) => dynamicByKey[a].label.localeCompare(dynamicByKey[b].label));
-  for (const k of dynKeys) bodyByKey[k] = dynamicByKey[k].html;
-  for (const k of _wdSeparatorKeys()) bodyByKey[k] = '<div class="wd-trade-sep wd-trade-meta-line-full"></div>';
-  // Drop separators that would sit at the top / bottom or right after another
-  // one (the fields between them are hidden or empty on this trade).
-  const bodyParts = [];
-  for (const k of _wdOrderBodyKeys(Object.keys(bodyByKey))) {
-    const html = bodyByKey[k];
-    if (!html) continue;
-    if (_wdIsSeparatorKey(k) && (!bodyParts.length || bodyParts[bodyParts.length - 1].sep)) continue;
-    bodyParts.push({ html, sep: _wdIsSeparatorKey(k) });
-  }
-  while (bodyParts.length && bodyParts[bodyParts.length - 1].sep) bodyParts.pop();
-  const bodyHtml = bodyParts.map(p => p.html).join('');
+  const bodyHtml = _wdCardBodyLines(t).map(_wdRenderBodyLine).join('');
 
   return `
     <div class="wd-trade-card ${_WD_BG_CLASS[t.outcome]||''}">
@@ -26959,7 +26944,38 @@ function _shareMediaStorageUrl(t, field) {
   return `${_SUPABASE_SCREENSHOTS_BASE}/${t._notionId}_${slotName}.png`;
 }
 
+/* Sender-resolved card layout for the trade-cards share viewer (share.js), so
+   the shared card renders exactly like the sender's drawer: the body lines
+   (_wdCardBodyLines — visibility, order, separators, Hour+Min, Notion props)
+   with colours resolved to #rrggbb (the viewer has no palette tokens / theme
+   editor), Date / Direction visibility, and the screenshots in the sender's
+   order with their column names. Plain data only — the viewer escapes it. */
+const _SHARE_STEP_TO_SLOT = { h4Before: 'h4', m15Before: 'm15', m15After: 'm15a',
+  ...Object.fromEntries(_EXTRA_SHOT_SLOTS.map(x => [x.step, 's' + x.n])) };
+function _shareCardLayout(t, hexCache) {
+  const hex = (c) => {
+    if (!c) return '';
+    if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+    if (!hexCache.has(c)) hexCache.set(c, _wdCssColorToHex(c));
+    return hexCache.get(c);
+  };
+  const lines = _wdCardBodyLines(t).map(d => {
+    const o = { k: d.kind };
+    if (d.title != null) o.ti = String(d.title);
+    if (d.value != null) o.v = String(d.value);
+    if (d.parts) o.p = d.parts.map(String);
+    if (d.color) o.c = hex(d.color);
+    return o;
+  });
+  const shots = _getScreenshotStepOrder()
+    .map(step => [_SHARE_STEP_TO_SLOT[step], step])
+    .filter(([slot]) => slot)
+    .map(([slot, step]) => [slot, String(_getTradeMediaStepLabel(step) || slot).trim()]);
+  return { v: 1, date: _wdFieldVisible('date'), dir: _wdFieldVisible('direction'), lines, shots };
+}
+
 function _buildShareSnapshot(sortedTrades, tpConfig) {
+  const hexCache = new Map();
   return sortedTrades.map(t => ({
     pair: t.pair || '',
     date: t.date || '',
@@ -26982,6 +26998,7 @@ function _buildShareSnapshot(sortedTrades, tpConfig) {
         .filter(s => String(t[s.field] || t[s.orig] || '').trim())
         .map(s => [`s${s.n}`, _shareResolveMediaSlot(t, s.field)])),
     },
+    card: _shareCardLayout(t, hexCache),
   }));
 }
 
@@ -27092,7 +27109,11 @@ function _extractIdFromShareUrl(url) {
 function _shareCtxKey(ctx) {
   // Cheap key so repeated clicks on Share for the same drawer state reuse
   // the just-created link instead of generating a new row each time.
-  return `${ctx.title}|${ctx.chipKind}|${ctx.n}|${ctx.totalR.toFixed(2)}`;
+  // `c1:<hash>` = the card layout baked into the snapshot (visibility, order,
+  // colours, separators): changing it — or links made before layouts were
+  // snapshotted — yields a fresh link instead of reusing a stale one.
+  const layout = _presetShareHash(JSON.stringify([_getTradeCardFieldsConfig(), _getTradeCardLayout(), _getScreenshotStepOrder()]));
+  return `${ctx.title}|${ctx.chipKind}|${ctx.n}|${ctx.totalR.toFixed(2)}|c1:${layout}`;
 }
 
 /* Persistent URL cache so a refresh doesn't generate a new share row for
