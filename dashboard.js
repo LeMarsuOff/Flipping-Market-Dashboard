@@ -16924,10 +16924,17 @@ function _wdSanitizeColor(c) {
 // (the Min column is folded into the Hour one — card and popover alike).
 const _WD_HOUR_COL_RE = /^\s*(hour|hours|heure|heures)\s*$/i;
 const _WD_MIN_COL_RE = /^\s*(min|mins|minute|minutes)\s*$/i;
-function _wdHourMinPair(keys) {
-  const hour = keys.find(k => _WD_HOUR_COL_RE.test(k));
-  const min = keys.find(k => _WD_MIN_COL_RE.test(k));
-  return (hour && min) ? { hour, min } : null;
+// `keys` must be the renderable columns only (not core-consumed / empty): a
+// trade can carry the same column twice (raw Notion name + the proxy's
+// normalized key, e.g. "Hour" + "hour"), and the raw one may be consumed by a
+// core dim. `prefer(k)` picks among duplicates (the ticked one). Every Min
+// copy is folded (`mins`) so none renders as its own line.
+function _wdHourMinPair(keys, prefer) {
+  const hours = keys.filter(k => _WD_HOUR_COL_RE.test(k));
+  const mins = keys.filter(k => _WD_MIN_COL_RE.test(k));
+  if (!hours.length || !mins.length) return null;
+  const pick = arr => (prefer && arr.find(prefer)) || arr[0];
+  return { hour: pick(hours), min: pick(mins), mins: new Set(mins) };
 }
 function _wdFormatHourMin(h, m) {
   const one = v => String(Array.isArray(v) ? (v[0] ?? '') : (v ?? '')).trim();
@@ -17063,8 +17070,8 @@ function _wdDynamicColumnDefs(trades) {
       seen.set(k, _wdDynamicColumnLabel(k, customBySrc));
     }
   }
-  const hm = _wdHourMinPair([...seen.keys()]);
-  if (hm) seen.delete(hm.min);
+  const hm = _wdHourMinPair([...seen.keys()], k => _wdFieldVisible('x:' + k));
+  if (hm) hm.mins.forEach(k => seen.delete(k));
   return [...seen.entries()]
     .map(([key, label]) => ({ key, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -26269,10 +26276,13 @@ function _wdTradeCard(t) {
     const consumed = _wdConsumedCoreColumns();
     const customBySrc = _wdCustomPropLabelMap();
     const out = {};
-    const hm = _wdHourMinPair(Object.keys(e));
+    const isEmpty = v => v == null || v === '' || (Array.isArray(v) && !v.length);
+    const hm = _wdHourMinPair(
+      Object.keys(e).filter(k => !consumed.has(k) && !_NOTION_EXTRAS_SYSTEM_KEYS.has(k) && !isEmpty(e[k])),
+      k => _wdFieldVisible('x:' + k));
     for (const k in e) {
       if (consumed.has(k) || _NOTION_EXTRAS_SYSTEM_KEYS.has(k)) continue;
-      if (hm && k === hm.min) continue;            // folded into the Hour line
+      if (hm && hm.mins.has(k)) continue;          // folded into the Hour line
       if (!_wdFieldVisible('x:' + k)) continue;
       const raw = e[k];
       if (raw == null || raw === '' || (Array.isArray(raw) && !raw.length)) continue;
