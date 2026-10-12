@@ -4666,6 +4666,8 @@ function handleActionClick(event) {
     case 'wd-field-color-reset': event.stopPropagation(); _wdHandleFieldColorReset(actionEl); break;
     case 'wd-color-palette-toggle': event.stopPropagation(); _wdToggleColorPalette(actionEl); break;
     case 'wd-color-pick':       event.stopPropagation(); _wdHandleColorPick(actionEl); break;
+    case 'wd-add-separator':    event.stopPropagation(); _wdAddSeparator(); break;
+    case 'wd-remove-separator': event.stopPropagation(); _wdRemoveSeparator(actionEl); break;
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'open-preset-share-popover':  event.stopPropagation(); _handleOpenPresetSharePopover(); break;
@@ -16992,8 +16994,13 @@ function _wdOrderBodyKeys(available) {
 // Body keys offered for a set of trades, default order: core fields, then the
 // dynamic Notion columns sorted by label (same basis as the popover).
 function _wdBodyKeysFor(dynDefs) {
-  return _wdOrderBodyKeys([..._WD_BODY_FIELD_KEYS, ...dynDefs.map(d => 'x:' + d.key)]);
+  return _wdOrderBodyKeys([..._WD_BODY_FIELD_KEYS, ...dynDefs.map(d => 'x:' + d.key), ..._wdSeparatorKeys()]);
 }
+// Section separators: pseudo body keys 'sep:<id>' that live only in the saved
+// order (added from the popover, always "shown", dragged like any field) and
+// render as a thin rule on the card to group related properties.
+function _wdIsSeparatorKey(k) { return typeof k === 'string' && k.startsWith('sep:'); }
+function _wdSeparatorKeys() { return _getTradeCardLayout().order.filter(_wdIsSeparatorKey); }
 // Persist a new order for the keys shown in the popover. Saved keys that are
 // not in this drawer (Notion columns absent from this trade subset) keep their
 // slot; the shown keys refill their own slots in the new sequence.
@@ -26304,7 +26311,18 @@ function _wdTradeCard(t) {
   const dynKeys = Object.keys(dynamicByKey)
     .sort((a, b) => dynamicByKey[a].label.localeCompare(dynamicByKey[b].label));
   for (const k of dynKeys) bodyByKey[k] = dynamicByKey[k].html;
-  const bodyHtml = _wdOrderBodyKeys(Object.keys(bodyByKey)).map(k => bodyByKey[k]).filter(Boolean).join('');
+  for (const k of _wdSeparatorKeys()) bodyByKey[k] = '<div class="wd-trade-sep wd-trade-meta-line-full"></div>';
+  // Drop separators that would sit at the top / bottom or right after another
+  // one (the fields between them are hidden or empty on this trade).
+  const bodyParts = [];
+  for (const k of _wdOrderBodyKeys(Object.keys(bodyByKey))) {
+    const html = bodyByKey[k];
+    if (!html) continue;
+    if (_wdIsSeparatorKey(k) && (!bodyParts.length || bodyParts[bodyParts.length - 1].sep)) continue;
+    bodyParts.push({ html, sep: _wdIsSeparatorKey(k) });
+  }
+  while (bodyParts.length && bodyParts[bodyParts.length - 1].sep) bodyParts.pop();
+  const bodyHtml = bodyParts.map(p => p.html).join('');
 
   return `
     <div class="wd-trade-card ${_WD_BG_CLASS[t.outcome]||''}">
@@ -27559,7 +27577,7 @@ const _SHARE_MODE_ALLOWED_ACTIONS = new Set([
   'open-tradelog-drawer', 'recovery-hist-bar', 'cal-open-day', 'expo-open-day',
   'expo-open-cohort', 'expo-open-pair', 'expo-open-conc', 'expo-open-wr',
   'close-widget-drawer', 'toggle-wd-fields', 'wd-field-toggle', 'wd-field-color-reset',
-  'wd-color-palette-toggle', 'wd-color-pick',
+  'wd-color-palette-toggle', 'wd-color-pick', 'wd-add-separator', 'wd-remove-separator',
   'open-img-lightbox', 'lightbox-nav-trade',
 ]);
 
@@ -27717,15 +27735,22 @@ function _wdBuildFieldsPanelHtml() {
     ...dynDefs.map(d => ['x:' + d.key, d.label]),
   ]);
   const bodyKeys = _wdBodyKeysFor(dynDefs);
+  const isShown = k => _wdIsSeparatorKey(k) || _wdFieldVisible(k);
   const shownHeader = _WD_HEADER_FIELD_KEYS.filter(k => _wdFieldVisible(k));
-  const shownBody = bodyKeys.filter(k => _wdFieldVisible(k));
-  const hidden = [..._WD_HEADER_FIELD_KEYS, ...bodyKeys].filter(k => !_wdFieldVisible(k));
+  const shownBody = bodyKeys.filter(isShown);
+  const hidden = [..._WD_HEADER_FIELD_KEYS, ...bodyKeys].filter(k => !isShown(k));
+  const sepRow = (key) => `<div class="wd-fields-opt is-sortable is-sep" data-field-key="${_escapeHtml(key)}">
+      <span class="wd-fields-handle" data-wd-drag-handle title="Drag to reorder" aria-hidden="true">⋮⋮</span>
+      <span class="wd-fields-sep-line" aria-label="Separator"></span>
+      <button class="wd-fields-color-reset" type="button" data-action="wd-remove-separator" data-field-key="${_escapeHtml(key)}" title="Remove separator">×</button>
+    </div>`;
   let html = `<div class="wd-fields-title">Shown on cards</div>`
     + shownHeader.map(k => plainRow(k, labels[k])).join('');
   if (shownBody.length) {
     html += (shownHeader.length ? `<div class="wd-fields-sep"></div>` : '')
       + `<div class="wd-fields-hint">Drag ⋮⋮ to reorder · swatch = value colour</div>`
-      + `<div class="wd-fields-list">${shownBody.map(k => bodyRow(k, labels[k] || k)).join('')}</div>`;
+      + `<div class="wd-fields-list">${shownBody.map(k => _wdIsSeparatorKey(k) ? sepRow(k) : bodyRow(k, labels[k] || k)).join('')}</div>`
+      + `<button class="wd-fields-add-sep" type="button" data-action="wd-add-separator">+ Add separator</button>`;
   }
   if (!shownHeader.length && !shownBody.length) html += `<div class="wd-fields-hint">Nothing ticked yet.</div>`;
   if (hidden.length) {
@@ -27820,6 +27845,26 @@ document.addEventListener('change', (e) => {
   _wdRerenderDrawerCards();
   _wdRebuildFieldsPopover();
 });
+
+/* Add a section separator at the end of the shown list / remove one. */
+function _wdAddSeparator() {
+  const list = document.querySelector('#wd-drawer .wd-fields-list');
+  const shown = list ? [...list.querySelectorAll(':scope > .wd-fields-opt')].map(r => r.dataset.fieldKey) : [];
+  _wdSaveBodyOrder([...shown, 'sep:' + Date.now().toString(36)]);
+  _wdRerenderDrawerCards();
+  _wdRebuildFieldsPopover();
+  const pop = document.querySelector('#wd-drawer .wd-fields-popover');
+  const last = pop && pop.querySelector('.wd-fields-list > .wd-fields-opt:last-child');
+  if (last) last.scrollIntoView({ block: 'nearest' });
+}
+function _wdRemoveSeparator(btn) {
+  const key = btn && btn.dataset ? btn.dataset.fieldKey : '';
+  if (!_wdIsSeparatorKey(key)) return;
+  const layout = _getTradeCardLayout();
+  _setTradeCardLayout({ ...layout, order: layout.order.filter(k => k !== key) });
+  _wdRerenderDrawerCards();
+  _wdRebuildFieldsPopover();
+}
 
 /* Swatch click: open this row's palette (closing any other one). */
 function _wdToggleColorPalette(btn) {
