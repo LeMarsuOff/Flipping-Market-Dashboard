@@ -17099,6 +17099,12 @@ function _getTradeMediaStepLabel(step) {
   // The mapping is the canonical identifier of the screenshot slot; the
   // hosting URL is just the data. Generic "TV Image N" fallback only when
   // no override is configured at all.
+  // Preset Share viewer: it boots on the demo profile (no API mapping), so
+  // use the names the sender resolved at share time (dashboard.shotLabels).
+  if (_isShareMode()) {
+    const shared = _shareRow()?.dashboard?.shotLabels?.[step];
+    if (typeof shared === 'string' && shared.trim()) return shared.trim();
+  }
   const dimKey = _LB_STEP_TO_DIM_KEY[step];
   if (dimKey) {
     const mode = localStorage.getItem(DS_KEY);
@@ -27423,6 +27429,9 @@ function _buildPresetShareContext() {
     hidden: JSON.parse(JSON.stringify(_hiddenWidgets || {})),
     ui: _presetShareUiState(),
     ls: _presetShareLsSnapshot(),
+    // Screenshot names as the sender sees them (from the API column mapping,
+    // which the viewer's demo profile doesn't have) — see _getTradeMediaStepLabel.
+    shotLabels: Object.fromEntries(_getScreenshotStepOrder().map(st => [st, String(_getTradeMediaStepLabel(st) || '')])),
   };
 
   const contentKey = _presetShareHash(JSON.stringify({ trades, dashboard, presetName }));
