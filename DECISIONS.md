@@ -857,3 +857,11 @@ Three sub-decisions, each cleared with Max:
 
 **Consequence:** Key is in `_SYNC_KEY_PREFIXES`, `_PRESET_SHARE_LS_PROFILE` and the profile-switch cache reset. PDF export and `share.js` cards do not honour it yet (ROADMAP TODO).
 
+### 2026-10-12 — Trade-cards share snapshot carries the sender's resolved card layout
+
+**Decision:** The drawer card body is built by one data function, `_wdCardBodyLines(t)` (ordered `{kind, title, value, parts, color}` lines, separators collapsed, Hour+Min folded), rendered by `_wdRenderBodyLine` in the dashboard. The trade-cards share snapshot stores each trade's resolved layout as plain data (`card: { v:1, lines, shots:[[slot,label]…], date, dir }`, colours resolved to `#rrggbb`) and `share.js` replays it; snapshots without `card` keep the legacy render.
+
+**Rationale:** The viewer is anonymous and has neither the sender's profile config (visibility / order / colours / separators / column names) nor the dashboard code; re-deriving it would drift. Shipping data (not HTML) keeps the viewer XSS-safe — it escapes every value and accepts only hex colours. Hex instead of palette tokens because the viewer has its own fixed theme.
+
+**Consequence:** Any new card-body feature must go through `_wdCardBodyLines` to reach shares. `_shareCtxKey` includes a hash of the card config so a layout change yields a new link instead of reusing a stale one. The PDF export still has its own renderer (ROADMAP TODO).
+
