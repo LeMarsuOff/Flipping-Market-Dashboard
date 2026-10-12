@@ -168,11 +168,13 @@ const appState = {
     monthlyMode: 'net',
     monthlySelectedMonth: null,
     // Monthly P&L time window. 'l12m' = last 12 months ending at the latest data
-    // month (default, rolling). 'year' = all 12 calendar months of monthlyYear
-    // (future/empty months included). Both cap the bar count at 12 so per-bar
-    // value labels are never suppressed. Not persisted — resets each session.
-    monthlyPeriodMode: 'l12m',
-    monthlyYear: null,
+    // month (rolling). 'year' (default) = all 12 calendar months of monthlyYear
+    // (future/empty months included), starting on the current calendar year —
+    // _monthlyResolvedYear falls back to the latest data year if it has no trades.
+    // Both cap the bar count at 12 so per-bar value labels are never suppressed.
+    // Not persisted — resets each session.
+    monthlyPeriodMode: 'year',
+    monthlyYear: new Date().getFullYear(),
     rrMinFilter: null,
     beRule: 2.4,
     // Global BE Management mode — drives BE-TP / BE-SL semantics across the
