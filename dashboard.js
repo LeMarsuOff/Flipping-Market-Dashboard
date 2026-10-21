@@ -502,6 +502,38 @@ const _SW = (() => {
   function _getSeenInternal(seenKey) { return _lastSeenUpdatedAt.get(seenKey) || null; }
   function _deleteSeenInternal(seenKey) { _lastSeenUpdatedAt.delete(seenKey); }
 
+  // ── Per-key write serialization + latest-wins coalescing (2026-10-21) ──
+  // Bug: N quick LS writes to one key fired N concurrent RPCs carrying the SAME
+  // seen updated_at. The first won, the others hit stale_write, retried in
+  // parallel, and the "final stale" path adopted an intermediate cloud value
+  // into LS — the last local edit was lost (7 quick custom-prop deletes left
+  // the cloud + LS stuck after delete #3). Now one RPC per key is in flight at
+  // a time; writes arriving meanwhile replace a single pending job (latest
+  // wins), which runs next with the fresh seen. Set + remove share the queue
+  // so their order is preserved.
+  const _writeQueues = new Map(); // seenKey → { running, pending: fn|null }
+  function _enqueueWrite(sk, job) {
+    let q = _writeQueues.get(sk);
+    if (!q) { q = { running: false, pending: null }; _writeQueues.set(sk, q); }
+    q.pending = job;
+    if (q.running) return;
+    q.running = true;
+    (async () => {
+      try {
+        while (q.pending) {
+          const next = q.pending;
+          q.pending = null;
+          try { await next(); } catch (e) { console.warn('[SW] queued write threw', sk, e?.message || e); }
+        }
+      } finally {
+        q.running = false;
+        _writeQueues.delete(sk);
+      }
+    })();
+  }
+  function _hasPendingWrite(sk) { return !!_writeQueues.get(sk)?.pending; }
+  function _hasWriteInFlightInternal(sk) { return _writeQueues.has(sk); }
+
   function _getClient() {
     if (!_client && window.supabase) {
       _client = window.supabase.createClient(_SB_URL, _SB_KEY);
@@ -689,6 +721,10 @@ const _SW = (() => {
           if (error) {
             if (_isStaleWriteError(error)) {
               if (isRetry) {
+                // A newer local edit is queued for this key — it carries the
+                // user's latest intent and runs next with a fresh seen. Don't
+                // roll LS back to the remote value underneath it.
+                if (_hasPendingWrite(sk)) return;
                 // Final stale — pull fresh remote and adopt it locally.
                 console.warn('[SW] stale_write final on', key, '— remote kept, local edit discarded');
                 try { _showToast('Sync conflict — refreshed from cloud', 'warn'); } catch {}
@@ -732,7 +768,9 @@ const _SW = (() => {
           console.warn('[SW] upsert threw for', key, e?.message || e);
         }
       };
-      doCall(_lastSeenUpdatedAt.get(sk) || null, false);
+      // Seen is read when the job runs (not when queued) so a coalesced write
+      // carries the updated_at returned by the write before it.
+      _enqueueWrite(sk, () => doCall(_lastSeenUpdatedAt.get(sk) || null, false));
     },
 
     remove(key) {
@@ -753,6 +791,7 @@ const _SW = (() => {
           if (error) {
             if (_isStaleWriteError(error)) {
               if (isRetry) {
+                if (_hasPendingWrite(sk)) return; // newer local edit queued — see set()
                 console.warn('[SW] stale_write final on delete', key, '— remote kept');
                 try { _showToast('Sync conflict — refreshed from cloud', 'warn'); } catch {}
                 // Other client wrote a fresh value while we tried to delete —
@@ -790,7 +829,7 @@ const _SW = (() => {
           console.warn('[SW] delete threw for', key, e?.message || e);
         }
       };
-      doCall(_lastSeenUpdatedAt.get(sk) || null, false);
+      _enqueueWrite(sk, () => doCall(_lastSeenUpdatedAt.get(sk) || null, false));
     },
 
     async syncFromRemote() {
@@ -1598,6 +1637,7 @@ const _SW = (() => {
     // right `p_seen_updated_at`. The closure exposes minimal surface to
     // keep the seen-cache private.
     _isSelfWrite(table, composite, updatedAt) { return _isSelfWriteFn(table, composite, updatedAt); },
+    _hasWriteInFlight(seenKey) { return _hasWriteInFlightInternal(seenKey); },
     _setSeen(seenKey, updatedAt) { _setSeenInternal(seenKey, updatedAt); },
     _getSeen(seenKey) { return _getSeenInternal(seenKey); },
     _deleteSeen(seenKey) { _deleteSeenInternal(seenKey); },
@@ -1686,6 +1726,14 @@ const _swRealtime = (() => {
     const composite = `${row.dashboard_id}|${row.key}`;
     if (!isDelete && row.updated_at &&
         window._SW._isSelfWrite('user_data', composite, row.updated_at)) {
+      return;
+    }
+    // In-flight guard: an echo of one of our own intermediate writes can land
+    // before its RPC response marks it as a self-write. While this key still
+    // has a local write queued or running, the local value is the newer intent
+    // — don't let an inbound row roll LS back. A genuine concurrent write from
+    // another device still surfaces as stale_write on our queued RPC.
+    if (window._SW._hasWriteInFlight?.(window._SW._seenKey('ud', row.dashboard_id, row.key))) {
       return;
     }
     const lsKey = row.dashboard_id === 'h4' ? `${row.key}_h4` : row.key;
