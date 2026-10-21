@@ -2911,8 +2911,11 @@ function addCustomProp({ name, key, type, showInFilters, notionSourceName }) {
     type: CUSTOM_PROP_TYPES.includes(type) ? type : 'text',
     showInFilters: showInFilters !== false,
     order: 0,
+    // Keep the Notion column key verbatim: columns can carry stray spaces
+    // ("H1 Arguments ") and extras are baked under the exact key — trimming
+    // here made every reader miss (include → no match, exclude → no-op).
     notionSourceName: (typeof notionSourceName === 'string' && notionSourceName.trim())
-      ? notionSourceName.trim()
+      ? notionSourceName
       : trimmedName,
   };
   // Prepend the new prop so it appears at the top of the declared list, then
@@ -15753,14 +15756,37 @@ function _customArrayOk(arr, entry, matchMode) {
 // Apply a customChips entry to a trade against a declared prop. Returns true
 // if the trade passes, false if it fails the entry's filter. Used by both
 // filterCustomChips (live) and getPresetOverrideFiltered (per-preset overrides).
+// Reads a declared prop's value from trade.extras under its notionSourceName.
+// Falls back to a whitespace-insensitive key match: Notion column names can
+// carry stray spaces ("H1 Arguments ") and props saved before 2026-10-21 stored
+// a trimmed notionSourceName, so the exact lookup missed every trade.
+function _customPropRawValue(trade, prop) {
+  const ex = trade?.extras;
+  if (!ex || !prop) return undefined;
+  const src = prop.notionSourceName;
+  if (src && ex[src] !== undefined) return ex[src];
+  const want = String(src || '').trim();
+  if (!want) return undefined;
+  for (const k in ex) if (k.trim() === want) return ex[k];
+  return undefined;
+}
+
 function _customEntryPasses(trade, prop, entry) {
   // Refacto Total 2026-05-24 — step 3: read extras under the prop's immutable
   // notionSourceName (the canonical Notion column key set at creation, never
-  // mutated by user renames). Eager bake writes here, so reads always find
-  // the value when the prop exists in Notion — no fallback chain needed.
-  const raw = trade?.extras?.[prop?.notionSourceName];
+  // mutated by user renames).
+  const raw = _customPropRawValue(trade, prop);
   if (prop.type === 'multi-select') {
-    return _customArrayOk(raw, entry, entry.matchMode || 'any');
+    // Expand exactly like the custom widgets do (_cwExpandFieldValues) so a
+    // value the widget shows is always a value the filter can match — e.g. a
+    // multi-select baked as the flattened string "FVG, OB".
+    const arr = Array.isArray(raw) ? raw : _cwExpandFieldValues(raw, 'multi-select');
+    return _customArrayOk(arr, entry, entry.matchMode || 'any');
+  }
+  // Array value on a select-typed prop: the widget groups per element, so match
+  // per element too (String(array) would never equal a single bar's key).
+  if (Array.isArray(raw) && prop.type !== 'checkbox') {
+    return _customArrayOk(raw, entry, 'any');
   }
   if (prop.type === 'checkbox') {
     const v = raw === null || raw === undefined ? '' : String(Boolean(raw));
@@ -18753,7 +18779,12 @@ function _cwResolveChipKey(def) {
   if (aliasChip && appState?.filters?.chips?.[aliasChip]) return aliasChip;
   if (appState?.filters?.chips?.[f]) return f;
   if (typeof loadCustomProps === 'function') {
-    const declared = loadCustomProps().find(p => p?.notionSourceName === f || p?.key === f);
+    // Whitespace-tolerant: field "H1 Arguments " must find a prop whose
+    // notionSourceName was stored trimmed — otherwise every right-click
+    // auto-declares yet another duplicate prop.
+    const fTrim = String(f).trim();
+    const declared = loadCustomProps().find(p =>
+      p?.key === f || (p?.notionSourceName && String(p.notionSourceName).trim() === fTrim));
     if (declared?.key) return 'custom:' + declared.key;
   }
   return 'custom:' + f;
@@ -26452,6 +26483,10 @@ function _pdfBuildDoc(ctx) {
   ctx.sorted.forEach(t => { const e = t.extras; if (e) for (const k in e) { const v = e[k]; if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) _presentSrc.add(k); } });
   const CUSTOM_PROPS = _customProps
     .map(p => ({ label: String(p.name || p.notionSourceName || p.key || '').trim(), src: (p.notionSourceName || p.key) }))
+    // Snap a trimmed notionSourceName onto the real extras key ("H1 Arguments ").
+    .map(p => (p.src && !_presentSrc.has(p.src))
+      ? { ...p, src: [..._presentSrc].find(k => k.trim() === String(p.src).trim()) || p.src }
+      : p)
     .filter(p => p.src && p.label && _presentSrc.has(p.src))
     .map((p, idx) => ({ key: 'c' + idx, label: p.label, src: p.src, block: false, def: false }));
   const STD_PROPS = [
@@ -43057,7 +43092,7 @@ function _npCoverageForProp(p) {
   for (const t of items) {
     // Refacto Total 2026-05-24 — step 3: single deterministic reader against
     // the immutable notionSourceName.
-    const v = t.extras?.[p?.notionSourceName];
+    const v = _customPropRawValue(t, p);
     if (v == null || v === '' || (Array.isArray(v) && !v.length)) continue;
     covered++;
   }
@@ -44055,7 +44090,7 @@ function _scanUniqueValuesFor(prop) {
   // notionSourceName. Single deterministic key — the eager bake writes here
   // for every detected Notion prop on every sync.
   for (const t of items) {
-    addValue(t?.extras?.[prop?.notionSourceName]);
+    addValue(_customPropRawValue(t, prop));
   }
 
   const total = set.size;
