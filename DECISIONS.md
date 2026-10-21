@@ -865,3 +865,11 @@ Three sub-decisions, each cleared with Max:
 
 **Consequence:** Any new card-body feature must go through `_wdCardBodyLines` to reach shares. `_shareCtxKey` includes a hash of the card config so a layout change yields a new link instead of reusing a stale one. The PDF export still has its own renderer (ROADMAP TODO).
 
+
+### 2026-10-21 — Synced LS writes are serialized per key (latest-wins coalescing)
+
+**Decision:** `_SW.set` / `_SW.remove` no longer fire one `*_if_unchanged` RPC per LS write. Each `user_data` key (`ud|<dashId>|<key>`) has a write queue: at most one RPC in flight, and writes arriving meanwhile replace a single pending job (latest wins) that runs next with the `updated_at` the previous write returned. Set and remove share the queue. The final-stale path skips adopting the remote value when a newer local edit is queued, and `_onUserData` ignores inbound rows for a key that still has a local write queued or running.
+
+**Rationale:** Concurrent RPCs for one key all carried the same seen `updated_at`, so every write after the first was a self-inflicted `stale_write`; the parallel retries then let an intermediate cloud value win and be written back into LS (reproduced: 8 quick writes ended on #2). Serializing removes the self-conflict while keeping optimistic concurrency for genuine cross-device conflicts.
+
+**Consequence:** A burst of N writes to one key costs at most 2 RPCs and intermediate states never reach the cloud. During a local write in flight, an inbound Realtime row for that key is dropped; a genuine concurrent write from another device then surfaces as `stale_write` on the queued RPC (retry once, local wins). The reconcile push (`migrateProfileScopedKeys`) still calls the RPC directly, outside the queue.
