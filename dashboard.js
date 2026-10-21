@@ -15773,33 +15773,8 @@ function filterTemporal(trades) {
 
 // ── Custom chips filter (sub-task 4) ──
 // Applied after filterChips, before filterTemporal. Reads t.extras[key] which
-// Option B keeps in sync with the raw source. scalar for select/checkbox,
-// array matching for multi-select (honours per-prop entry.matchMode any/all).
-// Module-level matching helpers shared by filterCustomChips (live state) and
-// getPresetOverrideFiltered (preset overrides, sub-task 5). Same semantics as
-// the local helpers used inside filterChips for natives, but with matchMode
-// support for multi-select all/any.
-function _customScalarOk(val, entry) {
-  if (entry.included.size && !entry.included.has(val)) return false;
-  if (entry.excluded.has(val)) return false;
-  return true;
-}
-function _customArrayOk(arr, entry, matchMode) {
-  const values = Array.isArray(arr) ? arr.map(v => String(v)) : [];
-  if (entry.included.size) {
-    if (matchMode === 'all') {
-      for (const inc of entry.included) if (!values.includes(String(inc))) return false;
-    } else {
-      const anyIncluded = values.some(v => entry.included.has(v));
-      if (!anyIncluded) return false;
-    }
-  }
-  if (entry.excluded.size) {
-    const anyExcluded = values.some(v => entry.excluded.has(v));
-    if (anyExcluded) return false;
-  }
-  return true;
-}
+// Option B keeps in sync with the raw source. Values are canonicalized by
+// _customPropValues; multi-select honours per-prop entry.matchMode any/all.
 
 // Apply a customChips entry to a trade against a declared prop. Returns true
 // if the trade passes, false if it fails the entry's filter. Used by both
@@ -15819,30 +15794,48 @@ function _customPropRawValue(trade, prop) {
   return undefined;
 }
 
-function _customEntryPasses(trade, prop, entry) {
-  // Refacto Total 2026-05-24 — step 3: read extras under the prop's immutable
-  // notionSourceName (the canonical Notion column key set at creation, never
-  // mutated by user renames).
+// ── Canonical custom-prop values (2026-10-21) ──
+// Single source of truth for "which values does this trade carry for this
+// declared prop". Used by the filter matcher AND the sidebar value scan, and
+// built on the custom widgets' own expansion (_cwExpandFieldValues), so any
+// key a Create-Widget chart shows is a key the filter can match — whatever
+// shape the extras were baked in (array, "a, b" string, Notion object,
+// checkbox as boolean or as "true"/"false" text).
+function _customValueKey(prop, v) {
+  if (prop?.type === 'checkbox') {
+    if (typeof v === 'boolean') return v ? 'true' : 'false';
+    const s = String(v ?? '').trim().toLowerCase();
+    if (!s) return '';
+    return (s === 'true' || s === '1' || s === 'yes' || s === 'oui' || s === 'x' || s === '✓' || s === '__yes__')
+      ? 'true' : 'false';
+  }
+  return String(v ?? '').trim();
+}
+function _customPropValues(trade, prop) {
   const raw = _customPropRawValue(trade, prop);
-  if (prop.type === 'multi-select') {
-    // Expand exactly like the custom widgets do (_cwExpandFieldValues) so a
-    // value the widget shows is always a value the filter can match — e.g. a
-    // multi-select baked as the flattened string "FVG, OB".
-    const arr = Array.isArray(raw) ? raw : _cwExpandFieldValues(raw, 'multi-select');
-    return _customArrayOk(arr, entry, entry.matchMode || 'any');
+  if (raw === null || raw === undefined) return [];
+  // Checkbox: String(Boolean("false")) === "true" — never coerce a stored
+  // string through Boolean(); map it through _customValueKey instead.
+  const vals = (prop.type === 'checkbox' && typeof raw === 'boolean')
+    ? [raw]
+    : _cwExpandFieldValues(raw, prop.type === 'multi-select' ? 'multi-select' : '');
+  return vals.map(v => _customValueKey(prop, v)).filter(v => v !== '');
+}
+
+function _customEntryPasses(trade, prop, entry) {
+  // Both sides go through _customValueKey: entry values come from widget bars,
+  // table rows, heatmap cells or sidebar pills, trade values from extras.
+  const vals = _customPropValues(trade, prop);
+  const has = (set, v) => { for (const x of set) if (_customValueKey(prop, x) === v) return true; return false; };
+  if (entry.included.size) {
+    if (prop.type === 'multi-select' && (entry.matchMode || 'any') === 'all') {
+      for (const inc of entry.included) if (!vals.includes(_customValueKey(prop, inc))) return false;
+    } else if (!vals.some(v => has(entry.included, v))) {
+      return false;
+    }
   }
-  // Array value on a select-typed prop: the widget groups per element, so match
-  // per element too (String(array) would never equal a single bar's key).
-  if (Array.isArray(raw) && prop.type !== 'checkbox') {
-    return _customArrayOk(raw, entry, 'any');
-  }
-  if (prop.type === 'checkbox') {
-    const v = raw === null || raw === undefined ? '' : String(Boolean(raw));
-    return _customScalarOk(v, entry);
-  }
-  // select (+ text/date/number if ever surfaced, though UI hides them)
-  const v = raw === null || raw === undefined ? '' : String(raw);
-  return _customScalarOk(v, entry);
+  if (entry.excluded.size && vals.some(v => has(entry.excluded, v))) return false;
+  return true;
 }
 
 function filterCustomChips(trades, skipCustomValue = null) {
@@ -18866,7 +18859,7 @@ function _cwEnsureFilterableChipKey(def) {
   if (!hasExtras || typeof addCustomProp !== 'function') return null;
   const name = def.fieldLabel || def.label || f;
   const it = String(def.inferredType || '').toLowerCase();
-  const type = it.includes('multi') ? 'multi-select' : (it === 'checkbox' ? 'checkbox' : 'select');
+  const type = it.includes('multi') ? 'multi-select' : ((it === 'checkbox' || it === 'boolean') ? 'checkbox' : 'select');
   let base = (typeof suggestCustomPropKey === 'function' && suggestCustomPropKey(name)) || '';
   if (!base || !/^[a-z]/.test(base)) base = 'field';
   let newKey = base, n = 1;
@@ -19058,7 +19051,7 @@ function renderCustomTable(def, trades) {
                 data-action="open-custom-row-drawer"
                 data-cw-id="${cwIdAttr}"
                 data-row-label="${_escapeAttr(r.label)}"
-                title="Click to drill into ${r.count} trade${r.count > 1 ? 's' : ''} · right-click to include/exclude">
+                title="Click to drill into ${r.count} trade${r.count > 1 ? 's' : ''}${isDateField ? '' : ' · right-click to include/exclude'}">
               <td class="cw-td cw-td-label" data-row-label="${_escapeAttr(r.label)}">${_escapeHtml(r.label)}</td>
               <td class="${totalCellClass}" style="${totalCellStyle}">${fmtR(r.sumR)}</td>
               <td class="cw-td cw-td-num" style="color:${_cwTableWrColor(r.wr)}">${fmtPct(r.wr)}</td>
@@ -19081,6 +19074,10 @@ function renderCustomTable(def, trades) {
     cell.addEventListener('contextmenu', e => {
       const rawKey = cell.dataset.rowLabel;
       if (!rawKey) return;
+      // Date tables fold values into month buckets ("Jan 2025") that no trade
+      // carries as a property value — include would match nothing and wipe
+      // the dashboard. Months are filtered by the date range, not by chips.
+      if (isDateField) return;
       e.preventDefault();
       e.stopPropagation();
       // Resolve lazily so an undeclared field is auto-added to Additional
@@ -44124,21 +44121,10 @@ function _npSidebarGroupHTML(p) {
 function _scanUniqueValuesFor(prop) {
   const items = appState.trades.items || [];
   const set = new Set();
-  const addValue = v => {
-    if (v === null || v === undefined || v === '') return;
-    if (prop.type === 'multi-select') {
-      if (Array.isArray(v)) v.forEach(x => { if (x !== null && x !== undefined && x !== '') set.add(String(x)); });
-    } else if (prop.type === 'checkbox') {
-      set.add(String(Boolean(v)));
-    } else {
-      set.add(String(v));
-    }
-  };
-  // Refacto Total 2026-05-24 — step 3: read extras under the prop's immutable
-  // notionSourceName. Single deterministic key — the eager bake writes here
-  // for every detected Notion prop on every sync.
+  // Same canonical values the filter matches against (_customPropValues) so a
+  // sidebar pill always filters something — e.g. checkbox stored as "false".
   for (const t of items) {
-    addValue(_customPropRawValue(t, prop));
+    for (const v of _customPropValues(t, prop)) set.add(v);
   }
 
   const total = set.size;
