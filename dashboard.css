@@ -6864,34 +6864,45 @@ td.mono { font-family:'DM Mono',monospace; font-size: var(--typo-panel-size) }
    head bootstrap in index.html). Hides every filter / edit / settings
    surface; widgets, tooltips and the drilldown drawer stay.
    Spec: docs/preset-share-feature.md §6 */
-html.is-share-mode {
+html.is-share-mode:not(.is-share-full) {
   --context-h: 0px;
   --tabs-h: 0px;
 }
-html.is-share-mode .topbar-right,
-html.is-share-mode .data-hub-btn,
-html.is-share-mode #filter-context-strip,
-html.is-share-mode .view-tabs,
-html.is-share-mode #pcb-bar,
-html.is-share-mode #tpm-invalid-banner,
-html.is-share-mode #sidebar-toggle,
-html.is-share-mode .layout > .sidebar,
-html.is-share-mode #local-mode-badge,
-html.is-share-mode .gs-hide-btn,
-html.is-share-mode .gs-drag-handle,
-html.is-share-mode .wd-drawer-share-btn,
-html.is-share-mode .wd-drawer-pdf-btn,
-html.is-share-mode .trade-link-btn,
-html.is-share-mode .mob-preset-pill,
-html.is-share-mode .mob-preset-pill + .mob-presets-separator,
-html.is-share-mode #tpm-badge-mob,
-html.is-share-mode .mob-footer {
+html.is-share-mode:not(.is-share-full) .topbar-right,
+html.is-share-mode:not(.is-share-full) .data-hub-btn,
+html.is-share-mode:not(.is-share-full) #filter-context-strip,
+html.is-share-mode:not(.is-share-full) .view-tabs,
+html.is-share-mode:not(.is-share-full) #pcb-bar,
+html.is-share-mode:not(.is-share-full) #tpm-invalid-banner,
+html.is-share-mode:not(.is-share-full) #sidebar-toggle,
+html.is-share-mode:not(.is-share-full) .layout > .sidebar,
+html.is-share-mode:not(.is-share-full) #local-mode-badge,
+html.is-share-mode:not(.is-share-full) .gs-hide-btn,
+html.is-share-mode:not(.is-share-full) .gs-drag-handle,
+html.is-share-mode:not(.is-share-full) .wd-drawer-share-btn,
+html.is-share-mode:not(.is-share-full) .wd-drawer-pdf-btn,
+html.is-share-mode:not(.is-share-full) .trade-link-btn,
+html.is-share-mode:not(.is-share-full) .mob-preset-pill,
+html.is-share-mode:not(.is-share-full) .mob-preset-pill + .mob-presets-separator,
+html.is-share-mode:not(.is-share-full) #tpm-badge-mob,
+html.is-share-mode:not(.is-share-full) .mob-footer {
   display: none !important;
 }
 /* Sidebar is display:none → main is the only grid item. */
-html.is-share-mode .layout,
-html.is-share-mode .layout.sidebar-collapsed {
+html.is-share-mode:not(.is-share-full) .layout,
+html.is-share-mode:not(.is-share-full) .layout.sidebar-collapsed {
   grid-template-columns: 1fr;
+}
+/* Full dashboard share — interactive copy: only data / account / re-share
+   surfaces are hidden (docs/preset-share-feature.md §10). */
+html.is-share-full .data-hub-btn,
+html.is-share-full #local-mode-badge,
+html.is-share-full #topbar-preset-share-wrap,
+html.is-share-full #topbar-signin-btn,
+html.is-share-full #account-toggle-btn,
+html.is-share-full .wd-drawer-share-btn,
+html.is-share-full .trade-link-btn {
+  display: none !important;
 }
 .share-mode-banner {
   display: flex;
@@ -6924,6 +6935,18 @@ html.is-share-mode .layout.sidebar-collapsed {
 .share-mode-banner .smb-sep { color: var(--text-muted); }
 .share-mode-banner .smb-spacer { flex: 1; }
 .share-mode-banner .smb-brand { color: var(--text-muted); }
+.share-mode-banner .smb-reset {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .5px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-normal);
+  border-radius: var(--rad-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.share-mode-banner .smb-reset:hover { color: var(--gold); border-color: var(--gold); }
 .share-mode-banner.is-expired .smb-title { color: var(--r); }
 @media (max-width: 600px) {
   .share-mode-banner { padding: 8px 14px; }
@@ -12314,6 +12337,42 @@ body.ms-sidebar-open .view-tabs {
   margin-top: 8px;
 }
 .wd-share-popover-retry:hover { background: var(--bg3); }
+/* Topbar Share — Snapshot / Full dashboard choice */
+.psh-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 9px 10px;
+  margin-bottom: 7px;
+  font-family: 'DM Mono', monospace;
+  cursor: pointer;
+  transition: border-color var(--ease-fast), background var(--ease-fast);
+}
+.psh-opt:hover { border-color: var(--gold); background: var(--bg3); }
+.psh-opt-name {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .5px;
+  color: var(--white);
+}
+.psh-opt-desc {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+.psh-foot {
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
 
 .wd-drawer-body {
   flex: 1;

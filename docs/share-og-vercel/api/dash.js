@@ -134,7 +134,7 @@ module.exports = async (req, res) => {
   const stats = row.stats || {};
   const name = String(row.chip_name || 'Shared dashboard').trim();
   const title = `${name} — Flipping Research`;
-  const desc = `Global Overview · ${num(stats.trades) ?? 0} trades · ${fmtPct(stats.winrate)} WR · `
+  const desc = `${stats.dim || 'Global Overview'} · ${num(stats.trades) ?? 0} trades · ${fmtPct(stats.winrate)} WR · `
     + `${fmtR(stats.netR)} · PF ${fmtPf(stats.profitFactor)}`;
   const ogImg = `${OG_IMAGE_BASE}?id=${encodeURIComponent(id)}&img=1`;
   const pageUrl = `https://${req.headers.host}/dash?id=${encodeURIComponent(id)}`;

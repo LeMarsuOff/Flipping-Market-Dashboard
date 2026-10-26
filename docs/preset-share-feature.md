@@ -289,8 +289,62 @@ intact + drilldown + screenshots.
 
 ## 9. Out of scope
 
-- ❌ Vue interactive (filtrer dans le snapshot) — décidé figé.
+- ❌ Vue interactive dans le mode Snapshot — décidé figé (l'interactif = mode Full, §10).
 - ❌ Plusieurs sections dans un même lien.
 - ❌ Révocation / liste « Mes shares » (même dette que le share de chip).
 - ❌ Expiration custom.
 - ❌ Partage des annotations lightbox.
+
+---
+
+## 10. Mode « Full dashboard » (2026-10-26)
+
+Le bouton **Share** ouvre d'abord un choix :
+
+- **Snapshot** — le partage décrit ci-dessus (Global Overview du preset
+  actif, lecture seule). Inchangé.
+- **Full dashboard** — une copie complète et utilisable du dashboard.
+
+Décisions Max (2026-10-26) : tout le journal · modifs du destinataire gardées
+dans son navigateur · toutes les colonnes Notion · seules les surfaces
+« données » bloquées.
+
+**Payload** (`_buildPresetShareFullContext`) — même table / RLS / route `/dash`,
+`chip_kind = 'preset'`, `dashboard.mode = 'full'` :
+
+- `trades` : **tous** les trades de `appState.trades.items` (timeframe actif),
+  même whitelist de champs que §5.1, mais `extras` **complets** (+ valeurs
+  des widgets custom cuites comme pour le Snapshot). Toujours sans
+  `_notionId` / `notionUrl` ; `tradeId` → `share:<i>`.
+- `dashboard.ls` (`_presetShareFullLsSnapshot`) : allowlist Snapshot + clés
+  globales UI (`flipping_user_themes`, sidebar, ordre des filtres, TP config…)
+  + **toutes** les clés du slot profil actif (presets, snapshots, live
+  filters, layouts de toutes les sections, widgets/props custom, cards…),
+  sauf caches / mapping / détection Notion-CSV et annotations lightbox
+  (clés par ID Notion, inutilisables dans la copie). + flags de migration
+  one-shot (valeur `'1'`) et `flipping_schema_version` — sans eux le viewer
+  rejoue les migrations sur les presets copiés (ex. Invalide / Bad Feeling
+  ajoutés au preset actif).
+- `dashboard.layouts` (toutes sections), `hidden`, `ui`, `section` active.
+- Garde-fou taille : 3 MB comme le Snapshot (limite Vercel 4,5 MB sur la
+  réponse inlinée).
+
+**Viewer** (`html.is-share-mode.is-share-full`) :
+
+- Le lockdown §6 ne s'applique qu'au Snapshot (`_isShareReadOnly()`).
+- Bloqué (`_SHARE_FULL_BLOCKED_ACTIONS` + préfixes `journal-profile-`,
+  `notion-`, `auth-`, `sw-`) : Data hub / Data Setup / mapping, Notion, CSV,
+  compte / connexion, export-all-data, re-partage (preset + chip). Toggle
+  M15/H4 bloqué (une seule timeframe dans la copie). Tout le reste marche :
+  filtres, presets, sections, layout, thème, simulateurs, PDF.
+- **Persistance** : le shim `localStorage` écrit en plus dans le vrai storage
+  de l'origine du proxy (`flipping-share-og.vercel.app`) sous
+  `fmshare_<id>:<clé>` (suppressions = sentinelle). Au chargement suivant,
+  ces clés sont rejouées par-dessus le snapshot (`__FM_SHARE__.restored`).
+  Jamais le storage de l'expéditeur, ni celui du destinataire sur github.io.
+- `ui` / `layouts` du payload appliqués **uniquement à la 1re visite**
+  (`_shareModeApplyFull`) — ensuite les choix du destinataire gagnent.
+- Bannière « Shared dashboard · Full dashboard · N trades » + bouton
+  **↺ Reset view** (efface les `fmshare_<id>:*` et recharge).
+- og:description : `stats.dim` (« Full dashboard ») au lieu de « Global
+  Overview » — nécessite un redeploy de `flipping-share-og`.

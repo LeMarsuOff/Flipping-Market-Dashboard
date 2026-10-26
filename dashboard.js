@@ -4724,7 +4724,9 @@ function handleActionClick(event) {
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
     case 'open-preset-share-popover':  event.stopPropagation(); _handleOpenPresetSharePopover(); break;
-    case 'retry-preset-share-create':  event.stopPropagation(); _handleOpenPresetSharePopover({ force: true }); break;
+    case 'retry-preset-share-create':  event.stopPropagation(); _presetShareCreate(_presetShareKind); break;
+    case 'preset-share-create':        event.stopPropagation(); _presetShareCreate(actionEl.dataset.shareKind); break;
+    case 'share-reset-view':           window.__FM_SHARE__?.resetView?.(); break;
     case 'cal-open-day': _calOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-day': _expoOpenDay(actionEl.dataset.date || ''); break;
     case 'expo-open-cohort': _expoOpenTradeCohort(actionEl.dataset.tradeId || ''); break;
@@ -11057,6 +11059,7 @@ function _reloadProfileScopedState() {
 }
 
 function setHTFSource(source) {
+  if (_isShareMode()) return; // shares carry the trades of one timeframe only
   if (source !== 'm15' && source !== 'h4') return;
   if ((localStorage.getItem(HTF_SOURCE_KEY) || 'm15') === source) return; // no-op
   localStorage.setItem(HTF_SOURCE_KEY, source);
@@ -27520,6 +27523,116 @@ function _buildPresetShareContext() {
   return { presetName, section, trades, sourceTrades: ctxTrades, stats, dashboard, contentKey };
 }
 
+/* ─── Full dashboard share ───────────────────────────────────────────
+   Second Share mode, next to the read-only snapshot above: the whole
+   journal (every trade, every extras column), every section, presets,
+   filters and layouts. The viewer runs the regular interactive dashboard
+   on that copy; only data surfaces (Data Setup, Notion, CSV, account,
+   re-share) stay blocked. Spec: docs/preset-share-feature.md §10 */
+
+const _PRESET_SHARE_FULL_LS_GLOBAL = [
+  ..._PRESET_SHARE_LS_GLOBAL,
+  'flipping_user_themes', 'flipping_sidebar_state', 'filters_display_order_v1',
+  'filtersZoneCollapsed_v1', 'flipping_context_expanded', 'tpManagementConfig',
+];
+// Profile-scoped bases that only feed the Notion / CSV pipeline (caches,
+// mapping, detection) or point at Notion ids the copy no longer has
+// (lightbox annotations) — useless in the viewer, some of them MBs large.
+const _PRESET_SHARE_FULL_LS_SKIP = /^(apiTrades|apiField|apiRaw|flipping_detected_|flipping_auto_mapped_|flipping_csv_cache|flipping_mapping_dirty|lightboxAnnotations_)/;
+
+/* Every key of the active profile slot (presets, live filters, layouts of all
+   sections, custom widgets / props, card settings…) on top of the read-only
+   allowlist. Same scope grouping as _presetShareLsSnapshot: in H4 the
+   `_<profile>_h4` keys go to `htf`, the plain `_<profile>` ones to `profile`;
+   in M15 both scopes resolve to the same demo key, so `profile` holds them all. */
+function _presetShareFullLsSnapshot() {
+  const ls = _presetShareLsSnapshot();
+  const read = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
+  for (const base of _PRESET_SHARE_FULL_LS_GLOBAL) {
+    const v = read(base);
+    if (v !== null) ls.global[base] = v;
+  }
+  // One-shot migration flags (+ schema version): without them the viewer
+  // re-runs boot migrations on the copied presets — e.g. the Invalide /
+  // Bad Feeling migration would add two exclusions to the active preset.
+  const schema = read(SCHEMA_VERSION_KEY);
+  if (schema !== null) ls.global[SCHEMA_VERSION_KEY] = schema;
+  const { profileId } = _getJournalProfileCacheContext();
+  const isH4 = (read(HTF_SOURCE_KEY) || 'm15') === 'h4';
+  const pSfx = profileId ? `_${profileId}` : null;
+  const hSfx = profileId ? `_${profileId}_h4` : null;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (!pSfx || (!key.endsWith(pSfx) && !key.endsWith(hSfx))) {
+      if (!/^(share_seen_|fmshare_)/.test(key) && read(key) === '1') ls.global[key] = '1';
+      continue;
+    }
+    let group = null;
+    let base = null;
+    if (key.endsWith(hSfx)) {
+      if (!isH4) continue;
+      group = 'htf'; base = key.slice(0, -hSfx.length);
+    } else if (key.endsWith(pSfx)) {
+      group = 'profile'; base = key.slice(0, -pSfx.length);
+    }
+    if (!base || _PRESET_SHARE_FULL_LS_SKIP.test(base)) continue;
+    const v = read(key);
+    if (v === null) continue;
+    // An M15 HTF key read by _presetShareLsSnapshot under `htf` is the same
+    // demo key as its `profile` twin — keep a single copy.
+    if (group === 'profile') delete ls.htf[base];
+    ls[group][base] = v;
+  }
+  return ls;
+}
+
+function _buildPresetShareFullContext() {
+  if (typeof _syncGridToLive === 'function') _syncGridToLive();
+  const items = appState.trades.items || [];
+  if (!items.length) throw new Error('No trades loaded — nothing to share.');
+
+  // Every column travels (Max's call, 2026-10-26). Custom-widget values that
+  // only exist in the raw API/CSV cache are still baked in (same as the
+  // snapshot); the trade's own extras win on a shared key, as in the app.
+  const customDefs = _loadCustomWidgetDefs().filter(Boolean);
+  const trades = items.map((t, i) => {
+    const out = _presetShareTrade(t, i, customDefs, []);
+    out.extras = { ...out.extras, ...(t.extras || {}) };
+    return out;
+  });
+
+  const st = calcStats(getFiltered()) || {};
+  const stats = {
+    trades: trades.length,
+    wins: st.w || 0,
+    losses: st.l || 0,
+    winrate: Number.isFinite(st.wr) ? +st.wr.toFixed(2) : 0,
+    netR: Number.isFinite(st.totalR) ? +st.totalR.toFixed(2) : 0,
+    avgR: Number.isFinite(st.ev) ? +st.ev.toFixed(3) : 0,
+    profitFactor: Number.isFinite(st.pf) ? +st.pf.toFixed(2) : null,
+    dim: 'Full dashboard',
+  };
+  const presetName = 'Full dashboard';
+
+  const dashboard = {
+    v: 2,
+    mode: 'full',
+    section: appState.ui.activeSection || 'global',
+    sectionLabel: 'Full dashboard',
+    htfSource: (typeof _getCurrentHTFSource === 'function' ? _getCurrentHTFSource() : null) || 'm15',
+    presetName,
+    layouts: JSON.parse(JSON.stringify(_liveSectionLayouts || {})),
+    hidden: JSON.parse(JSON.stringify(_hiddenWidgets || {})),
+    ui: _presetShareUiState(),
+    ls: _presetShareFullLsSnapshot(),
+    shotLabels: Object.fromEntries(_getScreenshotStepOrder().map(st => [st, String(_getTradeMediaStepLabel(st) || '')])),
+  };
+
+  const contentKey = _presetShareHash(JSON.stringify({ trades, dashboard }));
+  return { presetName, section: dashboard.section, trades, sourceTrades: items, stats, dashboard, contentKey };
+}
+
 /* A slot can be empty on the live trade while its screenshot is already in
    Storage (media cache miss after a refresh — filled on the next Sync). The
    viewer has no Sync, so probe the deterministic Storage URL of every empty
@@ -27561,7 +27674,9 @@ async function _createPresetShareRow(ctx) {
   const dashboard = { ...ctx.dashboard, snapshotAt: new Date().toISOString() };
   const bytes = JSON.stringify(ctx.trades).length + JSON.stringify(dashboard).length;
   if (bytes > _PRESET_SHARE_MAX_BYTES) {
-    throw new Error(`Preset too large to share (${(bytes / 1048576).toFixed(1)} MB — max 3 MB). Narrow the preset or date range.`);
+    throw new Error(ctx.dashboard.mode === 'full'
+      ? `Dashboard too large to share (${(bytes / 1048576).toFixed(1)} MB — max 3 MB). Use a Snapshot share instead.`
+      : `Preset too large to share (${(bytes / 1048576).toFixed(1)} MB — max 3 MB). Narrow the preset or date range.`);
   }
 
   const id = _generateShareId();
@@ -27581,35 +27696,58 @@ async function _createPresetShareRow(ctx) {
 }
 
 const _PRESET_SHARE_POPOVER_TITLE = 'Shareable dashboard link';
-let _presetShareLast = null; // { key, url } — this session's last created link
+const _PRESET_SHARE_FULL_POPOVER_TITLE = 'Full dashboard link';
+let _presetShareLast = {};            // kind → { key, url } — this session's last created link
+let _presetShareKind = 'snapshot';    // kind of the last create attempt (Retry)
 
-async function _handleOpenPresetSharePopover(opts = {}) {
+/* Topbar Share: first a choice between the read-only Snapshot (Global
+   Overview of the active preset) and the Full dashboard copy. */
+function _handleOpenPresetSharePopover() {
   const popEl = document.getElementById('preset-share-popover');
   if (!popEl) return;
-  if (!opts.force && !popEl.hasAttribute('hidden')) {
+  if (!popEl.hasAttribute('hidden')) {
     popEl.setAttribute('hidden', '');
     return;
   }
   popEl.removeAttribute('hidden');
+  popEl.innerHTML = `
+    <div class="wd-share-popover-title">Share dashboard</div>
+    <button class="psh-opt" data-action="preset-share-create" data-share-kind="snapshot" type="button">
+      <span class="psh-opt-name">Snapshot</span>
+      <span class="psh-opt-desc">Global Overview of the active preset · read-only</span>
+    </button>
+    <button class="psh-opt" data-action="preset-share-create" data-share-kind="full" type="button">
+      <span class="psh-opt-name">Full dashboard</span>
+      <span class="psh-opt-desc">All trades, sections, filters &amp; presets · fully usable copy, your profile is never touched</span>
+    </button>
+    <div class="psh-foot">Links expire after 7 days.</div>`;
+}
+
+async function _presetShareCreate(kind) {
+  const popEl = document.getElementById('preset-share-popover');
+  if (!popEl) return;
+  const full = kind === 'full';
+  _presetShareKind = full ? 'full' : 'snapshot';
+  const title = full ? _PRESET_SHARE_FULL_POPOVER_TITLE : _PRESET_SHARE_POPOVER_TITLE;
+  popEl.removeAttribute('hidden');
 
   let ctx;
   try {
-    ctx = _buildPresetShareContext();
+    ctx = full ? _buildPresetShareFullContext() : _buildPresetShareContext();
   } catch (err) {
     _renderSharePopoverError(popEl, err?.message || err, 'retry-preset-share-create');
     return;
   }
   // `m2`: snapshots with Storage-probed media (bumped so links cached before
   // the probe existed are not reused).
-  const ctxKey = `preset|m2|${ctx.contentKey}`;
+  const ctxKey = full ? `full|f1|${ctx.contentKey}` : `preset|m2|${ctx.contentKey}`;
 
-  const reuse = (_presetShareLast && _presetShareLast.key === ctxKey)
-    ? _presetShareLast.url
-    : _getCachedShareUrl(ctxKey);
+  const last = _presetShareLast[_presetShareKind];
+  const reuse = (last && last.key === ctxKey) ? last.url : _getCachedShareUrl(ctxKey);
   if (reuse) {
-    _presetShareLast = { key: ctxKey, url: reuse };
-    _renderSharePopoverSuccess(popEl, reuse, '…', _PRESET_SHARE_POPOVER_TITLE);
-    _refreshSharePopoverViewCount(popEl, reuse, _PRESET_SHARE_POPOVER_TITLE);
+    _presetShareLast[_presetShareKind] = { key: ctxKey, url: reuse };
+    _renderSharePopoverSuccess(popEl, reuse, '…', title);
+    _refreshSharePopoverViewCount(popEl, reuse, title);
     return;
   }
 
@@ -27619,9 +27757,9 @@ async function _handleOpenPresetSharePopover(opts = {}) {
   try {
     const { id, expiresAt } = await _createPresetShareRow(ctx);
     const url = `${_presetShareViewerBaseUrl()}?id=${id}`;
-    _presetShareLast = { key: ctxKey, url };
+    _presetShareLast[_presetShareKind] = { key: ctxKey, url };
     _putCachedShareUrl(ctxKey, url, expiresAt);
-    _renderSharePopoverSuccess(popEl, url, 0, _PRESET_SHARE_POPOVER_TITLE);
+    _renderSharePopoverSuccess(popEl, url, 0, title);
   } catch (err) {
     console.error('[preset-share] create failed', err);
     _renderSharePopoverError(popEl, err?.message || err?.error_description || 'Network error', 'retry-preset-share-create');
@@ -27650,6 +27788,16 @@ function _isShareMode() {
 
 function _shareRow() {
   return (window.__FM_SHARE__ && window.__FM_SHARE__.row) || null;
+}
+
+// Full dashboard share: the interactive copy (filters, presets, sections,
+// layout, theme…). The read-only lockdown below only applies to Snapshot shares.
+function _isShareFull() {
+  return _isShareMode() && _shareRow()?.dashboard?.mode === 'full';
+}
+
+function _isShareReadOnly() {
+  return _isShareMode() && !_isShareFull();
 }
 
 function _shareModeTrades() {
@@ -27693,11 +27841,28 @@ const _SHARE_MODE_ALLOWED_ACTIONS = new Set([
   'open-img-lightbox', 'lightbox-nav-trade',
 ]);
 
+// Full dashboard share: everything works except what touches a data source,
+// an account or creates a new share (the copy has no Notion / CSV / session).
+const _SHARE_FULL_BLOCKED_ACTIONS = new Set([
+  'set-data-source', 'toggle-data-hub', 'switch-dh-tab', 'open-data-hub-mapping',
+  'open-mapping-missing-trades', 'open-remap-picker', 'pick-remap-column', 'pick-api-field',
+  'refresh-api-fields', 'reapply-template-defaults', 'reapply-resync-confirm', 'retry-api-url',
+  'open-csv-overlay', 'csv-integration-manage-toggle', 'reset-csv-overrides',
+  'open-notion-overlay', 'open-custom-props-drawer', 'toggle-notion-props-panel',
+  'toggle-data-sources-section', 'toggle-integrations-section', 'toggle-journal-panel',
+  'toggle-account-panel', 'toggle-account-section', 'export-all-data',
+  'open-preset-share-popover', 'retry-preset-share-create', 'preset-share-create',
+  'open-share-popover', 'retry-share-create',
+]);
+const _SHARE_FULL_BLOCKED_PREFIX = /^(journal-profile-|notion-|auth-|sw-)/;
+
 function _shareModeBlocksAction(action) {
-  return _isShareMode() && !_SHARE_MODE_ALLOWED_ACTIONS.has(action);
+  if (!_isShareMode()) return false;
+  if (_isShareFull()) return _SHARE_FULL_BLOCKED_ACTIONS.has(action) || _SHARE_FULL_BLOCKED_PREFIX.test(action);
+  return !_SHARE_MODE_ALLOWED_ACTIONS.has(action);
 }
 
-if (_isShareMode()) {
+if (_isShareReadOnly()) {
   // Right-click Include/Exclude menus (bars, heatmaps, PO fields) — swallow
   // the event before any app listener sees it. The native browser menu stays.
   window.addEventListener('contextmenu', (e) => { e.stopPropagation(); }, true);
@@ -27721,6 +27886,21 @@ function _shareModeRenderBanner() {
   }
   const days = Math.max(0, Math.ceil((new Date(row.expires_at).getTime() - Date.now()) / 86400000));
   const snap = d.snapshotAt ? new Date(d.snapshotAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  if (_isShareFull()) {
+    const n = Array.isArray(row.trades) ? row.trades.length : (Number(st.trades) || 0);
+    el.innerHTML = `
+      <span class="smb-eyebrow">Shared dashboard</span>
+      <span class="smb-title">Full dashboard</span>
+      <span class="smb-sep">·</span>
+      <span>${n} trades</span>
+      ${snap ? `<span class="smb-sep">·</span><span>snapshot ${_escapeHtml(snap)}</span>` : ''}
+      <span class="smb-sep">·</span>
+      <span>expires in ${days}d</span>
+      <span class="smb-spacer"></span>
+      <button class="smb-reset" type="button" data-action="share-reset-view" title="Drop your changes and go back to the shared version">↺ Reset view</button>
+      <span class="smb-brand">Flipping Research · your changes stay in this browser</span>`;
+    return;
+  }
   el.innerHTML = `
     <span class="smb-eyebrow">Shared preset</span>
     <span class="smb-title">${_escapeHtml(row.chip_name || d.presetName || 'Dashboard')}</span>
@@ -27752,6 +27932,7 @@ function _shareModeBumpViewCount() {
    UI state (TP config, BE mode, RR filter…), exact live layout of the
    section, hidden widgets. Waits for GridStack (init is deferred). */
 function _shareModeApply() {
+  if (_isShareFull()) { _shareModeApplyFull(); return; }
   const row = _shareRow();
   const d = (row && row.dashboard) || {};
   const section = _PRESET_SHARE_SECTION; // Global Overview only, whatever the payload says
@@ -27773,6 +27954,32 @@ function _shareModeApply() {
     _grid.setStatic(true);
     _applySectionFilter(section, { skipSync: true });
   }
+  invalidateFilterCache();
+  render();
+  requestAnimationFrame(() => { try { _redrawAll(); } catch (_) {} });
+}
+
+/* Full dashboard share: the regular boot already restored presets, filters,
+   layouts and theme from the seeded storage. On the first visit only, also
+   restore the sender's in-memory state (TP config, RR filter… + unsaved grid
+   positions). On later visits the viewer's own saved changes win. */
+function _shareModeApplyFull() {
+  const d = _shareRow()?.dashboard || {};
+  if (!window.__FM_SHARE__?.restored) {
+    const ui = (d.ui && typeof d.ui === 'object') ? d.ui : {};
+    for (const [k, v] of Object.entries(ui)) {
+      if (k === 'activeSection' || k === 'showRawAll') continue;
+      appState.ui[k] = (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : v;
+    }
+    if (d.hidden && typeof d.hidden === 'object') _hiddenWidgets = { ...d.hidden };
+    if (d.layouts && typeof d.layouts === 'object' && _liveSectionLayouts) {
+      for (const [sec, lay] of Object.entries(d.layouts)) {
+        if (lay && typeof lay === 'object' && Object.keys(lay).length) _liveSectionLayouts[sec] = { ...lay };
+      }
+    }
+  }
+  const section = appState.ui.activeSection || d.section || 'global';
+  if (_grid) _applySectionFilter(section, { skipSync: true });
   invalidateFilterCache();
   render();
   requestAnimationFrame(() => { try { _redrawAll(); } catch (_) {} });
@@ -32483,7 +32690,7 @@ window._orrClearBeMgmt             = _orrClearBeMgmt;
 // ── RR Min Filter (bubble click → apply directly, no modal) ──
 
 function _rrFilterBubbleClick(lv, _label) {
-  if (_isShareMode()) return;
+  if (_isShareReadOnly()) return;
   const wasActive = appState.ui.rrMinFilter === lv;
   const activating = !wasActive;
   appState.ui.rrMinFilter = wasActive ? null : lv;
@@ -49113,7 +49320,7 @@ function initShareGridstack() {
 
 // ── Toggle Edit Mode ──
 function toggleEditMode() {
-  if (_isShareMode()) return; // read-only preset share
+  if (_isShareReadOnly()) return; // read-only preset share
   _editMode = !_editMode;
   const btns    = document.querySelectorAll('.layout-edit-btn');
   const toolbar = document.getElementById('layout-toolbar');

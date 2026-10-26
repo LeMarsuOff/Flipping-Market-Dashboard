@@ -37,12 +37,13 @@
     document.documentElement.classList.add('is-share-mode');
     if (!S.row) document.documentElement.classList.add('is-share-expired');
 
-    function memStorage() {
+    // onWrite(key, value|null): optional write-through (Full dashboard shares).
+    function memStorage(onWrite) {
       var m = Object.create(null);
       var api = {
         getItem: function (k) { k = String(k); return k in m ? m[k] : null; },
-        setItem: function (k, v) { m[String(k)] = String(v); },
-        removeItem: function (k) { delete m[String(k)]; },
+        setItem: function (k, v) { m[String(k)] = String(v); if (onWrite) onWrite(String(k), String(v)); },
+        removeItem: function (k) { delete m[String(k)]; if (onWrite) onWrite(String(k), null); },
         clear: function () { for (var k in m) delete m[k]; },
         key: function (i) { var ks = Object.keys(m); return i < ks.length ? ks[i] : null; }
       };
@@ -58,9 +59,9 @@
           // Monkey-patches of setItem/removeItem (the Supabase sync wrapper)
           // are ignored on purpose: nothing may leave the in-memory store.
           if (Object.prototype.hasOwnProperty.call(api, p)) return true;
-          m[String(p)] = String(v); return true;
+          api.setItem(p, v); return true;
         },
-        deleteProperty: function (t, p) { delete m[String(p)]; return true; },
+        deleteProperty: function (t, p) { api.removeItem(p); return true; },
         has: function (t, p) { return p in m; },
         ownKeys: function () { return Object.keys(m); },
         getOwnPropertyDescriptor: function (t, p) {
@@ -81,13 +82,24 @@
         return true;
       } catch (e) { return false; }
     };
-    var ls = memStorage();
+    var d = (S.row && S.row.dashboard) || {};
+    // Full dashboard share: the viewer's own changes (filters, presets,
+    // layout, theme…) are written through to this origin's real storage
+    // under `fmshare_<id>:` and replayed over the snapshot on the next visit.
+    // Never the sender's storage — the page runs on the share proxy's origin.
+    var full = !!S.row && d.mode === 'full';
+    var PFX = 'fmshare_' + S.id + ':';
+    var DEL = '\u0000fm-del';
+    var persist = false;
+    var ls = memStorage(function (k, v) {
+      if (!persist || !realLs) return;
+      try { realLs.setItem(PFX + k, v === null ? DEL : v); } catch (e) {}
+    });
     try {
       Object.defineProperty(window, 'localStorage',   { value: ls,           configurable: true });
       Object.defineProperty(window, 'sessionStorage', { value: memStorage(), configurable: true });
     } catch (e) {}
 
-    var d = (S.row && S.row.dashboard) || {};
     var htf = d.htfSource === 'h4' ? 'h4' : 'm15';
     // Demo profile slot (`__demo`) — mirrors getProfileScopedKey / _htfKey.
     function scoped(base) {
@@ -99,16 +111,50 @@
     for (k in (src.global || {}))  ls.setItem(k, src.global[k]);
     for (k in (src.htf || {}))     ls.setItem(scoped(htf === 'h4' ? k + '_h4' : k), src.htf[k]);
     for (k in (src.profile || {})) ls.setItem(scoped(k), src.profile[k]);
+    if (!full) {
+      ls.setItem('dataSource', 'demo');
+      ls.setItem('htfSource', htf);
+      ls.setItem('dashboard_section', 'global'); // only the Global Overview is shareable
+      return;
+    }
+    document.documentElement.classList.add('is-share-full');
+    ls.setItem('dashboard_section', d.section || 'global');
+    S.restored = false;
+    var saved = [];
+    try {
+      for (var i = 0; i < realLs.length; i++) {
+        var rk = realLs.key(i);
+        if (rk && rk.indexOf(PFX) === 0) saved.push(rk);
+      }
+    } catch (e) {}
+    for (var j = 0; j < saved.length; j++) {
+      var v = null;
+      try { v = realLs.getItem(saved[j]); } catch (e) {}
+      if (v === null) continue;
+      if (v === DEL) ls.removeItem(saved[j].slice(PFX.length));
+      else ls.setItem(saved[j].slice(PFX.length), v);
+      S.restored = true;
+    }
     ls.setItem('dataSource', 'demo');
     ls.setItem('htfSource', htf);
-    ls.setItem('dashboard_section', 'global'); // only the Global Overview is shareable
+    persist = true;
+    // "Reset view" in the banner: drop the viewer's changes, back to the snapshot.
+    S.resetView = function () {
+      try {
+        var all = [];
+        for (var n = 0; n < realLs.length; n++) { var nk = realLs.key(n); if (nk && nk.indexOf(PFX) === 0) all.push(nk); }
+        for (var q = 0; q < all.length; q++) realLs.removeItem(all[q]);
+      } catch (e) {}
+      persist = false;
+      location.reload();
+    };
   })();
 </script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Anybody:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <!-- GridStack CSS -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack.min.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gridstack.js/10.3.1/gridstack-extra.min.css"/>
-<link rel="stylesheet" href="dashboard.css?v=411">
+<link rel="stylesheet" href="dashboard.css?v=413">
 <script>
   // Pre-paint theme restore — avoids the brief flash of static :root colors
   // before applyThemeToCss() runs. Mirrors the derive logic in dashboard.js so
@@ -3384,6 +3430,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1489"></script>
+<script src="dashboard.js?v=1504"></script>
 </body>
 </html>
