@@ -13,6 +13,8 @@ _(none)_
 
 ## TODO — Active
 
+- [ ] **Full dashboard share — valider sur un vrai lien + redéployer `flipping-share-og`** — Pushé 2026-10-26 (`4ebc043`), testé seulement en local. À vérifier sur le vrai journal de Max : taille du payload (plafond 3 MB, limite Vercel 4,5 MB), rendu, persistance par lien. Redéployer le proxy pour que l'aperçu (og:description) affiche « Full dashboard » au lieu de « Global Overview ».
+
 - [ ] **Trade cards — ordre / couleurs / séparateurs pas appliqués à l'export PDF** — Le PDF (`_pdfBuildDoc`) a son propre rendu de carte et ignore `tradeCardLayout_v1` + la visibilité. Piste : réutiliser `_wdCardBodyLines` (déjà partagé par le drawer et le snapshot de partage). Le viewer chip-share est réglé depuis 2026-10-12.
 - [ ] **Live dashboard — screenshot slots empty after refresh (session media-cache miss)** — Found 2026-10-09 via Preset Share: on Max's profile ~25 % of trades had `imgH4Before` / `imgM15After` empty in memory while `<notionId>_<slot>.png` exists in Storage (`_mergeMediaCache` miss → slot stays empty until next Sync). The share now HEAD-probes Storage; the live drawer still shows fewer camera buttons. Investigate why the media cache misses + whether a deterministic-URL fallback (by own `_notionId`) is safe in `_mergeMediaCache`.
 - [ ] **Preset Share — decide simulator inputs in share-mode** — Monte Carlo / Prop Optimizer inputs stay editable in the read-only view (no data change, nothing persisted). Max to decide: keep or disable.
@@ -85,6 +87,8 @@ _(none)_
 ---
 
 ## Done — Last 10
+
+- [x] **Share — option « Full dashboard » : copie complète et utilisable du dashboard** (2026-10-27) — Demande de Max : le bouton Share propose maintenant **Snapshot** (inchangé, Global Overview en lecture seule) ou **Full dashboard** : tout le journal (toutes les colonnes Notion), presets, filtres, toutes les sections, layouts, thème. Le destinataire l'utilise comme Max ; seules les surfaces données restent bloquées (Data Setup, Notion, CSV, compte, export brut, re-partage, toggle M15/H4). Ses modifs sont gardées dans son navigateur par lien (`fmshare_<id>:*` sur l'origine du proxy) + bouton « ↺ Reset view » ; le profil de Max n'est jamais touché. Fix en route : les flags de migration one-shot voyagent avec la copie (sinon la migration Invalide/Bad Feeling ajoutait 2 exclusions au preset actif). Testé en local (proxy simulé, demo) : même preset / section / 65 trades, persistance, reset, Snapshot non régressé. Spec §10. Commit `4ebc043`.
 
 - [x] **Sync cloud — des sauvegardes rapides successives d'une même clé perdaient la dernière** (2026-10-21) — Trouvé en supprimant 7 filtres d'affilée : `_SW.set/remove` lançaient 1 RPC par écriture LS, toutes avec le même `seen updated_at` → la 1re gagnait, les autres en `stale_write`, retry en parallèle, et le chemin « final stale » réécrivait dans LS une valeur cloud **intermédiaire**. Reproduit live sur l'ancien code (v1472) : 8 écritures → LS + Supabase figés sur l'écriture #2. **Fix** : file par clé avec coalescence latest-wins (set + remove partagent la file, seen lu à l'exécution), pas de rollback LS si une édition plus récente attend, et `_onUserData` ignore une ligne entrante pour une clé encore en cours d'écriture. Vérifié : 8 écritures → 2 RPC, 0 stale, état final correct partout. Conflit réel multi-appareil non testé. Commit `ed6ef3a`.
 
