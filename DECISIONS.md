@@ -889,3 +889,11 @@ Three sub-decisions, each cleared with Max:
 **Rationale:** Widgets and filters each had their own value logic, and every divergence turned into "include matches nothing / exclude does nothing" (trimmed column names, multi-select stored as a string, checkbox text coerced with `Boolean("false") === true`). Fixing case by case did not hold; one shared reader makes any value a Create-Widget chart shows a value the filter can match, for props added later too.
 
 **Consequence:** New custom-prop value consumers must read through `_customPropValues`, not `t.extras[...]` directly. Custom tables grouped by date do not offer include/exclude (month buckets are not property values; months go through the date range).
+
+### 2026-10-27 — Backend trusts the session token, not the user_id; shares are read by exact id only
+
+**Decision:** Every `notion-dashboard-api-2` route goes through `api/_lib/security.js`: `applyCors` answers only for `https://lemarsuoff.github.io`, `https://flipping-share-og.vercel.app` and localhost; `requireSameUser` requires a Supabase Bearer token (`auth.getUser`) whose uid equals the `user_id` the call acts on (`REQUIRE_AUTH = true`). The dashboard sends the token on every backend call via `_backendAuthHeaders()` (`_SW.getAccessToken()`). The Notion OAuth `state` carries an HMAC-signed `<uid>.<ts>.<sig>` from `/oauth/start` (keyed on the Notion client secret, 1 h TTL) because the callback is a browser redirect that cannot carry the token. Public share reads go through `get_share(p_id)` (security definer, one row by exact id, never `created_by`); the `shares` table has no SELECT policy left.
+
+**Rationale:** The routes trusted whatever `user_id` they received, and that id was readable from the public `shares` table, so knowing it was enough to read a member's Notion journal or delete their account. CORS alone would not help (non-browser clients ignore it); the check has to be identity. The share table was listable with the anon key, so links were not the only way in.
+
+**Consequence:** Any new backend route must call `applyCors` + `requireSameUser` (or `authenticate`). Any new share reader must use `get_share`, never `/rest/v1/shares`. A new origin that legitimately calls the API must be added to `ALLOWED_ORIGINS`. Admin access is unchanged: the Supabase dashboard / service role bypasses RLS and these checks.
