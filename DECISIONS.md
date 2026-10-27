@@ -881,3 +881,11 @@ Three sub-decisions, each cleared with Max:
 **Rationale:** Max wants recipients to use the dashboard exactly like him without any effect on his profile. Reusing the existing share pipeline keeps the isolation guarantees (separate origin + shim, no auth, no sync). Copying whole profile slots instead of a hand-kept allowlist means new per-profile settings travel automatically. Migration flags must travel, otherwise boot migrations re-run on the copied presets (reproduced: Invalide / Bad Feeling exclusions added to the active preset).
 
 **Consequence:** Supersedes spec invariant §2.3 (« preset trades only ») for Full shares only — the Snapshot mode keeps it. Size cap stays 3 MB (Vercel 4.5 MB response limit on the inlined payload); large journals must fall back to Snapshot. Any new data-source / account action must be added to `_SHARE_FULL_BLOCKED_ACTIONS`.
+
+### 2026-10-27 — One canonical value reader for declared custom props
+
+**Decision:** Which values a trade carries for a declared custom prop is answered by a single function, `_customPropValues(trade, prop)`, built on the custom widgets' own expansion (`_cwExpandFieldValues`) over `_customPropRawValue` (whitespace-tolerant extras lookup). The filter matcher (`_customEntryPasses`, used live and by preset overrides) and the sidebar value scan (`_scanUniqueValuesFor`) both use it, and every comparison goes through `_customValueKey`, which normalizes both the entry value and the trade value (checkbox `true`/`false` from boolean or text, trimmed strings).
+
+**Rationale:** Widgets and filters each had their own value logic, and every divergence turned into "include matches nothing / exclude does nothing" (trimmed column names, multi-select stored as a string, checkbox text coerced with `Boolean("false") === true`). Fixing case by case did not hold; one shared reader makes any value a Create-Widget chart shows a value the filter can match, for props added later too.
+
+**Consequence:** New custom-prop value consumers must read through `_customPropValues`, not `t.extras[...]` directly. Custom tables grouped by date do not offer include/exclude (month buckets are not property values; months go through the date range).
