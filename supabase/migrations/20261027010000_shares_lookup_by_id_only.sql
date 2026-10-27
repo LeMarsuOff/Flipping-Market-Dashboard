@@ -36,3 +36,8 @@ $$;
 
 revoke all on function public.get_share(text) from public;
 grant execute on function public.get_share(text) to anon, authenticated;
+
+-- Step 2 (applied after every reader switched to get_share): no direct
+-- reads of the table any more, by anyone but the service role. With RLS on
+-- and no SELECT policy left, anon/authenticated see zero rows.
+drop policy if exists shares_public_read on public.shares;
