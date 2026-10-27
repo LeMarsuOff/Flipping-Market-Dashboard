@@ -1601,6 +1601,17 @@ const _SW = (() => {
 
     getUser() { return _user; },
 
+    // Current session JWT (auto-refreshed by supabase-js) — the Notion backend
+    // checks it against the user_id it is asked to act on.
+    async getAccessToken() {
+      const c = _getClient();
+      if (!c) return null;
+      try {
+        const { data } = await c.auth.getSession();
+        return data?.session?.access_token || null;
+      } catch (e) { return null; }
+    },
+
     // ── Retention — touch user_retention.last_active_at, debounced 1×/day ──
     // Called from the SIGNED_IN / INITIAL_SESSION auth handlers. Idempotent and
     // best-effort: a failure just leaves the LS flag untouched so the next
@@ -6211,7 +6222,7 @@ async function _checkNotionIntegrationStatus() {
   const timeoutId = setTimeout(() => ctrl.abort(), 10000);
 
   try {
-    const resp = await fetch(endpoint, { signal: ctrl.signal });
+    const resp = await fetch(endpoint, { signal: ctrl.signal, headers: await _backendAuthHeaders() });
     clearTimeout(timeoutId);
     debugLog('[Integrations] response status:', resp.status);
 
@@ -6419,7 +6430,7 @@ async function _handleNotionIntegrationDisconnect() {
     debugLog('[NotionDisconnect] deleting connection:', { userId: user.id });
     const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/notion/disconnect`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await _backendAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ user_id: user.id }),
     });
     if (resp.ok) {
@@ -6594,6 +6605,13 @@ function _closeJournalProfileEditor() {
 }
 const NOTION_OAUTH_BACKEND = 'https://notion-dashboard-api-2.vercel.app';
 
+// Headers for every NOTION_OAUTH_BACKEND call: the backend rejects a call
+// whose Bearer token does not belong to the user_id it carries.
+async function _backendAuthHeaders(extra) {
+  const token = typeof _SW !== 'undefined' ? await _SW.getAccessToken() : null;
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+}
+
 function _handleNotionOAuthReturn() {
   const params = new URLSearchParams(window.location.search);
   const connected     = params.get('notion_connected');
@@ -6725,15 +6743,18 @@ async function startNotionOAuth(profileId, options = {}) {
     return;
   }
 
-  let clientId, redirectUri;
+  let clientId, redirectUri, stateToken;
   try {
     const startUrl = `${NOTION_OAUTH_BACKEND}/api/notion/oauth/start`;
     debugLog('[NotionOAuth] fetching start endpoint:', startUrl);
-    const res = await fetch(startUrl);
+    const res = await fetch(startUrl, { headers: await _backendAuthHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     clientId    = data.client_id;
     redirectUri = data.redirect_uri;
+    // Signed "<uid>.<ts>.<sig>" — lets the callback trust which account the
+    // Notion workspace is attached to. Older backends don't send it.
+    stateToken  = data.state_token || '';
     debugLog('[NotionOAuth] start endpoint result: client_id=', clientId, 'redirect_uri=', redirectUri);
   } catch (err) {
     console.error('[NotionOAuth] Failed to fetch OAuth params:', err);
@@ -6760,7 +6781,7 @@ async function startNotionOAuth(profileId, options = {}) {
     try { sessionStorage.removeItem('notion_oauth_pending'); } catch (e) {}
   }
 
-  const state    = encodeURIComponent(user.id + '::' + (profileId || ''));
+  const state    = encodeURIComponent((stateToken || user.id) + '::' + (profileId || ''));
   const oauthUrl = `https://api.notion.com/v1/oauth/authorize`
     + `?client_id=${encodeURIComponent(clientId)}`
     + `&response_type=code`
@@ -6799,7 +6820,7 @@ async function _handleNotionDbPickerOpen(profileId) {
 
   try {
     const url = `${NOTION_OAUTH_BACKEND}/api/notion/databases?user_id=${encodeURIComponent(user.id)}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: await _backendAuthHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     _notionDbPickerDatabases = Array.isArray(data.databases) ? data.databases : [];
@@ -12065,7 +12086,7 @@ const _mediaQueue = (() => {
     try {
       const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/notion/media-sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await _backendAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ user_id: userId, items, force: forceBatch }),
       });
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -12418,7 +12439,7 @@ async function _loadNotionTrades(profile, options = {}) {
     debugLog('[NotionLoad] fetching:', url);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new DOMException('Timeout 90s', 'AbortError')), 90000);
-    const resp = await fetch(url, { signal: controller.signal });
+    const resp = await fetch(url, { signal: controller.signal, headers: await _backendAuthHeaders() });
     clearTimeout(timer);
 
     // Cache-scope override is already pinned to `profileId` at the top of the
@@ -39415,7 +39436,7 @@ function _handleDeleteAccount() {
     try {
       const resp = await fetch(`${NOTION_OAUTH_BACKEND}/api/account/delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await _backendAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ user_id: user.id }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
