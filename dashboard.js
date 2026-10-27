@@ -27204,9 +27204,8 @@ async function _getShareViewCount(shareId) {
   const sb = window._SW?.getClient?.();
   if (!sb) return null;
   try {
-    const { data, error } = await sb.from('shares')
+    const { data, error } = await sb.rpc('get_share', { p_id: shareId })
       .select('view_count')
-      .eq('id', shareId)
       .maybeSingle();
     if (error || !data) return null;
     return (typeof data.view_count === 'number') ? data.view_count : null;

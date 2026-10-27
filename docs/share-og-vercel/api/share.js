@@ -49,7 +49,7 @@ function fmtPf(v)  { if (v == null) return '∞'; const n = num(v); return n == 
 
 async function fetchShare(id) {
   try {
-    const u = `${SUPABASE_URL}/rest/v1/shares?id=eq.${encodeURIComponent(id)}`
+    const u = `${SUPABASE_URL}/rest/v1/rpc/get_share?p_id=${encodeURIComponent(id)}`
       + `&select=chip_name,chip_kind,stats&limit=1`;
     const r = await fetch(u, { headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` } });
     if (!r.ok) return null;                 // RLS hides expired rows → []

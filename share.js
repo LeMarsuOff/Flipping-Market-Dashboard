@@ -704,10 +704,10 @@ async function loadShare(id) {
       await sb.rpc('increment_share_view', { p_share_id: id });
     }
 
+    // get_share returns only the row whose id we hold (shares can't be listed).
     const { data, error } = await sb
-      .from('shares')
+      .rpc('get_share', { p_id: id })
       .select('chip_name, chip_kind, stats, trades, expires_at, view_count')
-      .eq('id', id)
       .maybeSingle();
 
     if (error) throw error;

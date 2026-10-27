@@ -23,7 +23,7 @@
       try {
         var K = 'sb_publishable_XYwK5z-G9Dhf1ZThUbje1g_ZW3SzeSC';
         var x = new XMLHttpRequest();
-        x.open('GET', 'https://pjkilmmltbyugjxbvyvh.supabase.co/rest/v1/shares?id=eq.' + id
+        x.open('GET', 'https://pjkilmmltbyugjxbvyvh.supabase.co/rest/v1/rpc/get_share?p_id=' + id
           + '&chip_kind=eq.preset&select=id,chip_name,stats,trades,dashboard,expires_at,view_count&limit=1', false);
         x.setRequestHeader('apikey', K);
         x.setRequestHeader('Authorization', 'Bearer ' + K);
@@ -3430,6 +3430,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-<script src="dashboard.js?v=1514"></script>
+<script src="dashboard.js?v=1515"></script>
 </body>
 </html>

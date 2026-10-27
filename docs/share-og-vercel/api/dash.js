@@ -56,7 +56,7 @@ function inlineJson(obj) {
 
 async function fetchShare(id) {
   try {
-    const u = `${SUPABASE_URL}/rest/v1/shares?id=eq.${encodeURIComponent(id)}`
+    const u = `${SUPABASE_URL}/rest/v1/rpc/get_share?p_id=${encodeURIComponent(id)}`
       + `&chip_kind=eq.preset`
       + `&select=id,chip_name,stats,trades,dashboard,expires_at,view_count&limit=1`;
     const r = await fetch(u, { headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` } });

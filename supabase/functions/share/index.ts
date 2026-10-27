@@ -115,7 +115,7 @@ type ShareRow = { chip_name?: string; chip_kind?: string; stats?: Record<string,
 
 async function fetchShare(id: string): Promise<ShareRow | null> {
   try {
-    const u = `${SUPABASE_URL}/rest/v1/shares?id=eq.${encodeURIComponent(id)}`
+    const u = `${SUPABASE_URL}/rest/v1/rpc/get_share?p_id=${encodeURIComponent(id)}`
       + `&select=chip_name,chip_kind,stats&limit=1`;
     const res = await fetch(u, {
       headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
