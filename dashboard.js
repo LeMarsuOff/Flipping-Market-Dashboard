@@ -4998,6 +4998,14 @@ function _parseNumeric(raw) {
 }
 const _SYSTEM_TP_R = 2.4;
 const _SYSTEM_SL_R = -1.0;
+// ORR "reached TP1" floor for the BE-out bucket. A winning trade (r > 0) has by
+// definition already hit its own journaled TP, so its floor is its realized R
+// when that sits below the 2.4R system default (e.g. a journal with a 2R base
+// TP). Without this, TP trades at +2R with rrMax in [2, 2.4) fell below the
+// hardcoded 2.4R floor and were counted as −1R even in BE Fallback.
+function _orrBeFloor(r) {
+  return (Number.isFinite(r) && r > 0) ? Math.min(_SYSTEM_TP_R, r) : _SYSTEM_TP_R;
+}
 let _outcomeDebugCounts = {};
 function _recordOutcomeDebug(raw, mapped, category = '') {
   const value = String(raw ?? '').trim();
@@ -22384,7 +22392,6 @@ function _getBeMgmtChipMatchedTrades() {
 // computeOptimalRR.
 function _getBeOutTradesAtTp(tp) {
   if (_orrSimMode !== 'be-fallback') return new Set();
-  if (tp <= _SYSTEM_TP_R) return new Set();
   const base = _getContextFiltered(true);
   const out = new Set();
   for (const t of base) {
@@ -22396,7 +22403,7 @@ function _getBeOutTradesAtTp(tp) {
     if (Number.isFinite(r) && r < 0) continue;
     if (rMax === null) continue;
     if (rMax >= tp) continue;
-    if (rMax < _SYSTEM_TP_R) continue;
+    if (rMax < _orrBeFloor(r)) continue;
     out.add(t);
   }
   return out;
@@ -25048,7 +25055,7 @@ try {
  *   0. outcome ∈ {BE-TP, BE-SL}    → BE-aware branch (see above)
  *   1. rMax ≥ tp                   → WIN    (reached simulated TP — counterfactually)
  *   2. r < 0  (and rMax < tp)      → LOSS   (real loser AND wouldn't have hit tp)
- *   3. rMax < _SYSTEM_TP_R         → LOSS   (didn't reach TP1, would have lost)
+ *   3. rMax < _orrBeFloor(r)       → LOSS   (didn't reach TP1, would have lost)
  *   4. _SYSTEM_TP_R ≤ rMax < tp    → BE-out in BE Fallback (0R)
  *                                  → LOSS   in Strict Loss (−1R)
  *   5. otherwise (no usable rMax)  → EXCLUDED
@@ -25147,7 +25154,7 @@ function computeOptimalRR(trades) {
         wins++;
       } else if (Number.isFinite(r) && r < 0) {
         losses++;
-      } else if (rMax !== null && rMax < _SYSTEM_TP_R) {
+      } else if (rMax !== null && rMax < _orrBeFloor(r)) {
         losses++;
       } else if (rMax !== null) {
         // rMax ∈ [TP1, tp) — BE-out in BE Fallback, LOSS in Strict Loss
@@ -32245,7 +32252,7 @@ function _getTradeReachR(trade) {
 //   0. outcome ∈ {BE-TP, BE-SL}   → BE-aware branch (see above)
 //   1. rrMax ≥ tp                 → tp    (WIN — reached simulated TP)
 //   2. r < 0  (and rrMax < tp)    → -1    (LOSS — real loser AND wouldn't hit tp)
-//   3. rrMax < _SYSTEM_TP_R       → -1    (LOSS — didn't reach TP1)
+//   3. rrMax < _orrBeFloor(r)     → -1    (LOSS — didn't reach TP1)
 //   4. _SYSTEM_TP_R ≤ rrMax < tp  → 0     (BE) in BE Fallback
 //                                 → -1    (LOSS) in Strict Loss
 //   5. otherwise (rrMax missing)  → null  (EXCLUDED)
@@ -32296,7 +32303,7 @@ function _getSimulatedR(trade) {
   // trades with high rrMax aren't misclassified. See header comment.
   if (rMax !== null && rMax >= tp) return tp;
   if (Number.isFinite(r) && r < 0) return -1;
-  if (rMax !== null && rMax < _SYSTEM_TP_R) return -1;
+  if (rMax !== null && rMax < _orrBeFloor(r)) return -1;
   if (rMax !== null) {
     // TP1 ≤ rMax < tp (BE-out range):
     //   BE Fallback → return null (removed from the dataset by the upstream
