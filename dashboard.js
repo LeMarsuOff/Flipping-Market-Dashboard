@@ -21061,13 +21061,22 @@ function drawDonut(stats) {
   // visual language (BE Trades KPI tile, Monthly P&L BE bar).
   const cBE   = tc('--gold') || tc('--a');
 
-  const data = [
+  // ORR bubble active → slices follow the simulated outcome at the active TP
+  // (TP = reached it, BE = BE-out / 0R, SL = −1R) instead of the Notion
+  // outcome, so BE-outs dropped from getFiltered() show up as a BE slice.
+  _donutOrrBuckets = _getDonutOrrBuckets();
+  const ob = _donutOrrBuckets;
+  const data = (ob ? [
+    { label:'TP',    n: ob.TP.length, color: cG  },
+    { label:'BE',    n: ob.BE.length, color: cBE },
+    { label:'SL',    n: ob.SL.length, color: cR  },
+  ] : [
     { label:'TP',    n: (stats||{}).cnt_tp  ||0, color: cG    },
     { label:'BE-TP', n: (stats||{}).be_tp   ||0, color: cBETP },
     { label:'BE-SL', n: (stats||{}).be_sl   ||0, color: cBESL },
     { label:'BE',    n: (stats||{}).be_plain||0, color: cBE   },
     { label:'SL',    n: (stats||{}).cnt_sl  ||0, color: cR    },
-  ].filter(d => d.n > 0);
+  ]).filter(d => d.n > 0);
 
   const total = data.reduce((s, d) => s + d.n, 0) || 1;
 
@@ -21132,6 +21141,25 @@ function drawDonut(stats) {
 let _donutSectors = [];
 let _donutGeom = null;
 let _donutHoverZone = null; // 'win' | 'loss' | null
+let _donutOrrBuckets = null; // { TP:[], BE:[], SL:[] } while the ORR bubble is active
+
+// Classify the context-filtered trades by their simulated R at the active ORR
+// TP. Null sims are kept as BE when they are BE-outs (BE Fallback) or plain BE
+// outcomes; anything else null is excluded, as in getFiltered().
+function _getDonutOrrBuckets() {
+  if (appState.ui.rrMinFilter === null) return null;
+  const beOut = _getBeOutTradesAtTp(appState.ui.rrMinFilter);
+  const out = { TP: [], BE: [], SL: [] };
+  for (const t of _getContextFiltered(true)) {
+    const s = _getSimulatedR(t);
+    if (s === null) {
+      if (beOut.has(t) || t.outcome === 'BE') out.BE.push(t);
+    } else if (s > 0) out.TP.push(t);
+    else if (s < 0)   out.SL.push(t);
+    else              out.BE.push(t);
+  }
+  return out;
+}
 
 function _isWinSector(label) { return label === 'TP' || label === 'BE-TP'; }
 
@@ -21175,8 +21203,11 @@ function _drawDonutSectors(ctx, sectors, geom, stats, hoverZone) {
   }
 
   // Center label: win rate
-  if (stats && stats.n > 0) {
-    const wr = (stats.w / stats.n * 100).toFixed(0) + '%';
+  const ob = _donutOrrBuckets;
+  const obTotal = ob ? ob.TP.length + ob.BE.length + ob.SL.length : 0;
+  if (ob ? obTotal > 0 : (stats && stats.n > 0)) {
+    // ORR: BE-outs stay in the denominator (matches the ORR widget WR).
+    const wr = (ob ? ob.TP.length / obTotal * 100 : stats.w / stats.n * 100).toFixed(0) + '%';
     ctx.fillStyle = isCenter ? (tc('--gold') || '#c8a84e') : tc('--white');
     const fontSize = isCenter ? Math.max(10, Math.round(S * 0.15)) : Math.max(9, Math.round(S * 0.13));
     ctx.font = `700 ${fontSize}px Anybody, sans-serif`;
@@ -21243,7 +21274,11 @@ document.addEventListener('click', e => {
   if (!zone) return;
   const filtered = getFiltered();
   let trades, label;
-  if (zone === 'center') {
+  const ob = _donutOrrBuckets;
+  if (ob && appState.ui.rrMinFilter !== null) {
+    trades = zone === 'center' ? [...ob.TP, ...ob.BE, ...ob.SL] : (ob[zone] || []);
+    label = zone === 'center' ? 'All Trades' : zone + ' @ ' + appState.ui.rrMinFilter + 'R';
+  } else if (zone === 'center') {
     trades = filtered;
     label = 'All Trades';
   } else {
