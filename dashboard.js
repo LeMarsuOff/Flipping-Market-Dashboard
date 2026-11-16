@@ -21150,13 +21150,17 @@ function _getDonutOrrBuckets() {
   if (appState.ui.rrMinFilter === null) return null;
   const beOut = _getBeOutTradesAtTp(appState.ui.rrMinFilter);
   const out = { TP: [], BE: [], SL: [] };
+  // Buckets hold simulated copies (same shape as _applySimulation) so the
+  // drilldown cards show the R at the active TP (e.g. +3R), not the raw R.
+  const simCopy = (t, r) => ({ ...t, r, _simulated: true,
+    _effectiveClassMode: undefined, effectiveR: undefined, effectiveClass: undefined });
   for (const t of _getContextFiltered(true)) {
     const s = _getSimulatedR(t);
     if (s === null) {
-      if (beOut.has(t) || t.outcome === 'BE') out.BE.push(t);
-    } else if (s > 0) out.TP.push(t);
-    else if (s < 0)   out.SL.push(t);
-    else              out.BE.push(t);
+      if (beOut.has(t) || t.outcome === 'BE') out.BE.push(simCopy(t, 0));
+    } else if (s > 0) out.TP.push(simCopy(t, s));
+    else if (s < 0)   out.SL.push(simCopy(t, s));
+    else              out.BE.push(simCopy(t, s));
   }
   return out;
 }
@@ -26482,7 +26486,10 @@ function _wdTradeCard(t) {
             // Class above is driven by raw t.r and t.outcome so BE-TP / BE-SL keep their
             // distinctive color even if the effective R shifts sign — intentional.
             let _rDisplay;
-            if (t.outcome === 'SL') {
+            if (t._simulated) {
+              // ORR bubble active: the simulated R at the active TP wins.
+              _rDisplay = t.r;
+            } else if (t.outcome === 'SL') {
               _rDisplay = (typeof t.tp1_rr === 'number' && Number.isFinite(t.tp1_rr) && t.tp1_rr < 0)
                 ? t.tp1_rr
                 : t.r;
