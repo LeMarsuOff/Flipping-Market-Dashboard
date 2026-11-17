@@ -4741,6 +4741,7 @@ function handleActionClick(event) {
     case 'wd-remove-separator': event.stopPropagation(); _wdRemoveSeparator(actionEl); break;
     case 'copy-share-url':      event.stopPropagation(); _copyShareUrl(actionEl); break;
     case 'retry-share-create':  event.stopPropagation(); _handleOpenSharePopover({ force: true }); break;
+    case 'refresh-share-link':  event.stopPropagation(); _refreshShareLink(); break;
     case 'open-preset-share-popover':  event.stopPropagation(); _handleOpenPresetSharePopover(); break;
     case 'retry-preset-share-create':  event.stopPropagation(); _presetShareCreate(_presetShareKind); break;
     case 'preset-share-create':        event.stopPropagation(); _presetShareCreate(actionEl.dataset.shareKind); break;
@@ -27255,6 +27256,7 @@ function _renderSharePopoverSuccess(popEl, shareUrl, viewCount, title = 'Shareab
   else if (typeof viewCount === 'number')
     vcLabel = (viewCount === 1) ? '1 view' : `${viewCount} views`;
   else vcLabel = '';
+  const vcPart = vcLabel ? `<span class="wd-share-popover-vc">${_escapeHtml(vcLabel)}</span>` : '';
   popEl.innerHTML = `
     <div class="wd-share-popover-title">${_escapeHtml(title)}</div>
     <div class="wd-share-popover-row">
@@ -27263,7 +27265,7 @@ function _renderSharePopoverSuccess(popEl, shareUrl, viewCount, title = 'Shareab
     </div>
     <div class="wd-share-popover-meta">
       <span><span class="wd-share-popover-meta-dot"></span><strong>Active</strong> · expires in 7d</span>
-      <span>${_escapeHtml(vcLabel)}</span>
+      <span class="wd-share-popover-meta-right">${vcPart}<button class="wd-share-popover-refresh" data-action="refresh-share-link" type="button" title="Regenerate link with current screenshots">↺ New link</button></span>
     </div>`;
 }
 
@@ -27406,6 +27408,22 @@ function _copyShareUrl(actionEl) {
     actionEl.textContent = 'Copy';
     actionEl.classList.remove('is-copied');
   }, 1800);
+}
+
+/* Force-regenerate the share snapshot for the current drawer context.
+   Bypasses both the in-memory and localStorage caches so a fresh row is
+   inserted in Supabase — picking up any screenshots added since the
+   original share was created. */
+function _refreshShareLink() {
+  const drawer = document.getElementById('wd-drawer');
+  const ctx = drawer && drawer._shareCtx;
+  if (!ctx) return;
+  const ctxKey = _shareCtxKey(ctx);
+  const map = _readShareUrlCache();
+  delete map[_shareCacheKeyScoped(ctxKey)];
+  _writeShareUrlCache(map);
+  drawer._shareLastCtxKey = null;
+  _handleOpenSharePopover({ force: true });
 }
 
 // Close popover on clicks outside (capture phase so we run before the
@@ -27943,7 +27961,7 @@ const _SHARE_FULL_BLOCKED_ACTIONS = new Set([
   'toggle-data-sources-section', 'toggle-integrations-section', 'toggle-journal-panel',
   'toggle-account-panel', 'toggle-account-section', 'export-all-data',
   'open-preset-share-popover', 'retry-preset-share-create', 'preset-share-create',
-  'open-share-popover', 'retry-share-create',
+  'open-share-popover', 'retry-share-create', 'refresh-share-link',
 ]);
 const _SHARE_FULL_BLOCKED_PREFIX = /^(journal-profile-|notion-|auth-|sw-)/;
 
