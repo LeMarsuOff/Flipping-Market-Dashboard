@@ -269,3 +269,12 @@ Stored as one `.md` file per command in `.claude/commands/`. Each file has a `de
 | `/push` | Mid-session safety push: `git status`, stage relevant changes, commit (imperative), push. No ROADMAP update (that's `/end` only). |
 
 The commands listed above are the canonical set; the user expects them on every machine.
+
+---
+
+## 13. Backend (separate project)
+
+- `notion-dashboard-api-2.vercel.app` (Notion OAuth, Notion query proxy, `media-sync` screenshot migration to Supabase Storage) is a **separate Vercel project**, not in this repo. Source: private repo `LeMarsuOff/notion-dashboard-api-2`. The older `LeMarsuOff/notion-dashboard-api` is the v1 backend — not this one.
+- Secrets (Supabase service key, Notion client id/secret, dashboard URL…) live only in the Vercel project settings — never committed, not readable locally.
+- Redeploying requires the Vercel CLI authenticated as Max → **only from Max's Mac**, never from a cloud session. A deploy serves all ~600 members: confirm with Max first.
+- `media-sync` re-encodes screenshots to lossless WebP but **keeps the `.png` path** (the front rebuilds `<notionId>_<slot>.png` URLs). It uploads with `upsert:false`, checks the `notion_media_cache` table first, and has a `force` flag to bypass both.
