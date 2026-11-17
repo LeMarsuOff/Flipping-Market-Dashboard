@@ -324,6 +324,8 @@ const _SYNC_KEY_PREFIXES = [
   // Per-profile trade-card body order + per-field value colours (same popover,
   // drag ⋮⋮ / swatch). Synced for the same reason as the visibility map.
   'tradeCardLayout_v1_',
+  // Per-profile property shown by each Share view bar chart (⚙ next to Copy Image).
+  'svBarSlots_v1_',
   'outcomeValueMapping_v1_',
   'flipping_notion_properties_',
   'flipping_custom_widgets_',
@@ -4529,6 +4531,11 @@ function handleActionClick(event) {
     case 'cycle-sort-col': cycleSortCol(actionEl.dataset.col); break;
     case 'set-share-mode': setShareMode(actionEl.dataset.mode); break;
     case 'export-share-view': exportShareView(); break;
+    case 'toggle-sv-charts': event.stopPropagation(); _svToggleChartsPopover(); break;
+    case 'sv-charts-slot': event.stopPropagation(); _svChartsUi.slot = actionEl.dataset.svSlot === 'right' ? 'right' : 'left'; _svRenderChartsPopover(); break;
+    case 'sv-charts-filter': event.stopPropagation(); _svChartsUi.filter = ['mapped', 'source'].includes(actionEl.dataset.svFilter) ? actionEl.dataset.svFilter : 'all'; _svRenderChartsPopover(); break;
+    case 'sv-charts-pick': event.stopPropagation(); _svPickChartProperty(actionEl.dataset.svId); break;
+    case 'sv-charts-reset': event.stopPropagation(); _svResetChartSlots(); break;
     case 'mob-apply-preset': mobApplyPreset(actionEl.dataset.preset === '' ? null : parseInt(actionEl.dataset.preset, 10)); break;
     case 'toggle-filter': toggleFilter(actionEl.dataset.key, actionEl.dataset.val); break;
     case 'toggle-custom-matchmode': _handleToggleCustomMatchMode(actionEl.dataset.key); break;
@@ -18517,6 +18524,12 @@ function _cwExpandFieldValues(raw, inferredType = '') {
 function renderCustomBars(def, trades) {
   const containerId = `bars-${def.id}`;
   if (!trades.length) { renderWidgetEmptyState(containerId); return; }
+  const data = _cwBuildBarData(def, trades);
+  if (!data.length) { renderWidgetEmptyState(containerId); return; }
+  renderBars(containerId, data, 1.8, false, def.id);
+}
+
+function _cwBuildBarData(def, trades) {
   const tpConfig = appState.ui.tpConfig;
   const groups = {};
   trades.forEach(t => {
@@ -18530,7 +18543,7 @@ function renderCustomBars(def, trades) {
       if (arr) arr.push(r);
     });
   });
-  const data = Object.entries(groups).map(([k, { rs, rawKey, _oc }]) => {
+  return Object.entries(groups).map(([k, { rs, rawKey, _oc }]) => {
     const sum = a => a.reduce((s, r) => s + r, 0);
     return {
       label: k,
@@ -18547,8 +18560,6 @@ function renderCustomBars(def, trades) {
       },
     };
   }).filter(d => d.n >= 1);
-  if (!data.length) { renderWidgetEmptyState(containerId); return; }
-  renderBars(containerId, data, 1.8, false, def.id);
 }
 
 function renderCustomHeatmap(def, trades) {
@@ -19245,7 +19256,9 @@ function renderBarsSplit(containerId, items, small, chart) {
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
   const _wrFn    = d => d.n > 0 ? (d.wins / d.n) * 100 : 0;
-  const sorted = chart
+  const sorted = (containerId === 'sv-bars-pair' || containerId === 'sv-bars-setup')
+    ? _svOrderBars(items)
+    : chart
     ? sortItems(items, chart, useTotal ? d => d.totalR : useWR ? _wrFn : useN ? d => d.n : null)
     : [...items].sort((a, b) => useTotal ? b.totalR - a.totalR : useWR ? _wrFn(b) - _wrFn(a) : useN ? b.n - a.n : b.ev - a.ev);
 
@@ -19375,11 +19388,11 @@ function renderBars(containerId, data, maxAbsR, small, chart) {
   const useWR    = barMode === 'wr';
   const useN     = barMode === 'n';
   const valFn    = d => useN ? d.n : useTotal ? d.totalR : useWR ? (d.n > 0 ? (d.wins / d.n) * 100 : 0) : d.ev;
-  const forceAlphaSort = containerId === 'sv-bars-pair' || containerId === 'sv-bars-setup';
+  const isShareBars = containerId === 'sv-bars-pair' || containerId === 'sv-bars-setup';
 
   // Apply sort — sort by current metric
-  const sorted = forceAlphaSort
-    ? [...data].sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { sensitivity: 'base' }))
+  const sorted = isShareBars
+    ? _svOrderBars(data)
     : chart
       ? sortItems(data, chart, useTotal ? d => d.totalR : useN ? d => d.n : null)
       : [...data].sort((a, b) => valFn(b) - valFn(a));
@@ -51160,6 +51173,284 @@ let _svExporting = false;
 let _svCalDayMap  = {};
 let _svCalYearMap = {};
 
+// ── Share view bar charts: property shown by each of the 2 slots ──
+// Stored per profile (synced via the svBarSlots_v1_ prefix). Each slot keeps a
+// snapshot of the picked property so it still renders when the property list
+// can't be rebuilt (raw cache empty after a refresh).
+const SV_BAR_SLOTS_LS_KEY = 'svBarSlots_v1';
+const _SV_BAR_SLOT_DEFAULTS = {
+  left:  { id: 'mapped:pair',  key: 'pair',  label: 'Pair',  source: 'mapped', inferredType: 'text' },
+  right: { id: 'mapped:setup', key: 'setup', label: 'Setup', source: 'mapped', inferredType: 'text' },
+};
+const _SV_BAR_SLOT_DOM = {
+  left:  { containerId: 'sv-bars-pair',  headId: 'sv-head-left' },
+  right: { containerId: 'sv-bars-setup', headId: 'sv-head-right' },
+};
+let _svChartsUi = { slot: 'left', query: '', filter: 'all' };
+
+function _svGetBarSlots() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(getProfileScopedKey(SV_BAR_SLOTS_LS_KEY)) || 'null'); } catch (e) {}
+  const pick = slot => {
+    const s = saved && saved[slot];
+    return (s && typeof s.key === 'string' && s.key) ? s : _SV_BAR_SLOT_DEFAULTS[slot];
+  };
+  return { left: pick('left'), right: pick('right') };
+}
+
+function _svSetBarSlot(slot, opt) {
+  const slots = _svGetBarSlots();
+  slots[slot] = opt
+    ? { id: opt.id, key: opt.key, label: opt.label, source: opt.source, inferredType: opt.inferredType || 'text' }
+    : _SV_BAR_SLOT_DEFAULTS[slot];
+  try { localStorage.setItem(getProfileScopedKey(SV_BAR_SLOTS_LS_KEY), JSON.stringify(slots)); } catch (e) {}
+}
+
+// Native dims keep their dashboard rendering (Setup detail mode, short labels);
+// any other property goes through the Create Widget grouping.
+function _svBarSlotData(sel, trades) {
+  if (sel.source === 'mapped' && sel.key === 'pair') return groupByEV(trades, t => t.pair);
+  if (sel.source === 'mapped' && sel.key === 'setup') {
+    return groupByEV(
+      trades,
+      t => setupDetailMode ? (t.setupDetail || t.setup) : t.setup,
+      k => setupDetailMode ? k : (SETUP_SHORT[k] || k)
+    );
+  }
+  if (sel.source === 'mapped' && sel.key === 'session') {
+    return groupByEV(trades, t => t.session, k => SESSION_SHORT[k] || k);
+  }
+  return _cwBuildBarData({ field: sel.key, propertySource: sel.source, inferredType: sel.inferredType }, trades);
+}
+
+// ── Chronological order for the Share view bars ──
+// Detected from the values themselves (works for custom Notion columns too):
+// weekdays Mon→Sun, months Jan→Dec, dates / year-months, hours & times, plain
+// numbers, sessions in canonical order. Anything else (or a mix) stays A→Z.
+const _svStripAccents = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+const _SV_DAY_RANK = (() => {
+  const m = {};
+  DAY_ORDER.forEach((d, i) => {
+    [d, DAY_FULL[d], DAY_EN[d]].forEach(n => { if (n) m[_svStripAccents(n.toLowerCase())] = i; });
+  });
+  return m;
+})();
+const _SV_MONTH_RANK = (() => {
+  const m = {};
+  const fr = ['janvier','fevrier','mars','avril','mai','juin','juillet','aout','septembre','octobre','novembre','decembre'];
+  const frShort = ['janv','fev','mars','avr','mai','juin','juil','aout','sept','oct','nov','dec'];
+  for (let i = 0; i < 12; i++) {
+    [MONTH_FULL[i], MONTH_NAMES[i], fr[i], frShort[i]].forEach(n => { m[n.toLowerCase()] = i; });
+  }
+  m.sept = 8; m.fevr = 1;
+  return m;
+})();
+const _SV_SESSION_RANK = Object.fromEntries(SESSION_ORDER.map((s, i) => [s.toLowerCase(), i]));
+
+function _svChronoRank(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  const low = _svStripAccents(s.toLowerCase()).replace(/\.$/, '');
+  if (low in _SV_DAY_RANK) return { kind: 'day', v: _SV_DAY_RANK[low] };
+  if (low in _SV_MONTH_RANK) return { kind: 'month', v: _SV_MONTH_RANK[low] };
+  if (low in _SV_SESSION_RANK) return { kind: 'session', v: _SV_SESSION_RANK[low] };
+  let m = s.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
+  if (m) return { kind: 'date', v: (+m[1]) * 10000 + (+m[2]) * 100 + (+(m[3] || 0)) };
+  m = low.match(/^([a-z]+)\.?\s+(\d{4})$/);
+  if (m && m[1] in _SV_MONTH_RANK) return { kind: 'date', v: (+m[2]) * 10000 + (_SV_MONTH_RANK[m[1]] + 1) * 100 };
+  m = low.match(/^(\d{1,2})\s*(?:h|:)\s*(\d{1,2})?\s*(?:min)?$/);
+  if (m) return { kind: 'time', v: (+m[1]) * 60 + (+(m[2] || 0)) };
+  m = low.match(/^(-?\d+(?:[.,]\d+)?)\s*(?:m|mn|min|mins|minutes?|r|rr)?$/);
+  if (m) return { kind: 'num', v: parseFloat(m[1].replace(',', '.')) };
+  return null;
+}
+
+function _svOrderBars(items) {
+  const ranks = items.map(d => _svChronoRank(d._rawKey ?? d.label));
+  const kind = ranks[0] && ranks[0].kind;
+  if (kind && ranks.every(r => r && r.kind === kind)) {
+    return items.map((d, i) => ({ d, v: ranks[i].v })).sort((a, b) => a.v - b.v).map(x => x.d);
+  }
+  return [...items].sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { sensitivity: 'base', numeric: true }));
+}
+
+// Same wording as the dashboard widgets: English weekdays, "Jan 2025", "08h".
+function _svPrettyBarLabels(data, sel) {
+  return data.map(d => {
+    const raw = String(d._rawKey ?? d.label);
+    let label = d.label;
+    const ym = raw.match(/^(\d{4})-(\d{2})$/);
+    if (DAY_FULL[raw]) label = DAY_FULL[raw];
+    else if (ym && +ym[2] >= 1 && +ym[2] <= 12) label = `${MONTH_NAMES[+ym[2] - 1]} ${ym[1]}`;
+    else if (sel.source === 'mapped' && sel.key === 'hour' && /^\d{1,2}$/.test(raw)) label = raw.padStart(2, '0') + 'h';
+    return label === d.label ? d : { ...d, label };
+  });
+}
+
+function _svRenderBarSlots(trades) {
+  const slots = _svGetBarSlots();
+  ['left', 'right'].forEach(slot => {
+    const sel = slots[slot];
+    const dom = _SV_BAR_SLOT_DOM[slot];
+    const head = document.getElementById(dom.headId);
+    if (head) {
+      head.textContent = `${sel.label} Performance`;
+      head.title = `${sel.label} Performance`;
+    }
+    renderBars(dom.containerId, _svPrettyBarLabels(_svBarSlotData(sel, trades), sel), 1.8, true, sel.key === 'setup' ? 'setup' : sel.key);
+  });
+}
+
+function _svChartsPopover() { return document.getElementById('sv-charts-popover'); }
+
+function _svToggleChartsPopover(forceOpen) {
+  const pop = _svChartsPopover();
+  if (!pop) return;
+  const open = typeof forceOpen === 'boolean' ? forceOpen : pop.hasAttribute('hidden');
+  const btn = document.getElementById('sv-gear-btn');
+  if (open) {
+    _svChartsUi.query = '';
+    pop.removeAttribute('hidden');
+    _svRenderChartsPopover();
+    requestAnimationFrame(() => document.getElementById('sv-charts-search')?.focus());
+  } else {
+    pop.setAttribute('hidden', '');
+  }
+  btn?.classList.toggle('is-open', open);
+  btn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function _svRenderChartsPopover() {
+  const pop = _svChartsPopover();
+  if (!pop || pop.hasAttribute('hidden')) return;
+  const prevSearch = document.getElementById('sv-charts-search');
+  const hadFocus = !!prevSearch && document.activeElement === prevSearch;
+  const caret = hadFocus ? { s: prevSearch.selectionStart, e: prevSearch.selectionEnd } : null;
+  const prevBody = pop.querySelector('.sv-charts-body');
+  const prevScroll = prevBody ? prevBody.scrollTop : 0;
+
+  const slots = _svGetBarSlots();
+  const activeSlot = _svChartsUi.slot;
+  const current = slots[activeSlot];
+  const { context, mappedFields, sourceFields } = getAvailableWidgetProperties();
+  const query = _svChartsUi.query.trim().toLowerCase();
+  const filter = _svChartsUi.filter;
+  const match = opt => {
+    if (filter === 'mapped' && opt.source !== 'mapped') return false;
+    if (filter === 'source' && opt.source !== context.mode) return false;
+    if (!query) return true;
+    return [opt.label, opt.sampleValue, opt.csvColumnName, opt.inferredType]
+      .filter(Boolean).join(' ').toLowerCase().includes(query);
+  };
+  const sections = [
+    { label: 'Mapped Fields', items: mappedFields.filter(match) },
+    { label: context.customSectionTitle, items: sourceFields.filter(match) },
+  ].filter(s => s.items.length);
+
+  const slotBtn = (slot, label) => `
+    <button type="button" class="sv-mode-btn${activeSlot === slot ? ' active' : ''}"
+            data-action="sv-charts-slot" data-sv-slot="${slot}">
+      ${label}<span class="sv-charts-slot-val">${_escapeHtml(slots[slot].label)}</span>
+    </button>`;
+  const filterBtn = (value, label) => `
+    <button type="button" class="cw-inline-filter${filter === value ? ' is-active' : ''}"
+            data-action="sv-charts-filter" data-sv-filter="${value}">${_escapeHtml(label)}</button>`;
+
+  const list = sections.length
+    ? sections.map(section => `
+        <section class="cw-inline-section">
+          <div class="cw-inline-section-title">${_escapeHtml(section.label)}</div>
+          <div class="cw-inline-list" role="list">
+            ${section.items.map(opt => `
+              <div class="cw-inline-row${opt.id === current.id ? ' is-selected' : ''}">
+                <button type="button" class="cw-inline-row-mainbtn"
+                        data-action="sv-charts-pick" data-sv-id="${_escapeAttr(opt.id)}"
+                        aria-pressed="${opt.id === current.id ? 'true' : 'false'}">
+                  <span class="cw-inline-row-main">
+                    <span class="cw-inline-row-label">${_escapeHtml(opt.label)}</span>
+                    <span class="cw-inline-row-meta">
+                      <span>${_escapeHtml(String(opt.sampleValue || '—'))}</span>
+                      <span class="cw-inline-row-sep">·</span>
+                      <span>${opt.coverageCount}/${opt.totalCount} trades</span>
+                    </span>
+                  </span>
+                </button>
+                ${opt.id === current.id ? '<span class="cw-inline-badge">Shown</span>' : ''}
+              </div>`).join('')}
+          </div>
+        </section>`).join('')
+    : `<div class="cw-create-empty">
+         <span class="cw-create-empty-title">No properties match this search</span>
+         <span class="cw-create-empty-copy">Try another keyword or switch the field filter.</span>
+       </div>`;
+
+  pop.innerHTML = `
+    <div class="sv-charts-title">Charts in the image</div>
+    <div class="sv-mode-toggle sv-charts-slots" role="tablist" aria-label="Chart slot">
+      ${slotBtn('left', 'Left')}
+      ${slotBtn('right', 'Right')}
+    </div>
+    <div class="sv-charts-toolbar">
+      <input type="text" id="sv-charts-search" class="cw-inline-search"
+             value="${_escapeAttr(_svChartsUi.query)}" placeholder="Search property..."
+             autocomplete="off" spellcheck="false">
+      <div class="cw-inline-filters" role="tablist" aria-label="Property source filter">
+        ${filterBtn('all', 'All')}
+        ${filterBtn('mapped', 'Mapped')}
+        ${filterBtn('source', context.label)}
+      </div>
+    </div>
+    <div class="sv-charts-body">${list}</div>
+    <div class="sv-charts-foot">
+      <button type="button" class="sv-charts-reset" data-action="sv-charts-reset">Reset to Pair + Setup</button>
+    </div>`;
+
+  const body = pop.querySelector('.sv-charts-body');
+  if (body) body.scrollTop = prevScroll;
+  if (hadFocus) {
+    const s = document.getElementById('sv-charts-search');
+    if (s) { s.focus(); try { s.setSelectionRange(caret.s, caret.e); } catch (_) {} }
+  }
+}
+
+function _svPickChartProperty(optionId) {
+  const { mappedFields, sourceFields } = getAvailableWidgetProperties();
+  const opt = [...mappedFields, ...sourceFields].find(o => o.id === optionId);
+  if (!opt) return;
+  _svSetBarSlot(_svChartsUi.slot, opt);
+  renderShareView();
+  _svRenderChartsPopover();
+}
+
+function _svResetChartSlots() {
+  _svSetBarSlot('left', null);
+  _svSetBarSlot('right', null);
+  renderShareView();
+  _svRenderChartsPopover();
+}
+
+document.addEventListener('input', e => {
+  const el = e.target.closest?.('#sv-charts-search');
+  if (!el) return;
+  _svChartsUi.query = el.value || '';
+  _svRenderChartsPopover();
+});
+
+document.addEventListener('click', e => {
+  const pop = _svChartsPopover();
+  if (!pop || pop.hasAttribute('hidden')) return;
+  // A pick re-renders the popover, detaching the clicked node before this runs.
+  if (!e.target.isConnected) return;
+  if (pop.contains(e.target) || e.target.closest('[data-action="toggle-sv-charts"]')) return;
+  _svToggleChartsPopover(false);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const pop = _svChartsPopover();
+  if (pop && !pop.hasAttribute('hidden')) _svToggleChartsPopover(false);
+});
+
 function setShareMode(mode) {
   _shareMode = mode;
   document.getElementById('sv-btn-year')?.classList.toggle('active', mode === 'year');
@@ -52086,22 +52377,8 @@ function renderShareView() {
     _svRenderCalMonth(selectedPeriod.ym);
   }
 
-  // Performance bars (reuse existing renderBars with sv-specific container IDs)
-  const absMax = 1.8;
-  renderBars(
-    'sv-bars-pair',
-    groupByEV(trades, t => t.pair),
-    absMax, true, 'pair'
-  );
-  renderBars(
-    'sv-bars-setup',
-    groupByEV(
-      trades,
-      t => setupDetailMode ? (t.setupDetail || t.setup) : t.setup,
-      k => setupDetailMode ? k : (SETUP_SHORT[k] || k)
-    ),
-    absMax, true, 'setup'
-  );
+  // Performance bars — property per slot picked from the ⚙ popover
+  _svRenderBarSlots(trades);
 }
 
 // ── Convert color(srgb r g b / a) → rgba(R,G,B,A) for html2canvas compat ──

@@ -12757,6 +12757,138 @@ body.ms-sidebar-open .view-tabs {
 }
 .sv-controls-right {
   margin-left: auto;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* ── ⚙ Charts picker (choose the property of each bar chart) ── */
+.sv-charts-wrap {
+  position: relative;
+  display: flex;
+}
+.sv-gear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+  color: var(--dim);
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.sv-gear-btn svg { width: 15px; height: 15px; display: block; transition: transform .3s ease; }
+.sv-gear-btn:hover { color: var(--body); }
+.sv-gear-btn.is-open {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 10%, var(--bg2));
+}
+.sv-gear-btn.is-open svg { transform: rotate(60deg); }
+.sv-gear-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 32%, transparent);
+}
+.sv-charts-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 360px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.55);
+  padding: 14px;
+  z-index: 50;
+}
+.sv-charts-popover[hidden] { display: none; }
+.sv-charts-popover::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  right: 9px;
+  width: 12px;
+  height: 12px;
+  background: var(--bg2);
+  border-top: 1px solid var(--line2);
+  border-left: 1px solid var(--line2);
+  transform: rotate(45deg);
+}
+.sv-charts-title {
+  font-family: 'DM Mono', monospace;
+  font-size: var(--sv-fs-micro);
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.sv-charts-slots { width: 100%; }
+.sv-charts-slots .sv-mode-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  text-align: left;
+}
+.sv-charts-slot-val {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--sv-fs-body);
+  letter-spacing: .3px;
+  text-transform: none;
+  color: var(--body);
+}
+.sv-charts-slots .sv-mode-btn.active .sv-charts-slot-val { color: var(--text-primary); }
+.sv-charts-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sv-charts-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 2px;
+}
+.sv-charts-body .cw-inline-row { padding: 8px 10px; }
+.sv-charts-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.sv-charts-reset {
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  color: var(--dim);
+  font-family: 'DM Mono', monospace;
+  font-size: var(--sv-fs-small);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sv-charts-reset:hover { color: var(--gold); }
+
+/* Long Notion property names stay on one line in the chart header */
+.sv-bars-head {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sv-mode-toggle {
   display: flex;
