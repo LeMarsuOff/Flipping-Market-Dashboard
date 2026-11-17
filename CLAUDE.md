@@ -241,7 +241,7 @@ A preset = a named filter configuration the user saves and switches between.
 
 ## 12. Local Automation (per-machine, gitignored)
 
-Everything under `.claude/` is gitignored — local config does NOT sync across machines via git. On a fresh machine, the user says **"install hooks and commands here"** and the agent recreates everything from the specs below.
+`.claude/commands/`, `.claude/hooks/post-edit.sh`, `.claude/settings.json` (hook registration) and `.claude/launch.json` are **committed** (since 2026-11-17) so cloud sessions (claude.ai/code) and any fresh clone get them. Only `.claude/settings.local.json`, `.claude/worktrees/` and `.claude/skills/` stay gitignored (per-machine). Don't register the hook again in `settings.local.json` — it would run twice.
 
 ### 12.1 PostToolUse hook — cache-bust + JS validation
 

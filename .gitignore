@@ -30,8 +30,10 @@ secrets.json
 # Vercel local link (per-machine, regenerated via `vercel link`)
 .vercel/
 
-# Claude Code local
-.claude/
+# Claude Code — per-machine bits only (commands, hook, launch.json are shared so cloud sessions get them)
+.claude/settings.local.json
+.claude/worktrees/
+.claude/skills/
 
 # Spike / POC (local only, never committed)
 spike/
