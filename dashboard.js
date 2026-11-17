@@ -13657,7 +13657,7 @@ const KPI_TITLES = {
   maxW:     'Best Streak — Longest consecutive winning streak.',
   maxL:     'Worst Streak — Longest consecutive losing streak.',
   maxDD:    'Max Drawdown — Largest peak-to-trough decline in R. Lower is better. Critical for prop firm challenges.',
-  beTrades: 'BE Trades — Count of trades matching an excluded chip in BE Management, plus — in BE Fallback mode — trades that reached TP1 but not the currently simulated TP. Shows 0 if no BE Management chip is excluded and no simulation is above TP1.',
+  beTrades: 'BE Trades — Outcome-based break-even trades (BE-TP, BE-SL, plain BE), including any hidden by an active Outcome chip filter. In BE Fallback mode with an active ORR bubble, also includes trades that reached TP1 but not the simulated TP target.',
 };
 
 // Order & color code mirror Statistics Overview (buildStatsOverviewMarkup)
@@ -22493,22 +22493,31 @@ function _getBePlainOutcomeTrades() {
   return out;
 }
 
-// Combined BE count at a given TP: (BE-out trades at tp) ∪ (BE Mgmt chips) ∪
-// (outcome-chip-excluded BE-TP/BE-SL) ∪ (plain BE outcomes), deduplicated. This
-// is what the summary's "W / L / BE" cell shows and what _computeBeTradesKpi
-// reports for the active bubble.
+// Combined BE count at a given TP: (BE-out trades at tp) ∪
+// (outcome-chip-excluded BE-TP/BE-SL) ∪ (plain BE outcomes), deduplicated.
+// Called by _computeBeTradesKpi when an ORR bubble is active (rrMinFilter !== null).
+// BE Management chip exclusions are intentionally excluded: they are plain
+// filtered-out trades, not BE-managed ones.
 function _getBeColumnCountAtTp(tp) {
   const beOut = _getBeOutTradesAtTp(tp);
-  const chips = _getBeMgmtChipMatchedTrades();
   const outcomeExcl = _getBeOutcomeExcludedTrades();
   const bePlain = _getBePlainOutcomeTrades();
-  const union = new Set([...beOut, ...chips, ...outcomeExcl, ...bePlain]);
+  const union = new Set([...beOut, ...outcomeExcl, ...bePlain]);
   return union.size;
 }
 
 function _computeBeTradesKpi() {
-  const tp = appState.ui.rrMinFilter !== null ? appState.ui.rrMinFilter : _SYSTEM_TP_R;
-  return _getBeColumnCountAtTp(tp);
+  // When no ORR bubble is active, count Notion BE outcomes (BE-TP, BE-SL, plain BE)
+  // visible in the filtered set, plus any BE-TP/BE-SL hidden by an outcome chip.
+  // The be-fallback simulation (rrMax < systemTP) must not inflate the count
+  // passively — it only applies when the user has an explicit ORR simulation running.
+  if (appState.ui.rrMinFilter === null) {
+    const filtered = _getContextFiltered(true);
+    const union = new Set(filtered.filter(t => t.outcome === 'BE-TP' || t.outcome === 'BE-SL' || t.outcome === 'BE'));
+    for (const t of _getBeOutcomeExcludedTrades()) union.add(t);
+    return union.size;
+  }
+  return _getBeColumnCountAtTp(appState.ui.rrMinFilter);
 }
 
 function updateStats(stats) {
@@ -52036,15 +52045,14 @@ function renderShareView() {
   // Period label
   _svRenderDateWidget(selectedPeriod.year, selectedPeriod.month);
 
-  // BE Trades KPI: union of (BE-out at active TP) and (BE Mgmt chip-matched).
-  // _computeBeTradesKpi (called by buildStatsOverviewMarkup) ignores the
-  // share-view period toggle, so compute it here against the active period.
-  const _svBeTp = appState.ui.rrMinFilter !== null ? appState.ui.rrMinFilter : _SYSTEM_TP_R;
+  // BE Trades KPI: Notion BE outcomes (BE-TP, BE-SL, plain BE) visible in the filtered
+  // set, plus any BE-TP/BE-SL hidden by an outcome chip. When an ORR bubble is active,
+  // also adds be-fallback simulation BEs. BE Management chip exclusions are not counted.
+  const _svFilteredForBe = _getContextFiltered(true);
   const _svBeUnion = new Set([
-    ..._getBeOutTradesAtTp(_svBeTp),
-    ..._getBeMgmtChipMatchedTrades(),
+    ..._svFilteredForBe.filter(t => t.outcome === 'BE-TP' || t.outcome === 'BE-SL' || t.outcome === 'BE'),
     ..._getBeOutcomeExcludedTrades(),
-    ..._getBePlainOutcomeTrades(),
+    ...(appState.ui.rrMinFilter !== null ? _getBeOutTradesAtTp(appState.ui.rrMinFilter) : []),
   ]);
   let _svBeCount;
   if (_shareMode === 'month' && selectedPeriod.ym) {
