@@ -13657,7 +13657,7 @@ const KPI_TITLES = {
   maxW:     'Best Streak — Longest consecutive winning streak.',
   maxL:     'Worst Streak — Longest consecutive losing streak.',
   maxDD:    'Max Drawdown — Largest peak-to-trough decline in R. Lower is better. Critical for prop firm challenges.',
-  beTrades: 'BE Trades — Count of trades matching an excluded chip in BE Management, plus — in BE Fallback mode — trades that reached TP1 but not the currently simulated TP. Shows 0 if no BE Management chip is excluded and no simulation is above TP1.',
+  beTrades: 'BE Trades — Break-even trades within your active filters: trades removed by an excluded BE Management chip, BE-TP / BE-SL hidden by the Outcome chip, plain BE outcomes, and — in BE Fallback mode — trades that reached TP1 but not the simulated TP. Trades excluded by any other filter (pair, day, hour, custom chips…) are never counted.',
 };
 
 // Order & color code mirror Statistics Overview (buildStatsOverviewMarkup)
@@ -22464,14 +22464,21 @@ function _getBeOutcomeExcludedTrades() {
   const beSlExcluded = isExcluded('BE-SL');
   if (!beTpExcluded && !beSlExcluded) return new Set();
 
+  // Neutralize the BE Management chip too: a BE-TP/BE-SL hidden by BOTH the
+  // outcome chip and a BE Mgmt chip would otherwise fall through both buckets
+  // (each helper still applying the other's exclusion) and vanish from the KPI.
+  const bmEntry = appState.filters.chips.beManagement;
   const savedIncluded = entry.included;
   const savedExcluded = entry.excluded;
+  const bmSavedExcluded = bmEntry ? bmEntry.excluded : null;
   entry.included = new Set();
   entry.excluded = new Set();
+  if (bmEntry) bmEntry.excluded = new Set();
   invalidateFilterCache();
   const dataset = _getContextFiltered(true);
   entry.included = savedIncluded;
   entry.excluded = savedExcluded;
+  if (bmEntry) bmEntry.excluded = bmSavedExcluded;
   invalidateFilterCache();
 
   const matched = new Set();
@@ -22497,13 +22504,42 @@ function _getBePlainOutcomeTrades() {
 // (outcome-chip-excluded BE-TP/BE-SL) ∪ (plain BE outcomes), deduplicated. This
 // is what the summary's "W / L / BE" cell shows and what _computeBeTradesKpi
 // reports for the active bubble.
-function _getBeColumnCountAtTp(tp) {
+// Returns the union Set itself, with the BE-out subset attached as `.beOut`
+// so the tooltip breakdown can label simulated BE exits.
+function _getBeTradesKpiSet(tp) {
   const beOut = _getBeOutTradesAtTp(tp);
   const chips = _getBeMgmtChipMatchedTrades();
   const outcomeExcl = _getBeOutcomeExcludedTrades();
   const bePlain = _getBePlainOutcomeTrades();
   const union = new Set([...beOut, ...chips, ...outcomeExcl, ...bePlain]);
-  return union.size;
+  union.beOut = beOut;
+  return union;
+}
+
+function _getBeColumnCountAtTp(tp) {
+  return _getBeTradesKpiSet(tp).size;
+}
+
+// Breakdown of the exact trades counted by the BE Trades KPI, so the tooltip
+// always sums to the headline value. `trades` is an iterable subset of the
+// union (e.g. scoped to the share-view period); `beOut` is the simulated
+// BE-out Set used to label non-BE outcomes.
+function _beKpiBreakdown(trades, beOut) {
+  const b = { be_tp: 0, be_sl: 0, be_plain: 0, be_sim: 0, be_mgmt: 0 };
+  for (const t of trades) {
+    if (t.outcome === 'BE-TP') b.be_tp++;
+    else if (t.outcome === 'BE-SL') b.be_sl++;
+    else if (t.outcome === 'BE') b.be_plain++;
+    else if (beOut && beOut.has(t)) b.be_sim++;
+    else b.be_mgmt++;
+  }
+  return b;
+}
+
+function _computeBeTradesKpiBreakdown() {
+  const tp = appState.ui.rrMinFilter !== null ? appState.ui.rrMinFilter : _SYSTEM_TP_R;
+  const set = _getBeTradesKpiSet(tp);
+  return _beKpiBreakdown(set, set.beOut);
 }
 
 function _computeBeTradesKpi() {
@@ -22659,22 +22695,28 @@ function _buildKpiTooltipBreakdown(kpiKey, stats, beStats) {
   }
 
   if (kpiKey === 'beTrades') {
-    const src = beStats || stats;
+    // beStats is the _beKpiBreakdown of the exact trades counted in the cell,
+    // so the rows always sum to the headline value.
+    const src = beStats || _computeBeTradesKpiBreakdown();
     const beTp = src.be_tp || 0;
     const beSl = src.be_sl || 0;
     const bePlain = src.be_plain || 0;
-    const total = beTp + beSl + bePlain;
+    const beSim = src.be_sim || 0;
+    const beMgmt = src.be_mgmt || 0;
+    const total = beTp + beSl + bePlain + beSim + beMgmt;
     if (total <= 0) return '';
     const cBETP = tc('--oc-betp');
     const cBESL = tc('--oc-besl');
     const cBE   = tc('--gold') || tc('--a');
+    const cDim  = tc('--text-secondary') || tc('--text-muted');
+    const pct = (n) => `${n} (${(n / total * 100).toFixed(0)}%)`;
     const rows = [];
-    if (beTp > 0)    rows.push(row(cBETP, 'BE-TP', `${beTp} (${(beTp / total * 100).toFixed(0)}%)`));
-    if (beSl > 0)    rows.push(row(cBESL, 'BE-SL', `${beSl} (${(beSl / total * 100).toFixed(0)}%)`));
-    if (bePlain > 0) rows.push(row(cBE,   'BE',    `${bePlain} (${(bePlain / total * 100).toFixed(0)}%)`));
-    // Column-pure aggregate (how often the trade reached break-even, mode-independent).
-    // Distinct from the headline KPI, which is the action-driven BE Management count.
-    const nzComponents = [beTp, beSl, bePlain].filter(n => n > 0).length;
+    if (beTp > 0)    rows.push(row(cBETP, 'BE-TP', pct(beTp)));
+    if (beSl > 0)    rows.push(row(cBESL, 'BE-SL', pct(beSl)));
+    if (bePlain > 0) rows.push(row(cBE,   'BE',    pct(bePlain)));
+    if (beSim > 0)   rows.push(row(cBE,   'BE-out (sim. TP)', pct(beSim)));
+    if (beMgmt > 0)  rows.push(row(cDim,  'Other (BE Mgmt)',  pct(beMgmt)));
+    const nzComponents = [beTp, beSl, bePlain, beSim, beMgmt].filter(n => n > 0).length;
     if (nzComponents > 1) rows.push(row(tc('--text-muted') || '#9aa0a6', 'Total BE', `${total}`));
     return rows.length ? `<div class="utip-threshold-legend">${rows.join('')}</div>` : '';
   }
@@ -22813,7 +22855,7 @@ function updateStatsWidget(stats) {
   }
 
   const totN = appState.trades.totalOverride !== null ? appState.trades.totalOverride : appState.trades.items.length;
-  const beStats = calcStats(_getContextFiltered(false)) || { be_tp: 0, be_sl: 0 };
+  const beStats = _computeBeTradesKpiBreakdown();
   body.innerHTML = buildStatsOverviewMarkup(stats, totN, 'main', beStats);
   _attachKpiTooltipHandlers(body, stats, beStats);
   // Refresh live refs so the topbar KPI tooltips reflect the current stats.
@@ -50350,7 +50392,9 @@ function updateMobileStats(stats) {
     return;
   }
   const totN = appState.trades.totalOverride !== null ? appState.trades.totalOverride : appState.trades.items.length;
-  const beTot = stats.be_tp + stats.be_sl;
+  // Same count as the desktop BE Trades KPI (_computeBeTradesKpi).
+  const beB = _computeBeTradesKpiBreakdown();
+  const beTot = beB.be_tp + beB.be_sl + beB.be_plain + beB.be_sim + beB.be_mgmt;
 
   const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   set('mk-n',   stats.n);
@@ -50365,7 +50409,7 @@ function updateMobileStats(stats) {
   set('mk-ws',  stats.maxW);
   set('mk-ls',  stats.maxL);
   set('mk-be',  beTot);
-  set('mk-be-s', (beTot / stats.n * 100).toFixed(0) + '% · TP:' + stats.be_tp + ' SL:' + stats.be_sl);
+  set('mk-be-s', 'TP:' + beB.be_tp + ' SL:' + beB.be_sl);
 
   // Dynamic colours
   const wrCell = document.querySelector('#mob-kpi-grid [data-kpi="win-rate"]');
@@ -51978,12 +52022,11 @@ function _svStreakMicro(value, tone, idPrefix = 'stats') {
 }
 
 // ── Stats Overview for share view ──
-function _svRenderStats(trades, beTrades = trades, beCount = null) {
+function _svRenderStats(trades, beStats, beCount = null) {
   const body = document.getElementById('sv-stats-body');
   const badge = document.getElementById('sv-stats-badge');
   if (!body) return;
   const stats = calcStats(trades);
-  const beStats = calcStats(beTrades) || { be_tp: 0, be_sl: 0 };
   if (!stats || !stats.n) {
     body.innerHTML = '<div class="sel-empty sel-empty-compact">No data</div>';
     if (badge) badge.textContent = '';
@@ -51992,7 +52035,7 @@ function _svRenderStats(trades, beTrades = trades, beCount = null) {
   const filtered = getFiltered();
   body.innerHTML = buildStatsOverviewMarkup(stats, filtered.length, 'share', beStats, beCount);
   if (badge) badge.textContent = '';
-  _attachKpiTooltipHandlers(body);
+  _attachKpiTooltipHandlers(body, stats, beStats);
   // Synchronous fit — apply hide classes before the browser paints the new
   // innerHTML so cells never flash in the "micros visible" state when the
   // ResizeObserver → renderShareView cycle rebuilds the overview. If the
@@ -52008,7 +52051,6 @@ function renderShareView() {
   if (currentView !== 'share') return;
 
   const filtered = getFiltered();
-  const filteredWithBE = _getContextFiltered(false);
   const selectedPeriod = _svGetSelectedYearMonth(filtered);
   _svSyncPresetSel();
 
@@ -52017,17 +52059,14 @@ function renderShareView() {
   //  - Year mode with a specific year → filter to that year
   //  - Year mode with "All"           → keep the full filtered dataset
   let trades = filtered;
-  let beTrades = filteredWithBE;
   if (_shareMode === 'month') {
     const { ym } = selectedPeriod;
     if (ym) {
       trades = filtered.filter(t => t.date && t.date.startsWith(ym));
-      beTrades = filteredWithBE.filter(t => t.date && t.date.startsWith(ym));
     }
   } else if (_shareMode === 'year' && !selectedPeriod.isAll && selectedPeriod.year) {
     const y = selectedPeriod.year;
     trades = filtered.filter(t => t.date && t.date.slice(0, 4) === y);
-    beTrades = filteredWithBE.filter(t => t.date && t.date.slice(0, 4) === y);
   }
 
   // Build calendar caches from the full filtered dataset
@@ -52040,25 +52079,20 @@ function renderShareView() {
   // _computeBeTradesKpi (called by buildStatsOverviewMarkup) ignores the
   // share-view period toggle, so compute it here against the active period.
   const _svBeTp = appState.ui.rrMinFilter !== null ? appState.ui.rrMinFilter : _SYSTEM_TP_R;
-  const _svBeUnion = new Set([
-    ..._getBeOutTradesAtTp(_svBeTp),
-    ..._getBeMgmtChipMatchedTrades(),
-    ..._getBeOutcomeExcludedTrades(),
-    ..._getBePlainOutcomeTrades(),
-  ]);
-  let _svBeCount;
+  const _svBeUnion = _getBeTradesKpiSet(_svBeTp);
+  let _svBeScoped = [..._svBeUnion];
   if (_shareMode === 'month' && selectedPeriod.ym) {
     const ym = selectedPeriod.ym;
-    _svBeCount = [..._svBeUnion].filter(t => t.date && t.date.startsWith(ym)).length;
+    _svBeScoped = _svBeScoped.filter(t => t.date && t.date.startsWith(ym));
   } else if (_shareMode === 'year' && !selectedPeriod.isAll && selectedPeriod.year) {
     const y = selectedPeriod.year;
-    _svBeCount = [..._svBeUnion].filter(t => t.date && t.date.slice(0, 4) === y).length;
-  } else {
-    _svBeCount = _svBeUnion.size;
+    _svBeScoped = _svBeScoped.filter(t => t.date && t.date.slice(0, 4) === y);
   }
+  const _svBeCount = _svBeScoped.length;
+  const _svBeStats = _beKpiBreakdown(_svBeScoped, _svBeUnion.beOut);
 
   // Stats
-  _svRenderStats(trades, beTrades, _svBeCount);
+  _svRenderStats(trades, _svBeStats, _svBeCount);
 
   // Equity chart: double rAF ensures layout is fully computed before drawing
   // Triple rAF: wait for CSS grid layout to fully settle before measuring
