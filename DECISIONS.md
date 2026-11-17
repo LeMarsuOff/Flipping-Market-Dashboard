@@ -897,3 +897,11 @@ Three sub-decisions, each cleared with Max:
 **Rationale:** The routes trusted whatever `user_id` they received, and that id was readable from the public `shares` table, so knowing it was enough to read a member's Notion journal or delete their account. CORS alone would not help (non-browser clients ignore it); the check has to be identity. The share table was listable with the anon key, so links were not the only way in.
 
 **Consequence:** Any new backend route must call `applyCors` + `requireSameUser` (or `authenticate`). Any new share reader must use `get_share`, never `/rest/v1/shares`. A new origin that legitimately calls the API must be added to `ALLOWED_ORIGINS`. Admin access is unchanged: the Supabase dashboard / service role bypasses RLS and these checks.
+
+### 2026-11-17 — Claude commands and hook are committed; only per-machine settings stay local
+
+**Decision:** `.claude/commands/`, `.claude/hooks/post-edit.sh`, `.claude/settings.json` (PostToolUse hook registration) and `.claude/launch.json` are tracked in git. `.gitignore` now excludes only `.claude/settings.local.json`, `.claude/worktrees/` and `.claude/skills/`. The hook is registered once, in `settings.json` — never again in `settings.local.json`.
+
+**Rationale:** Max wants to work from his desktop PC through cloud sessions (claude.ai/code), which start from the GitHub repo. With all of `.claude/` gitignored, a cloud session had no `/start`, `/end` or cache-bust hook. These files hold no secrets; permissions and machine paths stay in `settings.local.json`.
+
+**Consequence:** Changing a slash command or the hook is now a normal commit and reaches every machine via `/start`. Backend facts that previously lived only in local agent memory are summarised in `CLAUDE.md` §13 (no ids or token paths — the repo is public).
